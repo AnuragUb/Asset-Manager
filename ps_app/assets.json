@@ -1,0 +1,60 @@
+[
+    {
+        "Id":  "AST-20251208164305",
+        "AssignedTo":  "Anurag",
+        "Location":  "Mumbai - Malad ",
+        "Type":  "Computer",
+        "Name":  "Lenovo Laptop",
+        "Status":  "In Use",
+        "LastUpdated":  "2025-12-10 15:46:05",
+        "Notes":  null
+    },
+    {
+        "Id":  "N251210ASDOF",
+        "Type":  "Networking Gear",
+        "AssignedTo":  "asdad",
+        "Purpose":  "Office",
+        "LastUpdated":  "2025-12-10 15:36:02",
+        "Notes":  null,
+        "Name":  "as",
+        "Location":  "asda",
+        "Status":  "Available",
+        "PurchaseDate":  "2025-12-10"
+    },
+    {
+        "Id":  "W251113BANST",
+        "Type":  "Workstation",
+        "AssignedTo":  "Sudhir ",
+        "Purpose":  "Studio",
+        "LastUpdated":  "2025-12-11 13:28:47",
+        "Notes":  null,
+        "Name":  "Dell Work Station 3090",
+        "Location":  "Banglore",
+        "Status":  "In Use",
+        "PurchaseDate":  "2025-11-13"
+    },
+    {
+        "Id":  "X251210LOCOF",
+        "Type":  null,
+        "AssignedTo":  "",
+        "Purpose":  "Office",
+        "LastUpdated":  "2025-12-10 15:39:51",
+        "Notes":  null,
+        "Name":  "",
+        "Location":  "",
+        "Status":  "Available",
+        "PurchaseDate":  "2025-12-10"
+    },
+    {
+        "Id":  "A251211MUMPR",
+        "Type":  "Audio Equipment",
+        "AssignedTo":  "Anurag",
+        "Purpose":  "Production",
+        "LastUpdated":  "2025-12-11 13:30:10",
+        "Notes":  null,
+        "Name":  "Sony C710N TWS",
+        "Location":  "Mumbai",
+        "Status":  "In Use",
+        "PurchaseDate":  "2025-12-11"
+    }
+]

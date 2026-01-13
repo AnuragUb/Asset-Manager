@@ -1,0 +1,36 @@
+# Dependency folders
+node_modules/
+dist/
+build/
+bin/
+obj/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Databases
+*.db
+*.sqlite
+
+# Large binaries (Electron, etc.)
+*.exe
+*.dll
+*.so
+*.dylib
+*.zip
+*.tar.gz
+
+# Environment files
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

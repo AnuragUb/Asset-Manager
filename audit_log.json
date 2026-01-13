@@ -1,0 +1,5245 @@
+[
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 16:42:36",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "CREATE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset created: Lenovo Laptop",
+    "Timestamp": "2025-12-08 16:43:05",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 16:43:05\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "UPDATE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset updated: Lenovo Laptop",
+    "Timestamp": "2025-12-08 16:43:13",
+    "OldValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 16:43:05\",\r\n    \"Notes\":  null\r\n}",
+    "User": "admin",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 16:43:13\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 16:46:19",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 17:16:47",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": ""
+  },
+  {
+    "Action": "CREATE",
+    "AssetId": "AST-20251208171713",
+    "Details": "Asset created: GoogeMe",
+    "Timestamp": "2025-12-08 17:17:13",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208171713\",\r\n    \"AssignedTo\":  \"Sandeep Reddy Vanga\",\r\n    \"Location\":  \"Andheri - Mumbai\",\r\n    \"Type\":  \"Phone\",\r\n    \"Name\":  \"GoogeMe\",\r\n    \"Status\":  \"Repair\",\r\n    \"LastUpdated\":  \"2025-12-08 17:17:13\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 17:17:35",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 17:17:44",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "UPDATE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset updated: Lenovo Laptop",
+    "Timestamp": "2025-12-08 17:18:02",
+    "OldValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 16:43:13\",\r\n    \"Notes\":  null\r\n}",
+    "User": "admin",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:02\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 17:18:09",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 17:18:18",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": ""
+  },
+  {
+    "Action": "CREATE",
+    "AssetId": "AST-20251208171826",
+    "Details": "Asset created: sad",
+    "Timestamp": "2025-12-08 17:18:26",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208171826\",\r\n    \"AssignedTo\":  \"asdasd\",\r\n    \"Location\":  \"sada\",\r\n    \"Type\":  \"Phone\",\r\n    \"Name\":  \"sad\",\r\n    \"Status\":  \"Available\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:26\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 17:18:31",
+    "OldValue": "",
+    "User": "user",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 17:18:38",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "CREATE",
+    "AssetId": "AST-20251208171844",
+    "Details": "Asset created: das",
+    "Timestamp": "2025-12-08 17:18:44",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208171844\",\r\n    \"AssignedTo\":  \"asd\",\r\n    \"Location\":  \"sad\",\r\n    \"Type\":  \"Tablet\",\r\n    \"Name\":  \"das\",\r\n    \"Status\":  \"Available\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:44\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "UPDATE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset updated: Lenovo Laptop",
+    "Timestamp": "2025-12-08 17:18:53",
+    "OldValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:02\",\r\n    \"Notes\":  null\r\n}",
+    "User": "admin",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:53\",\r\n    \"Notes\":  null\r\n}"
+  },
+  {
+    "Action": "DELETE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset deleted: Lenovo Laptop",
+    "Timestamp": "2025-12-08 17:18:55",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "DELETE",
+    "AssetId": "AST-20251208164305",
+    "Details": "Asset deleted: Lenovo Laptop",
+    "Timestamp": "2025-12-08 17:19:05",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 17:19:13",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-08 17:20:09",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-08 18:20:36",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-09 14:28:38",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-09 18:07:33",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 12:01:57",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGIN",
+    "AssetId": "",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 12:18:59",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 12:29:17",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "Action": "LOGOUT",
+    "AssetId": "",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 12:29:28",
+    "OldValue": "",
+    "User": "admin",
+    "NewValue": ""
+  },
+  {
+    "OldValue": "",
+    "EventId": "171b2acf-42eb-49c2-a72f-25bb4c393095",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:32:13",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "485126aa-5bc0-411e-be77-12d779fe7a9f",
+    "Action": "CREATE",
+    "Metadata": {
+      "Id": "P251210MUMST",
+      "Type": "Phone",
+      "AssignedTo": "Anurag",
+      "Purpose": "Studio",
+      "LastUpdated": "2025-12-10 15:32:45",
+      "Notes": null,
+      "Name": "Anurag",
+      "Location": "Mumbai",
+      "Status": "In Use",
+      "PurchaseDate": "2025-12-10"
+    },
+    "Severity": "INFO",
+    "Details": "Asset created: Anurag",
+    "Timestamp": "2025-12-10 15:32:45",
+    "NewValue": "{\r\n    \"Id\":  \"P251210MUMST\",\r\n    \"Type\":  \"Phone\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Purpose\":  \"Studio\",\r\n    \"LastUpdated\":  \"2025-12-10 15:32:45\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai\",\r\n    \"Status\":  \"In Use\",\r\n    \"PurchaseDate\":  \"2025-12-10\"\r\n}",
+    "AssetId": "P251210MUMST",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "9ab6d6ec-a1fe-49ba-a6e4-6510e47d9bac",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 15:35:41",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "4b2c41f0-ff0b-4dcc-ab7f-a4f49adfbe47",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:35:54",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "07c1d72b-2c06-4484-85f0-f4e0ec7ee42e",
+    "Action": "CREATE",
+    "Metadata": {
+      "Id": "N251210ASDOF",
+      "Type": "Networking Gear",
+      "AssignedTo": "asdad",
+      "Purpose": "Office",
+      "LastUpdated": "2025-12-10 15:36:02",
+      "Notes": null,
+      "Name": "as",
+      "Location": "asda",
+      "Status": "Available",
+      "PurchaseDate": "2025-12-10"
+    },
+    "Severity": "INFO",
+    "Details": "Asset created: as",
+    "Timestamp": "2025-12-10 15:36:02",
+    "NewValue": "{\r\n    \"Id\":  \"N251210ASDOF\",\r\n    \"Type\":  \"Networking Gear\",\r\n    \"AssignedTo\":  \"asdad\",\r\n    \"Purpose\":  \"Office\",\r\n    \"LastUpdated\":  \"2025-12-10 15:36:02\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"as\",\r\n    \"Location\":  \"asda\",\r\n    \"Status\":  \"Available\",\r\n    \"PurchaseDate\":  \"2025-12-10\"\r\n}",
+    "AssetId": "N251210ASDOF",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "fac147bb-ef87-4e9c-bd3f-4b9f6d865632",
+    "Action": "CREATE",
+    "Metadata": {
+      "Id": "W251113BANST",
+      "Type": "Workstation",
+      "AssignedTo": "Sudhir ",
+      "Purpose": "Studio",
+      "LastUpdated": "2025-12-10 15:37:27",
+      "Notes": null,
+      "Name": "Dell Work Station 3090",
+      "Location": "Banglore",
+      "Status": "In Use",
+      "PurchaseDate": "2025-11-13"
+    },
+    "Severity": "INFO",
+    "Details": "Asset created: Dell Work Station 3090",
+    "Timestamp": "2025-12-10 15:37:27",
+    "NewValue": "{\r\n    \"Id\":  \"W251113BANST\",\r\n    \"Type\":  \"Workstation\",\r\n    \"AssignedTo\":  \"Sudhir \",\r\n    \"Purpose\":  \"Studio\",\r\n    \"LastUpdated\":  \"2025-12-10 15:37:27\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"Dell Work Station 3090\",\r\n    \"Location\":  \"Banglore\",\r\n    \"Status\":  \"In Use\",\r\n    \"PurchaseDate\":  \"2025-11-13\"\r\n}",
+    "AssetId": "W251113BANST",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "437c6302-5a10-44e3-bf36-fd7e4247c768",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 15:37:48",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "a8dc9ced-9d24-4d12-944a-cf66c61f22cf",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:37:56",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "user"
+  },
+  {
+    "OldValue": "",
+    "EventId": "06bcb6d8-3467-4e06-90be-dce6a36ef40a",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 15:38:13",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "user"
+  },
+  {
+    "OldValue": "",
+    "EventId": "29b11a3b-b937-43db-b727-c4e8cbcf51d0",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:38:20",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "1379a296-2fbe-44af-b51c-a01b30f1b658",
+    "Action": "CREATE",
+    "Metadata": {
+      "Id": "X251210LOCOF",
+      "Type": null,
+      "AssignedTo": "",
+      "Purpose": "Office",
+      "LastUpdated": "2025-12-10 15:39:51",
+      "Notes": null,
+      "Name": "",
+      "Location": "",
+      "Status": "Available",
+      "PurchaseDate": "2025-12-10"
+    },
+    "Severity": "INFO",
+    "Details": "Asset created: ",
+    "Timestamp": "2025-12-10 15:39:51",
+    "NewValue": "{\r\n    \"Id\":  \"X251210LOCOF\",\r\n    \"Type\":  null,\r\n    \"AssignedTo\":  \"\",\r\n    \"Purpose\":  \"Office\",\r\n    \"LastUpdated\":  \"2025-12-10 15:39:51\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"\",\r\n    \"Location\":  \"\",\r\n    \"Status\":  \"Available\",\r\n    \"PurchaseDate\":  \"2025-12-10\"\r\n}",
+    "AssetId": "X251210LOCOF",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "358f1a30-db86-406d-a56f-f36814d8b07a",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 15:45:14",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "0de53840-898a-470d-af91-0d9142f907cf",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:45:26",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-08 17:18:53\",\r\n    \"Notes\":  null\r\n}",
+    "EventId": "02412bb3-d5f8-4f8c-809b-f6ec948f94e8",
+    "Action": "UPDATE",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "Asset updated: Lenovo Laptop",
+    "Timestamp": "2025-12-10 15:46:05",
+    "NewValue": "{\r\n    \"Id\":  \"AST-20251208164305\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Location\":  \"Mumbai - Malad \",\r\n    \"Type\":  \"Computer\",\r\n    \"Name\":  \"Lenovo Laptop\",\r\n    \"Status\":  \"In Use\",\r\n    \"LastUpdated\":  \"2025-12-10 15:46:05\",\r\n    \"Notes\":  null\r\n}",
+    "AssetId": "AST-20251208164305",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "68b7b0da-3e64-4b67-8dee-8c8b0fcd02f6",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 15:52:11",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "3e4bc15e-7855-4f4f-80a0-81a19830a646",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 15:52:24",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "7a7ee4aa-3d4f-40bb-9698-e34c7617f631",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:02:46",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "3d1efa46-72d9-42b7-adea-c37e3102699e",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:07:43",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "aab50f06-3c5d-4a17-af7f-f37359d58a39",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:21:27",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "9e73847f-a314-4c63-bdcb-570549fde908",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:23:31",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "10cc863a-19bb-4cae-8cc3-581a1f3f7d71",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:23:57",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "4292adca-0725-4b78-9d84-c2b043fffd36",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:24:06",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "02b854a4-4b79-4a3c-b36a-6993de0a4214",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:25:23",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "5ea3650f-742f-4d52-a392-f1a006ec26d3",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:25:33",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "72d1b8b1-e452-40bc-b2df-1e22149f15c6",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:28:14",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "11520755-9261-47b2-9d81-6162d5bb9f18",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:28:28",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "cd1c4fb8-e366-46b6-b50e-7c65dbb2346d",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 16:28:40",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "67da99d7-9148-41d3-9cb0-822f34114199",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-10 16:28:47",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "96d3c541-8eb5-4755-aba1-8946746ccd45",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-10 18:05:19",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "95c92558-bfd7-44b3-b042-914ddf4a81d1",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 10:36:13",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "f6756b64-e906-400d-a8a3-e56d9bf92c99",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 12:28:00",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "b71198f0-73e0-49fe-a9be-acb53ca2b65a",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 12:28:11",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "45e0284b-39b5-431a-90e9-e7000fbfe160",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 13:14:20",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "a618ed85-7022-4276-b109-3375453341a2",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 13:14:40",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "1b4a5c6d-7be2-4e24-91fe-a7c10807bcd4",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 13:27:23",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "593bdbcd-c696-4d65-8f66-b595c1c962ed",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 13:27:43",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "{\r\n    \"Id\":  \"W251113BANST\",\r\n    \"Type\":  \"Workstation\",\r\n    \"AssignedTo\":  \"Sudhir \",\r\n    \"Purpose\":  \"Studio\",\r\n    \"LastUpdated\":  \"2025-12-10 15:37:27\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"Dell Work Station 3090\",\r\n    \"Location\":  \"Banglore\",\r\n    \"Status\":  \"In Use\",\r\n    \"PurchaseDate\":  \"2025-11-13\"\r\n}",
+    "EventId": "b04ab5a4-07a7-45db-9d29-c4f4efa832b1",
+    "Action": "UPDATE",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Work Station 3090",
+    "Timestamp": "2025-12-11 13:28:47",
+    "NewValue": "{\r\n    \"Id\":  \"W251113BANST\",\r\n    \"Type\":  \"Workstation\",\r\n    \"AssignedTo\":  \"Sudhir \",\r\n    \"Purpose\":  \"Studio\",\r\n    \"LastUpdated\":  \"2025-12-11 13:28:47\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"Dell Work Station 3090\",\r\n    \"Location\":  \"Banglore\",\r\n    \"Status\":  \"In Use\",\r\n    \"PurchaseDate\":  \"2025-11-13\"\r\n}",
+    "AssetId": "W251113BANST",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "b94cedde-04d3-4c75-ab9b-36f3e82043c7",
+    "Action": "CREATE",
+    "Metadata": {
+      "Id": "A251211MUMPR",
+      "Type": "Audio Equipment",
+      "AssignedTo": "Anurag",
+      "Purpose": "Production",
+      "LastUpdated": "2025-12-11 13:30:10",
+      "Notes": null,
+      "Name": "Sony C710N TWS",
+      "Location": "Mumbai",
+      "Status": "In Use",
+      "PurchaseDate": "2025-12-11"
+    },
+    "Severity": "INFO",
+    "Details": "Asset created: Sony C710N TWS",
+    "Timestamp": "2025-12-11 13:30:10",
+    "NewValue": "{\r\n    \"Id\":  \"A251211MUMPR\",\r\n    \"Type\":  \"Audio Equipment\",\r\n    \"AssignedTo\":  \"Anurag\",\r\n    \"Purpose\":  \"Production\",\r\n    \"LastUpdated\":  \"2025-12-11 13:30:10\",\r\n    \"Notes\":  null,\r\n    \"Name\":  \"Sony C710N TWS\",\r\n    \"Location\":  \"Mumbai\",\r\n    \"Status\":  \"In Use\",\r\n    \"PurchaseDate\":  \"2025-12-11\"\r\n}",
+    "AssetId": "A251211MUMPR",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "9c88a420-a4fc-4ee7-a999-2bff5ae595ea",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 14:14:56",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "505061b3-d23b-4cbd-8a23-9947d2aa957d",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 14:15:13",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "18c68a41-72a7-42a9-a05d-5ee21c4b6204",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 15:10:01",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "29ae9069-c50e-4ca6-acb6-66d40c99fa45",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-11 15:10:12",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "05f60492-9ec8-4c95-97c6-89eb6a15a385",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-11 18:05:48",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "acb6eb97-c174-46d5-b304-00f8f20e1da0",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-15 17:24:32",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "e4e69ea2-b430-4317-a277-e5b26a9f51d5",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-15 17:24:45",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "d1b66ab3-320a-4282-b5ee-cb9affffad3f",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-15 17:32:10",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "18c59b15-c457-44ed-93b0-0750b955eb10",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-15 17:32:23",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "29791c8b-f343-4eee-ad60-899791accaf9",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-15 17:33:01",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "OldValue": "",
+    "EventId": "e27936ca-7788-4df8-a62d-6bb48b8ecf6a",
+    "Action": "LOGOUT",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged out",
+    "Timestamp": "2025-12-15 17:33:03",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "assad",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-15T12:04:39.895Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T04:44:50.685Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:00:24.350Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T05:00:27.789Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2025-12-16T05:00:30.638Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:00:33.125Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:00:39.845Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2025-12-16T05:00:48.677Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:00:49.237Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:01:19.781Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "CO241216MUMRE",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T05:55:35.622Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "A251211MUMPR",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T06:53:40.053Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "X251210LOCOF",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2025-12-16T07:03:21.069Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "assad",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2025-12-16T07:03:23.644Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE251211MUMPR",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T07:04:36.965Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE251211MUMPR",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T07:04:44.060Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE251211MUMPR",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T07:04:46.389Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T07:20:22.965Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE251213MUMPR",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T07:21:11.878Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T08:40:11.933Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T08:40:19.963Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "AC251216MUMOF",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T08:41:22.148Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "W251113BANST",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:26.700Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH01",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:27.756Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "AST-20251208164305",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:30.404Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "index:0",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:33.932Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "N251210ASDOF",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:36.252Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "index:0",
+    "Severity": "INFO",
+    "Details": "Asset deleted (by-index)",
+    "Timestamp": "2025-12-16T08:41:38.308Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "NE251210DELRE",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T08:41:56.068Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "AE251210MUMRE",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T08:42:38.748Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "AC251216MUMOF",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2025-12-16T08:42:45.676Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "AE250113BANIH",
+    "Severity": "INFO",
+    "Details": "Asset created",
+    "Timestamp": "2025-12-16T09:21:53.260Z"
+  },
+  {
+    "Action": "ID_CONFLICT",
+    "User": "admin",
+    "AssetId": "AE250113BANIH",
+    "Severity": "WARN",
+    "Details": "Duplicate ID blocked",
+    "Timestamp": "2025-12-16T09:23:17.075Z"
+  },
+  {
+    "Action": "LOCATION_UPDATE",
+    "User": "qr",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Location set to WareHouse Banglore",
+    "Metadata": {
+      "Text": "WareHouse Banglore"
+    },
+    "Timestamp": "2025-12-16T10:20:12.708Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T10:22:09.883Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-16T10:22:53.748Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Asset updated",
+    "Timestamp": "2025-12-17T05:24:02.908Z"
+  },
+  {
+    "Action": "LOCATION_UPDATE",
+    "User": "qr",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Location set to Bandglore",
+    "Metadata": {
+      "Text": "Bandglore"
+    },
+    "Timestamp": "2025-12-18T12:06:44.752Z"
+  },
+  {
+    "Action": "LOCATION_UPDATE",
+    "User": "qr",
+    "AssetId": "AE230529DELIH02",
+    "Severity": "INFO",
+    "Details": "Location set to Bandglore",
+    "Metadata": {
+      "Text": "Bandglore"
+    },
+    "Timestamp": "2025-12-18T12:06:45.799Z"
+  },
+  {
+    "OldValue": "",
+    "EventId": "097cbc54-8a3f-4c8e-9217-171a338229aa",
+    "Action": "LOGIN",
+    "Metadata": null,
+    "Severity": "INFO",
+    "Details": "User logged in",
+    "Timestamp": "2025-12-26 10:54:31",
+    "NewValue": "",
+    "AssetId": "",
+    "User": "admin"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset created: Dell Workstation",
+    "Timestamp": "2026-01-06T06:46:32.840Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:48:13.522Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:49:08.195Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:49:26.686Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:49:28.576Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:49:29.806Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-06T06:49:30.934Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset created: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-06T07:03:50.163Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-06T07:07:50.111Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-06T07:12:25.673Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-06T07:12:38.729Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:04:54.135Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:09:54.104Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:14:54.113Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:14:54.121Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:19:54.119Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:19:54.127Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:24:54.140Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:24:54.148Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Asset created: Test Asset",
+    "Timestamp": "2026-01-06T11:26:02.999Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:29:54.153Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:29:54.159Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:34:54.145Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:34:54.152Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:39:54.147Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:39:54.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:44:54.146Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:44:54.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T11:49:54.156Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:49:54.165Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:49:54.172Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T11:54:54.148Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:54:54.157Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:54:54.166Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T11:59:54.171Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T11:59:54.180Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T11:59:54.187Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T12:04:54.178Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:04:54.188Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:04:54.197Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T12:09:54.197Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:09:54.207Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:09:54.214Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T12:14:54.203Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:14:54.217Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:14:54.223Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "MUM-0126-GVY4EX-L",
+    "Severity": "INFO",
+    "Details": "Asset created: Test Asset QR",
+    "Timestamp": "2026-01-06T12:19:41.264Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T12:19:54.218Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:19:54.228Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:19:54.247Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-06T12:24:54.215Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:24:54.226Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:24:54.235Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-06T12:29:54.129Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-06T12:29:54.136Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "AUD2601050180",
+    "Severity": "INFO",
+    "Details": "Asset updated: Sony Earbuds",
+    "Timestamp": "2026-01-07T07:23:13.875Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-6EUVS5-V",
+    "Severity": "INFO",
+    "Details": "Asset created: Speaker Module",
+    "Timestamp": "2026-01-07T07:23:13.951Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T08:11:51.986Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T08:11:51.996Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T08:46:53.463Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T08:46:53.476Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T08:51:53.483Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T08:51:53.493Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T08:56:53.481Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T08:56:53.491Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:01:53.497Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:01:53.507Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:06:53.496Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:06:53.506Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:26:46.239Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:31:46.245Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:36:46.250Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:36:46.259Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:41:46.246Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:41:46.257Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:46:46.254Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:46:46.264Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T09:51:46.264Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T09:51:46.274Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T09:51:46.282Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T10:49:04.461Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T10:49:04.473Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T10:53:49.315Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T10:53:49.323Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T10:53:49.334Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T10:58:49.335Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T10:58:49.343Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T10:58:49.351Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:03:49.324Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:03:49.332Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:03:49.342Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:03:49.351Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:08:49.340Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:08:49.348Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:08:49.359Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:08:49.366Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:13:49.343Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:13:49.352Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:13:49.360Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:13:49.367Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:18:49.349Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:18:49.358Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:18:49.367Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:18:49.375Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:23:49.337Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:23:49.347Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:23:49.357Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:23:49.366Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:28:49.351Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:28:49.358Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:28:49.368Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:28:49.375Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:33:49.360Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:33:49.368Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:33:49.376Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:33:49.383Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:38:49.373Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:38:49.381Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:38:49.392Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:38:49.400Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:43:49.380Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:43:49.388Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:43:49.396Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:43:49.404Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T11:48:49.384Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T11:48:49.391Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-07T11:48:49.399Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T11:48:49.407Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:01:05.309Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T12:06:05.332Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:06:05.340Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T12:11:05.344Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:11:05.352Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T12:16:05.338Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:16:05.346Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T12:16:05.355Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T12:21:05.370Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:21:05.378Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T12:21:05.386Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-07T12:26:05.352Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-07T12:26:05.360Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-07T12:26:05.368Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:22:57.516Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:22:57.529Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:27:57.527Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:27:57.538Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:32:57.540Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:32:57.551Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:37:57.546Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:37:57.558Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:42:57.538Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:42:57.546Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:45:44.607Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:45:44.617Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:48:16.377Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:48:16.388Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:53:01.354Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:53:01.363Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T04:58:01.378Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T04:58:01.389Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:03:01.359Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:03:01.369Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:08:10.554Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:08:10.564Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:12:55.548Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:12:55.558Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:17:55.547Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:17:55.559Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:31:11.113Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T05:36:11.095Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:41:11.113Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T05:41:11.124Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:41:11.136Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T05:57:24.041Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T05:57:24.050Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:02:24.047Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:02:24.056Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:07:24.064Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:07:24.078Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T06:12:24.052Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:12:24.060Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:12:24.070Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:17:24.031Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:17:24.040Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:22:24.009Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:22:24.017Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:27:24.025Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:27:24.034Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:27:24.042Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:32:27.612Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:32:29.212Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:32:30.737Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:32:31.754Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:37:24.045Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:37:24.055Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:37:24.064Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:37:24.078Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T06:42:24.059Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:42:24.067Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:42:24.076Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:42:24.085Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:42:24.098Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T06:47:24.062Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:47:24.070Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:47:24.079Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:47:24.087Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:47:24.095Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T06:52:24.059Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:52:24.067Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:52:24.077Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:52:24.086Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:52:24.095Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T06:57:24.069Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T06:57:24.076Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T06:57:24.085Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T06:57:24.092Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T06:57:24.100Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:02:24.072Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:02:24.079Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:02:24.088Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:02:24.094Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:02:24.102Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:07:24.096Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:07:24.104Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:07:24.113Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:07:24.122Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:07:24.129Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:12:24.099Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:12:24.108Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:12:24.118Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:12:24.126Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:12:24.134Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:17:24.118Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:17:24.127Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:17:24.138Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:17:24.146Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:17:24.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:22:24.140Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:22:24.148Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:22:24.156Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:22:24.164Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:22:24.171Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:27:24.133Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:27:24.142Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:27:24.152Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:27:24.161Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:27:24.169Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:32:24.141Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:32:24.148Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:32:24.157Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:32:24.164Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:32:24.171Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:37:24.147Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:37:24.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:37:24.167Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:37:24.176Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:37:24.184Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:42:24.148Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:42:24.156Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:42:24.165Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:42:24.173Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:42:24.180Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:47:24.155Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:47:24.163Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:47:24.173Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:47:24.181Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:47:24.188Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T07:52:24.146Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T07:52:24.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-08T07:52:24.164Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T07:52:24.171Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T07:52:24.178Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T08:39:33.021Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T08:39:33.030Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T08:44:33.027Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T08:44:33.038Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T08:49:33.048Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T08:49:33.057Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T08:54:33.054Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T08:54:33.063Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T08:59:33.065Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T08:59:33.077Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:04:33.067Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:04:33.077Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:09:33.082Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:09:33.091Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:09:33.102Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:14:33.076Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:14:33.085Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:14:33.094Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:19:33.119Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:19:33.129Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:19:33.139Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:24:33.092Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:24:33.100Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:24:33.109Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:29:33.106Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:29:33.118Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:29:33.131Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:34:33.108Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:34:33.118Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:34:33.129Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:39:33.117Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:39:33.125Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:39:33.134Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:44:33.130Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:44:33.136Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:44:33.145Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:49:33.129Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:49:33.137Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T09:49:33.146Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:49:33.155Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:54:33.136Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:54:33.145Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T09:54:33.155Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:54:33.165Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T09:59:33.144Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T09:59:33.152Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T09:59:33.163Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T09:59:33.172Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:04:33.154Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:04:33.161Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:04:33.172Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:04:33.179Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:09:33.155Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:09:33.165Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:09:33.174Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:09:33.182Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:14:33.171Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:14:33.179Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:14:33.190Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:14:33.198Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:19:33.170Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:19:33.179Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:19:33.188Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:19:33.195Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:24:33.175Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:24:33.182Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:24:33.192Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:24:33.199Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:29:33.322Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:29:33.338Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:29:33.347Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:29:33.356Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:34:33.181Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:34:33.188Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:34:33.199Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:34:33.208Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:39:33.199Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:39:33.207Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:39:33.218Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:39:33.228Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:44:33.197Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:44:33.210Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:44:33.225Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:44:33.237Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:49:33.201Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:49:33.209Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:49:33.223Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:49:33.238Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:54:33.186Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:54:33.195Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:54:33.207Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:54:33.215Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T10:59:33.215Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T10:59:33.225Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T10:59:33.235Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T10:59:33.246Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:04:33.610Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:04:34.006Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:04:34.543Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:04:34.604Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:09:33.209Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:09:33.221Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:09:33.231Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:09:33.243Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:14:33.230Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:14:33.239Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:14:33.250Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:14:33.263Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:19:33.227Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:19:33.238Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:19:33.251Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:19:33.261Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:24:33.239Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:24:33.247Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:24:33.258Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:24:33.266Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:29:33.233Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:29:33.241Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:29:33.250Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:29:33.259Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:34:33.234Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:34:33.245Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:34:33.258Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:34:33.268Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:39:33.242Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:39:33.251Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:39:33.260Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:39:33.269Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:44:33.231Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:44:33.240Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:44:33.249Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:44:33.261Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:49:33.238Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:49:33.247Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:49:33.257Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:49:33.267Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:54:33.236Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:54:33.247Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:54:33.257Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:54:33.265Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T11:59:33.240Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T11:59:33.247Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T11:59:33.256Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T11:59:33.264Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T12:04:33.254Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T12:04:33.268Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T12:04:33.278Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:04:33.286Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T12:09:33.253Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T12:09:33.261Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T12:09:33.269Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:09:33.276Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T12:14:33.296Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T12:14:33.306Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T12:14:33.317Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:14:33.325Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T12:19:33.294Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T12:19:33.308Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T12:19:33.319Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:19:33.329Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-08T12:24:33.296Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-08T12:24:33.306Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:24:33.317Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-08T12:29:33.320Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-08T12:29:33.328Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:19:09.102Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:19:09.131Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:19:09.157Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:19:09.168Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:19:09.183Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:24:09.077Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:24:09.088Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:24:09.101Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:24:09.112Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:24:09.123Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:29:09.078Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:29:09.088Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:29:09.099Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:29:09.112Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:29:09.120Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:34:09.125Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:34:09.134Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:34:09.147Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:34:09.159Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:34:09.167Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:39:09.101Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:39:09.113Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:39:09.124Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:39:09.132Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:39:09.140Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:44:06.254Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:44:06.265Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T08:44:06.276Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T08:44:06.286Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:44:06.298Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767782956396",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Active",
+    "Timestamp": "2026-01-09T08:44:30.971Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767773176156",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Planning",
+    "Timestamp": "2026-01-09T08:44:35.779Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767782956396",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Completed",
+    "Timestamp": "2026-01-09T08:44:40.179Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767782956396",
+    "Severity": "INFO",
+    "Details": "Project status updated to: On Hold",
+    "Timestamp": "2026-01-09T08:44:44.124Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767779659829",
+    "Severity": "INFO",
+    "Details": "Project status updated to: On Hold",
+    "Timestamp": "2026-01-09T08:45:12.899Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767779659829",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Completed",
+    "Timestamp": "2026-01-09T08:45:17.408Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767782956396",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Completed",
+    "Timestamp": "2026-01-09T08:45:21.642Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T08:48:51.221Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T08:48:51.230Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T08:48:51.239Z"
+  },
+  {
+    "Action": "EXTERNAL_CREATE_PROJECT",
+    "User": "External API",
+    "AssetId": "PRJ1767948998483",
+    "Severity": "INFO",
+    "Details": "Project created via external API: Zoho CRM Project",
+    "Timestamp": "2026-01-09T08:56:38.492Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T09:16:01.476Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T09:16:01.488Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T09:16:01.500Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T09:16:01.514Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T09:16:01.526Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T09:21:01.476Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T09:21:01.486Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T09:21:01.497Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T09:21:01.507Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T09:21:01.515Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T09:26:01.486Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T09:26:01.494Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T09:26:01.507Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T09:26:01.514Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T09:26:01.522Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T09:31:01.486Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.99 based on network scan.",
+    "Timestamp": "2026-01-09T09:31:01.501Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.99 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T09:31:01.510Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T09:31:01.524Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T11:06:29.068Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T11:06:29.078Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.106 to 192.168.6.43 based on network scan.",
+    "Timestamp": "2026-01-09T11:11:29.066Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.43 to 192.168.6.53 based on network scan.",
+    "Timestamp": "2026-01-09T11:11:29.077Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.53 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-09T11:11:29.088Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
+    "Timestamp": "2026-01-09T11:11:29.097Z"
+  }
+]

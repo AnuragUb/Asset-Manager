@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Asset Manager (Electron)</title>
+    <style>
+      body { font-family: Segoe UI, Arial, sans-serif; margin: 0; }
+      header { padding: 10px; background: #2f3b52; color: #fff; }
+      main { padding: 10px; }
+      .toolbar { margin-bottom: 10px; display: flex; gap: 8px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ddd; padding: 6px; }
+      th { background: #f2f2f2; }
+      #qrPreview { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+      #qrPreview .content { background: #fff; padding: 12px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h3>Asset Manager — Electron</h3>
+    </header>
+    <main>
+      <div id="login" style="padding:12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center">
+        <input id="txtUser" placeholder="Username" style="width:140px" />
+        <input id="txtPass" placeholder="Password" type="password" style="width:140px" />
+        <button id="btnLogin">Login</button>
+        <span id="lblUser" style="margin-left:auto"></span>
+      </div>
+      <div class="toolbar">
+        <button id="btnRefresh">Refresh</button>
+        <input id="txtSearch" placeholder="Search" style="flex:1" />
+        <button id="btnAdd">Add</button>
+        <button id="btnUpdate">Update</button>
+        <button id="btnDelete">Delete</button>
+        <button id="btnGenerateQR">Generate QR</button>
+        <button id="btnPreviewQR">Preview QR</button>
+        <button id="btnExportJson">Export JSON</button>
+        <button id="btnExportExcel">Export Excel</button>
+        <input type="file" id="fileImport" accept=".xlsx,.csv" />
+        <button id="btnImportExcel">Import Excel/CSV</button>
+        <input id="txtPort" placeholder="Port" style="width:80px" />
+        <button id="btnStartServer">Start Location Server</button>
+        <button id="btnStopServer">Stop Server</button>
+        <span id="lblStatus" style="margin-left:auto"></span>
+        <input id="txtBaseUrl" placeholder="Base URL (https://host)" style="flex:1" />
+        <label><input type="checkbox" id="chkRemote" checked /> Use Server API</label>
+        <input id="txtTokenTTL" placeholder="TTL hrs" style="width:90px" />
+        <input id="txtTokenSecret" placeholder="Secret" style="width:160px" />
+        <button id="btnSaveSettings">Save Settings</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="fldID" placeholder="ID" style="width:140px" />
+        <input id="fldName" placeholder="Name" style="width:180px" />
+        <input id="fldType" placeholder="Type" style="width:140px" />
+        <input id="fldLocation" placeholder="Location" style="width:140px" />
+        <input id="fldPurpose" placeholder="Purpose" style="width:140px" />
+        <input id="fldPurchase" placeholder="Purchase Date (YYYY-MM-DD)" style="width:180px" />
+        <button id="btnGenId">Generate ID</button>
+      </div>
+      <table id="tbl">
+        <thead><tr id="tblHead"></tr></thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+
+      <div id="qrPreview">
+        <div class="content">
+          <div id="qrContainer"></div>
+          <div style="text-align:right;margin-top:8px"><button id="btnClosePreview">Close</button></div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>

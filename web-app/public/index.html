@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Asset Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app-container">
+        <header id="app-header">
+            <div class="header-left">
+                <button id="sidebarToggle" class="icon-button">☰</button>
+                <span class="app-title">IT Help Desk</span>
+            </div>
+            <nav class="top-nav">
+                <a href="#" id="navHome">Home</a>
+                <a href="#" id="navActivities">Activities</a>
+                <a href="#" id="navRequests">Requests</a>
+                <a href="#" id="navProblems">Problems</a>
+                <a href="#" id="navChanges">Changes</a>
+                <a href="#" id="navProjects">Projects</a>
+                <a href="#" id="navReleases">Releases</a>
+                <a href="#" id="navAssets">Assets</a>
+                <a href="#" id="navReports">Reports</a>
+            </nav>
+            <div class="header-right">
+                <button class="icon-button">🔍</button>
+                <button class="icon-button">⚡</button>
+                <button class="icon-button">🕒</button>
+                <button class="icon-button">✉️<span class="badge">99+</span></button>
+                <button class="icon-button">🔔<span class="badge">25</span></button>
+                <button class="icon-button">⚙️</button>
+                <img src="https://via.placeholder.com/30" alt="User Avatar" class="user-avatar">
+            </div>
+        </header>
+
+        <aside id="app-sidebar">
+            <div class="sidebar-search">
+                <input type="text" placeholder="Search...">
+                <button class="icon-button">🔍</button>
+            </div>
+            <ul class="sidebar-menu">
+                <li><a href="#" class="menu-item">Favorites</a></li>
+                <li>
+                    <a href="#" class="menu-item toggle-submenu active">All Assets <span class="expand-icon">Expand</span></a>
+                    <ul class="submenu expanded">
+                        <li>
+                            <a href="#" class="menu-item toggle-submenu">Assets</a>
+                            <ul class="submenu">
+                                <li><a href="#" class="menu-item active" id="navItAssets">IT</a></li>
+                                <li><a href="#" class="menu-item">Non-IT</a></li>
+                            </ul>
+                        </li>
+                        <li><a href="#" class="menu-item">Components</a></li>
+                        <li><a href="#" class="menu-item">Scan Failures</a></li>
+                        <li><a href="#" class="menu-item">Consumables</a></li>
+                        <li><a href="#" class="menu-item">Software</a></li>
+                        <li><a href="#" class="menu-item">Asset Loan</a></li>
+                        <li><a href="#" class="menu-item">Barcode / QR code</a></li>
+                        <li><a href="#" class="menu-item">Generate Code</a></li>
+                        <li><a href="#" class="menu-item">History</a></li>
+                        <li><a href="#" class="menu-item">Replenishment</a></li>
+                        <li><a href="#" class="menu-item">Acknowledgements</a></li>
+                        <li><a href="#" class="menu-item">Groups</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </aside>
+
+        <main id="main-content">
+            <div id="login" class="view active">
+                <h2>Login</h2>
+                <form id="loginForm">
+                    <input type="text" id="username" placeholder="Username">
+                    <input type="password" id="password" placeholder="Password">
+                    <button type="submit">Login</button>
+                </form>
+                <p id="loginMsg" style="color: red;"></p>
+            </div>
+
+            <div id="dashboard" class="view">
+                <h2>Dashboard</h2>
+                <div id="assetCardsContainer" class="asset-cards-container">
+                    <!-- Asset cards will be dynamically inserted here -->
+                </div>
+            </div>
+
+            <div id="admin" class="view">
+                <h2>Admin Panel</h2>
+                <div id="adminMsg" style="color: red;"></div>
+                <table id="tblAdmin">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Role</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblBodyAdmin">
+                        <!-- Rows will be dynamically inserted here -->
+                    </tbody>
+                </table>
+                <!-- Admin specific forms/buttons -->
+            </div>
+
+            <div id="it-assets" class="view">
+                <h2>IT Assets</h2>
+                <table id="tblItAssets">
+                    <thead>
+                        <tr>
+                            <th>Asset Tag</th>
+                            <th>Model</th>
+                            <th>User</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblBodyItAssets">
+                        <!-- Rows will be dynamically inserted here -->
+                    </tbody>
+                </table>
+                <!-- IT Assets specific forms/buttons -->
+            </div>
+        </main>
+    </div>
+
+    <button id="btnSearchBy">Search</button>
+    <div id="searchPanel" style="display: none;">
+        <!-- Search input and results -->
+        <input type="text" id="searchInput" placeholder="Search...">
+        <button id="searchButton">Go</button>
+    </div>
+
+    <script>
+        // Placeholder variables and functions for the script to work
+        let currentUser = null;
+        let assets = []; // This would be populated from an API
+        let filteredAssets = () => assets; // Simple placeholder, would be more complex
+        let findOriginalIndex = (asset) => assets.indexOf(asset); // Simple placeholder
+        let setAdminFields = (asset) => console.log('Setting admin fields for:', asset); // Placeholder
+        let setItAssetFields = (asset) => console.log('Setting IT asset fields for:', asset); // Placeholder
+
+        let selectedIdxAdmin = -1;
+        let selectedIdxItAssets = -1;
+        let selectedIdxDashboard = -1;
+
+        let selectedOriginalIdAdmin = '';
+        let selectedOriginalIndexAdmin = -1;
+        let selectedAssetAdmin = null;
+
+        let selectedOriginalIdItAssets = '';
+        let selectedOriginalIndexItAssets = -1;
+        let selectedAssetItAssets = null;
+
+        let searchVisible = false;
+
+        const loginForm = document.getElementById('loginForm');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginMsg = document.getElementById('loginMsg');
+
+        const assetCardsContainer = document.getElementById('assetCardsContainer');
+        // const tblBodyDashboard = document.getElementById('tblBodyDashboard'); // No longer used
+        const tblBodyAdmin = document.getElementById('tblBodyAdmin');
+        const tblBodyItAssets = document.getElementById('tblBodyItAssets');
+
+        // const btnPreviewQR = document.getElementById('btnPreviewQR'); // No longer used
+        const qrDiv = document.getElementById('qrDiv');
+
+        const navDashboard = document.getElementById('navDashboard');
+        const navAdmin = document.getElementById('navAdmin');
+        const navItAssets = document.getElementById('navItAssets'); // Now used
+
+        const btnSearchBy = document.getElementById('btnSearchBy');
+        const searchPanel = document.getElementById('searchPanel');
+
+        function showView(viewName) {
+            document.querySelectorAll('.view').forEach(view => {
+                view.style.display = 'none';
+            });
+            document.getElementById(viewName).style.display = 'block';
+        }
+
+        function render() {
+            // Simulate rendering dashboard content with cards
+            assetCardsContainer.innerHTML = '';
+            filteredAssets().forEach((asset, idx) => {
+                const assetCard = document.createElement('div');
+                assetCard.classList.add('asset-card');
+                assetCard.innerHTML = `
+                    <button class="asset-card-add-button">+</button>
+                    <div class="asset-card-header">
+                        <span class="asset-card-title">${asset.Name} (${asset.Total})</span>
+                    </div>
+                    <div class="asset-card-icon">${asset.Icon || '📦'}</div>
+                    <div class="asset-card-status">
+                        <div class="asset-card-status-item">
+                            <span class="asset-card-status-label">In Use</span>
+                            <span class="asset-card-status-value">${asset.InUse}</span>
+                        </div>
+                        <div class="asset-card-status-item">
+                            <span class="asset-card-status-label">In Store</span>
+                            <span class="asset-card-status-value">${asset.InStore}</span>
+                        </div>
+                        <div class="asset-card-status-item">
+                            <span class="asset-card-status-label">In Repair</span>
+                            <span class="asset-card-status-value">${asset.InRepair}</span>
+                        </div>
+                        <div class="asset-card-status-item">
+                            <span class="asset-card-status-label">Others</span>
+                            <span class="asset-card-status-value">${asset.Others}</span>
+                        </div>
+                    </div>
+                `;
+                assetCardsContainer.appendChild(assetCard);
+            });
+        }
+
+        function renderAdmin() {
+            // Simulate rendering admin content
+            tblBodyAdmin.innerHTML = '';
+            // Assuming there's an adminAssets array or similar
+            assets.forEach((a, idx) => { // Using 'assets' as a placeholder for admin data
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${a.ID || a.Id}</td><td>${a.Name}</td><td>${a.Role || 'user'}</td>`;
+                tr.onclick = () => {
+                    Array.from(tblBodyAdmin.querySelectorAll('tr')).forEach(r => r.classList.remove('selected'));
+                    tr.classList.add('selected');
+                    selectedOriginalIdAdmin = String(a.ID || a.Id || '');
+                    selectedOriginalIndexAdmin = findOriginalIndex(a);
+                    selectedAssetAdmin = a;
+                    selectedIdxAdmin = idx;
+                    setAdminFields(a);
+                    console.log('Admin selectedIdxAdmin:', selectedIdxAdmin);
+                };
+                tblBodyAdmin.appendChild(tr);
+            });
+        }
+
+        function renderItAssets() {
+            // Simulate rendering IT Assets content
+            tblBodyItAssets.innerHTML = '';
+            // Assuming there's an itAssets array or similar
+            assets.forEach((a, idx) => { // Using 'assets' as a placeholder for IT assets data
+                const trItAssets = document.createElement('tr');
+                trItAssets.innerHTML = `<td>${a.AssetTag || a.ID}</td><td>${a.Model}</td><td>${a.User}</td>`;
+                trItAssets.onclick = () => {
+                    Array.from(tblBodyItAssets.querySelectorAll('tr')).forEach(r => r.classList.remove('selected'));
+                    trItAssets.classList.add('selected');
+                    selectedOriginalIdItAssets = String(a.ID || a.Id || '');
+                    selectedOriginalIndexItAssets = findOriginalIndex(a);
+                    selectedAssetItAssets = a;
+                    selectedIdxItAssets = idx;
+                    setItAssetFields(a);
+                    console.log('IT Assets selectedIdxItAssets:', selectedIdxItAssets);
+                };
+                tblBodyItAssets.appendChild(trItAssets);
+            });
+        }
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial view
+            showView('login'); // Start at login
+        });
+
+        loginForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const username = usernameInput.value;
+            const password = passwordInput.value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username: usernameInput.value, password: passwordInput.value }),
+                });
+
+                const data = await response.json();
+
+                if (data.ok) {
+                    currentUser = data.user;
+                    loginMsg.textContent = '';
+                    showView('dashboard');
+                    render();
+                } else {
+                    loginMsg.textContent = 'Invalid credentials';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                loginMsg.textContent = 'An error occurred during login.';
+            }
+        };
+
+
+        // btnPreviewQR.onclick = async () => { // No longer used
+        //     if (selectedIdxDashboard < 0) {
+        //         alert('Please select an asset from the dashboard table.');
+        //         return;
+        //     }
+        //     const id = String(filteredAssets()[selectedIdxDashboard].ID || filteredAssets()[selectedIdxDashboard].Id || '');
+        //     if (id) {
+        //         qrDiv.innerHTML = `<img src="/api/qr/${encodeURIComponent(id)}" alt="QR Code for ${id}" />`;
+        //     } else {
+        //         qrDiv.innerHTML = 'No ID found for selected asset.';
+        //     }
+        // };
+
+        navDashboard.onclick = (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showView('login');
+                return;
+            }
+            showView('dashboard');
+            render();
+        };
+
+        navAdmin.onclick = (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showView('login');
+                return;
+            }
+            if (!(currentUser.role === 'admin' || currentUser.role === 'superuser')) {
+                document.getElementById('adminMsg').textContent = 'Admin required';
+                showView('admin');
+                renderAdmin(); // Still render, but show message
+                return;
+            }
+            document.getElementById('adminMsg').textContent = 'Admin panel';
+            showView('admin');
+            renderAdmin();
+        };
+
+        navItAssets.onclick = (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showView('login');
+                return;
+            }
+            showView('it-assets');
+            renderItAssets();
+        };
+
+        btnSearchBy.onclick = () => {
+            if (!currentUser) {
+                showView('login');
+                return;
+            }
+            searchVisible = !searchVisible;
+            searchPanel.style.display = searchVisible ? 'block' : 'none';
+        };
+
+        // Populate some dummy assets for testing
+        assets = [
+            { ID: 'A001', Name: 'Access Point', Type: 'Electronics', Total: 24, InUse: 1, InStore: 21, InRepair: 0, Others: 2, Icon: '📡' },
+            { ID: 'A002', Name: 'Chromebook', Type: 'Electronics', Total: 8, InUse: 0, InStore: 7, InRepair: 1, Others: 0, Icon: '💻' },
+            { ID: 'A003', Name: 'Cisco Catos Switch', Type: 'Network', Total: 24, InUse: 7, InStore: 15, InRepair: 2, Others: 0, Icon: '🎛️' },
+            { ID: 'A004', Name: 'Cisco Router', Type: 'Network', Total: 17, InUse: 9, InStore: 8, InRepair: 0, Others: 0, Icon: '📶' },
+            { ID: 'A005', Name: 'Cisco Switch', Type: 'Network', Total: 0, InUse: 0, InStore: 0, InRepair: 0, Others: 0, Icon: '🔌' },
+            { ID: 'A006', Name: 'Computer', Type: 'Electronics', Total: 32, InUse: 0, InStore: 27, InRepair: 5, Others: 0, Icon: '🖥️' },
+            { ID: 'A007', Name: 'Cooling pads', Type: 'Accessories', Total: 0, InUse: 0, InStore: 0, InRepair: 0, Others: 0, Icon: '🌬️' },
+            { ID: 'A008', Name: 'Encrypted Phones', Type: 'Electronics', Total: 14, InUse: 1, InStore: 13, InRepair: 0, Others: 0, Icon: '📱' },
+            { ID: 'A009', Name: 'Firewall', Type: 'Network', Total: 5, InUse: 0, InStore: 5, InRepair: 0, Others: 0, Icon: '🧱' },
+            { ID: 'A010', Name: 'iPad', Type: 'Electronics', Total: 0, InUse: 0, InStore: 0, InRepair: 0, Others: 0, Icon: 'タブレット' },
+            { ID: 'A011', Name: 'Mobile', Type: 'Electronics', Total: 0, InUse: 0, InStore: 0, InRepair: 0, Others: 0, Icon: '🤳' },
+            { ID: 'A012', Name: 'Network Services', Type: 'Network', Total: 1, InUse: 0, InStore: 1, InRepair: 0, Others: 0, Icon: '🌐' },
+            { ID: 'A013', Name: 'Printer', Type: 'Peripherals', Total: 9, InUse: 0, InStore: 9, InRepair: 0, Others: 0, Icon: '🖨️' },
+            { ID: 'A014', Name: 'Rack', Type: 'Infrastructure', Total: 1, InUse: 0, InStore: 1, InRepair: 0, Others: 0, Icon: 'ラック' },
+            { ID: 'A015', Name: 'Router', Type: 'Network', Total: 15, InUse: 1, InStore: 14, InRepair: 0, Others: 0, Icon: '📡' },
+            { ID: 'A016', Name: 'Server', Type: 'Infrastructure', Total: 29, InUse: 0, InStore: 29, InRepair: 0, Others: 0, Icon: 'サーバー' },
+        ];
+
+    </script>
+</body>
+</html>

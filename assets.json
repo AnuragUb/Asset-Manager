@@ -1,0 +1,49 @@
+[
+  {
+    "ID": "CO241216MUMRE",
+    "Name": "Lenovo Laptop",
+    "Type": "Computer",
+    "Location": "Mumbai ",
+    "Purpose": "Rental",
+    "PurchaseDate": "2024-12-16",
+    "LastUpdated": "2025-12-16 05:55:35"
+  },
+  {
+    "ID": "AE230529DELIH02",
+    "Name": "Sony WfC500",
+    "Type": "Audio Equipment",
+    "Location": "WareHouse Banglore",
+    "Purpose": "In-House",
+    "PurchaseDate": "2023-05-19",
+    "LastUpdated": "2025-12-18 12:06:45",
+    "CurrentLocation": "Bandglore",
+    "PreviousLocation": "Bandglore"
+  },
+  {
+    "ID": "NE251210DELRE",
+    "Name": "Crestron WiFi Module Ascorpone",
+    "Type": "Networking Gear",
+    "Location": "Delhi",
+    "Purpose": "Rental",
+    "PurchaseDate": "2025-12-10",
+    "LastUpdated": "2025-12-16 08:41:56"
+  },
+  {
+    "ID": "AE251210MUMRE",
+    "Name": "Sony WF-C710N",
+    "Type": "Audio Equipment",
+    "Location": "Mumbai",
+    "Purpose": "Rental",
+    "PurchaseDate": "2025-12-10",
+    "LastUpdated": "2025-12-16 08:42:38"
+  },
+  {
+    "ID": "AE250113BANIH",
+    "Name": "Sony WF-XM5_1000",
+    "Type": "Audio Equipment",
+    "Location": "Banglore",
+    "Purpose": "In-House",
+    "PurchaseDate": "2025-01-13",
+    "LastUpdated": "2025-12-16 09:21:53"
+  }
+]

@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Details | Asset Manager</title>
+    <meta name="description" content="View detailed information about asset, its history, and associated child assets.">
+    <meta name="keywords" content="asset management, inventory, qr code tracking, asset history">
+    <meta property="og:title" content="Asset Details | Asset Manager">
+    <meta property="og:description" content="Detailed information about asset and its hierarchy.">
+    <meta property="og:type" content="website">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #007bff;
+            --primary-dark: #0056b3;
+            --bg: #f4f7f6;
+            --card-bg: #ffffff;
+            --text: #333;
+            --text-muted: #666;
+            --border: #e2e8f0;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header-card {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .header-icon {
+            font-size: 48px;
+            background: rgba(255,255,255,0.2);
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-info h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.25);
+            backdrop-filter: blur(5px);
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text);
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 18px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 700;
+        }
+
+        .info-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .assigned-section {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .assigned-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .hierarchy-item {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s;
+        }
+
+        .hierarchy-item:hover {
+            border-color: var(--primary);
+            background: #f1f5f9;
+        }
+
+        .hierarchy-link {
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .history-timeline {
+            position: relative;
+            padding-left: 32px;
+        }
+
+        .history-timeline::before {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+
+        .history-entry {
+            position: relative;
+            padding-bottom: 24px;
+        }
+
+        .history-entry::before {
+            content: '';
+            position: absolute;
+            left: -32px;
+            top: 4px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            z-index: 1;
+        }
+
+        .history-date {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .history-content {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 4px;
+        }
+
+        .history-action {
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 14px;
+        }
+
+        .history-details {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .qr-card {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .qr-image {
+            width: 180px;
+            height: 180px;
+            padding: 10px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-action:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .hierarchy-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .hierarchy-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: inherit;
+            flex: 1;
+        }
+
+        .hierarchy-link:hover {
+            color: var(--primary);
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .header-card { padding: 20px; flex-direction: column; text-align: center; }
+            .grid { grid-template-columns: 1fr; gap: 16px; }
+        }
+
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #cbd5e1;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-screen">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container" id="app" style="display: none;">
+        <!-- Content will be injected here -->
+    </div>
+
+    <script>
+        async function loadAssetDetails() {
+            const pathParts = window.location.pathname.split('/');
+            const assetId = pathParts[pathParts.length - 1];
+            
+            if (!assetId) {
+                renderError('Invalid Asset ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/asset-details/${encodeURIComponent(assetId)}`);
+                if (!response.ok) throw new Error('Asset not found');
+                
+                const data = await response.json();
+                renderAsset(data);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+            } catch (err) {
+                renderError(err.message);
+            }
+        }
+
+        function renderError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            document.getElementById('app').innerHTML = `
+                <div class="card" style="text-align: center; padding: 40px;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+                    <h2>Error</h2>
+                    <p style="color: var(--text-muted); margin-bottom: 20px;">${msg}</p>
+                    <a href="/" class="btn-action">Return to Dashboard</a>
+                </div>
+            `;
+        }
+
+        function renderAsset(data) {
+            const { asset, children, history, parent } = data;
+            const app = document.getElementById('app');
+
+            // Check if user is logged in
+            const isLoggedIn = !!localStorage.getItem('currentUser');
+
+            // Update page title and meta for SEO
+            document.title = `${asset.ItemName} | Asset Details`;
+            const description = `Asset ${asset.ID} - ${asset.ItemName}. Status: ${asset.Status}. Assigned to: ${asset.AssignedTo || 'Nobody'}.`;
+            
+            // SEO Meta updates
+            const updateMeta = (name, content) => {
+                let el = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
+                if (el) el.setAttribute('content', content);
+            };
+            updateMeta('description', description);
+            updateMeta('og:description', description);
+            updateMeta('og:title', `${asset.ItemName} | Asset Manager`);
+
+            const initial = (asset.AssignedTo || '?').charAt(0).toUpperCase();
+
+            let html = `
+                <div class="header-card">
+                    <div class="header-icon">${asset.Icon || '📦'}</div>
+                    <div class="header-info" style="flex: 1;">
+                        <div class="status-pill">${asset.Status}</div>
+                        <h1>${asset.ItemName}</h1>
+                        <div style="font-size: 14px; opacity: 0.9;">ID: ${asset.ID}</div>
+                    </div>
+                    ${isLoggedIn ? `
+                        <button onclick="triggerEdit('${asset.ID}')" class="btn-action" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); white-space: nowrap;">
+                            ✏️ Edit Asset
+                        </button>
+                    ` : ''}
+                </div>
+
+                ${asset.AssignedTo ? `
+                    <div class="card">
+                        <div class="section-title">Current Assignment</div>
+                        <div class="assigned-section">
+                            <div class="assigned-avatar">${initial}</div>
+                            <div>
+                                <div style="font-weight: 700; color: var(--primary);">${asset.AssignedTo}</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Assigned User</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${parent ? `
+                    <div class="card">
+                        <div class="section-title">Part Of / Parent</div>
+                        <div class="hierarchy-item">
+                            <a href="/asset/${parent.ID}" class="hierarchy-link">
+                                <span style="font-size: 24px;">${parent.Icon || '📦'}</span>
+                                <div>
+                                    <div style="font-weight: 600;">${parent.ItemName}</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">${parent.ID}</div>
+                                </div>
+                            </a>
+                            <span style="font-size: 12px; color: var(--primary); font-weight: 600;">PARENT</span>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="card">
+                    <div class="section-title">Specifications</div>
+                    <div class="grid">
+                        <div class="info-item">
+                            <div class="info-label">Make / Model</div>
+                            <div class="info-value">${asset.Make || 'N/A'} ${asset.Model || ''}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Serial Number</div>
+                            <div class="info-value">${asset.SrNo || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Asset Tag / No</div>
+                            <div class="info-value">${asset.No || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Current Location</div>
+                            <div class="info-value">${asset.CurrentLocation || 'Unknown'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Category</div>
+                            <div class="info-value">${asset.Category} / ${asset.Type}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Purchase Date</div>
+                            <div class="info-value">${asset.PurchaseDate || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Inventory Balance</div>
+                            <div class="info-value">${asset.Balance || '0'}</div>
+                        </div>
+                    </div>
+                    ${asset.ItemDescription ? `
+                        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border);">
+                            <div class="info-label">Description</div>
+                            <div style="font-size: 14px; margin-top: 4px;">${asset.ItemDescription}</div>
+                        </div>
+                    ` : ''}
+                </div>
+
+                ${(asset.IPAddress || asset.MACAddress || asset.VLAN || asset.PhysicalPort) ? `
+                    <div class="card">
+                        <div class="section-title">Network & IT Details</div>
+                        <div class="grid">
+                            <div class="info-item">
+                                <div class="info-label">IP Address</div>
+                                <div class="info-value" style="color: var(--primary); font-family: monospace;">${asset.IPAddress || 'N/A'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">MAC Address</div>
+                                <div class="info-value" style="font-family: monospace;">${asset.MACAddress || 'N/A'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Network Type</div>
+                                <div class="info-value">${asset.NetworkType || 'N/A'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">VLAN</div>
+                                <div class="info-value">${asset.VLAN || 'N/A'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Physical Port</div>
+                                <div class="info-value">${asset.PhysicalPort || 'N/A'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Socket ID / User ID</div>
+                                <div class="info-value">${asset.SocketID || 'N/A'} / ${asset.UserID || 'N/A'}</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${(asset.Remarks || asset.Purpose || asset.PurchaseDetails) ? `
+                    <div class="card">
+                        <div class="section-title">Additional Information</div>
+                        <div class="grid">
+                            ${asset.Purpose ? `
+                                <div class="info-item">
+                                    <div class="info-label">Purpose</div>
+                                    <div class="info-value">${asset.Purpose}</div>
+                                </div>
+                            ` : ''}
+                            ${asset.Remarks ? `
+                                <div class="info-item">
+                                    <div class="info-label">Remarks</div>
+                                    <div class="info-value">${asset.Remarks}</div>
+                                </div>
+                            ` : ''}
+                            ${asset.PurchaseDetails ? `
+                                <div class="info-item" style="grid-column: span 2;">
+                                    <div class="info-label">Purchase Details</div>
+                                    <div class="info-value">${asset.PurchaseDetails}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${children && children.length > 0 ? `
+                    <div class="card">
+                        <div class="section-title">Components / Child Assets (${children.length})</div>
+                        ${children.map(child => {
+                            const isNoQr = child.NoQR === 1 || child.NoQR === true;
+                            if (isNoQr) {
+                                return `
+                                    <div class="hierarchy-item no-link" style="opacity: 0.85;">
+                                        <div class="hierarchy-link" style="cursor: default; pointer-events: none; text-decoration: none;">
+                                            <span style="font-size: 24px;">${child.Icon || '🧩'}</span>
+                                            <div>
+                                                <div style="font-weight: 600; color: var(--text-main);">${child.ItemName}</div>
+                                                <div style="font-size: 11px; color: var(--text-muted);">${child.SrNo ? `S/N: ${child.SrNo}` : 'Component'} • ${child.Status}</div>
+                                            </div>
+                                        </div>
+                                        <span style="font-size: 10px; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px; font-weight: bold;">CHILD</span>
+                                    </div>
+                                `;
+                            } else {
+                                return `
+                                    <div class="hierarchy-item">
+                                        <a href="/asset/${child.ID}" class="hierarchy-link">
+                                            <span style="font-size: 24px;">${child.Icon || '📦'}</span>
+                                            <div>
+                                                <div style="font-weight: 600;">${child.ItemName}</div>
+                                                <div style="font-size: 11px; color: var(--text-muted);">${child.ID} • ${child.Status}</div>
+                                            </div>
+                                        </a>
+                                        <span style="font-size: 12px; color: var(--text-muted);">COMPONENT</span>
+                                    </div>
+                                `;
+                            }
+                        }).join('')}
+                    </div>
+                ` : ''}
+
+                ${isLoggedIn ? `
+                <div class="card">
+                    <div class="section-title">Timeline & History</div>
+                    <div class="history-timeline">
+                        ${history && history.length > 0 ? history.map(h => `
+                            <div class="history-entry">
+                                <div class="history-date">${new Date(h.Timestamp).toLocaleString()} • by <b>${h.User}</b></div>
+                                <div class="history-content">
+                                    <div class="history-action">${h.Action}</div>
+                                    <div class="history-details">${h.Details}</div>
+                                </div>
+                            </div>
+                        `).join('') : '<p style="color:var(--text-muted)">No history available for this asset.</p>'}
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="card qr-card">
+                    <div class="section-title" style="justify-content: center;">Identification QR</div>
+                    <img src="${(asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`}" 
+                         class="qr-image" 
+                         alt="QR Code"
+                         onerror="this.src='/api/qr/${encodeURIComponent(asset.ID)}'">
+                    <div style="display: flex; gap: 12px; justify-content: center; margin-top: 10px;">
+                        <button onclick="copyLink()" class="btn-action btn-secondary">🔗 Copy Link</button>
+                        <button onclick="window.print()" class="btn-action btn-secondary">🖨️ Print Page</button>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500;">
+                        ← Back to Asset Management Dashboard
+                    </a>
+                </div>
+            `;
+
+            app.innerHTML = html;
+        }
+
+        function copyLink() {
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                alert('Link copied to clipboard!');
+            });
+        }
+
+        function triggerEdit(id) {
+            // Redirect to dashboard with edit parameter
+            window.location.href = `/?edit=${encodeURIComponent(id)}`;
+        }
+
+        loadAssetDetails();
+    </script>
+</body>
+</html>

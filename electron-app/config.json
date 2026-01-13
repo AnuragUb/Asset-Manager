@@ -1,0 +1,7 @@
+{
+  "baseUrl": "",
+  "apiBaseUrl": "http://192.168.6.189:8080",
+  "remoteApi": true,
+  "tokenSecret": "changeme",
+  "tokenTTLHours": 24
+}
