@@ -1,0 +1,6 @@
+THIS ELECTRON APPLICATION IS DEPRECATED.
+
+The project has moved to a full web-based architecture located in the `web-app` directory.
+Please use the web application for all future development and production use.
+
+Refer to the root README.md for instructions on running the web application.

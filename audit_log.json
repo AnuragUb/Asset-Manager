@@ -5241,5 +5241,109 @@
     "Severity": "INFO",
     "Details": "Automatically updated IP from 192.168.6.105 to 192.168.6.106 based on network scan.",
     "Timestamp": "2026-01-09T11:11:29.097Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767778323412",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Active",
+    "Timestamp": "2026-01-15T07:30:34.091Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767778323412",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Planning",
+    "Timestamp": "2026-01-15T07:30:35.236Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "LOC-0126-S3C57N-E",
+    "Severity": "INFO",
+    "Details": "Asset created: undefined",
+    "Timestamp": "2026-01-15T09:23:20.187Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "LOC-0126-ZRA6BW-J",
+    "Severity": "INFO",
+    "Details": "Asset created: Test",
+    "Timestamp": "2026-01-15T09:23:20.242Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "web",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 2 assets",
+    "Timestamp": "2026-01-15T09:23:20.313Z"
+  },
+  {
+    "Action": "IP_AUTO_SYNC",
+    "User": "SYSTEM",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Automatically updated IP from 192.168.6.169 to 192.168.6.105 based on network scan.",
+    "Timestamp": "2026-01-15T09:23:30.665Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "CAM2601022567",
+    "Severity": "INFO",
+    "Details": "Asset updated: PTZ Camera",
+    "Timestamp": "2026-01-17T10:42:23.670Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "AUD2601050180",
+    "Severity": "INFO",
+    "Details": "Asset updated: Sony Earbuds",
+    "Timestamp": "2026-01-17T10:43:26.267Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-6EUVS5-V",
+    "Severity": "INFO",
+    "Details": "Asset updated: Speaker Module",
+    "Timestamp": "2026-01-17T10:43:26.294Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T06:25:53.628Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-19T07:06:08.905Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T08:19:43.612Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T08:44:27.080Z"
   }
 ]

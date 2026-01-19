@@ -801,11 +801,19 @@ window.initProjectsView = async function() {
     }
 
     try {
-        projectsGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px;">Loading projects...</div>';
-        
-        const response = await fetch('/api/projects');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        console.log('Fetching projects from /api/projects...');
+        const response = await fetch('/api/projects').catch(err => {
+            console.error('Fetch error:', err);
+            throw new Error(`Network error or server unreachable: ${err.message}`);
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'No error body');
+            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        }
+
         allProjects = await response.json();
+        console.log('Successfully loaded projects:', allProjects.length);
         
         if (projectCount) projectCount.textContent = `${allProjects.length} Projects`;
         
@@ -1732,6 +1740,11 @@ export function renderSidebarTree() {
                         // Navigate dashboard to this parent
                         window.currentDashboardParent = node;
                         renderDashboard(window.allAssets, () => window.allAssets);
+                        
+                        // If it's a leaf kind, also open the list modal immediately
+                        if (node.type === 'kind' && (!node.children || node.children.length === 0)) {
+                            showAssetList(node);
+                        }
                     }
                 };
             });
@@ -1759,12 +1772,18 @@ export function renderDashboard(assets, filteredAssets) {
     const assetsToRender = filteredAssets();
     const kinds = window.allAssetKinds || [];
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-    const parentNode = window.currentDashboardParent;
     const manager = window.hierarchyManager;
     if (!manager) {
         console.warn('HierarchyManager not yet initialized. Postponing renderDashboard.');
         assetGrid.innerHTML = '<div style="padding: 20px; color: #666;">Loading hierarchy...</div>';
         return;
+    }
+
+    // Re-sync parentNode with current manager to avoid stale object issues
+    let parentNode = window.currentDashboardParent;
+    if (parentNode && manager) {
+        parentNode = manager.findNode(parentNode.ID);
+        window.currentDashboardParent = parentNode; // Update global reference
     }
 
     const dashboardTitle = document.getElementById('dashboard-title');
@@ -1830,10 +1849,40 @@ export function renderDashboard(assets, filteredAssets) {
             .map(d => d.Name);
         
         recursiveAssets = assets.filter(a => descendantKindNames.includes(a.Type));
-    }
+        }
+        
+        // If it's a leaf kind (no children), show a message and automatically open the list
+        if (parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0)) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; background: white; border-radius: 8px; border: 1px dashed #ccc;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📦</div>
+                    <h3 style="margin-bottom: 10px;">${parentNode.Name} Assets</h3>
+                    <p style="color: #666; margin-bottom: 20px;">Viewing inventory for this category.</p>
+                    <button id="btnOpenLeafList" style="padding: 10px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">View Full Inventory List</button>
+                </div>
+            `;
+            const btn = document.getElementById('btnOpenLeafList');
+            if (btn) btn.onclick = () => showAssetList(parentNode);
+            
+            // Auto-open list if it's not already open
+            const modal = document.getElementById('assetListModal');
+            if (modal && modal.style.display !== 'flex') {
+                showAssetList(parentNode);
+            }
+            return;
+        }
 
-    // Render cards for displayNodes (subfolders/subkinds)
-    displayNodes.forEach(node => {
+        // Render cards for displayNodes (subfolders/subkinds)
+        if (displayNodes.length === 0 && parentNode) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                    <p>No sub-categories or folders found in <b>${parentNode.Name}</b>.</p>
+                </div>
+            `;
+            return;
+        }
+
+        displayNodes.forEach(node => {
         const isKind = node.type === 'kind';
         const nodeName = node.Name;
         
@@ -1860,33 +1909,21 @@ export function renderDashboard(assets, filteredAssets) {
         
         assetCard.style.cursor = 'pointer';
         assetCard.onclick = (e) => {
-            e.stopPropagation(); // Prevent global listener from firing redundant showAssetList(null)
-            if (isSelectionMode) {
-                // In selection mode, clicking the card toggles selection for all assets of this kind?
-                // Actually, cards are for Kinds/Folders. The user wants to select QR codes.
-                // QR codes belong to Assets. Assets are shown in the asset list modal.
-                // So maybe only show selection in the asset list modal?
-                // The user said: "this Print QR button will act to select all the QR code needed"
-                // This might mean selection should be in the list of assets.
-                
-                // For now, let's keep cards for navigation, but maybe allow selecting a whole kind?
-                // "Select all the QR code needed" sounds like granular selection.
-                // Let's focus selection on the Asset List Modal first.
-            }
-            
-            if (node.children && node.children.length > 0) {
-                // Drill down if there are children
-                window.currentDashboardParent = node;
-                renderDashboard(window.allAssets, () => window.allAssets);
-            } else if (node.type === 'kind') {
-                // Leaf kind - show assets
-                showAssetList(node);
-            } else {
-                // It's a folder with no children, just show empty or drill down
-                window.currentDashboardParent = node;
-                renderDashboard(window.allAssets, () => window.allAssets);
-            }
-        };
+                    e.stopPropagation(); // Prevent global listener from firing redundant showAssetList(null)
+                    
+                    if (node.children && node.children.length > 0) {
+                        // Drill down if there are children
+                        window.currentDashboardParent = node;
+                        renderDashboard(window.allAssets, () => window.allAssets);
+                    } else if (node.type === 'kind') {
+                        // Leaf kind - show assets
+                        showAssetList(node);
+                    } else {
+                        // It's a folder with no children, show message or navigate
+                        window.currentDashboardParent = node;
+                        renderDashboard(window.allAssets, () => window.allAssets);
+                    }
+                };
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
@@ -2174,6 +2211,19 @@ export async function editAsset(asset) {
     document.getElementById('itemAssignedTo').value = asset.AssignedTo || '';
     document.getElementById('itemParentId').value = asset.ParentId || '';
 
+    // Warranty Details
+    const warrantyField = document.getElementById('itemWarranty');
+    const amcField = document.getElementById('itemAMC');
+    const valueField = document.getElementById('itemValue');
+    const currencyField = document.getElementById('itemCurrency');
+    const purchaseDateField = document.getElementById('itemPurchaseDate');
+
+    if (warrantyField) warrantyField.value = asset.warranty_months || 0;
+    if (amcField) amcField.value = asset.amc_months || 0;
+    if (valueField) valueField.value = asset.asset_value || 0;
+    if (currencyField) currencyField.value = asset.Currency || 'INR';
+    if (purchaseDateField) purchaseDateField.value = asset.PurchaseDate || '';
+
     // IT Specific Fields
     if (localStorage.getItem('selectedAssetCategory') === 'IT') {
         const macField = document.getElementById('itemMAC');
@@ -2290,6 +2340,7 @@ function showAssetList(nodeOrKindName) {
                         </div>
                     ` : '-'}
                 </td>
+                <td>${a.warranty_months ? `${a.warranty_months}m` : '-'}</td>
                 <td>${a.ParentId || '-'}</td>
                 <td>${a.IN || '0'}</td>
                 <td>${a.OUT || '0'}</td>

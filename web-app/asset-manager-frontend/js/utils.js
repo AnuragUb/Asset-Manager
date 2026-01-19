@@ -1,49 +1,58 @@
 export function showView(viewName) {
     console.log(`showView('${viewName}') called`);
-    const views = document.querySelectorAll('.view');
-    console.log(`Found ${views.length} views to manage`);
-    
-    views.forEach(view => {
-        view.classList.add('hidden');
-        view.classList.remove('active');
-    });
-
-    const targetView = document.getElementById(viewName);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        targetView.classList.add('active');
-        console.log(`Switched to view: ${viewName}`);
-    } else {
-        console.warn(`View not found: ${viewName}`);
-    }
-
-    // Header/Sidebar handling
-    const header = document.querySelector('header');
-    const sidebar = document.querySelector('aside');
-    
-    if (viewName === 'loginView') {
-        if (header) header.classList.add('hidden');
-        if (sidebar) sidebar.classList.add('hidden');
-        document.body.classList.add('login-page');
-    } else {
-        if (header) header.classList.remove('hidden');
+    try {
+        // Only target top-level views to avoid hiding sub-views unintentionally
+        const views = document.querySelectorAll('#main-content > .view');
+        console.log(`Found ${views.length} top-level views to manage`);
         
-        if (sidebar) {
-            sidebar.classList.remove('hidden');
-            
-            // Ensure sidebar toggle works
-            const toggleBtn = document.getElementById('sidebarToggle');
-            if (toggleBtn) {
-                toggleBtn.onclick = () => {
-                    sidebar.classList.toggle('collapsed');
-                };
-            }
-        }
-        document.body.classList.remove('login-page');
-    }
+        views.forEach(view => {
+            view.classList.add('hidden');
+            view.classList.remove('active');
+        });
 
-    // Trigger redraw for any visible Tabulator instances
-    redrawAllVisibleTabulators();
+        const targetView = document.getElementById(viewName);
+        if (targetView) {
+            targetView.classList.remove('hidden');
+            targetView.classList.add('active');
+            console.log(`Switched to view: ${viewName}`);
+        } else {
+            console.warn(`View not found: ${viewName}`);
+        }
+
+        // Header/Sidebar handling
+        const header = document.querySelector('header');
+        const sidebar = document.querySelector('aside');
+        
+        if (viewName === 'loginView') {
+            if (header) header.classList.add('hidden');
+            if (sidebar) sidebar.classList.add('hidden');
+            document.body.classList.add('login-page');
+        } else {
+            if (header) header.classList.remove('hidden');
+            
+            if (sidebar) {
+                sidebar.classList.remove('hidden');
+                
+                // Ensure sidebar toggle works
+                const toggleBtn = document.getElementById('sidebarToggle');
+                if (toggleBtn) {
+                    toggleBtn.onclick = () => {
+                        sidebar.classList.toggle('collapsed');
+                    };
+                }
+            }
+            document.body.classList.remove('login-page');
+        }
+
+        // Trigger redraw for any visible Tabulator instances
+        try {
+            redrawAllVisibleTabulators();
+        } catch (re) {
+            console.warn('Tabulator redraw failed (non-critical):', re);
+        }
+    } catch (err) {
+        console.error(`CRITICAL ERROR in showView('${viewName}'):`, err);
+    }
 }
 
 /**

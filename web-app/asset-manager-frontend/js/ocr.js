@@ -327,4 +327,27 @@ export function setupOcr() {
 
     exportExcelBtn.onclick = () => handleExport('excel');
     exportWordBtn.onclick = () => handleExport('word');
+
+    // Tab Switching Logic
+    window.switchOcrTab = (tab) => {
+        const rawView = document.getElementById('ocrRawView');
+        const blocksView = document.getElementById('ocrBlocksView');
+        const tabs = document.querySelectorAll('.tab-btn');
+
+        if (tab === 'raw') {
+            rawView.style.display = 'block';
+            blocksView.style.display = 'none';
+        } else {
+            rawView.style.display = 'none';
+            blocksView.style.display = 'block';
+        }
+
+        tabs.forEach(t => {
+            if (t.textContent.toLowerCase().includes(tab)) {
+                t.classList.add('active');
+            } else {
+                t.classList.remove('active');
+            }
+        });
+    };
 }

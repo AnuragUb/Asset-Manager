@@ -1,16 +1,38 @@
-import { showView } from './utils.js?v=3.8';
-import { renderDashboard, setupDashboard, renderSidebarTree } from './dashboard.js?v=3.8';
-import { initScannerView } from './networkScanner.js?v=3.8';
-import { renderAdmin } from './admin.js?v=3.8';
-import { renderItAssets } from './itAssets.js?v=3.8';
-import { setupAuth } from './auth.js?v=3.8';
-import { setupQrGenerator } from './qr.js?v=3.8';
-import { HierarchyManager } from './hierarchy.js?v=3.8';
-import { initEmployeeView, loadEmployees } from './employees.js?v=3.8';
-import { setupOcr } from './ocr.js?v=1.0';
+console.log('MAIN.JS: Entry point (v4.4)');
+import { showView } from './utils.js?v=4.4';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers } from './dashboard.js?v=4.4';
+import { initScannerView } from './networkScanner.js?v=4.4';
+import { renderItAssets } from './itAssets.js?v=4.4';
+import { setupAuth, logout } from './auth.js?v=4.4';
+import { HierarchyManager, renderSidebarTree } from './hierarchy.js?v=4.4';
+import { initEmployeeView, loadEmployees } from './employees.js?v=4.4';
+import { setupOcr } from './ocr.js?v=4.4';
+import { initWarrantyView } from './warranty.js?v=4.4';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
+
+// Global diagnostic for Warranty
+window.checkWarranty = () => {
+    const nav = document.getElementById('nav-warranty');
+    const view = document.getElementById('warranty-view');
+    const initFn = typeof initWarrantyView === 'function' || typeof window.initWarrantyView === 'function';
+    
+    console.log('--- Warranty Diagnostic ---');
+    console.log('Nav element:', nav);
+    console.log('Nav display:', nav ? getComputedStyle(nav).display : 'N/A');
+    console.log('Nav visibility:', nav ? getComputedStyle(nav).visibility : 'N/A');
+    console.log('View element:', view);
+    console.log('View classes:', view ? view.className : 'N/A');
+    console.log('View display:', view ? getComputedStyle(view).display : 'N/A');
+    console.log('Init function exists:', initFn);
+    console.log('--- End Diagnostic ---');
+    
+    if (nav) {
+        console.log('Manually triggering click on Warranty nav...');
+        nav.click();
+    }
+};
 
 // --- RELEASES VIEW RENDERING ---
 export function renderReleases() {
@@ -19,6 +41,14 @@ export function renderReleases() {
     if (!content) return;
     
     content.innerHTML = `
+        <div class="release-item" style="margin-bottom: 20px; padding: 15px; background: #e7f3ff; border-left: 4px solid #0056b3; border-radius: 4px;">
+            <h3 style="margin-top: 0; color: #0056b3;">Beta - Public Preview</h3>
+            <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Released: January 13, 2026</p>
+            <ul style="padding-left: 20px;">
+                <li><strong>Initial Beta Launch:</strong> Preparing for production release.</li>
+                <li><strong>Performance:</strong> Optimized asset grid and OCR processing.</li>
+            </ul>
+        </div>
         <div class="release-item" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #007bff; border-radius: 4px;">
             <h3 style="margin-top: 0; color: #007bff;">v3.1 - Asset Manager Refinement</h3>
             <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Released: January 2, 2026</p>
@@ -62,6 +92,9 @@ window.sidebarDiagnostic();
 let assets = [];
 let assetKinds = [];
 let folders = [];
+
+// Instantiate Hierarchy Manager
+window.hierarchyManager = new HierarchyManager();
 
 // --- System Integrity Check ---
 const originalFetch = window.fetch;
@@ -110,6 +143,19 @@ async function loadAssetKinds() {
 
         console.log(`Loaded ${assetKinds.length} kinds and ${folders.length} folders`);
         
+        // Initialize Hierarchy Manager with combined data
+        const combinedData = [
+            ...assetKinds.map(k => ({ 
+                ...k, 
+                ID: k.ID || k.Name, 
+                ParentID: k.ParentID || k.ParentName,
+                type: 'kind' 
+            })),
+            ...folders.map(f => ({ ...f, type: 'folder' }))
+        ];
+        window.hierarchyManager = new HierarchyManager(combinedData);
+        console.log('HierarchyManager initialized with', combinedData.length, 'nodes');
+
         // Populate parent dropdown in modal
         const parentSelect = document.getElementById('newKindParent');
         if (parentSelect) {
@@ -244,11 +290,13 @@ let filteredAssets = () => {
 
 // Test if we can find the elements we need
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM Content Loaded (main.js)');
+    console.log('DOM Content Loaded (main.js) - Initializing navigation');
     const views = document.querySelectorAll('.view');
     console.log(`Found ${views.length} views`);
     
-    setupQrGenerator();
+    // Setup navigation early, before auth
+    setupNavigation();
+    
     setupOcr();
     
     setupAuth(async (user) => {
@@ -269,6 +317,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         await loadAssets();
         
+        // Load employees globally so dropdowns are populated even if Employees tab isn't visited
+        if (typeof loadEmployees === 'function') {
+            await loadEmployees();
+        }
+        
+        // setupNavigation() is already called, but we can call it again safely if we add checks
+        setupNavigation();
+        
         const dashboardView = document.getElementById('dashboardView');
         if (dashboardView) {
             console.log('Found dashboardView, switching...');
@@ -279,7 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nav-dashboard')?.classList.add('active');
 
             // Show home-view subview by default
-            const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view'];
+            const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view'];
             subViews.forEach(sv => {
                 const el = document.getElementById(sv);
                 if (el) {
@@ -291,13 +347,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         el.classList.add('hidden');
                         el.style.display = 'none';
                         // Still set flexDirection so it's ready when the view is shown
-                        if (sv === 'dc-view') {
+                        if (sv === 'dc-view' || sv === 'warranty-view') {
                             el.style.flexDirection = 'column';
                         }
                     }
                 }
             });
-            
+
             // Render sidebar tree AFTER showView to ensure container is visible and ready
             console.log('Rendering sidebar tree. Kinds:', (window.allAssetKinds || []).length);
             await renderSidebarTree();
@@ -313,26 +369,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Show dashboard view first (which contains projects-view)
                 showView('dashboardView');
                 
-                // Show projects-view subview
-                const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view'];
-                subViews.forEach(sv => {
-                    const el = document.getElementById(sv);
-                    if (el) {
-                        if (sv === 'projects-view') {
-                        el.classList.remove('hidden');
-                        el.style.display = 'flex';
-                    } else {
-                            el.classList.add('hidden');
-                            el.style.display = 'none';
-                        }
-                    }
-                });
-
-                if (window.showProjectDetails) {
-                    window.showProjectDetails(currentUser.projectId);
-                }
-                // Hide other nav links for clients
-                document.querySelectorAll('.nav-link:not(#nav-projects)').forEach(link => link.style.display = 'none');
+                // Then show projects view specifically
+                const projectsNav = document.getElementById('nav-projects');
+                if (projectsNav) projectsNav.click();
             }
 
             // Check for edit parameter in URL
@@ -349,9 +388,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newUrl = window.location.pathname;
                 window.history.replaceState({}, document.title, newUrl);
             }
-
-            // Add navigation listeners after setupDashboard to ensure they don't conflict
-            setupNavigation();
         } else {
             console.error('Could NOT find dashboardView element!');
             alert('Error: Dashboard view not found in the page.');
@@ -360,74 +396,168 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupNavigation() {
-    console.log('setupNavigation() called');
-    
+    console.log('setupNavigation() called - Diagnostic Check');
     const navLinks = {
-        'nav-dashboard': { view: 'dashboardView', subView: 'home-view' },
-        'nav-sheet': { view: 'dashboardView', subView: 'sheet-view', init: () => window.initSheetView?.() },
-        'nav-employees': { view: 'dashboardView', subView: 'employee-view', init: () => initEmployeeView() },
-        'nav-dc': { view: 'dashboardView', subView: 'dc-view', init: () => window.initDCView?.() },
+        'nav-dashboard': { 
+            view: 'dashboardView', 
+            subView: 'home-view', 
+            init: () => {
+                console.log('nav-dashboard init');
+                if (typeof renderDashboard === 'function') {
+                    renderDashboard(window.allAssets || [], () => window.allAssets || []);
+                }
+            } 
+        },
+        'nav-sheet': { 
+            view: 'dashboardView', 
+            subView: 'sheet-view', 
+            init: () => {
+                if (typeof setupDashboard === 'function') setupDashboard();
+                if (window.initSheetView) window.initSheetView();
+            }
+        },
+        'nav-employees': { 
+            view: 'dashboardView', 
+            subView: 'employee-view', 
+            init: () => typeof initEmployeeView === 'function' && initEmployeeView() 
+        },
+        'nav-dc': { 
+            view: 'dashboardView', 
+            subView: 'dc-view',
+            init: () => {
+                if (window.initDCView) window.initDCView();
+            }
+        },
         'nav-projects': { 
             view: 'dashboardView', 
             subView: 'projects-view', 
             init: () => {
-                console.log('nav-projects init called');
-                if (typeof window.initProjectsView === 'function') {
-                    window.initProjectsView();
-                } else {
-                    console.warn('window.initProjectsView is not a function, retrying in 100ms...');
-                    setTimeout(() => {
-                        if (typeof window.initProjectsView === 'function') {
-                            window.initProjectsView();
-                        } else {
-                            console.error('window.initProjectsView still not available after retry');
-                        }
-                    }, 100);
+                console.log('nav-projects init');
+                if (window.initProjectsView) window.initProjectsView();
+                if (typeof renderSidebarTree === 'function') {
+                    renderSidebarTree();
                 }
-            }
+            } 
         },
-        'nav-releases': { view: 'dashboardView', subView: 'releases-view', init: () => window.renderReleases?.() },
-        'nav-scanner': { view: 'dashboardView', subView: 'scanner-view', init: () => initScannerView() },
-        'nav-ocr': { view: 'dashboardView', subView: 'ocr-view' },
-        'nav-admin': { view: 'adminView', init: () => typeof renderAdmin === 'function' && renderAdmin() },
-        'navGenerateCode': { view: 'qrView', init: () => typeof setupQrGenerator === 'function' && setupQrGenerator() }
+        'nav-releases': { 
+            view: 'dashboardView', 
+            subView: 'releases-view',
+            init: () => typeof renderReleases === 'function' && renderReleases()
+        },
+        'nav-scanner': { 
+            view: 'dashboardView', 
+            subView: 'scanner-view', 
+            init: () => typeof initScannerView === 'function' && initScannerView() 
+        },
+        'nav-ocr': { 
+            view: 'dashboardView', 
+            subView: 'ocr-view', 
+            init: () => typeof setupOcr === 'function' && setupOcr() 
+        },
+        'nav-warranty': { 
+            view: 'dashboardView', 
+            subView: 'warranty-view', 
+            init: () => {
+                console.log('nav-warranty init called');
+                if (typeof initWarrantyView === 'function') {
+                    initWarrantyView();
+                } else if (window.initWarrantyView) {
+                    window.initWarrantyView();
+                } else {
+                    console.error('initWarrantyView not found in window or local scope!');
+                }
+            } 
+        }
     };
 
+    console.log('Nav items to attach:', Object.keys(navLinks));
     Object.entries(navLinks).forEach(([id, config]) => {
-        document.getElementById(id)?.addEventListener('click', (e) => {
-            e.preventDefault();
-            console.log(`Navigation clicked: ${id}`);
+        const el = document.getElementById(id);
+        if (el) {
+            // Avoid duplicate listeners
+            if (el.dataset.navAttached) {
+                console.log(`Listener already attached to ${id}, skipping.`);
+                return;
+            }
             
-            // 1. Show main view
-            showView(config.view);
+            console.log(`Successfully attached listener to ${id}`);
+            el.dataset.navAttached = "true";
+            
+            // Explicitly set pointer cursor
+            el.style.cursor = 'pointer';
 
-            // 2. Handle sub-views within dashboard
-            if (config.view === 'dashboardView') {
-                const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view'];
-                subViews.forEach(sv => {
-                    const el = document.getElementById(sv);
-                    if (el) {
-                        if (sv === config.subView) {
-                            el.classList.remove('hidden');
-                            el.style.display = 'flex';
-                            if (sv === 'home-view' || sv === 'dc-view') {
-                                el.style.flexDirection = 'column';
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log(`[CLICK EVENT] Element ${id} clicked!`);
+                
+                try {
+                    // 1. Show main view
+                    console.log(`Showing main view: ${config.view}`);
+                    showView(config.view);
+
+                    // 2. Handle sub-views within dashboard
+                    if (config.view === 'dashboardView') {
+                        const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view'];
+                        console.log(`Switching to subview: ${config.subView}`);
+                        
+                        // Show/Hide Sidebar based on subview
+                        const sidebar = document.getElementById('app-sidebar');
+                        if (sidebar) {
+                            // Show sidebar for core dashboard views
+                            const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view'];
+                            if (showSidebarViews.includes(config.subView)) {
+                                sidebar.classList.remove('hidden');
+                                sidebar.style.display = 'block';
+                            } else {
+                                sidebar.classList.add('hidden');
+                                sidebar.style.display = 'none';
                             }
-                        } else {
-                            el.classList.add('hidden');
-                            el.style.display = 'none';
+                        }
+
+                        subViews.forEach(sv => {
+                            const subEl = document.getElementById(sv);
+                            if (subEl) {
+                                if (sv === config.subView) {
+                                    console.log(`Showing subview element: ${sv}`);
+                                    subEl.classList.remove('hidden');
+                                    subEl.classList.add('active'); // Add active class for CSS display: flex
+                                    subEl.style.display = 'flex';
+                                    subEl.style.flexDirection = 'column';
+                                    subEl.style.flex = '1';
+                                } else {
+                                    subEl.classList.add('hidden');
+                                    subEl.classList.remove('active'); // Remove active class
+                                    subEl.style.display = 'none';
+                                }
+                            }
+                        });
+                    } else {
+                        // For non-dashboard views (like adminView, qrView), hide sidebar
+                        const sidebar = document.getElementById('app-sidebar');
+                        if (sidebar) {
+                            sidebar.classList.add('hidden');
+                            sidebar.style.display = 'none';
                         }
                     }
-                });
-            }
 
-            // 3. Update active state
-            document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-            e.currentTarget.classList.add('active');
+                    // 3. Update active state in nav
+                    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+                    el.classList.add('active');
 
-            // 4. Run init function if any
-            if (config.init) config.init();
-        });
+                    // 4. Run initialization
+                    if (config.init) {
+                        console.log(`Running init for ${id}...`);
+                        try {
+                            config.init();
+                        } catch (initErr) {
+                            console.error(`Init failed for ${id}:`, initErr);
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error during navigation for ${id}:`, err);
+                }
+            });
+        }
     });
 }
 
@@ -495,9 +625,31 @@ function setupDashboardFormHandlers() {
                 icon = kindDef ? kindDef.Icon : '📦';
             }
 
-            // Add the new individual asset
+            // Collect Child Assets (No QR)
+            const childRows = document.querySelectorAll('.child-asset-row');
+            const components = [];
+            for (const row of childRows) {
+                const childName = row.querySelector('.child-name').value;
+                if (!childName) continue;
+
+                components.push({
+                    Type: 'Component',
+                    ItemName: childName,
+                    Make: row.querySelector('.child-make').value,
+                    SrNo: row.querySelector('.child-srno').value,
+                    Status: status,
+                    Category: category,
+                    NoQR: 1,
+                    Icon: '🧩'
+                });
+            }
+
+            // Collect Linked Components (QR)
+            const linkedTags = document.querySelectorAll('.linked-component-tag');
+            const linkedIds = Array.from(linkedTags).map(tag => tag.getAttribute('data-id'));
+
             const newItem = {
-                ID: assetDbId || undefined, // Include ID if editing
+                ID: assetDbId || undefined,
                 Type: kind,
                 ItemName: name,
                 Status: status,
@@ -514,7 +666,13 @@ function setupDashboardFormHandlers() {
                 PurchaseDetails: document.getElementById('itemPurchase')?.value || '',
                 Remarks: document.getElementById('itemRemarks')?.value || '',
                 AssignedTo: document.getElementById('itemAssignedTo')?.value || '',
-                ParentId: document.getElementById('itemParentId')?.value || '',
+                ParentId: document.getElementById('itemParentId')?.value.trim() || null,
+                // Warranty Details
+                warranty_months: parseInt(document.getElementById('itemWarranty')?.value) || 0,
+                amc_months: parseInt(document.getElementById('itemAMC')?.value) || 0,
+                asset_value: parseFloat(document.getElementById('itemValue')?.value) || 0,
+                Currency: document.getElementById('itemCurrency')?.value || 'INR',
+                PurchaseDate: document.getElementById('itemPurchaseDate')?.value || '',
                 // IT Specific Fields
                 MACAddress: document.getElementById('itemMAC')?.value || '',
                 IPAddress: document.getElementById('itemIP')?.value || '',
@@ -522,55 +680,22 @@ function setupDashboardFormHandlers() {
                 PhysicalPort: document.getElementById('itemPhysicalPort')?.value || '',
                 VLAN: document.getElementById('itemVLAN')?.value || '',
                 SocketID: document.getElementById('itemSocketID')?.value || '',
-                UserID: document.getElementById('itemUserID')?.value || ''
+                UserID: document.getElementById('itemUserID')?.value || '',
+                // Nested data
+                components: components,
+                linkedIds: linkedIds
             };
 
-            console.log('Saving asset item:', newItem);
+            console.log('Saving asset item with components:', newItem);
             const result = await saveAsset(newItem);
             
             if (result && (result.success || result.id)) {
-                const mainAssetId = result.id || assetDbId;
-                
-                // Handle Child Assets (No QR)
-                const childRows = document.querySelectorAll('.child-asset-row');
-                for (const row of childRows) {
-                    const childName = row.querySelector('.child-name').value;
-                    if (!childName) continue;
-
-                    const childData = {
-                        Type: 'Component',
-                        ItemName: childName,
-                        Make: row.querySelector('.child-make').value,
-                        SrNo: row.querySelector('.child-srno').value,
-                        Status: status,
-                        Category: category,
-                        ParentId: mainAssetId,
-                        NoQR: 1,
-                        Icon: '🧩'
-                    };
-                    await saveAsset(childData);
-                }
-
-                // Handle Linked Components (QR)
-                const linkedTags = document.querySelectorAll('.linked-component-tag');
-                for (const tag of linkedTags) {
-                    const linkedId = tag.getAttribute('data-id');
-                    // Find the full asset object to update it
-                    const linkedAsset = (window.allAssets || []).find(a => a.ID === linkedId);
-                    if (linkedAsset) {
-                        const updatedLinked = { ...linkedAsset, ParentId: mainAssetId };
-                        await saveAsset(updatedLinked);
-                    }
-                }
-
                 const modal = document.getElementById('addAssetItemModal');
                 if (modal) modal.style.display = 'none';
                 addAssetItemForm.reset();
                 document.getElementById('assetDbId').value = ''; // Clear the hidden ID
                 
-                // Final reload to ensure everything is in sync
-                await loadAssets();
-                renderDashboard(assets, filteredAssets);
+                // loadAssets and renderDashboard are already called inside saveAsset()
             }
         };
     }

@@ -481,6 +481,18 @@
                             <div class="info-value">${asset.PurchaseDate || 'N/A'}</div>
                         </div>
                         <div class="info-item">
+                            <div class="info-label">Warranty / AMC</div>
+                            <div class="info-value">
+                                ${asset.warranty_months ? `${asset.warranty_months} Mo. Warranty` : ''}
+                                ${asset.amc_months ? `${asset.warranty_months ? ' | ' : ''}${asset.amc_months} Mo. AMC` : ''}
+                                ${(!asset.warranty_months && !asset.amc_months) ? 'N/A' : ''}
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Asset Value</div>
+                            <div class="info-value">${asset.asset_value ? `${asset.Currency || 'INR'} ${asset.asset_value}` : 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
                             <div class="info-label">Inventory Balance</div>
                             <div class="info-value">${asset.Balance || '0'}</div>
                         </div>

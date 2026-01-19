@@ -1,102 +1,49 @@
-# Asset Management Tool
+# Asset Management Tool (Web Version)
 
-A comprehensive asset management system with user roles and change tracking.
+This is the web-based version of the Asset Management system. The local PowerShell and Electron versions are now deprecated in favor of this web application.
+
+## Quick Start (Web App)
+
+1. **Navigate to the web app directory**:
+   ```bash
+   cd web-app/asset-manager-backend
+   ```
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+3. **Start the server**:
+   ```bash
+   node server.js
+   ```
+4. **Access the app**: Open your browser and go to `http://localhost:8080`
 
 ## Features
 
-- **User Authentication**: Login system with roles (User and Super User)
-- **Asset Management**: Create, Read, Update, Delete assets
-- **Change Tracking**: Complete audit log of all changes
-- **Role-Based Access**: Super users can view audit logs
-- **Asset Fields**: Name, Type, Status, Location, Assigned To, Notes
+- **Modern Web UI**: Responsive dashboard and asset management interface.
+- **Atomic Sync**: Assets, components, and warranty details are updated synchronously in a single request.
+- **QR Code Integration**: Automatic QR code generation for asset tracking.
+- **IT-Specific Fields**: Specialized tracking for MAC addresses, IP addresses, and network details.
+- **Employee Management**: Assign assets directly to employees from a global directory.
+- **Audit Logging**: Comprehensive change tracking for all asset modifications.
 
-## Quick Start
+## Core Ground Rules
 
-1. **Launch the tool**: Double-click `asset_manager.bat`
-2. **Login**: Use default credentials:
-   - **Super User**: `admin` / `admin123`
-   - **Regular User**: `user` / `user123`
+- **Web App Only**: We are currently and for the foreseeable future only working on the web app. The local app versions are deprecated.
+- **Simplified Version Control**: Changes are automatically pushed to the GitHub repository.
 
-## Default Credentials
+## Project Structure
 
+- `web-app/asset-manager-backend`: Express.js server and SQLite database.
+- `web-app/asset-manager-frontend`: HTML/JS frontend (Vanilla JS with ES Modules).
+- `web-app/asset-manager-frontend/dist`: Production-ready frontend assets.
 
+## Deprecated Versions
 
-- **Super User** (can view audit logs):
-  - Username: `admin`
-  - Password: `admin123`
+- `electron-app/`: The Electron-based desktop wrapper is deprecated.
+- `asset_manager.ps1` & `asset_manager.bat`: The PowerShell-based local GUI is deprecated.
 
-- **Regular User** (can manage assets):
-  - Username: `user`
-  - Password: `user123`
-
-## Asset Fields
-
-- **ID**: Auto-generated unique identifier (AST-YYYYMMDDHHMMSS)
-- **Name**: Asset name/description
-- **Type**: Computer, Printer, Monitor, Phone, Tablet, Other
-- **Status**: Available, In Use, Repair, Retired, Lost
-- **Location**: Physical location of the asset
-- **Assigned To**: Person/department using the asset
-- **Notes**: Additional information
-- **Last Updated**: Timestamp of last modification
-
-## User Roles
-
-### Regular User
-- View assets
-- Add new assets
-- Update asset details (edit directly in the grid)
-- Delete assets
-- Cannot view audit logs
-
-### Super User
-- All regular user permissions
-- **View Audit Log**: Complete change history with:
-  - Timestamp
-  - User who made the change
-  - Action (CREATE, UPDATE, DELETE, LOGIN, LOGOUT)
-  - Asset ID
-  - Details of changes
-
-## Files
-
-- `asset_manager.bat` - Launcher script
-- `asset_manager.ps1` - Main application script
-- `assets.json` - Asset data storage
-- `users.json` - User accounts and passwords
-- `audit_log.json` - Complete change history (super users only)
-
-## How to Use
-
-### Adding Assets
-1. Click "Add Asset"
-2. Fill in asset details
-3. Click "Save"
-
-### Updating Assets
-1. Select an asset in the grid
-2. Edit directly in the grid cells
-3. Click "Update Selected"
-4. Changes are logged automatically
-
-### Deleting Assets
-1. Select an asset in the grid
-2. Click "Delete Selected"
-3. Confirm deletion
-
-### Viewing Audit Log (Super Users Only)
-1. Click "View Audit Log"
-2. See complete history of all changes
-3. Includes who, what, when, and details
-
-## Security Notes
-
-- Passwords are stored in plain text in `users.json`
-- Consider implementing encryption for production use
-- Super users should change default passwords
-- Keep `users.json` and `audit_log.json` secure
-
-## Audit Log Details
+---
 
 Every action is logged with:
 - **Timestamp**: When the action occurred

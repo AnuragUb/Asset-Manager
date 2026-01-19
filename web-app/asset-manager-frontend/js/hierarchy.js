@@ -17,16 +17,28 @@ export class HierarchyManager {
         const nodes = {};
         const tree = [];
 
-        // Create node map
+        // Create node map - ensure every node has an ID
         flatData.forEach(item => {
-            nodes[item.ID] = { ...item, children: [] };
+            const id = item.ID || item.Name;
+            if (id) {
+                const node = { ...item, ID: id, children: [] };
+                nodes[id] = node;
+                // Also map by name if it's different from ID to allow name-based parent lookups
+                if (item.Name && item.Name !== id) {
+                    nodes[item.Name] = node;
+                }
+            }
         });
 
         // Link children to parents
         flatData.forEach(item => {
-            const node = nodes[item.ID];
-            if (item.ParentID && nodes[item.ParentID]) {
-                nodes[item.ParentID].children.push(node);
+            const id = item.ID || item.Name;
+            const node = nodes[id];
+            if (!node) return;
+
+            const parentId = item.ParentID || item.ParentName;
+            if (parentId && nodes[parentId]) {
+                nodes[parentId].children.push(node);
             } else {
                 tree.push(node);
             }
