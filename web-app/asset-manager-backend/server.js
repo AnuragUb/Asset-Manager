@@ -1472,7 +1472,7 @@ app.put('/api/assets/:id', (req, res) => {
       asset.PurchaseDetails || existing.PurchaseDetails || '',
       asset.Remarks || existing.Remarks || '',
       new Date().toISOString(),
-      asset.AssignedTo || existing.AssignedTo || '',
+      asset.AssignedTo !== undefined ? asset.AssignedTo : (existing.AssignedTo || ''),
       asset.NoQR !== undefined ? (asset.NoQR ? 1 : 0) : (existing.NoQR || 0),
       asset.warranty_months !== undefined ? asset.warranty_months : existing.warranty_months,
       asset.amc_months !== undefined ? asset.amc_months : existing.amc_months,
