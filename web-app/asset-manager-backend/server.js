@@ -686,7 +686,19 @@ app.get('/api/qr/generate/:text', async (req, res) => {
 
 app.post('/api/assets', async (req, res) => {
   try {
-    const asset = req.body
+    const asset = req.body;
+    
+    // Basic Validation
+    if (!asset.ItemName || asset.ItemName.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Item Name is required' });
+    }
+    if (!asset.Category || asset.Category.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Category is required' });
+    }
+    if (!asset.Type || asset.Type.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Type (Kind) is required' });
+    }
+
     console.log('Adding new asset:', asset.ItemName);
     
     // Generate unique ID if not present
@@ -694,6 +706,12 @@ app.post('/api/assets', async (req, res) => {
     if (!newId) {
       newId = generateModernAssetId(asset.CurrentLocation || '');
       console.log('Generated Modern ID:', newId);
+    } else {
+      // Check if ID already exists
+      const existing = db.prepare('SELECT ID FROM assets WHERE ID = ?').get(newId);
+      if (existing) {
+        return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists` });
+      }
     }
 
     // Generate QR Code if not present and NoQR is not true
@@ -710,8 +728,9 @@ app.post('/api/assets', async (req, res) => {
         ID, ItemName, Status, Make, Model, SrNo, Type,
         Category, Icon, isPlaceholder, ParentId,
         CurrentLocation, "IN", "OUT", Balance,
-        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
+        warranty_months, amc_months, asset_value, Currency, PurchaseDate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -736,7 +755,12 @@ app.post('/api/assets', async (req, res) => {
       new Date().toISOString(),
       qrCode || null,
       asset.AssignedTo || '',
-      asset.NoQR ? 1 : 0
+      asset.NoQR ? 1 : 0,
+      asset.warranty_months || 0,
+      asset.amc_months || 0,
+      asset.asset_value || 0,
+      asset.Currency || 'USD',
+      asset.PurchaseDate || ''
     );
 
     // Save IT details to separate table if any exist
@@ -755,6 +779,50 @@ app.post('/api/assets', async (req, res) => {
         asset.SocketID || '',
         asset.UserID || ''
       );
+    }
+
+    // Handle nested components (new child assets)
+    if (Array.isArray(asset.components) && asset.components.length > 0) {
+      const compStmt = db.prepare(`
+        INSERT INTO assets (
+          ID, ItemName, Status, Make, Model, SrNo, Type,
+          Category, Icon, isPlaceholder, ParentId,
+          CurrentLocation, "IN", "OUT", Balance,
+          DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const comp of asset.components) {
+        const compId = generateModernAssetId(asset.CurrentLocation || '');
+        compStmt.run(
+          compId,
+          comp.ItemName || '',
+          comp.Status || asset.Status || 'In Store',
+          comp.Make || '',
+          comp.Model || '',
+          comp.SrNo || '',
+          comp.Type || 'Component',
+          comp.Category || asset.Category || '',
+          comp.Icon || '🧩',
+          0,
+          newId, // ParentId
+          asset.CurrentLocation || '',
+          '0', '0', '0',
+          '', '', '',
+          new Date().toISOString(),
+          null, // No QR for components
+          '',
+          1 // NoQR = true
+        );
+      }
+    }
+
+    // Handle linked existing assets
+    if (Array.isArray(asset.linkedIds) && asset.linkedIds.length > 0) {
+      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
+      for (const linkId of asset.linkedIds) {
+        linkStmt.run(newId, linkId);
+      }
     }
 
 
@@ -779,6 +847,21 @@ app.post('/api/assets/bulk', async (req, res) => {
     if (!Array.isArray(assets)) {
       console.error('Bulk upload: Expected an array, got:', typeof assets);
       return res.status(400).send('Expected an array of assets');
+    }
+
+    // Basic Validation
+    const errors = [];
+    assets.forEach((asset, idx) => {
+      if (!asset.ItemName || asset.ItemName.trim() === '') {
+        errors.push(`Asset at index ${idx}: Item Name is required`);
+      }
+      if (!asset.Category && !asset.Module) { // Some imports use Module instead of Category
+        errors.push(`Asset at index ${idx}: Category is required`);
+      }
+    });
+
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, errors });
     }
 
     console.log(`Bulk adding ${assets.length} assets...`);
@@ -812,13 +895,45 @@ app.post('/api/assets/bulk', async (req, res) => {
       return { ...asset, ID: newId, QRCode: qrCode || null };
     }));
 
+    // Check for duplicate IDs in the batch
+    const idSet = new Set();
+    const batchDuplicates = new Set();
+    processedAssets.forEach(a => {
+      if (idSet.has(a.ID)) {
+        batchDuplicates.add(a.ID);
+      }
+      idSet.add(a.ID);
+    });
+
+    if (batchDuplicates.size > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Duplicate IDs found in batch: ${Array.from(batchDuplicates).join(', ')}` 
+      });
+    }
+
+    // Check if any IDs already exist in database
+    const existingIds = [];
+    const checkStmt = db.prepare('SELECT ID FROM assets WHERE ID = ?');
+    for (const asset of processedAssets) {
+        const existing = checkStmt.get(asset.ID);
+        if (existing) existingIds.push(asset.ID);
+    }
+    if (existingIds.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Some Asset IDs already exist in database: ${existingIds.slice(0, 5).join(', ')}${existingIds.length > 5 ? '...' : ''}` 
+        });
+    }
+
     const insertAssetStmt = db.prepare(`
       INSERT INTO assets (
         ID, ItemName, Status, Make, Model, SrNo, Type,
         Category, Icon, isPlaceholder, ParentId,
         CurrentLocation, "IN", "OUT", Balance,
-        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
+        warranty_months, amc_months, asset_value, Currency, PurchaseDate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertItStmt = db.prepare(`
@@ -851,7 +966,12 @@ app.post('/api/assets/bulk', async (req, res) => {
           timestamp,
           asset.QRCode || null,
           asset.AssignedTo || '',
-          asset.NoQR ? 1 : 0
+          asset.NoQR ? 1 : 0,
+          asset.warranty_months || 0,
+          asset.amc_months || 0,
+          asset.asset_value || 0,
+          asset.Currency || 'USD',
+          asset.PurchaseDate || ''
         );
 
         if (asset.MACAddress || asset.MACAddres || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
@@ -1222,7 +1342,14 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         if (!tempAsset) return res.status(404).send('Temporary asset not found');
 
         // Create permanent asset
-        const newAssetId = `AST${Date.now()}`;
+        let newAssetId = `AST${Date.now()}`;
+        
+        // Double check if this ID exists (very unlikely but for safety)
+        const existing = db.prepare('SELECT ID FROM assets WHERE ID = ?').get(newAssetId);
+        if (existing) {
+            newAssetId = `AST${Date.now()}${Math.floor(Math.random() * 1000)}`;
+        }
+
         const ip = getLocalIP();
         const port = process.env.PORT || 8080;
         const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newAssetId)}`;
@@ -1231,9 +1358,21 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         db.transaction(() => {
             // 1. Insert into assets
             db.prepare(`
-                INSERT INTO assets (ID, No, ItemName, Status, Make, Model, Type, Category, Icon, isPlaceholder, LastUpdated, QRCode, NoQR)
-                VALUES (?, ?, ?, 'In Store', ?, ?, ?, ?, '🧩', 0, ?, ?, 0)
-            `).run(newAssetId, newAssetId, tempAsset.ItemName, tempAsset.Make, tempAsset.Model, tempAsset.Type, tempAsset.Category, new Date().toISOString(), qrCode);
+                INSERT INTO assets (
+                  ID, No, ItemName, Status, Make, Model, Type, 
+                  Category, Icon, isPlaceholder, LastUpdated, QRCode, NoQR
+                ) VALUES (?, ?, ?, 'In Store', ?, ?, ?, ?, '🧩', 0, ?, ?, 0)
+            `).run(
+              newAssetId, 
+              newAssetId, 
+              tempAsset.ItemName || 'Unnamed Asset', 
+              tempAsset.Make || '', 
+              tempAsset.Model || '', 
+              tempAsset.Type || 'AST', 
+              tempAsset.Category || 'General', 
+              new Date().toISOString(), 
+              qrCode
+            );
 
             // 2. Link to project
             db.prepare(`
@@ -1272,6 +1411,7 @@ app.put('/api/assets/:id', (req, res) => {
   try {
     const id = req.params.id;
     const asset = req.body;
+    console.log(`Updating asset ${id}:`, JSON.stringify(asset));
     
     // Check if asset exists
     const existing = db.prepare(`
@@ -1309,7 +1449,8 @@ app.put('/api/assets/:id', (req, res) => {
         Type = ?, Category = ?, Icon = ?, ParentId = ?, 
         CurrentLocation = ?, "IN" = ?, "OUT" = ?, Balance = ?, 
         DispatchReceiveDt = ?, PurchaseDetails = ?, Remarks = ?, 
-        LastUpdated = ?, AssignedTo = ?, NoQR = ?
+        LastUpdated = ?, AssignedTo = ?, NoQR = ?,
+        warranty_months = ?, amc_months = ?, asset_value = ?, Currency = ?, PurchaseDate = ?
       WHERE ID = ?
     `);
 
@@ -1333,6 +1474,11 @@ app.put('/api/assets/:id', (req, res) => {
       new Date().toISOString(),
       asset.AssignedTo || existing.AssignedTo || '',
       asset.NoQR !== undefined ? (asset.NoQR ? 1 : 0) : (existing.NoQR || 0),
+      asset.warranty_months !== undefined ? asset.warranty_months : existing.warranty_months,
+      asset.amc_months !== undefined ? asset.amc_months : existing.amc_months,
+      asset.asset_value !== undefined ? asset.asset_value : existing.asset_value,
+      asset.Currency !== undefined ? asset.Currency : existing.Currency,
+      asset.PurchaseDate !== undefined ? asset.PurchaseDate : existing.PurchaseDate,
       id
     );
 
@@ -1352,6 +1498,53 @@ app.put('/api/assets/:id', (req, res) => {
         asset.SocketID !== undefined ? asset.SocketID : (existing.SocketID || ''),
         asset.UserID !== undefined ? asset.UserID : (existing.UserID || '')
       );
+    }
+
+    // Handle nested components (new child assets)
+    if (Array.isArray(asset.components) && asset.components.length > 0) {
+      const compStmt = db.prepare(`
+        INSERT INTO assets (
+          ID, ItemName, Status, Make, Model, SrNo, Type,
+          Category, Icon, isPlaceholder, ParentId,
+          CurrentLocation, "IN", "OUT", Balance,
+          DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const comp of asset.components) {
+        const compId = generateModernAssetId(asset.CurrentLocation || existing.CurrentLocation || '');
+        compStmt.run(
+          compId,
+          comp.ItemName || '',
+          comp.Status || asset.Status || existing.Status || 'In Store',
+          comp.Make || '',
+          comp.Model || '',
+          comp.SrNo || '',
+          comp.Type || 'Component',
+          comp.Category || asset.Category || existing.Category || '',
+          comp.Icon || '🧩',
+          0,
+          id, // ParentId
+          asset.CurrentLocation || existing.CurrentLocation || '',
+          '0', '0', '0',
+          '', '', '',
+          new Date().toISOString(),
+          null, // No QR
+          '',
+          1 // NoQR = true
+        );
+      }
+    }
+
+    // Handle linked existing assets
+    if (Array.isArray(asset.linkedIds)) {
+      // First, unassign all current children that are NOT in the new linkedIds list 
+      // AND were not just added as new components (which wouldn't be in the DB yet anyway)
+      // Actually, it's safer to just update all in linkedIds to point to this parent.
+      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
+      for (const linkId of asset.linkedIds) {
+        linkStmt.run(id, linkId);
+      }
     }
 
 
