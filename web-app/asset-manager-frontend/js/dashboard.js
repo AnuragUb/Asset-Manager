@@ -1635,22 +1635,8 @@ export function renderSidebarTree() {
     ]).then(([folders, kinds]) => {
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
         
-        // Merge folders and kinds into a single hierarchy structure
-        // In the user's mental model, "Asset Kinds" are basically the nodes
-        // and "Folders" are just ways to group them, or Tier 1 categories.
-        // Let's treat everything as a node in the HierarchyManager.
-        
-        const allNodes = [
-            ...folders.map(f => ({ ...f, type: 'folder' })),
-            ...kinds.map(k => ({ 
-                ID: `KIND_${k.Name}`, 
-                ParentID: k.ParentName ? (folders.find(f => f.Name === k.ParentName)?.ID || `KIND_${k.ParentName}`) : null,
-                Name: k.Name,
-                Icon: k.Icon,
-                Module: k.Module,
-                type: 'kind'
-            }))
-        ];
+        // Merge folders and kinds into a single hierarchy structure using standardized mapping
+        const allNodes = HierarchyManager.mapNodes(folders, kinds);
 
         const manager = new HierarchyManager(allNodes);
         window.hierarchyManager = manager; // Store for dashboard use
@@ -1764,7 +1750,10 @@ export function renderSidebarTree() {
 
 export function renderDashboard(assets, filteredAssets) {
     window.allAssets = assets;
-    console.log('renderDashboard() (Hierarchy v4.0)');
+    console.log('[Dashboard] renderDashboard() called');
+    console.log('[Dashboard] Assets count:', (assets || []).length);
+    console.log('[Dashboard] Category:', localStorage.getItem('selectedAssetCategory'));
+    
     const assetGrid = document.getElementById('assetGrid');
     if (!assetGrid) return;
     assetGrid.innerHTML = '';
@@ -1806,7 +1795,7 @@ export function renderDashboard(assets, filteredAssets) {
                 } else {
                     window.currentDashboardParent = null;
                 }
-                renderDashboard(window.allAssets, () => window.allAssets);
+                renderDashboard(window.allAssets, filteredAssets);
             };
         }
 
@@ -1832,10 +1821,21 @@ export function renderDashboard(assets, filteredAssets) {
     if (!parentNode) {
         // "All Assets" view: Show Tier 1 categories as cards
         displayNodes = manager.getModuleTree(category);
-        console.log('[Dashboard] Display Nodes (Root):', displayNodes.map(n => n.Name));
+        console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
         
         // In "All Assets" view, the filteredAssets already contains what we want
-        recursiveAssets = assetsToRender;
+        recursiveAssets = filteredAssets();
+        
+        if (displayNodes.length === 0) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📂</div>
+                    <p>No categories found for <b>${category}</b> assets.</p>
+                    <p style="font-size: 13px;">Check if the Hierarchy Manager is properly initialized.</p>
+                </div>
+            `;
+            return;
+        }
     } else {
         // Specific Folder/Kind view: Show children as cards
         displayNodes = parentNode.children || [];
@@ -1848,10 +1848,10 @@ export function renderDashboard(assets, filteredAssets) {
             .filter(d => d.type === 'kind')
             .map(d => d.Name);
         
-        recursiveAssets = assets.filter(a => descendantKindNames.includes(a.Type));
-        }
-        
-        // If it's a leaf kind (no children), show a message and automatically open the list
+        recursiveAssets = assets.filter(a => descendantKindNames.includes(a.Type) && a.Category === category);
+    }
+
+    // If it's a leaf kind (no children), show a message and automatically open the list
         if (parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0)) {
             assetGrid.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 40px; text-align: center; background: white; border-radius: 8px; border: 1px dashed #ccc;">
@@ -1889,7 +1889,7 @@ export function renderDashboard(assets, filteredAssets) {
         // Calculate stats recursively for this node
         const nodeDescendants = manager.getDescendants(node.ID, true);
         const nodeKindNames = nodeDescendants.filter(d => d.type === 'kind').map(d => d.Name);
-        const nodeAssets = assets.filter(a => nodeKindNames.includes(a.Type));
+        const nodeAssets = assets.filter(a => nodeKindNames.includes(a.Type) && a.Category === category);
         
         const realAssets = nodeAssets.filter(a => {
             const p = a.isPlaceholder;
@@ -1914,14 +1914,14 @@ export function renderDashboard(assets, filteredAssets) {
                     if (node.children && node.children.length > 0) {
                         // Drill down if there are children
                         window.currentDashboardParent = node;
-                        renderDashboard(window.allAssets, () => window.allAssets);
+                        renderDashboard(window.allAssets, filteredAssets);
                     } else if (node.type === 'kind') {
                         // Leaf kind - show assets
                         showAssetList(node);
                     } else {
                         // It's a folder with no children, show message or navigate
                         window.currentDashboardParent = node;
-                        renderDashboard(window.allAssets, () => window.allAssets);
+                        renderDashboard(window.allAssets, filteredAssets);
                     }
                 };
 
@@ -2179,6 +2179,11 @@ export function openAddItemModal(kind) {
 
 export async function editAsset(asset) {
     console.log('editAsset() called for:', asset.ID);
+    
+    // Close assetListModal if it's open
+    const listModal = document.getElementById('assetListModal');
+    if (listModal) listModal.style.display = 'none';
+
     openAddItemModal(asset.Type);
     
     const title = document.getElementById('addItemModalTitle');
@@ -2308,7 +2313,7 @@ function showAssetList(nodeOrKindName) {
     }
     
     if (assets.length === 0) {
-        body.innerHTML = `<tr><td colspan="13" style="text-align:center;">No ${query ? 'matching ' : ''}assets found for this kind.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="16" style="text-align:center;">No ${query ? 'matching ' : ''}assets found for this kind.</td></tr>`;
     } else {
         assets.forEach(a => {
             const isSelected = selectedBatchAssets.some(sa => sa.ID === a.ID);
@@ -2690,3 +2695,149 @@ async function handleBulkUpload(file, kind, category) {
 // --- Expose to global ---
 window.initScannerView = initScannerView;
 window.removeAssetFromDC = removeAssetFromDC;
+
+export function setupDashboardFormHandlers() {
+    console.log('setupDashboardFormHandlers() called');
+    const form = document.getElementById('addAssetItemForm');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            console.log('addAssetItemForm onsubmit triggered');
+            
+            const btnSubmit = form.querySelector('button[type="submit"]');
+            const originalText = btnSubmit ? btnSubmit.textContent : 'Save Asset';
+            
+            if (btnSubmit) {
+                btnSubmit.disabled = true;
+                btnSubmit.textContent = 'Saving...';
+            }
+
+            try {
+                const formData = new FormData(form);
+                const assetId = document.getElementById('assetDbId').value;
+                const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+                
+                // Collect basic fields
+                const asset = {
+                    ID: assetId || null,
+                    Type: formData.get('itemKind'),
+                    ItemName: formData.get('itemName'),
+                    Icon: formData.get('itemIcon'),
+                    Status: formData.get('itemStatus'),
+                    Make: formData.get('itemMake'),
+                    Model: formData.get('itemModel'),
+                    SrNo: formData.get('itemSrNo'),
+                    CurrentLocation: formData.get('itemLocation'),
+                    IN: formData.get('itemIn') || 0,
+                    OUT: formData.get('itemOut') || 0,
+                    Balance: formData.get('itemBalance') || 0,
+                    DispatchReceiveDt: formData.get('itemDate'),
+                    PurchaseDetails: formData.get('itemPurchase'),
+                    Remarks: formData.get('itemRemarks'),
+                    AssignedTo: formData.get('itemAssignedTo'),
+                    ParentId: formData.get('itemParentId'),
+                    Category: category,
+                    
+                    // Warranty
+                    warranty_months: formData.get('itemWarranty') || 0,
+                    amc_months: formData.get('itemAMC') || 0,
+                    asset_value: formData.get('itemValue') || 0,
+                    Currency: formData.get('itemCurrency') || 'INR',
+                    PurchaseDate: formData.get('itemPurchaseDate')
+                };
+
+                // Add IT fields if applicable
+                if (category === 'IT') {
+                    asset.MACAddress = formData.get('itemMAC');
+                    asset.IPAddress = formData.get('itemIP');
+                    asset.NetworkType = formData.get('itemNetworkType');
+                    asset.PhysicalPort = formData.get('itemPhysicalPort');
+                    asset.VLAN = formData.get('itemVLAN');
+                    asset.SocketID = formData.get('itemSocketID');
+                    asset.UserID = formData.get('itemUserID');
+                }
+
+                // Collect Children (No QR)
+                const children = [];
+                form.querySelectorAll('.child-asset-row').forEach(row => {
+                    const name = row.querySelector('.child-name').value;
+                    if (name) {
+                        children.push({
+                            ItemName: name,
+                            Make: row.querySelector('.child-make').value,
+                            SrNo: row.querySelector('.child-srno').value,
+                            NoQR: 1
+                        });
+                    }
+                });
+                asset.children = children;
+
+                // Collect Linked Components (With QR)
+                const linkedIds = [];
+                const linkedList = document.getElementById('linkedComponentsList');
+                if (linkedList) {
+                    linkedList.querySelectorAll('.linked-component-tag').forEach(tag => {
+                        linkedIds.push(tag.getAttribute('data-id'));
+                    });
+                }
+                asset.linkedComponentIds = linkedIds;
+
+                console.log('Saving asset via window.saveAsset:', asset);
+                const result = await window.saveAsset(asset);
+                
+                if (result) {
+                    alert('Asset saved successfully!');
+                    document.getElementById('addAssetItemModal').style.display = 'none';
+                    // Dashboard and sidebar are refreshed inside window.saveAsset
+                }
+            } catch (err) {
+                console.error('Error in setupDashboardFormHandlers submit:', err);
+                alert('Failed to save asset: ' + err.message);
+            } finally {
+                if (btnSubmit) {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = originalText;
+                }
+            }
+        };
+    }
+
+    // Add Asset Kind Form Handler
+    const kindForm = document.getElementById('addAssetKindForm');
+    if (kindForm) {
+        kindForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(kindForm);
+            const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+            
+            const kindData = {
+                Name: formData.get('newKindName'),
+                Icon: formData.get('newKindIcon'),
+                ParentID: formData.get('newKindParent'),
+                Module: category
+            };
+
+            try {
+                const response = await fetch('/api/asset_kinds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(kindData)
+                });
+                
+                if (response.ok) {
+                    alert('Category added successfully!');
+                    document.getElementById('addAssetKindModal').style.display = 'none';
+                    kindForm.reset();
+                    if (window.loadAssets) await window.loadAssets();
+                    if (typeof renderSidebarTree === 'function') await renderSidebarTree();
+                } else {
+                    const err = await response.text();
+                    alert('Error: ' + err);
+                }
+            } catch (err) {
+                console.error('Kind submission error:', err);
+                alert('Failed to save category');
+            }
+        };
+    }
+}

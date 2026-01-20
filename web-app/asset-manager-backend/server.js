@@ -5,12 +5,13 @@ const qrcode = require('qrcode')
 const multer = require('multer');
 const fs = require('fs');
 const os = require('os');
+const { exec, execSync } = require('child_process');
 const Evilscan = require('evilscan');
 const find = require('local-devices');
-const { createWorker } = require('tesseract.js');
 const XLSX = require('xlsx');
+const nodemailer = require('nodemailer');
+const cron = require('node-cron');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
-const { PDFParse } = require('pdf-parse');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
 // Ensure uploads directory exists
@@ -56,8 +57,8 @@ const {
 } = require('./utils')
 
 const app = express()
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '100mb' }))
+app.use(express.urlencoded({ limit: '100mb', extended: true }))
 
 // API Key for external integrations (Zoho, Odoo, etc.)
 // In a production environment, this should be moved to an environment variable or database.
@@ -191,9 +192,221 @@ app.get(`/api/sys/control/${ADMIN_SECRET}`, (req, res) => {
     res.status(400).send("Invalid Action. Options: lock, unlock, disrupt, terminate");
 });
 
+// --- Email Notification System ---
+
+/**
+ * Sends a warranty expiration notification email
+ */
+async function sendWarrantyEmail(asset, daysLeft, settings) {
+    console.log(`Attempting to send warranty email for asset ${asset.ID} to ${settings.notification_email}`);
+    
+    if (!settings.smtp_host || !settings.smtp_user || !settings.smtp_pass || !settings.notification_email) {
+        const missing = [];
+        if (!settings.smtp_host) missing.push('SMTP Host');
+        if (!settings.smtp_user) missing.push('SMTP User');
+        if (!settings.smtp_pass) missing.push('SMTP Pass');
+        if (!settings.notification_email) missing.push('Notification Email');
+        console.warn(`Email settings incomplete. Missing: ${missing.join(', ')}`);
+        return false;
+    }
+
+    const transporter = nodemailer.createTransport({
+        host: settings.smtp_host,
+        port: settings.smtp_port || 587,
+        secure: settings.smtp_port == 465,
+        auth: {
+            user: settings.smtp_user,
+            pass: settings.smtp_pass
+        }
+    });
+
+    const status = daysLeft < 0 ? 'EXPIRED' : 'EXPIRING SOON';
+    const subject = `[WARRANTY ALERT] Asset ${asset.ID} - ${asset.ItemName} is ${status}`;
+    
+    const html = `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+            <h2 style="color: ${daysLeft < 0 ? '#dc3545' : '#ff8c00'};">${status}</h2>
+            <p>The warranty for the following asset is ${daysLeft < 0 ? 'already expired' : 'expiring soon'}:</p>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Asset ID:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.ID}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Item Name:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.ItemName}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Model:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.Model || '-'}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Serial No:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.SrNo || '-'}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Purchase Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.PurchaseDate || '-'}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Warranty:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.warranty_months} months</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Days Remaining:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${Math.round(daysLeft)} days</td></tr>
+            </table>
+            <p style="margin-top: 30px; font-size: 12px; color: #888;">This is an automated notification from your Asset Management System.</p>
+        </div>
+    `;
+
+    try {
+        await transporter.sendMail({
+            from: `"Asset Manager Alerts" <${settings.smtp_user}>`,
+            to: settings.notification_email,
+            subject: subject,
+            html: html
+        });
+        
+        appendAudit({
+            Action: 'WARRANTY_ALERT_SENT',
+            User: 'SYSTEM',
+            AssetId: asset.ID,
+            Severity: 'INFO',
+            Details: `Sent ${status} email notification to ${settings.notification_email}`
+        });
+        
+        console.log(`Notification sent for asset ${asset.ID}`);
+        return true;
+    } catch (err) {
+        console.error(`Failed to send email for asset ${asset.ID}:`, err);
+        return false;
+    }
+}
+
+/**
+ * Main warranty check task
+ */
+async function checkWarrantyStatuses() {
+    console.log('Running daily warranty status check...');
+    const dynamic = readDynamic();
+    const settings = dynamic.email_settings || {};
+    
+    if (!settings.enabled) {
+        console.log('Warranty notifications are disabled.');
+        return;
+    }
+
+    try {
+        const assets = db.prepare('SELECT * FROM assets WHERE isPlaceholder = 0').all();
+        const now = new Date();
+        const thresholdDays = settings.threshold_days || 30;
+        
+        // Track notified assets in dynamic.json to avoid duplicate emails
+        const notified = dynamic.notified_assets || {};
+        let changed = false;
+
+        for (const asset of assets) {
+            if (!asset.PurchaseDate || !asset.warranty_months) continue;
+
+            const pMonths = parseInt(asset.warranty_months);
+            if (isNaN(pMonths)) continue;
+
+            const pDate = new Date(asset.PurchaseDate);
+            if (isNaN(pDate.getTime())) continue;
+
+            const expiryDate = new Date(pDate);
+            expiryDate.setMonth(pDate.getMonth() + pMonths);
+            
+            const diffTime = expiryDate - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            const notifiedKey = `${asset.ID}_${expiryDate.getTime()}`;
+            
+            // Notify if expired or expiring within threshold
+            if (diffDays <= thresholdDays) {
+                if (!notified[notifiedKey]) {
+                    console.log(`Warranty Alert: Asset ${asset.ID} expires in ${diffDays} days. Sending email...`);
+                    const success = await sendWarrantyEmail(asset, diffDays, settings);
+                    if (success) {
+                        notified[notifiedKey] = new Date().toISOString();
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if (changed) {
+            dynamic.notified_assets = notified;
+            writeDynamic(dynamic);
+        }
+    } catch (err) {
+        console.error('Error checking warranty statuses:', err);
+    }
+}
+
+// Run daily at 9:00 AM
+cron.schedule('0 9 * * *', checkWarrantyStatuses);
+
+// API Endpoints for Email Settings
+app.get('/api/settings/email', (req, res) => {
+    const dynamic = readDynamic();
+    const settings = dynamic.email_settings || {
+        enabled: false,
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_user: '',
+        smtp_pass: '',
+        notification_email: '',
+        threshold_days: 30
+    };
+    // Hide password for security
+    const safeSettings = { ...settings };
+    if (safeSettings.smtp_pass) safeSettings.smtp_pass = '********';
+    res.json(safeSettings);
+});
+
+app.post('/api/settings/email', (req, res) => {
+    const dynamic = readDynamic();
+    const newSettings = req.body;
+    
+    // If password is '********', keep the old password
+    if (newSettings.smtp_pass === '********' && dynamic.email_settings) {
+        newSettings.smtp_pass = dynamic.email_settings.smtp_pass;
+    }
+    
+    dynamic.email_settings = newSettings;
+    writeDynamic(dynamic);
+    
+    res.json({ success: true, message: 'Email settings saved successfully' });
+});
+
+// Test Email Endpoint
+app.post('/api/settings/email/test', async (req, res) => {
+    const settings = req.body;
+    const dynamic = readDynamic();
+    
+    if (settings.smtp_pass === '********' && dynamic.email_settings) {
+        settings.smtp_pass = dynamic.email_settings.smtp_pass;
+    }
+
+    const testAsset = {
+        ID: 'TEST-ASSET',
+        ItemName: 'Test Notification System',
+        Model: 'N/A',
+        SrNo: 'N/A',
+        PurchaseDate: new Date().toISOString().split('T')[0],
+        warranty_months: 12
+    };
+
+    try {
+        const success = await sendWarrantyEmail(testAsset, 365, settings);
+        if (success) {
+            res.json({ success: true, message: 'Test email sent successfully' });
+        } else {
+            // Check if it was a config issue or a connection issue
+            const missing = [];
+            if (!settings.smtp_host) missing.push('SMTP Host');
+            if (!settings.smtp_user) missing.push('SMTP User');
+            if (!settings.smtp_pass) missing.push('SMTP Password');
+            if (!settings.notification_email) missing.push('Notification Email');
+            
+            let errorMsg = 'Failed to send email.';
+            if (missing.length > 0) {
+                errorMsg = `Configuration incomplete. Missing: ${missing.join(', ')}`;
+            } else {
+                errorMsg = 'SMTP Connection failed. Please check your host, port, and credentials. If using Gmail, ensure you use an App Password.';
+            }
+            res.status(400).json({ success: false, error: errorMsg });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Existing routes follow...
-app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
+app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
 app.use('/uploads', express.static(uploadsDir));
 app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons')));
@@ -764,14 +977,14 @@ app.post('/api/assets', async (req, res) => {
     );
 
     // Save IT details to separate table if any exist
-    if (asset.MACAddress || asset.MACAddres || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
+    if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
       db.prepare(`
         INSERT OR REPLACE INTO asset_it_details (
           AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         newId,
-        asset.MACAddress || asset.MACAddres || '',
+        asset.MACAddress || '',
         asset.IPAddress || '',
         asset.NetworkType || '',
         asset.PhysicalPort || '',
@@ -974,10 +1187,10 @@ app.post('/api/assets/bulk', async (req, res) => {
           asset.PurchaseDate || ''
         );
 
-        if (asset.MACAddress || asset.MACAddres || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
+        if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
           insertItStmt.run(
             asset.ID,
-            asset.MACAddress || asset.MACAddres || '',
+            asset.MACAddress || '',
             asset.IPAddress || '',
             asset.NetworkType || '',
             asset.PhysicalPort || '',
@@ -1004,6 +1217,110 @@ app.post('/api/assets/bulk', async (req, res) => {
   } catch (err) {
     console.error('Failed to bulk create assets:', err);
     res.status(500).send('Error in bulk creation: ' + err.message);
+  }
+});
+
+app.put('/api/assets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const asset = req.body;
+
+    // Basic Validation
+    if (!asset.ItemName || asset.ItemName.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Item Name is required' });
+    }
+    if (!asset.Category || asset.Category.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Category is required' });
+    }
+    if (!asset.Type || asset.Type.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Type (Kind) is required' });
+    }
+
+    console.log('Updating asset:', id);
+
+    // Update main asset table
+    const stmt = db.prepare(`
+      UPDATE assets SET 
+        ItemName = ?, Status = ?, Make = ?, Model = ?, SrNo = ?, Type = ?,
+        Category = ?, Icon = ?, ParentId = ?, CurrentLocation = ?,
+        "IN" = ?, "OUT" = ?, Balance = ?, DispatchReceiveDt = ?,
+        PurchaseDetails = ?, Remarks = ?, LastUpdated = ?, AssignedTo = ?, NoQR = ?,
+        warranty_months = ?, amc_months = ?, asset_value = ?, Currency = ?, PurchaseDate = ?
+      WHERE ID = ?
+    `);
+
+    const result = stmt.run(
+      asset.ItemName || '',
+      asset.Status || 'In Store',
+      asset.Make || '',
+      asset.Model || '',
+      asset.SrNo || '',
+      asset.Type || '',
+      asset.Category || '',
+      asset.Icon || '',
+      asset.ParentId || null,
+      asset.CurrentLocation || '',
+      asset.IN || '0',
+      asset.OUT || '0',
+      asset.Balance || '0',
+      asset.DispatchReceiveDt || '',
+      asset.PurchaseDetails || '',
+      asset.Remarks || '',
+      new Date().toISOString(),
+      asset.AssignedTo || '',
+      asset.NoQR ? 1 : 0,
+      asset.warranty_months || 0,
+      asset.amc_months || 0,
+      asset.asset_value || 0,
+      asset.Currency || 'USD',
+      asset.PurchaseDate || '',
+      id
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
+    // Update IT details if any exist
+    if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
+      db.prepare(`
+        INSERT OR REPLACE INTO asset_it_details (
+          AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        asset.MACAddress || '',
+        asset.IPAddress || '',
+        asset.NetworkType || '',
+        asset.PhysicalPort || '',
+        asset.VLAN || '',
+        asset.SocketID || '',
+        asset.UserID || ''
+      );
+    }
+
+    // Handle linked existing assets (update their ParentId to this asset)
+    if (Array.isArray(asset.linkedIds)) {
+      // First, clear existing children for this parent if needed? 
+      // Actually, standard behavior for linkedIds in POST was to set ParentId.
+      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
+      for (const linkId of asset.linkedIds) {
+        linkStmt.run(id, linkId);
+      }
+    }
+
+    appendAudit({ 
+      Action: 'UPDATE', 
+      User: req.headers['x-user'] || 'web', 
+      AssetId: id, 
+      Severity: 'INFO', 
+      Details: `Asset updated: ${asset.ItemName}` 
+    });
+
+    res.json({ success: true, ID: id });
+  } catch (err) {
+    console.error('Failed to update asset:', err);
+    res.status(500).send('Error updating asset: ' + err.message);
   }
 });
 
@@ -1483,14 +1800,14 @@ app.put('/api/assets/:id', (req, res) => {
     );
 
     // Update IT details if provided
-    if (asset.MACAddress !== undefined || asset.MACAddres !== undefined || asset.IPAddress !== undefined || asset.NetworkType !== undefined || asset.PhysicalPort !== undefined || asset.VLAN !== undefined || asset.SocketID !== undefined || asset.UserID !== undefined) {
+    if (asset.MACAddress !== undefined || asset.IPAddress !== undefined || asset.NetworkType !== undefined || asset.PhysicalPort !== undefined || asset.VLAN !== undefined || asset.SocketID !== undefined || asset.UserID !== undefined) {
       db.prepare(`
         INSERT OR REPLACE INTO asset_it_details (
           AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
-        asset.MACAddress !== undefined ? asset.MACAddress : (asset.MACAddres !== undefined ? asset.MACAddres : (existing.MACAddress || '')),
+        asset.MACAddress !== undefined ? asset.MACAddress : (existing.MACAddress || ''),
         asset.IPAddress !== undefined ? asset.IPAddress : (existing.IPAddress || ''),
         asset.NetworkType !== undefined ? asset.NetworkType : (existing.NetworkType || ''),
         asset.PhysicalPort !== undefined ? asset.PhysicalPort : (existing.PhysicalPort || ''),
@@ -2069,87 +2386,190 @@ app.get('/api/external/projects/:id', checkApiKey, (req, res) => {
 });
 
 // OCR and Document Export Helpers
-function clusterTesseractBlocks(blocks, verticalThreshold = 60, horizontalThreshold = 150) {
-    if (!blocks || blocks.length === 0) return [];
-
-    // Tesseract blocks are already a good starting point, but they can be too granular
-    // We group them spatially to match logical regions (like Header, Address, Table)
-    const sorted = [...blocks].sort((a, b) => a.bbox.y0 - b.bbox.y0);
-    const clusters = [];
-    const used = new Set();
-
-    for (let i = 0; i < sorted.length; i++) {
-        if (used.has(i)) continue;
-
-        let currentCluster = [i];
-        used.add(i);
-
-        let expanded = true;
-        while (expanded) {
-            expanded = false;
-            for (let j = 0; j < sorted.length; j++) {
-                if (used.has(j)) continue;
-
-                const canMerge = currentCluster.some(idx => {
-                    const b1 = sorted[idx].bbox;
-                    const b2 = sorted[j].bbox;
-
-                    const vOverlap = Math.max(0, Math.min(b1.y1, b2.y1) - Math.max(b1.y0, b2.y0));
-                    const hOverlap = Math.max(0, Math.min(b1.x1, b2.x1) - Math.max(b1.x0, b2.x0));
-                    
-                    const vDist = Math.max(0, b2.y0 - b1.y1, b1.y0 - b2.y1);
-                    const hDist = Math.max(0, b2.x0 - b1.x1, b1.x0 - b2.x1);
-
-                    // Strategy: 
-                    // 1. If vertically close AND horizontally overlapping or close -> Merge
-                    // 2. If horizontally very close AND vertically overlapping (side-by-side like Bill to/Ship to) -> Merge
-                    return (vDist < verticalThreshold && (hOverlap > 0 || hDist < horizontalThreshold)) ||
-                           (hDist < horizontalThreshold && vOverlap > 10);
-                });
-
-                if (canMerge) {
-                    currentCluster.push(j);
-                    used.add(j);
-                    expanded = true;
-                }
-            }
-        }
-        clusters.push(currentCluster.map(idx => sorted[idx]));
-    }
-
-    return clusters.map(cluster => {
-        cluster.sort((a, b) => (a.bbox.y0 - b.bbox.y0) || (a.bbox.x0 - b.bbox.x0));
-        return {
-            text: cluster.map(b => b.text.trim()).join('\n'),
-            type: 'block',
-            bbox: {
-                x0: Math.min(...cluster.map(b => b.bbox.x0)),
-                y0: Math.min(...cluster.map(b => b.bbox.y0)),
-                x1: Math.max(...cluster.map(b => b.bbox.x1)),
-                y1: Math.max(...cluster.map(b => b.bbox.y1))
-            }
-        };
-    }).filter(c => c.text.length > 0);
-}
-
 function detectTable(text) {
     const lines = text.split('\n').filter(l => l.trim());
     if (lines.length < 2) return false;
     
     let tableIndicators = 0;
     for (const line of lines) {
-        // Detect columns via multiple spaces, tabs, or piped characters
-        const hasColumns = line.match(/\t/) || line.match(/ {3,}/) || (line.match(/\|/) && line.split('|').length > 2);
+        // Detect columns via 2+ spaces, tabs, or piped characters
+        const hasColumns = line.match(/\t/) || line.match(/ {2,}/) || (line.match(/\|/) && line.split('|').length > 2);
         const hasNumbers = line.match(/\d+\.\d{2}/) || line.match(/\$\s*\d+/);
         
         if (hasColumns || hasNumbers) {
             tableIndicators++;
         }
     }
-    return tableIndicators > lines.length * 0.4;
+    // If more than 30% of lines look like table rows, consider it a table
+    return tableIndicators > lines.length * 0.3;
 }
 
 // OCR and Document Export Endpoints
+// --- Pro OCR Configuration (OCRmyPDF) ---
+const OCR_CONFIG = {
+    tesseract: 'C:\\Program Files\\Tesseract-OCR',
+    ghostscript: 'C:\\Program Files\\gs\\gs10.06.0\\bin',
+    ocrmypdf: 'C:\\Users\\Admin\\AppData\\Roaming\\Python\\Python314\\Scripts\\ocrmypdf.exe'
+};
+
+// Update PATH for OCR dependencies
+const originalPath = process.env.PATH;
+process.env.PATH = `${OCR_CONFIG.tesseract};${OCR_CONFIG.ghostscript};${process.env.PATH}`;
+
+async function processFileWithProMode(inputBuffer, originalName) {
+    const tempDir = os.tmpdir();
+    const ext = path.extname(originalName).toLowerCase() || '.pdf';
+    const inputPath = path.join(tempDir, `ocr_in_${Date.now()}${ext}`);
+    const outputFilename = `ocr_pro_${Date.now()}.pdf`;
+    const outputPath = path.join(uploadsDir, outputFilename);
+    const sidecarPath = path.join(tempDir, `ocr_sidecar_${Date.now()}.txt`);
+
+    try {
+        fs.writeFileSync(inputPath, inputBuffer);
+        
+        // OCRmyPDF command for both PDF and Images
+        // Note: Removed --clean and --deskew as they require 'unpaper' which might not be installed.
+        const cmd = `"${OCR_CONFIG.ocrmypdf}" --force-ocr --sidecar "${sidecarPath}" "${inputPath}" "${outputPath}"`;
+        
+        console.log(`PRO OCR: Executing ${cmd}`);
+        
+        return new Promise((resolve, reject) => {
+            exec(cmd, async (error, stdout, stderr) => {
+                if (error) {
+                    console.error('PRO OCR Error:', stderr || error.message);
+                    reject(new Error(stderr || error.message));
+                    return;
+                }
+
+                console.log('PRO OCR Success:', stdout);
+
+                let text = '';
+                if (fs.existsSync(sidecarPath)) {
+                    text = fs.readFileSync(sidecarPath, 'utf8');
+                }
+
+                try {
+                    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                    if (fs.existsSync(sidecarPath)) fs.unlinkSync(sidecarPath);
+                } catch (e) {
+                    console.warn('Cleanup warning:', e.message);
+                }
+
+                const blocks = text.split(/\n\s*\n/).filter(b => b.trim()).map(b => ({
+                    text: b.trim(),
+                    type: detectTable(b) ? 'table' : 'block',
+                    selected: true
+                }));
+
+                resolve({ 
+                    text, 
+                    blocks, 
+                    isPro: true, 
+                    downloadUrl: `/uploads/${outputFilename}` 
+                });
+            });
+        });
+    } catch (err) {
+        console.error('PRO OCR Setup Error:', err);
+        throw err;
+    }
+}
+
+app.get('/api/ocr/history', (req, res) => {
+    try {
+        if (!fs.existsSync(uploadsDir)) return res.json([]);
+        
+        const files = fs.readdirSync(uploadsDir)
+            .filter(f => f.startsWith('ocr_pro_') && f.endsWith('.pdf'))
+            .map(f => {
+                const stats = fs.statSync(path.join(uploadsDir, f));
+                const jsonPath = path.join(uploadsDir, f.replace('.pdf', '.json'));
+                const hasBlocks = fs.existsSync(jsonPath);
+                
+                return {
+                    name: f,
+                    url: `/uploads/${f}`,
+                    date: stats.mtime,
+                    size: stats.size,
+                    hasBlocks: hasBlocks
+                };
+            })
+            .sort((a, b) => b.date - a.date);
+            
+        res.json(files);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/ocr/history/:filename/blocks', (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const jsonPath = path.join(uploadsDir, filename.replace('.pdf', '.json'));
+        
+        if (!fs.existsSync(jsonPath)) {
+            return res.status(404).json({ error: 'Blocks not found' });
+        }
+        
+        const blocks = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        res.json(blocks);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/ocr/history/:filename/blocks', express.json({ limit: '100mb' }), (req, res) => {
+    try {
+        const filename = req.params.filename;
+        const blocks = req.body.blocks;
+        
+        console.log(`OCR: Saving blocks for ${filename}...`);
+        
+        if (!filename.startsWith('ocr_pro_') || !filename.endsWith('.pdf')) {
+            console.error(`OCR Save Error: Invalid filename ${filename}`);
+            return res.status(400).json({ error: 'Invalid filename' });
+        }
+        
+        if (!Array.isArray(blocks)) {
+            console.error('OCR Save Error: Blocks is not an array', typeof blocks);
+            return res.status(400).json({ error: 'Blocks must be an array' });
+        }
+        
+        const jsonPath = path.join(uploadsDir, filename.replace('.pdf', '.json'));
+        fs.writeFileSync(jsonPath, JSON.stringify(blocks, null, 2));
+        
+        console.log(`OCR: Blocks saved successfully to ${jsonPath}`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('OCR Save Exception:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/ocr/history/:filename', (req, res) => {
+    try {
+        const filename = req.params.filename;
+        if (!filename.startsWith('ocr_pro_') || !filename.endsWith('.pdf')) {
+            return res.status(400).json({ error: 'Invalid filename' });
+        }
+        
+        const filePath = path.join(uploadsDir, filename);
+        const jsonPath = path.join(uploadsDir, filename.replace('.pdf', '.json'));
+        
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            if (fs.existsSync(jsonPath)) {
+                fs.unlinkSync(jsonPath);
+            }
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'File not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/ocr/process', ocrUpload.single('document'), async (req, res) => {
     try {
         if (!req.file) {
@@ -2158,76 +2578,47 @@ app.post('/api/ocr/process', ocrUpload.single('document'), async (req, res) => {
 
         const buffer = req.file.buffer;
         const mimetype = req.file.mimetype;
+        const originalName = req.file.originalname;
         let text = '';
         let blocks = [];
 
-        if (mimetype === 'application/pdf') {
-            const parser = new PDFParse({ data: buffer });
-            const result = await parser.getText();
-            await parser.destroy();
+        if (mimetype === 'application/pdf' || mimetype.startsWith('image/')) {
+            // Enforce Pro Mode (OCRmyPDF) for both PDF and Images
+            console.log(`OCR: Processing ${mimetype} using Pro Mode (OCRmyPDF)...`);
+            const proResult = await processFileWithProMode(buffer, originalName);
             
-            const rawText = result.text;
+            // Save initial blocks to JSON for persistence
+            if (proResult.downloadUrl) {
+                const outputFilename = proResult.downloadUrl.split('/').pop();
+                const jsonPath = path.join(uploadsDir, outputFilename.replace('.pdf', '.json'));
+                fs.writeFileSync(jsonPath, JSON.stringify(proResult.blocks, null, 2));
+            }
+
+            res.json({ 
+                text: proResult.text, 
+                blocks: proResult.blocks, 
+                isPro: true, 
+                downloadUrl: proResult.downloadUrl 
+            });
             
-            // Intelligent PDF grouping
-            const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
+            console.log(`OCR: Pro Mode completed for ${originalName}.`);
+            return;
+        } else if (mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimetype === 'application/vnd.ms-excel') {
+            // Handle Excel files directly
+            const workbook = XLSX.read(buffer, { type: 'buffer' });
             blocks = [];
-            let currentBlock = [];
-
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                const nextLine = lines[i+1];
-                
-                currentBlock.push(line);
-
-                // Heuristics for block splitting:
-                // 1. Next line is empty (already filtered, so we check next in array)
-                // 2. Line is short (potential header or list item)
-                // 3. Line ends with a period (potential end of paragraph)
-                // 4. Significant change in line length
-                const isShort = line.length < 40;
-                const endsWithPeriod = line.endsWith('.');
-                const nextIsMuchDifferent = nextLine && Math.abs(nextLine.length - line.length) > 50;
-
-                if (i === lines.length - 1 || isShort || endsWithPeriod || nextIsMuchDifferent) {
-                    const blockText = currentBlock.join('\n');
-                    let type = 'block';
-                    
-                    // Detect if it's a header
-                    if (blockText.length < 100 && (blockText === blockText.toUpperCase() || i < 5)) {
-                        type = 'header';
-                    } else if (detectTable(blockText)) {
-                        type = 'table';
-                    }
-
+            
+            workbook.SheetNames.forEach(sheetName => {
+                const sheet = workbook.Sheets[sheetName];
+                // Use Tab as separator for Excel to ensure perfect column preservation
+                const csv = XLSX.utils.sheet_to_csv(sheet, { FS: '\t' }); 
+                if (csv.trim()) {
                     blocks.push({
-                        text: blockText,
-                        type: type,
-                        bbox: null
+                        text: `SHEET: ${sheetName}\n${csv}`,
+                        type: 'table'
                     });
-                    currentBlock = [];
                 }
-            }
-            
-            text = blocks.map(b => b.text).join('\n\n');
-
-            if (!rawText.trim()) {
-                return res.status(400).json({ error: 'Scanned PDF detected. Direct text extraction failed.' });
-            }
-        } else if (mimetype.startsWith('image/')) {
-            const worker = await createWorker('eng');
-            const { data } = await worker.recognize(buffer);
-            await worker.terminate();
-            
-            // Apply advanced spatial clustering for block pattern recognition
-            const rawBlocks = data.blocks || [];
-            const clustered = clusterTesseractBlocks(rawBlocks);
-            
-            blocks = clustered.map(c => ({
-                text: c.text,
-                type: detectTable(c.text) ? 'table' : 'block',
-                bbox: c.bbox
-            }));
-            
+            });
             text = blocks.map(b => b.text).join('\n\n');
         } else {
             return res.status(400).json({ error: 'Unsupported file type' });
@@ -2240,7 +2631,7 @@ app.post('/api/ocr/process', ocrUpload.single('document'), async (req, res) => {
     }
 });
 
-app.post('/api/ocr/export/pdf', express.json(), async (req, res) => {
+app.post('/api/ocr/export/pdf', express.json({ limit: '100mb' }), async (req, res) => {
     try {
         const { blocks, filename } = req.body;
         if (!blocks || !Array.isArray(blocks)) return res.status(400).send('No blocks to export');
@@ -2253,74 +2644,129 @@ app.post('/api/ocr/export/pdf', express.json(), async (req, res) => {
         let page = pdfDoc.addPage();
         const { width, height } = page.getSize();
         
-        let yOffset = height - 50;
         const margin = 50;
         const maxWidth = width - (margin * 2);
+        let yOffset = height - margin;
+
+        // Add Header
+        page.drawText('OCR EXTRACTED DOCUMENT', {
+            x: margin,
+            y: yOffset,
+            size: 16,
+            font: fontBold,
+            color: rgb(0.1, 0.4, 0.7),
+        });
+        yOffset -= 20;
+
+        page.drawText(`Source: ${filename || 'Unknown'}`, {
+            x: margin,
+            y: yOffset,
+            size: 9,
+            font: font,
+            color: rgb(0.5, 0.5, 0.5),
+        });
+        yOffset -= 30;
+
+        // Draw a separator line
+        page.drawLine({
+            start: { x: margin, y: yOffset + 10 },
+            end: { x: width - margin, y: yOffset + 10 },
+            thickness: 1,
+            color: rgb(0.8, 0.8, 0.8),
+        });
 
         for (const block of blocks) {
-            const textLines = block.text.split('\n');
             const isTable = block.type === 'table';
             const isHeader = block.type === 'header';
             
-            // Choose font and size
             let currentFont = font;
             let fontSize = 10;
+            let color = rgb(0, 0, 0);
+
             if (isHeader) {
                 currentFont = fontBold;
                 fontSize = 14;
+                color = rgb(0.2, 0.2, 0.2);
             } else if (isTable) {
                 currentFont = fontMono;
                 fontSize = 8;
             }
 
-            // Wrap text if too long (simple wrap)
+            const textLines = block.text.split('\n');
             const wrappedLines = [];
+            
+            // Simple line wrapping
+            const charsPerLine = isTable ? 100 : 85;
             for (const line of textLines) {
-                if (line.length > 80 && !isTable) {
+                if (line.length > charsPerLine) {
                     let remaining = line;
                     while (remaining.length > 0) {
-                        wrappedLines.push(remaining.substring(0, 80));
-                        remaining = remaining.substring(80);
+                        wrappedLines.push(remaining.substring(0, charsPerLine));
+                        remaining = remaining.substring(charsPerLine);
                     }
                 } else {
                     wrappedLines.push(line);
                 }
             }
-            
-            // Estimate block height
-            const lineHeight = fontSize + 4;
-            const blockHeight = wrappedLines.length * lineHeight + (isTable ? 20 : 15);
 
-            if (yOffset - blockHeight < 50) {
+            const lineHeight = fontSize + 4;
+            const blockHeight = (wrappedLines.length * lineHeight) + (isTable ? 15 : 10);
+
+            // Page break check
+            if (yOffset - blockHeight < margin) {
                 page = pdfDoc.addPage();
-                yOffset = height - 50;
+                yOffset = height - margin;
+                
+                // Add tiny header on new page
+                page.drawText(`${filename} (continued...)`, {
+                    x: margin,
+                    y: height - 25,
+                    size: 8,
+                    font: font,
+                    color: rgb(0.7, 0.7, 0.7),
+                });
+                yOffset -= 30;
             }
 
+            // Table Background
             if (isTable) {
                 page.drawRectangle({
                     x: margin - 5,
-                    y: yOffset - blockHeight + 10,
+                    y: yOffset - blockHeight + 5,
                     width: maxWidth + 10,
-                    height: blockHeight - 5,
-                    color: rgb(0.97, 0.98, 1),
-                    borderColor: rgb(0.8, 0.8, 1),
-                    borderWidth: 1
+                    height: blockHeight,
+                    color: rgb(0.98, 0.98, 1),
+                    borderColor: rgb(0.85, 0.85, 0.9),
+                    borderWidth: 0.5
                 });
                 yOffset -= 5;
             }
 
             for (const line of wrappedLines) {
-                if (yOffset < margin) break;
                 page.drawText(line.trim(), {
                     x: margin + (isTable ? 5 : 0),
                     y: yOffset,
                     size: fontSize,
                     font: currentFont,
-                    color: rgb(0, 0, 0),
+                    color: color,
                 });
                 yOffset -= lineHeight;
             }
-            yOffset -= isHeader ? 10 : 15; // Block spacing
+            
+            yOffset -= (isHeader ? 15 : 10); // Space after block
+        }
+
+        // Add Footer with Page Numbers
+        const pages = pdfDoc.getPages();
+        for (let i = 0; i < pages.length; i++) {
+            const p = pages[i];
+            p.drawText(`Page ${i + 1} of ${pages.length}`, {
+                x: width / 2 - 30,
+                y: 20,
+                size: 8,
+                font: font,
+                color: rgb(0.6, 0.6, 0.6),
+            });
         }
 
         const pdfBytes = await pdfDoc.save();
@@ -2334,16 +2780,37 @@ app.post('/api/ocr/export/pdf', express.json(), async (req, res) => {
     }
 });
 
-app.post('/api/ocr/export/excel', express.json(), (req, res) => {
+app.post('/api/ocr/export/excel', express.json({ limit: '100mb' }), (req, res) => {
     try {
-        const { text, filename } = req.body;
-        if (!text) return res.status(400).send('No text to export');
+        const { blocks, text, filename } = req.body;
+        console.log(`OCR: Exporting to Excel. Blocks: ${blocks ? blocks.length : 0}, Filename: ${filename}`);
+        if (!blocks && !text) return res.status(400).send('No data to export');
 
-        // Simple formatting: split by lines and tabs
-        const rows = text.split('\n').map(line => line.split(/\t| {2,}/));
+        let rows = [];
+        if (blocks && Array.isArray(blocks)) {
+            blocks.forEach(block => {
+                if (block.type === 'table') {
+                    const tableLines = block.text.split('\n');
+                    tableLines.forEach(line => {
+                        if (line.trim()) {
+                            // Split by multiple spaces or tabs
+                            rows.push(line.split(/ {2,}|\t+/).map(c => c.trim()));
+                        }
+                    });
+                    rows.push([]); // Add empty row after table
+                } else {
+                    rows.push([block.text]);
+                    rows.push([]); // Add empty row after block
+                }
+            });
+        } else {
+            // Fallback to text splitting
+            rows = text.split('\n').map(line => line.split(/\t| {2,}/));
+        }
+
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Extracted Text");
+        XLSX.utils.book_append_sheet(wb, ws, "Extracted Data");
 
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         
@@ -2351,23 +2818,62 @@ app.post('/api/ocr/export/excel', express.json(), (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename=${filename || 'exported'}.xlsx`);
         res.send(buf);
     } catch (err) {
+        console.error('Excel Export error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/ocr/export/word', express.json(), async (req, res) => {
+app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, res) => {
     try {
-        const { text, filename } = req.body;
-        if (!text) return res.status(400).send('No text to export');
+        const { blocks, text, filename } = req.body;
+        console.log(`OCR: Exporting to Word. Blocks: ${blocks ? blocks.length : 0}, Filename: ${filename}`);
+        if (!blocks && !text) return res.status(400).send('No data to export');
+
+        const children = [];
+
+        if (blocks && Array.isArray(blocks)) {
+            blocks.forEach(block => {
+                const isHeader = block.type === 'header';
+                const isTable = block.type === 'table';
+
+                if (isHeader) {
+                    children.push(new Paragraph({
+                        children: [new TextRun({ text: block.text, bold: true, size: 28 })],
+                        spacing: { before: 400, after: 200 }
+                    }));
+                } else if (isTable) {
+                    const tableLines = block.text.split('\n');
+                    tableLines.forEach(line => {
+                        if (line.trim()) {
+                            children.push(new Paragraph({
+                                children: [new TextRun({ text: line, font: 'Courier New', size: 18 })],
+                                spacing: { after: 100 }
+                            }));
+                        }
+                    });
+                    children.push(new Paragraph({ children: [] })); // spacer
+                } else {
+                    block.text.split('\n').forEach(line => {
+                        children.push(new Paragraph({
+                            children: [new TextRun({ text: line, size: 22 })],
+                            spacing: { after: 150 }
+                        }));
+                    });
+                    children.push(new Paragraph({ children: [] })); // spacer
+                }
+            });
+        } else {
+            text.split('\n').forEach(line => {
+                children.push(new Paragraph({
+                    children: [new TextRun(line)],
+                }));
+            });
+        }
 
         const doc = new Document({
             sections: [{
                 properties: {},
-                children: text.split('\n').map(line => 
-                    new Paragraph({
-                        children: [new TextRun(line)],
-                    })
-                ),
+                children: children,
             }],
         });
 
@@ -2377,11 +2883,15 @@ app.post('/api/ocr/export/word', express.json(), async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename=${filename || 'exported'}.docx`);
         res.send(buf);
     } catch (err) {
+        console.error('Word Export error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log('Server started successfully.');
 });
+
+// Set timeout to 10 minutes for long OCR jobs
+server.timeout = 600000;

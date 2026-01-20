@@ -29,6 +29,10 @@ Thumbs.db
 logs/
 *.log
 
+# Uploads and temporary files
+web-app/asset-manager-backend/uploads/
+web-app/asset-manager-backend/temp/
+
 # IDE files
 .vscode/
 .idea/

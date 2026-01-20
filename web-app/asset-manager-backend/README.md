@@ -56,10 +56,14 @@ The server will typically run on `http://localhost:8080`.
 The backend exposes the following API endpoints:
 
 -   `POST /api/login`: Handles user authentication.
--   `GET /api/assets`: Retrieves asset data.
+-   `GET /api/assets`: Retrieves all assets.
+-   `POST /api/assets`: Creates a new asset.
+-   `PUT /api/assets/:id`: Updates an existing asset by ID.
+-   `POST /api/assets/bulk`: Bulk creates assets from CSV/JSON.
+-   `GET /api/folders`: Retrieves hierarchy folders.
+-   `GET /api/asset_kinds`: Retrieves asset types/kinds.
 -   `GET /api/users`: Retrieves user data (admin/superuser only).
 -   `GET /api/qr/:id`: Generates QR codes for asset IDs.
--   *(Further API endpoints for asset creation, update, deletion, etc., can be added here)*
 
 ## 6. Frontend Integration
 

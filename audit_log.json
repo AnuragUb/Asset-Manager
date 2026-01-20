@@ -5345,5 +5345,69 @@
     "Severity": "INFO",
     "Details": "Asset updated: Dell Workstation",
     "Timestamp": "2026-01-19T08:44:27.080Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T09:07:47.541Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T09:46:21.811Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LAP2601035116",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP Laptop",
+    "Timestamp": "2026-01-19T09:47:06.190Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-19T10:01:20.517Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LAP2601035116",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP Laptop",
+    "Timestamp": "2026-01-19T11:08:40.961Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-19T11:28:12.599Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "TEST-ASSET",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to ubhalkaranurag.be@gmail.com",
+    "Timestamp": "2026-01-20T08:35:51.861Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "TEST-ASSET",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to Swapnil@Cineom.in",
+    "Timestamp": "2026-01-20T08:38:19.934Z"
   }
 ]

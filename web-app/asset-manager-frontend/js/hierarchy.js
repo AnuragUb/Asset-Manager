@@ -11,6 +11,26 @@ export class HierarchyManager {
     }
 
     /**
+     * Standardized way to map database folders and kinds to hierarchy nodes
+     */
+    static mapNodes(folders = [], kinds = []) {
+        return [
+            ...folders.map(f => ({ 
+                ...f, 
+                ID: f.ID, 
+                ParentID: f.ParentID,
+                type: 'folder' 
+            })),
+            ...kinds.map(k => ({ 
+                ...k, 
+                ID: k.ID || k.Name, 
+                ParentID: k.ParentID || k.ParentName,
+                type: 'kind' 
+            }))
+        ];
+    }
+
+    /**
      * Builds a recursive tree structure from flat data
      */
     buildTree(flatData) {
@@ -30,17 +50,25 @@ export class HierarchyManager {
             }
         });
 
-        // Link children to parents
+        // Link children to parents - Use a Set to track which nodes have been added to the tree
+        // to avoid duplicates if flatData itself has duplicates or if multiple IDs map to the same node
+        const addedToHierarchy = new Set();
+
         flatData.forEach(item => {
             const id = item.ID || item.Name;
             const node = nodes[id];
-            if (!node) return;
+            if (!node || addedToHierarchy.has(node.ID)) return;
 
             const parentId = item.ParentID || item.ParentName;
             if (parentId && nodes[parentId]) {
-                nodes[parentId].children.push(node);
+                // Check if already a child to avoid duplication
+                if (!nodes[parentId].children.some(c => c.ID === node.ID)) {
+                    nodes[parentId].children.push(node);
+                    addedToHierarchy.add(node.ID);
+                }
             } else {
                 tree.push(node);
+                addedToHierarchy.add(node.ID);
             }
         });
 

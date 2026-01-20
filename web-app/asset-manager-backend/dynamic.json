@@ -1,1 +1,11 @@
-{}
+{
+  "email_settings": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "itsupport@cineom.in",
+    "smtp_pass": "pcdt lfsv gwjz jybs",
+    "notification_email": "Swapnil@Cineom.in",
+    "threshold_days": 30
+  }
+}

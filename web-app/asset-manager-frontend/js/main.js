@@ -1,13 +1,14 @@
-console.log('MAIN.JS: Entry point (v4.4)');
-import { showView } from './utils.js?v=4.4';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers } from './dashboard.js?v=4.4';
-import { initScannerView } from './networkScanner.js?v=4.4';
-import { renderItAssets } from './itAssets.js?v=4.4';
-import { setupAuth, logout } from './auth.js?v=4.4';
-import { HierarchyManager, renderSidebarTree } from './hierarchy.js?v=4.4';
-import { initEmployeeView, loadEmployees } from './employees.js?v=4.4';
-import { setupOcr } from './ocr.js?v=4.4';
-import { initWarrantyView } from './warranty.js?v=4.4';
+console.log('MAIN.JS: Entry point (v4.5)');
+import { showView } from './utils.js?v=4.5';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=4.5';
+import { initScannerView } from './networkScanner.js?v=4.5';
+import { renderItAssets } from './itAssets.js?v=4.5';
+import { setupAuth } from './auth.js?v=4.5';
+import { HierarchyManager } from './hierarchy.js?v=4.5';
+import { initEmployeeView, loadEmployees } from './employees.js?v=4.5';
+import { setupOcr } from './ocr.js?v=4.5';
+import { initWarrantyView } from './warranty.js?v=4.5';
+import { initSettingsView } from './settings.js?v=4.5';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -143,16 +144,8 @@ async function loadAssetKinds() {
 
         console.log(`Loaded ${assetKinds.length} kinds and ${folders.length} folders`);
         
-        // Initialize Hierarchy Manager with combined data
-        const combinedData = [
-            ...assetKinds.map(k => ({ 
-                ...k, 
-                ID: k.ID || k.Name, 
-                ParentID: k.ParentID || k.ParentName,
-                type: 'kind' 
-            })),
-            ...folders.map(f => ({ ...f, type: 'folder' }))
-        ];
+        // Initialize Hierarchy Manager with combined data using standardized mapping
+        const combinedData = HierarchyManager.mapNodes(folders, assetKinds);
         window.hierarchyManager = new HierarchyManager(combinedData);
         console.log('HierarchyManager initialized with', combinedData.length, 'nodes');
 
@@ -255,11 +248,13 @@ async function saveAsset(asset) {
             const result = await response.json().catch(() => ({ success: true }));
             console.log('Asset saved successfully', result);
             await loadAssets(); // Reload to get the latest state from DB
+            await renderSidebarTree(); // Re-render sidebar to update counts and hierarchy
             
             // If we are in the dashboard view, re-render it
             const dashboardView = document.getElementById('dashboardView');
             if (dashboardView && dashboardView.style.display !== 'none') {
-                renderDashboard(assets, filteredAssets);
+                console.log('Post-save dashboard re-render with assets count:', (window.allAssets || []).length);
+                renderDashboard(window.allAssets, filteredAssets);
             }
             
             return result;
@@ -277,6 +272,7 @@ async function saveAsset(asset) {
 }
 window.loadAssets = loadAssets;
 window.saveAsset = saveAsset;
+window.editAsset = editAsset;
 
 let currentUser = null;
 let filteredAssets = () => {
@@ -335,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nav-dashboard')?.classList.add('active');
 
             // Show home-view subview by default
-            const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view'];
+            const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
             subViews.forEach(sv => {
                 const el = document.getElementById(sv);
                 if (el) {
@@ -380,9 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (editId) {
                 const assetToEdit = assets.find(a => a.ID === editId);
                 if (assetToEdit) {
-                    import('./dashboard.js').then(module => {
-                        module.editAsset(assetToEdit);
-                    });
+                    editAsset(assetToEdit);
                 }
                 // Clear the parameter without reloading
                 const newUrl = window.location.pathname;
@@ -404,7 +398,7 @@ function setupNavigation() {
             init: () => {
                 console.log('nav-dashboard init');
                 if (typeof renderDashboard === 'function') {
-                    renderDashboard(window.allAssets || [], () => window.allAssets || []);
+                    renderDashboard(assets, filteredAssets);
                 }
             } 
         },
@@ -459,14 +453,30 @@ function setupNavigation() {
             subView: 'warranty-view', 
             init: () => {
                 console.log('nav-warranty init called');
-                if (typeof initWarrantyView === 'function') {
-                    initWarrantyView();
-                } else if (window.initWarrantyView) {
-                    window.initWarrantyView();
+                // Ensure assets are loaded before initializing warranty view
+                if (!window.allAssets || window.allAssets.length === 0) {
+                    console.log('nav-warranty: No assets found, reloading...');
+                    loadAssets().then(() => {
+                        if (typeof initWarrantyView === 'function') initWarrantyView();
+                    });
                 } else {
-                    console.error('initWarrantyView not found in window or local scope!');
+                    if (typeof initWarrantyView === 'function') {
+                        initWarrantyView();
+                    } else if (window.initWarrantyView) {
+                        window.initWarrantyView();
+                    }
                 }
             } 
+        },
+        'nav-settings': {
+            view: 'dashboardView',
+            subView: 'settings-view',
+            init: () => {
+                console.log('nav-settings init called');
+                if (typeof initSettingsView === 'function') {
+                    initSettingsView();
+                }
+            }
         }
     };
 
@@ -497,14 +507,14 @@ function setupNavigation() {
 
                     // 2. Handle sub-views within dashboard
                     if (config.view === 'dashboardView') {
-                        const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view'];
+                        const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
                         console.log(`Switching to subview: ${config.subView}`);
                         
                         // Show/Hide Sidebar based on subview
                         const sidebar = document.getElementById('app-sidebar');
                         if (sidebar) {
                             // Show sidebar for core dashboard views
-                            const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view'];
+                            const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view', 'settings-view'];
                             if (showSidebarViews.includes(config.subView)) {
                                 sidebar.classList.remove('hidden');
                                 sidebar.style.display = 'block';
@@ -561,142 +571,4 @@ function setupNavigation() {
     });
 }
 
-function setupDashboardFormHandlers() {
-    console.log('setupDashboardFormHandlers() called - Attaching listeners to forms');
-    const addAssetKindForm = document.getElementById('addAssetKindForm');
-    if (addAssetKindForm) {
-        addAssetKindForm.onsubmit = async (e) => {
-            e.preventDefault();
-            console.log('addAssetKindForm submitted');
-            const name = document.getElementById('newKindName').value;
-            const icon = document.getElementById('newKindIcon').value || '📦';
-            const parentName = document.getElementById('newKindParent').value || null;
-            const category = localStorage.getItem('selectedAssetCategory');
-            
-            const newKind = {
-                Name: name,
-                Module: category,
-                Icon: icon,
-                ParentName: parentName
-            };
-            
-            try {
-                const response = await fetch('/api/asset_kinds', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newKind)
-                });
-                
-                if (response.ok) {
-                    console.log('Asset kind saved successfully');
-                    await loadAssets(); // Reload everything
-                    await renderSidebarTree(); // Update sidebar with new kind
-                    renderDashboard(assets, filteredAssets);
-                    const modal = document.getElementById('addAssetKindModal');
-                    if (modal) modal.style.display = 'none';
-                    addAssetKindForm.reset();
-                } else {
-                    const errText = await response.text();
-                    alert('Error saving asset kind: ' + errText);
-                }
-            } catch (err) {
-                console.error('Failed to save asset kind:', err);
-            }
-        };
-    }
 
-    const addAssetItemForm = document.getElementById('addAssetItemForm');
-    if (addAssetItemForm) {
-        addAssetItemForm.onsubmit = async (e) => {
-            e.preventDefault();
-            console.log('Add Asset Form Submission Started');
-            
-            const assetDbId = document.getElementById('assetDbId').value;
-            const kind = document.getElementById('itemKind').value;
-            const name = document.getElementById('itemName').value;
-            console.log('Form data:', { kind, name, assetDbId });
-            const status = document.getElementById('itemStatus').value;
-            const category = localStorage.getItem('selectedAssetCategory');
-            
-            // Get the icon from the form field, fallback to kind icon if empty
-            let icon = document.getElementById('itemIcon')?.value;
-            if (!icon) {
-                const kindDef = (window.allAssetKinds || []).find(k => k.Name === kind);
-                icon = kindDef ? kindDef.Icon : '📦';
-            }
-
-            // Collect Child Assets (No QR)
-            const childRows = document.querySelectorAll('.child-asset-row');
-            const components = [];
-            for (const row of childRows) {
-                const childName = row.querySelector('.child-name').value;
-                if (!childName) continue;
-
-                components.push({
-                    Type: 'Component',
-                    ItemName: childName,
-                    Make: row.querySelector('.child-make').value,
-                    SrNo: row.querySelector('.child-srno').value,
-                    Status: status,
-                    Category: category,
-                    NoQR: 1,
-                    Icon: '🧩'
-                });
-            }
-
-            // Collect Linked Components (QR)
-            const linkedTags = document.querySelectorAll('.linked-component-tag');
-            const linkedIds = Array.from(linkedTags).map(tag => tag.getAttribute('data-id'));
-
-            const newItem = {
-                ID: assetDbId || undefined,
-                Type: kind,
-                ItemName: name,
-                Status: status,
-                Icon: icon,
-                Category: category,
-                Make: document.getElementById('itemMake')?.value || '',
-                Model: document.getElementById('itemModel')?.value || '',
-                SrNo: document.getElementById('itemSrNo')?.value || '',
-                CurrentLocation: document.getElementById('itemLocation')?.value || '',
-                IN: document.getElementById('itemIn')?.value || '0',
-                OUT: document.getElementById('itemOut')?.value || '0',
-                Balance: document.getElementById('itemBalance')?.value || '0',
-                DispatchReceiveDt: document.getElementById('itemDate')?.value || '',
-                PurchaseDetails: document.getElementById('itemPurchase')?.value || '',
-                Remarks: document.getElementById('itemRemarks')?.value || '',
-                AssignedTo: document.getElementById('itemAssignedTo')?.value || '',
-                ParentId: document.getElementById('itemParentId')?.value.trim() || null,
-                // Warranty Details
-                warranty_months: parseInt(document.getElementById('itemWarranty')?.value) || 0,
-                amc_months: parseInt(document.getElementById('itemAMC')?.value) || 0,
-                asset_value: parseFloat(document.getElementById('itemValue')?.value) || 0,
-                Currency: document.getElementById('itemCurrency')?.value || 'INR',
-                PurchaseDate: document.getElementById('itemPurchaseDate')?.value || '',
-                // IT Specific Fields
-                MACAddress: document.getElementById('itemMAC')?.value || '',
-                IPAddress: document.getElementById('itemIP')?.value || '',
-                NetworkType: document.getElementById('itemNetworkType')?.value || '',
-                PhysicalPort: document.getElementById('itemPhysicalPort')?.value || '',
-                VLAN: document.getElementById('itemVLAN')?.value || '',
-                SocketID: document.getElementById('itemSocketID')?.value || '',
-                UserID: document.getElementById('itemUserID')?.value || '',
-                // Nested data
-                components: components,
-                linkedIds: linkedIds
-            };
-
-            console.log('Saving asset item with components:', newItem);
-            const result = await saveAsset(newItem);
-            
-            if (result && (result.success || result.id)) {
-                const modal = document.getElementById('addAssetItemModal');
-                if (modal) modal.style.display = 'none';
-                addAssetItemForm.reset();
-                document.getElementById('assetDbId').value = ''; // Clear the hidden ID
-                
-                // loadAssets and renderDashboard are already called inside saveAsset()
-            }
-        };
-    }
-}
