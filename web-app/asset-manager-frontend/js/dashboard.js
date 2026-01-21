@@ -1953,7 +1953,27 @@ export function renderSidebarTree() {
             allAssetsLink.onclick = (e) => {
                 e.preventDefault();
                 window.currentDashboardParent = null;
-                renderDashboard(window.allAssets, () => window.allAssets);
+                
+                // Determine which view to refresh
+                const sheetView = document.getElementById('sheet-view');
+                if (sheetView && sheetView.style.display !== 'none') {
+                    if (window.initSheetView) window.initSheetView();
+                } else {
+                    // Default to dashboard grid view
+                    const homeView = document.getElementById('home-view');
+                    if (homeView) {
+                        homeView.style.display = 'flex';
+                        homeView.classList.remove('hidden');
+                        // Hide other subviews if we forced home-view
+                        document.querySelectorAll('.view').forEach(v => {
+                            if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
+                                v.style.display = 'none';
+                                v.classList.add('hidden');
+                            }
+                        });
+                    }
+                    renderDashboard(window.allAssets, () => window.allAssets);
+                }
                 
                 // Reset sidebar active states
                 sidebarMenu.querySelectorAll('.tree-link').forEach(l => {
@@ -1979,7 +1999,26 @@ export function renderSidebarTree() {
                 tempAssetsLink.style.color = '#007bff';
                 tempAssetsLink.style.fontWeight = 'bold';
 
-                renderDashboard(window.allAssets, () => []); // We'll handle fetching temp assets in renderDashboard
+                // Determine which view to refresh
+                const sheetView = document.getElementById('sheet-view');
+                if (sheetView && sheetView.style.display !== 'none') {
+                    if (window.initSheetView) window.initSheetView();
+                } else {
+                    // Default to dashboard grid view
+                    const homeView = document.getElementById('home-view');
+                    if (homeView) {
+                        homeView.style.display = 'flex';
+                        homeView.classList.remove('hidden');
+                        // Hide other subviews if we forced home-view
+                        document.querySelectorAll('.view').forEach(v => {
+                            if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
+                                v.style.display = 'none';
+                                v.classList.add('hidden');
+                            }
+                        });
+                    }
+                    renderDashboard(window.allAssets, () => []); 
+                }
             };
         }
 
@@ -2002,6 +2041,9 @@ export function renderSidebarTree() {
             });
 
             container.querySelectorAll('.tree-link').forEach(link => {
+                // Skip virtual links handled separately
+                if (link.id === 'tempAssetsLink' || link.id === 'allAssetsLink') return;
+                
                 link.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -2021,7 +2063,27 @@ export function renderSidebarTree() {
 
                         // Navigate dashboard to this parent
                         window.currentDashboardParent = node;
-                        renderDashboard(window.allAssets, () => window.allAssets);
+                        
+                        // Determine which view to refresh
+                        const sheetView = document.getElementById('sheet-view');
+                        if (sheetView && sheetView.style.display !== 'none') {
+                            if (window.initSheetView) window.initSheetView();
+                        } else {
+                            // Default to dashboard grid view
+                            const homeView = document.getElementById('home-view');
+                            if (homeView && homeView.style.display === 'none') {
+                                homeView.style.display = 'flex';
+                                homeView.classList.remove('hidden');
+                                // Hide other subviews if we forced home-view
+                                document.querySelectorAll('.view').forEach(v => {
+                                    if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
+                                        v.style.display = 'none';
+                                        v.classList.add('hidden');
+                                    }
+                                });
+                            }
+                            renderDashboard(window.allAssets, () => window.allAssets);
+                        }
                         
                         // If it's a leaf kind, also open the list modal immediately
                         if (node.type === 'kind' && (!node.children || node.children.length === 0)) {
@@ -2103,9 +2165,9 @@ export function renderDashboard(assets, filteredAssets) {
                 // Group by project if needed, or just show all
                 tempAssets.forEach(asset => {
                     const card = document.createElement('div');
-                card.classList.add('asset-card');
-                card.onclick = () => showTempAssetDetails(asset.ID); // Add this line
-                card.style.cursor = 'pointer'; // Change to pointer
+                    card.classList.add('asset-card');
+                    card.onclick = () => showTempAssetDetails(asset.ID); 
+                    card.style.cursor = 'pointer'; 
                     card.innerHTML = `
                         <div class="asset-card-icon">⏳</div>
                         <div class="asset-card-header">
