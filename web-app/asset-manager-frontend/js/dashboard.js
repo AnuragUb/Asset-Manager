@@ -1178,10 +1178,19 @@ window.makeAssetPermanent = async function(id) {
         
         if (response.ok) {
             const result = await response.json();
-            alert(`Asset converted successfully! New ID: ${result.assetId}`);
-            // Refresh the dashboard
-            renderDashboard(window.allAssets, () => []); 
+            alert(`Asset converted successfully! New ID: ${result.assetId || result.permanentId}`);
+            
+            // Refresh Dashboard if visible
+            if (typeof renderDashboard === 'function') {
+                renderDashboard(window.allAssets, () => []); 
+            }
             if (window.loadAssets) await window.loadAssets();
+            
+            // Refresh Project view if active
+            if (currentProjectId) {
+                if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
+                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
+            }
         } else {
             const err = await response.text();
             alert('Error converting asset: ' + err);
@@ -1202,7 +1211,16 @@ window.deleteTempAsset = async function(id) {
         
         if (response.ok) {
             alert('Temporary asset deleted.');
-            renderDashboard(window.allAssets, () => []); 
+            
+            // Refresh Dashboard if visible
+            if (typeof renderDashboard === 'function') {
+                renderDashboard(window.allAssets, () => []); 
+            }
+            
+            // Refresh Project view if active
+            if (currentProjectId) {
+                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
+            }
         } else {
             const err = await response.text();
             alert('Error deleting asset: ' + err);
@@ -1430,12 +1448,27 @@ window.makeAssetPermanent = async function(tempAssetId) {
     if (!confirm('Convert this temporary asset to a permanent asset in the inventory?')) return;
     
     try {
-        const response = await fetch(`/api/temporary-assets/${tempAssetId}/make-permanent`, { method: 'POST' });
+        const response = await fetch(`/api/temporary-assets/${tempAssetId}/make-permanent`, {
+            method: 'POST',
+            headers: {
+                'x-user': localStorage.getItem('username') || 'web'
+            }
+        });
         const result = await response.json();
         if (result.success) {
-            alert('Asset converted successfully!');
-            await loadProjectAssets(currentProjectId);
-            await loadProjectTempAssets(currentProjectId);
+            alert(`Asset converted successfully! New ID: ${result.permanentId}`);
+            
+            // Refresh Dashboard if visible
+            if (typeof renderDashboard === 'function') {
+                renderDashboard(window.allAssets, () => []); 
+            }
+            if (window.loadAssets) await window.loadAssets();
+            
+            // Refresh Project view if active
+            if (currentProjectId) {
+                if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
+                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
+            }
         } else {
             alert('Error: ' + (result.error || 'Failed to convert'));
         }
@@ -1453,8 +1486,18 @@ window.deleteTempAsset = async function(tempAssetId) {
         const result = await response.json();
         if (result.success) {
             alert('Temporary item deleted successfully!');
-            await loadProjectAssets(currentProjectId);
-            await loadProjectTempAssets(currentProjectId);
+            
+            // Refresh Dashboard if visible
+            if (typeof renderDashboard === 'function') {
+                renderDashboard(window.allAssets, () => []); 
+            }
+            if (window.loadAssets) await window.loadAssets();
+
+            // Refresh Project view if active
+            if (currentProjectId) {
+                if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
+                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
+            }
         } else {
             alert('Error: ' + (result.error || 'Failed to delete'));
         }

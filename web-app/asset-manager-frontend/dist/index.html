@@ -149,15 +149,15 @@
                                 <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
                                     <div class="form-group" style="margin-bottom: 15px;">
                                         <label style="display: block; margin-bottom: 5px; font-weight: 600;">Customer/Receiver Name</label>
-                                        <input type="text" id="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="e.g. John Doe / ABC Corp">
+                                        <input type="text" id="dcCustomerName" name="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="e.g. John Doe / ABC Corp">
                                     </div>
                                     <div class="form-group" style="margin-bottom: 15px;">
                                         <label style="display: block; margin-bottom: 5px; font-weight: 600;">Delivery Date</label>
-                                        <input type="date" id="dcDate" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                        <input type="date" id="dcDate" name="dcDate" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
                                     </div>
                                     <div class="form-group" style="margin-bottom: 15px; position: relative;">
                                         <label style="display: block; margin-bottom: 5px; font-weight: 600;">Search & Add Assets</label>
-                                        <input type="text" id="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search by Name or ID...">
+                                        <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search by Name or ID...">
                                         <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
                                     </div>
                                 </div>
@@ -921,21 +921,21 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                         <div class="form-group">
                             <label>Project Name</label>
-                            <input type="text" id="sideProjectName" class="form-input">
+                            <input type="text" id="sideProjectName" name="sideProjectName" class="form-input">
                         </div>
                         <div class="form-group">
                             <label>Client Name</label>
-                            <input type="text" id="sideProjectClient" class="form-input">
+                            <input type="text" id="sideProjectClient" name="sideProjectClient" class="form-input">
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                         <div class="form-group">
                             <label>Location</label>
-                            <input type="text" id="sideProjectLocation" class="form-input" value="MUMBAI">
+                            <input type="text" id="sideProjectLocation" name="sideProjectLocation" class="form-input" value="MUMBAI">
                         </div>
                         <div class="form-group">
                             <label>Currency</label>
-                            <select id="sideProjectCurrency" class="form-input">
+                            <select id="sideProjectCurrency" name="sideProjectCurrency" class="form-input">
                                 <option value="INR">INR (₹)</option>
                                 <option value="USD">USD ($)</option>
                                 <option value="EUR">EUR (€)</option>
@@ -944,16 +944,16 @@
                     </div>
                     <div class="form-group">
                         <label>Description</label>
-                        <textarea id="sideProjectDesc" class="form-input" style="height: 80px; width: 100%;"></textarea>
+                        <textarea id="sideProjectDesc" name="sideProjectDesc" class="form-input" style="height: 80px; width: 100%;"></textarea>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                         <div class="form-group">
                             <label>Start Date</label>
-                            <input type="date" id="sideProjectStartDate" class="form-input">
+                            <input type="date" id="sideProjectStartDate" name="sideProjectStartDate" class="form-input">
                         </div>
                         <div class="form-group">
                             <label>End Date</label>
-                            <input type="date" id="sideProjectEndDate" class="form-input">
+                            <input type="date" id="sideProjectEndDate" name="sideProjectEndDate" class="form-input">
                         </div>
                     </div>
                     <div class="modal-actions">
@@ -1047,30 +1047,30 @@
                     <h3>Add Temporary Asset</h3>
                     <div class="form-group" style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 5px;">Item Name</label>
-                        <input type="text" id="tempItemName" class="form-input" style="width: 100%; padding: 8px;">
+                        <input type="text" id="tempItemName" name="tempItemName" class="form-input" style="width: 100%; padding: 8px;">
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
                         <div class="form-group">
                             <label style="display: block; margin-bottom: 5px;">Make</label>
-                            <input type="text" id="tempMake" class="form-input" style="width: 100%; padding: 8px;">
+                            <input type="text" id="tempMake" name="tempMake" class="form-input" style="width: 100%; padding: 8px;">
                         </div>
                         <div class="form-group">
                             <label style="display: block; margin-bottom: 5px;">Model</label>
-                            <input type="text" id="tempModel" class="form-input" style="width: 100%; padding: 8px;">
+                            <input type="text" id="tempModel" name="tempModel" class="form-input" style="width: 100%; padding: 8px;">
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
                         <div class="form-group">
                             <label style="display: block; margin-bottom: 5px;">Quantity</label>
-                            <input type="number" id="tempQuantity" class="form-input" value="1" style="width: 100%; padding: 8px;">
+                            <input type="number" id="tempQuantity" name="tempQuantity" class="form-input" value="1" style="width: 100%; padding: 8px;">
                         </div>
                         <div class="form-group">
                             <label style="display: block; margin-bottom: 5px;">Price</label>
-                            <input type="number" id="tempPrice" class="form-input" value="0" style="width: 100%; padding: 8px;">
+                            <input type="number" id="tempPrice" name="tempPrice" class="form-input" value="0" style="width: 100%; padding: 8px;">
                         </div>
                         <div class="form-group">
                             <label style="display: block; margin-bottom: 5px;">Currency</label>
-                            <select id="tempCurrency" class="form-input" style="width: 100%; padding: 8px;">
+                            <select id="tempCurrency" name="tempCurrency" class="form-input" style="width: 100%; padding: 8px;">
                                 <option value="INR">INR</option>
                                 <option value="USD">USD</option>
                                 <option value="EUR">EUR</option>
