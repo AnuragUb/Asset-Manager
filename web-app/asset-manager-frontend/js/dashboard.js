@@ -277,7 +277,25 @@ async function initSheetView() {
                 { title: "Currency", field: "Currency", width: 80 },
                 { title: "Make", field: "Make", headerFilter: "input" },
                 { title: "Model", field: "Model", headerFilter: "input" },
-                { title: "Status", field: "Status", width: 120 }
+                { title: "Status", field: "Status", width: 120 },
+                { title: "Actions", width: 150, hozAlign: "center", formatter: function(cell) {
+                    return `
+                        <div style="display: flex; gap: 5px;">
+                            <button class="btn-action" style="font-size: 10px; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Convert</button>
+                            <button class="btn-action" style="font-size: 10px; background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Delete</button>
+                        </div>
+                    `;
+                }, cellClick: function(e, cell) {
+                    const data = cell.getRow().getData();
+                    const target = e.target;
+                    if (target.innerText === 'Convert') {
+                        e.stopPropagation();
+                        window.makeAssetPermanent(data.ID);
+                    } else if (target.innerText === 'Delete') {
+                        e.stopPropagation();
+                        window.deleteTempAsset(data.ID);
+                    }
+                }}
             ];
             window.tabulatorInstance.setColumns(tempColumns);
         } else {
@@ -306,7 +324,25 @@ async function initSheetView() {
             { title: "Currency", field: "Currency", width: 80 },
             { title: "Make", field: "Make", headerFilter: "input" },
             { title: "Model", field: "Model", headerFilter: "input" },
-            { title: "Status", field: "Status", width: 120 }
+            { title: "Status", field: "Status", width: 120 },
+            { title: "Actions", width: 150, hozAlign: "center", formatter: function(cell) {
+                return `
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn-action" style="font-size: 10px; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Convert</button>
+                        <button class="btn-action" style="font-size: 10px; background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Delete</button>
+                    </div>
+                `;
+            }, cellClick: function(e, cell) {
+                const data = cell.getRow().getData();
+                const target = e.target;
+                if (target.innerText === 'Convert') {
+                    e.stopPropagation();
+                    window.makeAssetPermanent(data.ID);
+                } else if (target.innerText === 'Delete') {
+                    e.stopPropagation();
+                    window.deleteTempAsset(data.ID);
+                }
+            }}
         ];
     } else {
         columns = [
@@ -339,7 +375,14 @@ async function initSheetView() {
 
         columns.push(
             { title: "Parent ID", field: "ParentId", editor: "input", headerFilter: "input" },
-            { title: "Last Updated", field: "LastUpdated", width: 150, hozAlign: "center" }
+            { title: "Last Updated", field: "LastUpdated", width: 150, hozAlign: "center" },
+            { title: "Actions", width: 100, hozAlign: "center", formatter: function(cell) {
+                return `<button class="btn-action" style="font-size: 10px; background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Delete</button>`;
+            }, cellClick: function(e, cell) {
+                e.stopPropagation();
+                const data = cell.getRow().getData();
+                window.deleteAsset(data.ID);
+            }}
         );
     }
 
@@ -355,6 +398,15 @@ async function initSheetView() {
             const data = cell.getRow().getData();
             console.log('Cell edited, saving asset:', data);
             window.saveAsset(data);
+        },
+        rowClick: function(e, row) {
+            const data = row.getData();
+            const isTemp = window.currentDashboardParent && window.currentDashboardParent.ID === 'TEMP_VIEW';
+            if (isTemp) {
+                window.showTempAssetDetails(data.ID);
+            } else {
+                window.showAssetDetails(data.ID);
+            }
         }
     });
 
@@ -1212,12 +1264,147 @@ async function loadProjectAssets(projectId) {
 }
 
 window.showAssetDetails = async function(assetId) {
-    // Basic implementation to show asset details
-    alert(`Viewing Permanent Asset: ${assetId}\n(Full details modal can be implemented here)`);
+    console.log('showAssetDetails() for:', assetId);
+    const asset = (window.allAssets || []).find(a => a.ID === assetId);
+    if (!asset) {
+        alert('Asset not found in local cache. Fetching from server...');
+        // Optional: Fetch from server if not found
+        return;
+    }
+
+    const modal = document.getElementById('assetDetailsModal');
+    const content = document.getElementById('assetDetailsContent');
+    const title = document.getElementById('assetDetailsTitle');
+    const btnEdit = document.getElementById('btnEditFromDetails');
+    const btnDelete = document.getElementById('btnDeleteFromDetails');
+
+    if (!modal || !content) return;
+
+    title.textContent = `Asset Details: ${asset.ID}`;
+    
+    let html = `
+        <div>
+            <div style="font-size: 60px; margin-bottom: 10px; text-align: center;">${asset.Icon || '📦'}</div>
+            <p><strong>Item Name:</strong> ${asset.ItemName}</p>
+            <p><strong>Status:</strong> <span class="status-pill status-${(asset.Status || 'In Store').toLowerCase().replace(/\s+/g, '-')}">${asset.Status || 'In Store'}</span></p>
+            <p><strong>Category:</strong> ${asset.Type || '-'}</p>
+            <p><strong>Make:</strong> ${asset.Make || '-'}</p>
+            <p><strong>Model:</strong> ${asset.Model || '-'}</p>
+            <p><strong>Serial No:</strong> ${asset.SrNo || '-'}</p>
+        </div>
+        <div>
+            <p><strong>Location:</strong> ${asset.CurrentLocation || '-'}</p>
+            <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
+            <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
+            <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
+            <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
+            <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
+            <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
+                <img src="/api/qr/${encodeURIComponent(asset.ID)}" style="width: 120px; height: 120px;" onerror="this.style.display='none'">
+                <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code / Asset URL</div>
+            </div>
+        </div>
+    `;
+
+    content.innerHTML = html;
+    
+    if (btnEdit) {
+        btnEdit.onclick = () => {
+            modal.style.display = 'none';
+            editAsset(asset);
+        };
+    }
+
+    if (btnDelete) {
+        btnDelete.onclick = () => {
+            modal.style.display = 'none';
+            window.deleteAsset(asset.ID);
+        };
+    }
+
+    modal.style.display = 'flex';
 };
 
 window.showTempAssetDetails = async function(assetId) {
-    alert(`Viewing Temporary Asset: ${assetId}\n(Full details modal can be implemented here)`);
+    console.log('showTempAssetDetails() for:', assetId);
+    const asset = (window.currentTempAssets || []).find(a => a.ID === assetId);
+    if (!asset) {
+        alert('Temporary asset details not available.');
+        return;
+    }
+
+    const modal = document.getElementById('tempAssetDetailsModal');
+    const content = document.getElementById('tempAssetDetailsContent');
+    const btnConvert = document.getElementById('btnConvertFromDetails');
+    const btnDelete = document.getElementById('btnDeleteFromDetails');
+
+    if (!modal || !content) return;
+
+    content.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+                <p><strong>ID:</strong> <small style="font-family: monospace;">${asset.ID}</small></p>
+                <p><strong>Item Name:</strong> ${asset.ItemName}</p>
+                <p><strong>Project ID:</strong> ${asset.ProjectId}</p>
+                <p><strong>Quantity:</strong> ${asset.Quantity}</p>
+            </div>
+            <div>
+                <p><strong>Est. Price:</strong> ${asset.EstimatedPrice} ${asset.Currency}</p>
+                <p><strong>Make:</strong> ${asset.Make || '-'}</p>
+                <p><strong>Model:</strong> ${asset.Model || '-'}</p>
+                <p><strong>Type:</strong> ${asset.Type || '-'}</p>
+            </div>
+        </div>
+        <div style="margin-top: 10px; padding: 10px; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; font-size: 12px; color: #856404;">
+            ⚠️ This is a temporary asset. Convert it to a permanent asset to add it to the inventory and generate a QR code.
+        </div>
+    `;
+
+    if (btnConvert) {
+        btnConvert.onclick = () => {
+            modal.style.display = 'none';
+            window.makeAssetPermanent(asset.ID);
+        };
+    }
+
+    if (btnDelete) {
+        btnDelete.onclick = () => {
+            modal.style.display = 'none';
+            window.deleteTempAsset(asset.ID);
+        };
+    }
+
+    modal.style.display = 'flex';
+};
+
+window.deleteAsset = async function(assetId) {
+    if (!confirm(`Are you sure you want to delete asset ${assetId}? This action cannot be undone.`)) return;
+    
+    try {
+        const username = localStorage.getItem('username') || 'web';
+        const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, {
+            method: 'DELETE',
+            headers: { 'x-user': username }
+        });
+        
+        if (response.ok) {
+            alert('Asset deleted successfully');
+            if (window.loadAssets) await window.loadAssets();
+            if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, () => window.allAssets);
+            
+            // If we are in sheet view, refresh it
+            const sheetView = document.getElementById('sheetView');
+            if (sheetView && sheetView.style.display !== 'none') {
+                initSheetView();
+            }
+        } else {
+            const err = await response.text();
+            alert('Error deleting asset: ' + err);
+        }
+    } catch (err) {
+        console.error('Delete error:', err);
+        alert('Failed to delete asset');
+    }
 };
 
 window.makeAssetPermanent = async function(id) {
@@ -1916,8 +2103,9 @@ export function renderDashboard(assets, filteredAssets) {
                 // Group by project if needed, or just show all
                 tempAssets.forEach(asset => {
                     const card = document.createElement('div');
-                    card.classList.add('asset-card');
-                    card.style.cursor = 'default';
+                card.classList.add('asset-card');
+                card.onclick = () => showTempAssetDetails(asset.ID); // Add this line
+                card.style.cursor = 'pointer'; // Change to pointer
                     card.innerHTML = `
                         <div class="asset-card-icon">⏳</div>
                         <div class="asset-card-header">
@@ -1930,8 +2118,8 @@ export function renderDashboard(assets, filteredAssets) {
                             <div>Est. Price: ${asset.EstimatedPrice} ${asset.Currency}</div>
                         </div>
                         <div style="padding: 10px; display: flex; gap: 5px; justify-content: center;">
-                            <button onclick="makeAssetPermanent('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #e6f7ff; color: #1890ff; border-color: #91d5ff;">Convert</button>
-                            <button onclick="deleteTempAsset('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #fff1f0; color: #cf1322; border-color: #ffa39e;">Delete</button>
+                            <button onclick="event.stopPropagation(); makeAssetPermanent('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #e6f7ff; color: #1890ff; border-color: #91d5ff;">Convert</button>
+                            <button onclick="event.stopPropagation(); deleteTempAsset('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #fff1f0; color: #cf1322; border-color: #ffa39e;">Delete</button>
                         </div>
                     `;
                     assetGrid.appendChild(card);
@@ -3027,7 +3215,7 @@ export function setupDashboardFormHandlers() {
             
             let assetsToReport = [];
             if (parent && parent.ID === 'TEMP_VIEW') {
-                const assetsToReport = window.currentTempAssets || [];
+                assetsToReport = window.currentTempAssets || [];
                 if (assetsToReport.length === 0) {
                     alert('No temporary assets to report.');
                     return;

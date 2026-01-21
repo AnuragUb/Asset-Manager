@@ -786,6 +786,38 @@
 
 
 
+            <!-- Asset Details Modal -->
+            <div id="assetDetailsModal" class="modal">
+                <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+                    <span class="close-modal" onclick="document.getElementById('assetDetailsModal').style.display='none'">&times;</span>
+                    <h3 id="assetDetailsTitle">Asset Details</h3>
+                    <div id="assetDetailsContent" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                        <!-- Content will be injected via JS -->
+                    </div>
+                    <div style="margin-top: 25px; text-align: right; border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+                         <button class="action-button blue" id="btnEditFromDetails">Edit Asset</button>
+                         <button class="action-button red" id="btnDeleteFromDetails">Delete Asset</button>
+                         <button class="action-button gray" onclick="document.getElementById('assetDetailsModal').style.display='none'">Close</button>
+                     </div>
+                </div>
+            </div>
+
+            <!-- Temporary Asset Details Modal -->
+            <div id="tempAssetDetailsModal" class="modal">
+                <div class="modal-content" style="max-width: 600px;">
+                    <span class="close-modal" onclick="document.getElementById('tempAssetDetailsModal').style.display='none'">&times;</span>
+                    <h3>Temporary Asset Details</h3>
+                    <div id="tempAssetDetailsContent" style="margin-top: 15px;">
+                        <!-- Content will be injected via JS -->
+                    </div>
+                    <div style="margin-top: 25px; text-align: right; border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="action-button blue" id="btnConvertFromDetails">Convert to Permanent</button>
+                        <button class="action-button red" id="btnDeleteFromDetails">Delete</button>
+                        <button class="action-button gray" onclick="document.getElementById('tempAssetDetailsModal').style.display='none'">Close</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Employee Modal -->
             <div id="employeeModal" class="modal">
                 <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
