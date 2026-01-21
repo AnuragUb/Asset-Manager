@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Asset Manager (Beta)</title>
+    <link rel="stylesheet" href="/static/style.css?v=4.3">
+    <link href="https://unpkg.com/tabulator-tables@5.5.0/dist/css/tabulator.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.0/dist/js/tabulator.min.js"></script>
+    <script type="text/javascript" src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="app-container">
+        <header id="app-header" class="hidden">
+            <div class="header-left">
+                <button id="sidebarToggle" class="icon-button">☰</button>
+                <span class="app-title">IT Asset Manager <span style="font-size: 10px; background: #eee; padding: 2px 5px; border-radius: 3px; color: #666; vertical-align: middle;">Beta</span></span>
+            </div>
+                <nav class="top-nav">
+                    <a href="#" class="nav-link active" id="nav-dashboard">Dashboard</a>
+                    <a href="#" class="nav-link" id="nav-sheet">Sheet</a>
+                    <a href="#" class="nav-link" id="nav-employees">Employees</a>
+                    <a href="#" class="nav-link" id="nav-dc">Create DC</a>
+                    <a href="#" class="nav-link" id="nav-projects">Projects</a>
+                    <a href="#" class="nav-link" id="nav-scanner">Network Scanner</a>
+                    <a href="#" class="nav-link" id="nav-ocr">Document OCR</a>
+                    <a href="#" class="nav-link" id="nav-warranty">Warranty</a>
+                    <a href="#" class="nav-link" id="nav-settings">Settings</a>
+                    <a href="#" class="nav-link" id="nav-releases">Releases</a>
+                </nav>
+            <div class="header-right">
+                <button class="icon-button" title="Notifications">🔔<span class="badge">25</span></button>
+                <button class="icon-button" title="Settings">⚙️</button>
+                <span id="display-username" class="user-name-display">Username</span>
+                <button id="logout-btn" style="margin-left: 10px; background: #dc3545; color: white; border: none; padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; height: 28px; font-weight: 500;">Logout 🚪</button>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <aside id="app-sidebar" class="hidden">
+            <div class="sidebar-search">
+                <input type="text" placeholder="Search...">
+                <button class="icon-button">🔍</button>
+            </div>
+            <ul class="sidebar-menu" id="sidebar-tree">
+                <!-- Hierarchical tree will be dynamically inserted here -->
+            </ul>
+        </aside>
+
+        <main id="main-content">
+            <div id="loginView" class="view active">
+                <div class="login-card" style="z-index: 2001;">
+                    <h2>Login (Beta)</h2>
+                    <p>Enter your credentials to access the Asset Manager</p>
+                    <p style="color: blue; font-size: 12px;">Server: localhost:8080</p>
+                    <form id="loginForm">
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" name="username" placeholder="Enter username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" placeholder="Enter password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="assetCategory">Select Module</label>
+                            <select id="assetCategory" name="assetCategory" required>
+                                <option value="" disabled selected>Choose part of the app</option>
+                                <option value="IT">IT Assets</option>
+                                <option value="In-House">In-House Assets</option>
+                                <option value="Rental">Rental Assets</option>
+                                <option value="Inventory">Inventory Assets</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="login-button">Login</button>
+                    </form>
+                    <p id="loginMsg" class="error-msg"></p>
+                </div>
+            </div>
+
+            <div id="dashboardView" class="view hidden">
+                <!-- Main Dashboard Container -->
+                <div id="dashboard-container" style="display: flex; height: 100%; overflow: hidden;">
+                    <!-- Dashboard Section (Home) -->
+                    <div id="home-view" class="view hidden" style="flex: 1; padding: 20px;">
+                        <div class="dashboard-header" style="flex-shrink: 0;">
+                            <h2 id="dashboard-title">IT Assets</h2>
+                            <div class="dashboard-actions" style="display: flex; gap: 10px;">
+                                <button class="action-button orange" id="btnReportDashboard">Report</button>
+                                <button class="action-button" id="btnBatchPrintQr" style="background: #17a2b8;">
+                                    <span>Print QR</span>
+                                </button>
+                                <button class="action-button blue" id="btnAddAssetKind">
+                                    <span>Add Category</span>
+                                </button>
+                                <button class="action-button green" id="btnAddAssetItem">
+                                    <span>Add Asset</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="asset-grid" id="assetGrid" style="flex: 1; overflow-y: auto; min-height: 0;">
+                            <!-- Asset cards will be dynamically inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Sheet Section (Excel View) -->
+                    <div id="sheet-view" class="view hidden" style="flex: 1;">
+                        <div class="view-toolbar">
+                            <h2 class="view-title">Excel Sheet View</h2>
+                            <div class="view-actions">
+                                <button class="action-button orange" id="btnReportSheet">Report</button>
+                                <button class="action-button purple" id="btnSyncTally">Sync Tally</button>
+                                <button class="action-button green" id="btnExportExcel">Export Excel</button>
+                                <button class="action-button blue" id="btnSyncGraph">Sync Graph API</button>
+                            </div>
+                        </div>
+                        <div class="grid-container">
+                            <div id="excel-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- Employee Section -->
+                    <div id="employee-view" class="view hidden" style="flex: 1;">
+                        <div class="view-toolbar">
+                            <h2 class="view-title">Employee Management</h2>
+                            <div class="view-actions">
+                                <button class="action-button blue" id="btnBulkUploadEmployees" style="margin-right: 10px;">Bulk Upload</button>
+                                <button class="action-button green" id="btnAddEmployee">Add Employee</button>
+                                <input type="file" id="employeeBulkInput" accept=".xlsx, .xls, .csv" style="display: none;">
+                            </div>
+                        </div>
+                        <div class="grid-container">
+                            <div id="employee-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- Delivery Challan (DC) View -->
+                    <div id="dc-view" class="view hidden" style="flex: 1; padding: 20px;">
+                        <div class="dashboard-header" style="flex-shrink: 0; margin-bottom: 20px;">
+                            <div>
+                                <h2 style="margin: 0;">Create Delivery Challan (DC)</h2>
+                                <p style="color: #666; font-size: 14px; margin-top: 5px;">Select assets and generate a delivery manifesto.</p>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 30%, 450px), 1fr)); gap: 15px; flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 1400px; margin: 0 auto;">
+                            <!-- Left: Form -->
+                            <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
+                                <h3 style="margin-top: 0;">Challan Details</h3>
+                                <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                                    <div class="form-group" style="margin-bottom: 15px;">
+                                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Customer/Receiver Name</label>
+                                        <input type="text" id="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="e.g. John Doe / ABC Corp">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 15px;">
+                                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Delivery Date</label>
+                                        <input type="date" id="dcDate" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 15px; position: relative;">
+                                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Search & Add Assets</label>
+                                        <input type="text" id="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search by Name or ID...">
+                                        <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                    </div>
+                                </div>
+                                <button id="btnGenerateDC" class="action-button blue" style="width: 100%; margin-top: 10px; justify-content: center; flex-shrink: 0;">Generate DC & QR Code</button>
+                            </div>
+
+                            <!-- Right: Selected Assets -->
+                            <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
+                                <h3 style="margin-top: 0;">Selected Assets</h3>
+                                <div style="flex: 1; overflow-y: auto;">
+                                    <table style="width: 100%; border-collapse: collapse;" id="dcSelectedAssetsTable">
+                                        <thead>
+                                            <tr style="border-bottom: 2px solid #eee; text-align: left;">
+                                                <th style="padding: 10px;">ID</th>
+                                                <th style="padding: 10px;">Item Name</th>
+                                                <th style="padding: 10px; text-align: center;">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dcSelectedAssetsBody">
+                                            <!-- Selected assets will appear here -->
+                                        </tbody>
+                                    </table>
+                                    <div id="dcEmptyState" style="padding: 40px; text-align: center; color: #999;">
+                                        No assets selected. Search above to add.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DC Preview Modal -->
+                        <div id="dcPreviewModal" class="modal" style="display: none; align-items: center; justify-content: center;">
+                            <div class="modal-content" style="max-width: 700px; width: 90%; padding: 40px; border-radius: 0; box-shadow: 0 0 40px rgba(0,0,0,0.2);">
+                                <span class="close-modal">&times;</span>
+                                <div id="printableDC" style="background: white; padding: 20px;">
+                                    <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px;">
+                                        <h1 style="margin: 0; letter-spacing: 2px;">DELIVERY CHALLAN</h1>
+                                        <div id="dcChallanNoDisplay" style="font-weight: bold; color: #555; margin-top: 5px;"></div>
+                                    </div>
+                                    
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
+                                        <div style="flex: 1;">
+                                            <div style="color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold; margin-bottom: 5px;">Consignee / Customer</div>
+                                            <div id="dcCustomerDisplay" style="font-weight: bold; font-size: 18px; color: #333;"></div>
+                                        </div>
+                                        <div style="text-align: right; flex: 1;">
+                                            <div style="color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold; margin-bottom: 5px;">Delivery Date</div>
+                                            <div id="dcDateDisplay" style="font-weight: bold; font-size: 18px; color: #333;"></div>
+                                        </div>
+                                    </div>
+
+                                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #ddd;">
+                                        <thead>
+                                            <tr style="background: #f0f0f0;">
+                                                <th style="padding: 12px; border: 1px solid #ddd; text-align: left; width: 40px;">#</th>
+                                                <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">Asset ID</th>
+                                                <th style="padding: 12px; border: 1px solid #ddd; text-align: left;">Description / Item Name</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dcPreviewItemsBody"></tbody>
+                                    </table>
+
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px;">
+                                        <div style="text-align: center; border-top: 1px solid #ccc; width: 150px; padding-top: 10px; font-size: 12px;">Receiver's Signature</div>
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 10px; color: #888; margin-bottom: 5px;">VALIDATE MANIFESTO</div>
+                                            <img id="dcQRCodeImage" src="" style="width: 120px; height: 120px; border: 1px solid #eee; padding: 5px;">
+                                        </div>
+                                        <div style="text-align: center; border-top: 1px solid #ccc; width: 150px; padding-top: 10px; font-size: 12px;">Authorized Signatory</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;" class="no-print">
+                                    <button class="login-button close-modal" style="background: #6c757d; flex: 1;">Close</button>
+                                    <button class="login-button" style="flex: 1; background: #17a2b8;" id="btnPrintDC">Print Challan</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="releases-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <h2>Release Notes</h2>
+                        <div id="release-notes-content"></div>
+                    </div>
+
+                    <!-- Network Scanner View -->
+                    <div id="scanner-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <div class="view-toolbar" style="margin-bottom: 20px;">
+                            <h2 class="view-title">Network Scanner</h2>
+                            <div class="view-actions" style="display: flex; gap: 10px;">
+                                <button class="action-button blue" id="btnStartScan">Start Scan</button>
+                                <button class="action-button green" id="btnScanEntireNetwork">Scan Entire Network</button>
+                            </div>
+                        </div>
+
+                        <div class="card-panel" style="margin-bottom: 20px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div class="form-group">
+                                    <label>Target IP Range (e.g. 192.168.1.0/24)</label>
+                                    <input type="text" id="scannerTarget" class="form-input" style="width: 100%;" placeholder="192.168.1.0/24">
+                                    <div id="scannerInterfaceInfo" style="font-size: 11px; color: #666; margin-top: 5px;">Detecting interfaces...</div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Scan Ports (Comma separated)</label>
+                                    <input type="text" id="scannerPorts" class="form-input" style="width: 100%;" value="80,443,22,3389,8080">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="scanner-results-container" style="background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <div id="scanner-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- OCR View -->
+                    <div id="ocr-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <div class="view-toolbar" style="margin-bottom: 20px;">
+                            <h2 class="view-title">Document OCR & AI Extraction</h2>
+                            <div class="view-actions" style="display: flex; gap: 10px;">
+                                <button class="action-button blue" id="btnProcessOCR" disabled>Process Document</button>
+                                <button class="action-button green" id="btnExportOcrExcel" disabled>Export to Excel</button>
+                                <button class="action-button purple" id="btnExportOcrWord" disabled>Export to Word</button>
+                                <button class="action-button red" id="btnExportOcrPdf" disabled>Export to PDF</button>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100% - 80px);">
+                            <!-- Left Column: File Upload -->
+                            <div class="card-panel" style="display: flex; flex-direction: column;">
+                                <h3 style="margin-top: 0;">Upload Document</h3>
+                                <p style="color: #666; font-size: 13px;">Upload an image or PDF to extract text and data using AI.</p>
+                                
+                                <div id="ocrDropZone" style="flex: 1; border: 2px dashed #ccc; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;">
+                                    <div style="font-size: 40px; margin-bottom: 10px;">📄</div>
+                                    <div style="font-weight: 600;">Drop file here</div>
+                                    <div style="color: #999; font-size: 12px;">or click to browse</div>
+                                    <input type="file" id="ocrFileInput" style="display: none;" accept="image/*,application/pdf">
+                                </div>
+
+                                <div id="ocrFileInfo" style="display: none; flex-direction: column; align-items: center; justify-content: center; flex: 1; background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center;">
+                                    <div style="font-size: 40px; margin-bottom: 10px;">✅</div>
+                                    <div id="ocrFileName" style="font-weight: 600; margin-bottom: 5px; word-break: break-all;"></div>
+                                    <div id="ocrFileSize" style="color: #666; font-size: 12px; margin-bottom: 20px;"></div>
+                                    <button id="ocrClearFile" style="background: none; border: 1px solid #dc3545; color: #dc3545; padding: 5px 15px; border-radius: 4px; cursor: pointer;">Remove File</button>
+                                </div>
+                            </div>
+
+                            <!-- Right Column: Results -->
+                            <div id="ocrResultsArea" class="card-panel" style="display: flex; flex-direction: column; position: relative;">
+                                <div id="ocrLoadingOverlay" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.8); z-index: 10; flex-direction: column; align-items: center; justify-content: center;">
+                                    <div class="spinner" style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px;"></div>
+                                    <div style="font-weight: 600;">Analyzing document...</div>
+                                </div>
+
+                                <div style="display: flex; border-bottom: 1px solid #eee; margin-bottom: 15px;">
+                                    <button class="tab-btn active" onclick="switchOcrTab('raw')">Raw Text</button>
+                                    <button class="tab-btn" onclick="switchOcrTab('blocks')">Data Blocks</button>
+                                </div>
+
+                                <div id="ocrRawView" style="flex: 1;">
+                                    <textarea id="ocrResultText" style="width: 100%; height: 100%; border: 1px solid #ddd; border-radius: 4px; padding: 10px; font-family: monospace; resize: none;" placeholder="Extracted text will appear here..."></textarea>
+                                </div>
+
+                                <div id="ocrBlocksView" style="flex: 1; display: none; overflow-y: auto;">
+                                    <!-- Extracted blocks will appear here -->
+                                    <div style="padding: 40px; text-align: center; color: #999;">
+                                        No blocks extracted yet. Process a document to see results.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Projects View -->
+                    <div id="projects-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Projects Kanban Board</h2>
+                                <span id="projectCount" style="background: #e7f3ff; color: #0078d4; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 600;">0 Projects</span>
+                            </div>
+                            <div class="view-actions">
+                                <div style="display: flex; gap: 10px;">
+                                    <div class="search-box" style="position: relative;">
+                                        <input type="text" id="projectSearch" placeholder="Filter projects..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 250px;">
+                                    </div>
+                                    <button class="action-button blue" onclick="document.getElementById('createProjectModal').style.display='flex'">+ Create Project</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="projectsGrid" style="flex: 1; min-height: 0;"></div>
+                    </div>
+
+                    <!-- Warranty View -->
+                    <div id="warranty-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <div class="view-toolbar" style="margin-bottom: 20px;">
+                            <h2 class="view-title">Asset Warranty Dashboard</h2>
+                            <div class="view-actions" style="display: flex; gap: 10px;">
+                                <button class="action-button" onclick="console.log('DIAGNOSTICS:', { allAssets: window.allAssets, hierarchy: window.hierarchyManager, ranges: window.warrantyRanges }); alert('Diagnostics logged to console (F12). Check window.allAssets status.');" style="background: #666; color: white;">🔍 Diag</button>
+                                <div class="search-box" style="position: relative; display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 13px; color: #666;">Filter by Warranty:</label>
+                                    <select id="warrantyFilterSelect" style="padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                        <option value="all">All Assets</option>
+                                        <!-- Will be populated from warrantyRanges -->
+                                    </select>
+                                </div>
+                                <button class="action-button blue" id="btnManageWarrantyRanges">Manage Ranges</button>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 350px; gap: 20px; height: calc(100% - 80px);">
+                            <!-- Left Column: Pie Chart -->
+                            <div class="card-panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px;">
+                                <h3 style="margin-top: 0; align-self: flex-start;">Warranty Status Overview</h3>
+                                <div style="width: 100%; max-width: 500px; flex: 1; display: flex; align-items: center;">
+                                    <canvas id="warrantyPieChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Right Column: Details/Legend -->
+                            <div class="card-panel" style="display: flex; flex-direction: column;">
+                                <h3 style="margin-top: 0;">Details</h3>
+                                <div id="warrantyLegend" style="overflow-y: auto; flex: 1;">
+                                    <!-- Legend and counts will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Section: Detailed Summary Table -->
+                        <div class="card-panel" style="margin-top: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h3 style="margin: 0;">Detailed Warranty Breakdown</h3>
+                                <button class="action-button blue" onclick="window.updateWarrantyChart()" style="font-size: 12px; padding: 4px 10px;">Refresh Data</button>
+                            </div>
+                            <div id="warrantySummaryTableContainer" style="overflow-x: auto; max-height: 400px;">
+                                <table class="data-table" style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                            <th style="padding: 12px; text-align: left;">Warranty Status</th>
+                                            <th style="padding: 12px; text-align: center;">Count</th>
+                                            <th style="padding: 12px; text-align: left;">Assets (Items)</th>
+                                            <th style="padding: 12px; text-align: center;">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="warrantySummaryBody">
+                                        <tr><td colspan="4" style="text-align: center; padding: 20px; color: #999;">Loading summary...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings View -->
+                    <div id="settings-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
+                        <div class="view-toolbar" style="margin-bottom: 20px;">
+                            <h2 class="view-title">Application Settings</h2>
+                        </div>
+
+                        <div class="card-panel" style="max-width: 800px; margin: 0 auto;">
+                            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">Email Notifications (Warranty Alerts)</h3>
+                            
+                            <form id="emailSettingsForm">
+                                <div class="form-group" style="margin-bottom: 20px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                        <input type="checkbox" id="emailEnabled" style="width: 20px; height: 20px;">
+                                        <span style="font-weight: 600;">Enable Email Notifications</span>
+                                    </label>
+                                    <p style="font-size: 12px; color: #666; margin-top: 5px;">When enabled, the system will automatically check for expiring warranties and send alerts.</p>
+                                </div>
+
+                                <div id="emailConfigFields" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                    <div class="form-group">
+                                        <label>SMTP Host</label>
+                                        <input type="text" id="smtpHost" placeholder="smtp.gmail.com" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>SMTP Port</label>
+                                        <input type="number" id="smtpPort" placeholder="587" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>SMTP User (Email)</label>
+                                        <input type="email" id="smtpUser" placeholder="your-email@gmail.com" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>SMTP Password</label>
+                                        <input type="password" id="smtpPass" placeholder="********" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Recipient Email</label>
+                                        <input type="email" id="notificationEmail" placeholder="admin@company.com" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Alert Threshold (Days before expiry)</label>
+                                        <input type="number" id="thresholdDays" placeholder="30" class="form-input">
+                                    </div>
+                                </div>
+
+                                <div style="margin-top: 30px; display: flex; gap: 10px;">
+                                    <button type="submit" class="action-button green">Save Settings</button>
+                                    <button type="button" id="btnTestEmail" class="action-button blue">Send Test Email</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Range Management Modal -->
+                    <div id="warrantyRangeModal" class="modal">
+                        <div class="modal-content" style="max-width: 600px;">
+                            <span class="close-modal">&times;</span>
+                            <h3>Manage Warranty Ranges</h3>
+                            <div id="rangeListContainer" style="margin-bottom: 20px; max-height: 300px; overflow-y: auto;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="text-align: left; border-bottom: 1px solid #eee;">
+                                            <th style="padding: 10px;">Color</th>
+                                            <th style="padding: 10px;">Label</th>
+                                            <th style="padding: 10px;">Min (Months)</th>
+                                            <th style="padding: 10px;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="warrantyRangesBody">
+                                        <!-- Ranges will be inserted here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <hr>
+                            <h4 id="rangeFormTitle">Add New Range</h4>
+                            <form id="addRangeForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                                <input type="hidden" id="rangeIndex" value="-1">
+                                <div class="form-group">
+                                    <label>Label</label>
+                                    <input type="text" id="rangeLabel" placeholder="e.g. 2+ Years" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Months Remaining (min)</label>
+                                    <input type="number" id="rangeMinMonths" placeholder="24" required step="0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Color</label>
+                                    <input type="color" id="rangeColor" value="#006400" style="height: 38px; width: 50px; padding: 2px;">
+                                </div>
+                                <button type="submit" id="btnSaveRange" class="action-button green" style="grid-column: span 3; justify-content: center;">Add Range</button>
+                            </form>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Modal for Adding Asset Kind -->
+            <div id="addAssetKindModal" class="modal">
+                <div class="modal-content">
+                    <span class="close-modal">&times;</span>
+                    <h3>Add New Asset Kind</h3>
+                    <form id="addAssetKindForm">
+                        <div class="form-group">
+                            <label for="newKindName">Name (e.g., Laptops)</label>
+                            <input type="text" id="newKindName" name="newKindName" required>
+                        </div>
+                        <div class="form-group">
+                        <label for="newKindIcon">Icon (Emoji or Image)</label>
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            <input type="text" id="newKindIcon" name="newKindIcon" placeholder="💻" style="flex: 1;">
+                            <select id="kindIconPicker" style="width: 40px;" onchange="document.getElementById('newKindIcon').value = this.value">
+                                <option value="📦">📦</option>
+                                <option value="💻">💻</option>
+                                <option value="📱">📱</option>
+                                <option value="🖥️">🖥️</option>
+                                <option value="⌨️">⌨️</option>
+                                <option value="🖱️">🖱️</option>
+                                <option value="🖨️">🖨️</option>
+                                <option value="🔌">🔌</option>
+                                <option value="🔋">🔋</option>
+                            </select>
+                            <button type="button" class="upload-icon-btn" onclick="triggerIconUpload('newKindIcon')" title="Upload New Icon" style="padding: 5px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">📁</button>
+                        </div>
+                    </div>
+                        <div class="form-group">
+                            <label for="newKindParent">Parent Kind (Optional)</label>
+                            <select id="newKindParent" name="newKindParent">
+                                <option value="">None (Top Level)</option>
+                                <!-- Will be populated dynamically -->
+                            </select>
+                        </div>
+                        <button type="submit" class="login-button">Add Kind</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal for Adding Asset Item -->
+            <div id="addAssetItemModal" class="modal">
+                <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+                <span class="close-modal">&times;</span>
+                    <h3 id="addItemModalTitle">Add New Asset</h3>
+                    <form id="addAssetItemForm">
+                        <input type="hidden" id="assetDbId" name="assetDbId">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="itemKind">Asset Category / Kind</label>
+                                <select id="itemKind" name="itemKind" required>
+                                    <option value="" disabled selected>Select Kind...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemName">Item Name / ID</label>
+                                <input type="text" id="itemName" name="itemName" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemIcon">Asset Icon (Emoji or Image)</label>
+                                <div style="display: flex; gap: 5px; align-items: center;">
+                                    <input type="text" id="itemIcon" name="itemIcon" placeholder="📦" style="flex: 1;">
+                                    <select id="iconPicker" style="width: 40px;" onchange="document.getElementById('itemIcon').value = this.value">
+                                        <option value="📦">📦</option>
+                                        <option value="💻">💻</option>
+                                        <option value="📱">📱</option>
+                                        <option value="🖥️">🖥️</option>
+                                        <option value="⌨️">⌨️</option>
+                                        <option value="🖱️">🖱️</option>
+                                        <option value="🖨️">🖨️</option>
+                                        <option value="🔌">🔌</option>
+                                        <option value="🔋">🔋</option>
+                                    </select>
+                                    <button type="button" class="upload-icon-btn" onclick="triggerIconUpload('itemIcon')" title="Upload New Icon" style="padding: 5px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">📁</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemStatus">Initial Status</label>
+                                <select id="itemStatus" name="itemStatus">
+                                    <option value="In Store">In Store</option>
+                                    <option value="In Use">In Use</option>
+                                    <option value="In Repair">In Repair</option>
+                                    <option value="Others">Others</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemMake">Make</label>
+                                <input type="text" id="itemMake" name="itemMake">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemModel">Model</label>
+                                <input type="text" id="itemModel" name="itemModel">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemSrNo">Serial No</label>
+                                <input type="text" id="itemSrNo" name="itemSrNo">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemLocation">Current Location</label>
+                                <input type="text" id="itemLocation" name="itemLocation">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemIn">IN</label>
+                                <input type="number" id="itemIn" name="itemIn" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemOut">OUT</label>
+                                <input type="number" id="itemOut" name="itemOut" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemBalance">Balance</label>
+                                <input type="number" id="itemBalance" name="itemBalance" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemDate">Dispatch / Receive Dt.</label>
+                                <input type="date" id="itemDate" name="itemDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemPurchase">Purchase Details</label>
+                                <input type="text" id="itemPurchase" name="itemPurchase">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemRemarks">Remarks</label>
+                                <input type="text" id="itemRemarks" name="itemRemarks">
+                            </div>
+                            <!-- Warranty Details -->
+                            <div class="form-group">
+                                <label for="itemWarranty">Warranty (Months)</label>
+                                <input type="number" id="itemWarranty" name="itemWarranty" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemAMC">AMC (Months)</label>
+                                <input type="number" id="itemAMC" name="itemAMC" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemValue">Asset Value</label>
+                                <div style="display: flex; gap: 5px;">
+                                    <select id="itemCurrency" name="itemCurrency" style="width: 80px;">
+                                        <option value="INR">INR</option>
+                                        <option value="USD">USD</option>
+                                        <option value="EUR">EUR</option>
+                                        <option value="GBP">GBP</option>
+                                    </select>
+                                    <input type="number" id="itemValue" name="itemValue" value="0" style="flex: 1;">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemPurchaseDate">Purchase Date</label>
+                                <input type="date" id="itemPurchaseDate" name="itemPurchaseDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="itemAssignedTo">Assigned To</label>
+                                <select id="itemAssignedTo" name="itemAssignedTo">
+                                    <option value="">-- Select Employee --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemParentId">Parent Asset ID (Optional)</label>
+                                <input type="text" id="itemParentId" name="itemParentId" placeholder="e.g. LAP2312310001">
+                            </div>
+                        </div>
+
+                        <!-- Children / Components Section -->
+                        <div id="childrenSection" style="margin-top: 15px; border-top: 2px solid #28a745; padding-top: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h4 style="margin: 0; color: #28a745;">Components (No QR required)</h4>
+                                <button type="button" id="btnAddChildField" class="icon-button" style="background: #28a745; color: white; border-radius: 4px; padding: 2px 8px; font-size: 12px;">+ Add Component</button>
+                            </div>
+                            <div id="childrenListContainer" style="margin-bottom: 15px;">
+                                <!-- Child asset rows will be added here -->
+                            </div>
+
+                            <div style="border-top: 1px dashed #ccc; padding-top: 10px;">
+                                <h4 style="margin: 0 0 5px 0; color: #0078d4; font-size: 0.9em;">Link Existing Component (QR)</h4>
+                                <div style="display: flex; gap: 5px;">
+                                    <input type="text" id="linkComponentSearch" placeholder="Search by ID or Name..." style="flex: 1; padding: 5px; font-size: 12px;">
+                                </div>
+                                <div id="linkComponentResults" style="max-height: 100px; overflow-y: auto; background: #fff; border: 1px solid #eee; display: none; margin-top: 5px;"></div>
+                                <div id="linkedComponentsList" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- IT Specific Fields -->
+                        <div id="itFields" style="display: none; margin-top: 15px; border-top: 2px solid #0078d4; padding-top: 15px;">
+                            <h4 style="margin-bottom: 10px; color: #0078d4;">IT & Connectivity Details</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                <div class="form-group">
+                                    <label for="itemMAC">MAC Address</label>
+                                    <input type="text" id="itemMAC" name="itemMAC" placeholder="00:00:00:00:00:00">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemIP">IP Address</label>
+                                    <input type="text" id="itemIP" name="itemIP" placeholder="192.168.1.1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemNetworkType">Network Type</label>
+                                    <select id="itemNetworkType" name="itemNetworkType">
+                                        <option value="DHCP">DHCP</option>
+                                        <option value="Static">Static</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemPhysicalPort">Physical Port</label>
+                                    <input type="text" id="itemPhysicalPort" name="itemPhysicalPort" placeholder="SW-01 Port 24">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemVLAN">VLAN</label>
+                                    <input type="text" id="itemVLAN" name="itemVLAN" placeholder="10 (IT)">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemSocketID">Socket ID</label>
+                                    <input type="text" id="itemSocketID" name="itemSocketID" placeholder="SKT-A12">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemUserID">User ID / Login</label>
+                                    <input type="text" id="itemUserID" name="itemUserID" placeholder="john.doe">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                            <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Add Asset</button>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-size: 0.9em; color: #666;">Or Bulk Upload:</span>
+                                <input type="file" id="bulkUploadFile" accept=".csv,.xlsx" style="display: none;">
+                                <button type="button" class="login-button" style="width: auto; padding: 5px 15px; background: #28a745;" onclick="document.getElementById('bulkUploadFile').click()">CSV/Excel</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal for Asset List View -->
+            <div id="assetListModal" class="modal">
+                <div class="modal-content" style="max-width: 90%; width: 1000px;">
+                    <span class="close-modal">&times;</span>
+                    <h3 id="assetListTitle">Asset List</h3>
+                    <div class="table-container" style="max-height: 60vh; overflow-y: auto; margin-top: 15px;">
+                        <table id="tblAssetList">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Icon</th>
+                                    <th>Item Name</th>
+                                    <th>Status</th>
+                                    <th>Make</th>
+                                    <th>Model</th>
+                                    <th>Serial No</th>
+                                    <th>Location</th>
+                                    <th>Assigned To</th>
+                                    <th>Warranty</th>
+                                    <th>Parent ID</th>
+                                    <th>IN</th>
+                                    <th>OUT</th>
+                                    <th>Bal</th>
+                                    <th>Details</th>
+                                    <th>QR Code</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tblBodyAssetList">
+                                <!-- Rows will be dynamically inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delivery Challan Modal -->
+            <div id="dcModal" class="modal">
+                <div class="modal-content">
+                    <h3 id="dcModalTitle">Create Delivery Challan</h3>
+                    <div id="dcForm" class="asset-form">
+                        <!-- Form fields for DC -->
+                    </div>
+                    <div class="modal-actions">
+                        <button class="cancel-button" onclick="document.getElementById('dcModal').style.display='none'">Cancel</button>
+                        <button class="login-button" id="btnSaveDC">Create</button>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Employee Modal -->
+            <div id="employeeModal" class="modal">
+                <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+                    <span class="close-modal" id="closeEmployeeModal">&times;</span>
+                    <h3 id="employeeModalTitle">Add New Employee</h3>
+                    <form id="employeeForm" class="asset-form">
+                        <input type="hidden" id="employeeDbId" name="employeeDbId">
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="empId">Employee ID *</label>
+                                <input type="text" id="empId" name="empId" placeholder="EMP001" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="empName">Full Name *</label>
+                                <input type="text" id="empName" name="empName" placeholder="John Doe" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="empDept">Department</label>
+                                <input type="text" id="empDept" name="empDept" placeholder="IT / Finance / HR">
+                            </div>
+                            <div class="form-group">
+                                <label for="empDesignation">Designation</label>
+                                <input type="text" id="empDesignation" name="empDesignation" placeholder="Software Engineer">
+                            </div>
+                            <div class="form-group">
+                                <label for="empEmail">Email</label>
+                                <input type="email" id="empEmail" name="empEmail" placeholder="john.doe@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="empPhone">Phone</label>
+                                <input type="text" id="empPhone" name="empPhone" placeholder="+1234567890">
+                            </div>
+                            <div class="form-group">
+                                <label for="empStatus">Status</label>
+                                <select id="empStatus" name="empStatus">
+                                    <option value="ACTIVE">ACTIVE</option>
+                                    <option value="INACTIVE">INACTIVE</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 20px; text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
+                            <button type="button" class="cancel-button" id="btnCancelEmployee">Cancel</button>
+                            <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Save Employee</button>
+                        </div>
+                    </form>
+
+                    <!-- Assigned Assets Section -->
+                    <div id="employeeAssetsSection" style="margin-top: 25px; border-top: 2px solid #eee; padding-top: 15px; display: none;">
+                        <h4 style="margin-bottom: 10px; color: #0078d4;">Assigned Assets</h4>
+                        <div id="employeeAssetsList" style="max-height: 200px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                                <thead style="background: #f8f9fa;">
+                                    <tr>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #ddd;">ID</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #ddd;">Item</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #ddd;">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="employeeAssetsBody">
+                                    <!-- Assets will be listed here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Mapping Preview Modal -->
+            <div id="bulkMappingModal" class="modal">
+                <div class="modal-content" style="max-width: 800px; max-height: 90vh; display: flex; flex-direction: column;">
+                    <span class="close-modal" onclick="document.getElementById('bulkMappingModal').style.display='none'">&times;</span>
+                    <h3>Analyze & Map Data</h3>
+                    <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">We've analyzed your file. Please verify that the spreadsheet columns match our system fields correctly.</p>
+                    
+                    <div style="flex-grow: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 5px; margin-bottom: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                        <thead style="position: sticky; top: 0; background: #f8f9fa; border-bottom: 2px solid #dee2e6; z-index: 10;">
+                            <tr>
+                                <th style="padding: 10px; text-align: left;">Spreadsheet Column</th>
+                                <th style="padding: 10px; text-align: left;">Sample Data</th>
+                                <th style="padding: 10px; text-align: left;">Maps To Field</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappingTableBody">
+                            <!-- Suggestions will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Live Preview Section -->
+                <div style="margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 0.9em; color: #333;">Data Preview (First 3 rows):</h4>
+                    <div id="bulkUploadPreview" style="font-size: 0.8em; background: #fdfdfe; border: 1px dashed #ccc; padding: 10px; border-radius: 4px; max-height: 150px; overflow-y: auto;">
+                        <p style="color: #999; font-style: italic;">Adjust mappings above to see preview...</p>
+                    </div>
+                </div>
+
+                    <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="cancel-button" onclick="document.getElementById('bulkMappingModal').style.display='none'">Cancel</button>
+                        <button id="btnConfirmBulkUpload" class="login-button" style="width: auto; padding: 10px 30px; background: #28a745;">Process & Upload</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Link Asset Modal -->
+            <div id="linkAssetModal" class="modal">
+                <div class="modal-content" style="max-width: 500px;">
+                    <span class="close-modal" onclick="document.getElementById('linkAssetModal').style.display='none'">&times;</span>
+                    <h2 id="linkModalTitle">Link Device to Asset</h2>
+                    <p id="linkModalSubtitle" style="color: #666; margin-bottom: 20px;"></p>
+                    
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600;">Select Asset</label>
+                        <select id="linkAssetSelect" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">Loading assets...</option>
+                        </select>
+                    </div>
+
+                    <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="cancel-button" onclick="document.getElementById('linkAssetModal').style.display='none'">Cancel</button>
+                        <button id="btnConfirmLinkAsset" class="login-button" style="width: auto; padding: 10px 30px;">Link Asset</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project Modals -->
+            <div id="createProjectModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 600px;">
+                    <span class="close-modal" onclick="document.getElementById('createProjectModal').style.display='none'">&times;</span>
+                    <h3>Initialize New Project</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Project Name</label>
+                            <input type="text" id="sideProjectName" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>Client Name</label>
+                            <input type="text" id="sideProjectClient" class="form-input">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Location</label>
+                            <input type="text" id="sideProjectLocation" class="form-input" value="MUMBAI">
+                        </div>
+                        <div class="form-group">
+                            <label>Currency</label>
+                            <select id="sideProjectCurrency" class="form-input">
+                                <option value="INR">INR (₹)</option>
+                                <option value="USD">USD ($)</option>
+                                <option value="EUR">EUR (€)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="sideProjectDesc" class="form-input" style="height: 80px; width: 100%;"></textarea>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Start Date</label>
+                            <input type="date" id="sideProjectStartDate" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" id="sideProjectEndDate" class="form-input">
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="btnSideSubmitProject" class="action-button blue">Initialize Project</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="projectDetailsModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 900px; width: 95%;">
+                    <span class="close-modal" onclick="document.getElementById('projectDetailsModal').style.display='none'">&times;</span>
+                    <h2 id="modalProjectTitle">Project Details</h2>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div id="projectClientInfo" class="card-panel"></div>
+                        <div id="projectStats" class="card-panel" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;"></div>
+                    </div>
+
+                    <div id="clientUserAction" style="margin-bottom: 20px; display: none;">
+                        <button class="action-button blue" onclick="showCreateClientUserModal()">Create Client User Account</button>
+                    </div>
+
+                    <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 10px;">
+                        <button class="tab-btn active" onclick="switchProjectTab('assets')">Project Assets</button>
+                        <button class="tab-btn" onclick="switchProjectTab('temp')">Temporary Assets</button>
+                        <button class="tab-btn" onclick="switchProjectTab('bom')">BOM / Export</button>
+                    </div>
+
+                    <div id="projectAssetsTab" class="project-tab-content active">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0;">Assigned Permanent Assets</h3>
+                            <button class="action-button green" onclick="showAssignAssetModal()">+ Assign Asset</button>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Item Name</th>
+                                    <th>Status</th>
+                                    <th>Category</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="projectAssetsTableBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="projectTempAssetsTab" class="project-tab-content" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0;">Temporary Assets (Rental/Service)</h3>
+                            <button class="action-button blue" onclick="showAddTempAssetModal()">+ Add Temp Asset</button>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Item Name</th>
+                                    <th>Make/Model</th>
+                                    <th>Qty</th>
+                                    <th>Est. Price</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="projectTempAssetsTableBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="projectBomTab" class="project-tab-content" style="display: none;">
+                        <div id="projectBomContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="assignAssetModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 500px;">
+                    <span class="close-modal" onclick="document.getElementById('assignAssetModal').style.display='none'">&times;</span>
+                    <h3>Assign Asset to Project</h3>
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px;">Select Asset</label>
+                        <select id="assignAssetSelect" class="form-input" style="width: 100%; padding: 8px;"></select>
+                    </div>
+                    <div class="modal-actions" style="display: flex; justify-content: flex-end;">
+                        <button id="btnConfirmAssignAsset" class="action-button blue">Assign to Project</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="addTempAssetModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 500px;">
+                    <span class="close-modal" onclick="document.getElementById('addTempAssetModal').style.display='none'">&times;</span>
+                    <h3>Add Temporary Asset</h3>
+                    <div class="form-group" style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Item Name</label>
+                        <input type="text" id="tempItemName" class="form-input" style="width: 100%; padding: 8px;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 5px;">Make</label>
+                            <input type="text" id="tempMake" class="form-input" style="width: 100%; padding: 8px;">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 5px;">Model</label>
+                            <input type="text" id="tempModel" class="form-input" style="width: 100%; padding: 8px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 5px;">Quantity</label>
+                            <input type="number" id="tempQuantity" class="form-input" value="1" style="width: 100%; padding: 8px;">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 5px;">Price</label>
+                            <input type="number" id="tempPrice" class="form-input" value="0" style="width: 100%; padding: 8px;">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: block; margin-bottom: 5px;">Currency</label>
+                            <select id="tempCurrency" class="form-input" style="width: 100%; padding: 8px;">
+                                <option value="INR">INR</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                                <option value="GBP">GBP</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-actions" style="display: flex; justify-content: flex-end;">
+                        <button id="btnSubmitTempAsset" class="action-button blue">Add to Project</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="itAssetsView" class="view">
+                <h2>IT Assets</h2>
+                <table id="tblItAssets">
+                    <thead>
+                        <tr>
+                            <th>Asset Tag</th>
+                            <th>Model</th>
+                            <th>User</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblBodyItAssets">
+                        <!-- Rows will be dynamically inserted here -->
+                    </tbody>
+                </table>
+                <!-- IT Assets specific forms/buttons -->
+            </div>
+
+            <!-- Batch Print Overlay (Floating) -->
+            <div id="batchPrintOverlay" class="batch-print-overlay" style="display: none;">
+                <div>
+                    <span id="selectedCount" style="font-weight: bold; color: #007bff;">0</span> items selected
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="btnCancelSelection" class="size-btn" style="background: #f8d7da; color: #721c24;">Cancel</button>
+                    <button id="btnProceedBatchPrint" class="login-button" style="width: auto; padding: 5px 15px; background: #17a2b8; font-size: 14px;">Print Selected</button>
+                </div>
+            </div>
+
+            <!-- Batch Print View (Hidden until printing) -->
+            <div id="batchPrintView" class="view hidden" style="padding: 40px; background: white; height: 100%; overflow-y: auto;">
+                <div class="no-print" style="margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Batch QR Print Preview</h2>
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <div style="display: flex; gap: 10px;">
+                            <button class="size-btn batch-size-btn" data-size="1cm">1x1 cm</button>
+                            <button class="size-btn batch-size-btn" data-size="2cm">2x2 cm</button>
+                            <button class="size-btn batch-size-btn active" data-size="5cm">5x5 cm</button>
+                        </div>
+                        <button id="btnConfirmBatchPrint" class="login-button" style="width: auto; padding: 10px 25px; background: #28a745;">Confirm & Print</button>
+                        <button id="btnBackFromBatch" class="login-button" style="width: auto; padding: 10px 25px; background: #6c757d;">Back</button>
+                    </div>
+                </div>
+                <div id="batchQrContainer" class="qr-print-5cm">
+                    <!-- QR codes will be dynamically inserted here -->
+                </div>
+            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="btnSearchBy">Search</button>
+    <div id="searchPanel" style="display: none;">
+        <!-- Search input and results -->
+        <input type="text" id="searchInput" placeholder="Search...">
+        <button id="searchButton">Go</button>
+    </div>
+
+    <script>
+        console.log('INDEX.HTML: Inline script execution check (v4.4)');
+        window.addEventListener('error', function(e) {
+            console.error('GLOBAL ERROR CAUGHT:', e.message, 'at', e.filename, ':', e.lineno);
+        });
+        setTimeout(function() {
+            if (!window.sidebarDiagnostic) {
+                console.error('CRITICAL: main.js failed to load within 3 seconds!');
+                document.body.insertAdjacentHTML('afterbegin', '<div style="background:red;color:white;padding:20px;position:fixed;top:0;left:0;z-index:99999;">CRITICAL: JavaScript modules failed to load. Please check console for errors.</div>');
+            }
+        }, 3000);
+    </script>
+    <!-- Hidden File Input for Icon Upload -->
+    <input type="file" id="iconUploadInput" style="display: none;" accept="image/*">
+    
+    <script type="module" src="/js/main.js?v=4.5"></script>
+</body>
+</html>
