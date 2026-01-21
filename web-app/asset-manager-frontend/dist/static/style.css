@@ -479,6 +479,10 @@ body {
 
 .action-button.green { background-color: #28a745; }
 .action-button.blue { background-color: #007bff; }
+.action-button.red { background-color: #dc3545; }
+.action-button.gray { background-color: #6c757d; }
+.action-button.light-gray { background-color: #e9ecef; color: #495057; }
+.action-button.light-gray:hover { background-color: #dee2e6; }
 
 /* Tabulator Row Height and Text Visibility */
 .tabulator .tabulator-row {
