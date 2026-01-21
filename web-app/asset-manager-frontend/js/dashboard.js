@@ -2758,11 +2758,11 @@ export function setupDashboardFormHandlers() {
                 }
 
                 // Collect Children (No QR)
-                const children = [];
+                const components = [];
                 form.querySelectorAll('.child-asset-row').forEach(row => {
                     const name = row.querySelector('.child-name').value;
                     if (name) {
-                        children.push({
+                        components.push({
                             ItemName: name,
                             Make: row.querySelector('.child-make').value,
                             SrNo: row.querySelector('.child-srno').value,
@@ -2770,7 +2770,7 @@ export function setupDashboardFormHandlers() {
                         });
                     }
                 });
-                asset.children = children;
+                asset.components = components;
 
                 // Collect Linked Components (With QR)
                 const linkedIds = [];
@@ -2780,7 +2780,7 @@ export function setupDashboardFormHandlers() {
                         linkedIds.push(tag.getAttribute('data-id'));
                     });
                 }
-                asset.linkedComponentIds = linkedIds;
+                asset.linkedIds = linkedIds;
 
                 console.log('Saving asset via window.saveAsset:', asset);
                 const result = await window.saveAsset(asset);

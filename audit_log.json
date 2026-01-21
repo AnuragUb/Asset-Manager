@@ -5409,5 +5409,21 @@
     "Severity": "INFO",
     "Details": "Sent EXPIRING SOON email notification to Swapnil@Cineom.in",
     "Timestamp": "2026-01-20T08:38:19.934Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "LAP2601035116",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to Swapnil@Cineom.in",
+    "Timestamp": "2026-01-21T03:30:03.092Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to Swapnil@Cineom.in",
+    "Timestamp": "2026-01-21T03:30:06.051Z"
   }
 ]

@@ -7,5 +7,9 @@
     "smtp_pass": "pcdt lfsv gwjz jybs",
     "notification_email": "Swapnil@Cineom.in",
     "threshold_days": 30
+  },
+  "notified_assets": {
+    "LAP2601035116_1771113600000": "2026-01-21T03:30:03.094Z",
+    "MUM-0126-AJW99D-Q_1771027200000": "2026-01-21T03:30:06.052Z"
   }
 }

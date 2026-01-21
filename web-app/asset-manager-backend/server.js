@@ -1220,110 +1220,6 @@ app.post('/api/assets/bulk', async (req, res) => {
   }
 });
 
-app.put('/api/assets/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const asset = req.body;
-
-    // Basic Validation
-    if (!asset.ItemName || asset.ItemName.trim() === '') {
-      return res.status(400).json({ success: false, error: 'Item Name is required' });
-    }
-    if (!asset.Category || asset.Category.trim() === '') {
-      return res.status(400).json({ success: false, error: 'Category is required' });
-    }
-    if (!asset.Type || asset.Type.trim() === '') {
-      return res.status(400).json({ success: false, error: 'Type (Kind) is required' });
-    }
-
-    console.log('Updating asset:', id);
-
-    // Update main asset table
-    const stmt = db.prepare(`
-      UPDATE assets SET 
-        ItemName = ?, Status = ?, Make = ?, Model = ?, SrNo = ?, Type = ?,
-        Category = ?, Icon = ?, ParentId = ?, CurrentLocation = ?,
-        "IN" = ?, "OUT" = ?, Balance = ?, DispatchReceiveDt = ?,
-        PurchaseDetails = ?, Remarks = ?, LastUpdated = ?, AssignedTo = ?, NoQR = ?,
-        warranty_months = ?, amc_months = ?, asset_value = ?, Currency = ?, PurchaseDate = ?
-      WHERE ID = ?
-    `);
-
-    const result = stmt.run(
-      asset.ItemName || '',
-      asset.Status || 'In Store',
-      asset.Make || '',
-      asset.Model || '',
-      asset.SrNo || '',
-      asset.Type || '',
-      asset.Category || '',
-      asset.Icon || '',
-      asset.ParentId || null,
-      asset.CurrentLocation || '',
-      asset.IN || '0',
-      asset.OUT || '0',
-      asset.Balance || '0',
-      asset.DispatchReceiveDt || '',
-      asset.PurchaseDetails || '',
-      asset.Remarks || '',
-      new Date().toISOString(),
-      asset.AssignedTo || '',
-      asset.NoQR ? 1 : 0,
-      asset.warranty_months || 0,
-      asset.amc_months || 0,
-      asset.asset_value || 0,
-      asset.Currency || 'USD',
-      asset.PurchaseDate || '',
-      id
-    );
-
-    if (result.changes === 0) {
-      return res.status(404).json({ success: false, error: 'Asset not found' });
-    }
-
-    // Update IT details if any exist
-    if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
-      db.prepare(`
-        INSERT OR REPLACE INTO asset_it_details (
-          AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        asset.MACAddress || '',
-        asset.IPAddress || '',
-        asset.NetworkType || '',
-        asset.PhysicalPort || '',
-        asset.VLAN || '',
-        asset.SocketID || '',
-        asset.UserID || ''
-      );
-    }
-
-    // Handle linked existing assets (update their ParentId to this asset)
-    if (Array.isArray(asset.linkedIds)) {
-      // First, clear existing children for this parent if needed? 
-      // Actually, standard behavior for linkedIds in POST was to set ParentId.
-      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
-      for (const linkId of asset.linkedIds) {
-        linkStmt.run(id, linkId);
-      }
-    }
-
-    appendAudit({ 
-      Action: 'UPDATE', 
-      User: req.headers['x-user'] || 'web', 
-      AssetId: id, 
-      Severity: 'INFO', 
-      Details: `Asset updated: ${asset.ItemName}` 
-    });
-
-    res.json({ success: true, ID: id });
-  } catch (err) {
-    console.error('Failed to update asset:', err);
-    res.status(500).send('Error updating asset: ' + err.message);
-  }
-});
-
 // --- External Integration API (for Zoho, Odoo, etc.) ---
 
 /**
@@ -1673,12 +1569,16 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         const qrCode = await qrcode.toDataURL(urlText, { width: 512 });
 
         db.transaction(() => {
+            // Get project location if possible
+            const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(tempAsset.ProjectId);
+            const location = project ? project.Location : 'MUMBAI';
+
             // 1. Insert into assets
             db.prepare(`
                 INSERT INTO assets (
                   ID, No, ItemName, Status, Make, Model, Type, 
-                  Category, Icon, isPlaceholder, LastUpdated, QRCode, NoQR
-                ) VALUES (?, ?, ?, 'In Store', ?, ?, ?, ?, '🧩', 0, ?, ?, 0)
+                  Category, Icon, isPlaceholder, LastUpdated, QRCode, NoQR, CurrentLocation, asset_value, Currency
+                ) VALUES (?, ?, ?, 'In Store', ?, ?, ?, ?, '🧩', 0, ?, ?, 0, ?, ?, ?)
             `).run(
               newAssetId, 
               newAssetId, 
@@ -1688,7 +1588,10 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
               tempAsset.Type || 'AST', 
               tempAsset.Category || 'General', 
               new Date().toISOString(), 
-              qrCode
+              qrCode,
+              location,
+              tempAsset.EstimatedPrice || 0,
+              tempAsset.Currency || 'USD'
             );
 
             // 2. Link to project
@@ -1700,6 +1603,15 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
             // 3. Mark temporary as permanent
             db.prepare('UPDATE temporary_assets SET IsPermanent = 1, PermanentAssetId = ? WHERE ID = ?')
                 .run(newAssetId, id);
+
+            // 4. Audit Log
+            appendAudit({ 
+                Action: 'CONVERT_TEMP', 
+                User: req.headers['x-user'] || 'web', 
+                AssetId: newAssetId, 
+                Severity: 'INFO', 
+                Details: `Converted temporary asset "${tempAsset.ItemName}" to permanent asset. Linked to Project ID: ${tempAsset.ProjectId}` 
+            });
         })();
 
         res.json({ success: true, permanentId: newAssetId });
