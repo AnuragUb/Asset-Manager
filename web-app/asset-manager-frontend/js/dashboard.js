@@ -2168,20 +2168,21 @@ export function renderDashboard(assets, filteredAssets) {
                     card.classList.add('asset-card');
                     card.onclick = () => showTempAssetDetails(asset.ID); 
                     card.style.cursor = 'pointer'; 
+                    card.style.paddingBottom = '35px'; // Space for buttons
                     card.innerHTML = `
-                        <div class="asset-card-icon">⏳</div>
-                        <div class="asset-card-header">
+                        <div class="asset-card-icon" style="margin-bottom: 2px;">⏳</div>
+                        <div class="asset-card-header" style="margin-bottom: 2px;">
                             <span class="asset-card-title">${asset.ItemName}</span>
                         </div>
-                        <div style="padding: 10px; font-size: 12px; color: #666;">
-                            <div>Project ID: ${asset.ProjectId}</div>
-                            <div>Make/Model: ${asset.Make || '-'} / ${asset.Model || '-'}</div>
-                            <div>Qty: ${asset.Quantity}</div>
-                            <div>Est. Price: ${asset.EstimatedPrice} ${asset.Currency}</div>
+                        <div class="asset-card-status" style="grid-template-columns: 1fr; border-top: 1px solid #f0f0f0; margin-top: 2px; padding-top: 4px;">
+                            <div class="asset-card-status-item">
+                                <span class="asset-card-status-label" style="font-size: 8px;">Project ID</span>
+                                <span class="asset-card-status-value" style="font-size: 9px; color: #007bff; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">${asset.ProjectId}</span>
+                            </div>
                         </div>
-                        <div style="padding: 10px; display: flex; gap: 5px; justify-content: center;">
-                            <button onclick="event.stopPropagation(); makeAssetPermanent('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #e6f7ff; color: #1890ff; border-color: #91d5ff;">Convert</button>
-                            <button onclick="event.stopPropagation(); deleteTempAsset('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #fff1f0; color: #cf1322; border-color: #ffa39e;">Delete</button>
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; display: flex; height: 28px; border-top: 1px solid #eee; background: #fff; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; overflow: hidden;">
+                            <button onclick="event.stopPropagation(); makeAssetPermanent('${asset.ID}')" style="flex: 1; border: none; background: #f0f7ff; color: #007bff; font-size: 10px; font-weight: 600; cursor: pointer; border-right: 1px solid #eee; transition: all 0.2s;" onmouseover="this.style.background='#e6f0ff'" onmouseout="this.style.background='#f0f7ff'">Convert</button>
+                            <button onclick="event.stopPropagation(); deleteTempAsset('${asset.ID}')" style="flex: 1; border: none; background: #fff1f0; color: #f5222d; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ffe8e6'" onmouseout="this.style.background='#fff1f0'">Delete</button>
                         </div>
                     `;
                     assetGrid.appendChild(card);
