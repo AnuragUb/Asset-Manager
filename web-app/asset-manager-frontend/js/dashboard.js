@@ -1165,6 +1165,54 @@ window.showTempAssetDetails = async function(assetId) {
     alert(`Viewing Temporary Asset: ${assetId}\n(Full details modal can be implemented here)`);
 };
 
+window.makeAssetPermanent = async function(id) {
+    if (!confirm('Convert this temporary asset to a permanent asset?')) return;
+    
+    try {
+        const response = await fetch(`/api/temporary-assets/${id}/make-permanent`, {
+            method: 'POST',
+            headers: {
+                'x-user': localStorage.getItem('username') || 'web'
+            }
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            alert(`Asset converted successfully! New ID: ${result.assetId}`);
+            // Refresh the dashboard
+            renderDashboard(window.allAssets, () => []); 
+            if (window.loadAssets) await window.loadAssets();
+        } else {
+            const err = await response.text();
+            alert('Error converting asset: ' + err);
+        }
+    } catch (err) {
+        console.error('Conversion error:', err);
+        alert('Failed to convert asset');
+    }
+};
+
+window.deleteTempAsset = async function(id) {
+    if (!confirm('Are you sure you want to delete this temporary asset?')) return;
+    
+    try {
+        const response = await fetch(`/api/temporary-assets/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('Temporary asset deleted.');
+            renderDashboard(window.allAssets, () => []); 
+        } else {
+            const err = await response.text();
+            alert('Error deleting asset: ' + err);
+        }
+    } catch (err) {
+        console.error('Delete error:', err);
+        alert('Failed to delete asset');
+    }
+};
+
 async function loadProjectTempAssets(projectId) {
     const tbody = document.getElementById('projectTempAssetsTableBody');
     if (!tbody) {
@@ -1654,6 +1702,12 @@ export function renderSidebarTree() {
                     <a href="#" class="menu-item toggle-submenu active" id="allAssetsLink" style="text-decoration: none; color: #007bff; font-weight: bold; flex: 1;">All Assets</a>
                 </div>
                 <div id="sidebar-hierarchy-container" style="display: block;">
+                    <div class="tree-node" style="user-select: none;">
+                        <div class="tree-item-wrapper" style="padding: 6px 20px 6px 40px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <span class="tree-icon">⏳</span>
+                            <a href="#" class="tree-link" id="tempAssetsLink" style="flex: 1; color: #555; font-size: 13px; text-decoration: none;">Temporary Assets</a>
+                        </div>
+                    </div>
                     ${treeHTML || '<p style="padding: 10px 40px; color: #999; font-size: 12px; font-style: italic;">No categories found</p>'}
                 </div>
             </li>
@@ -1684,6 +1738,26 @@ export function renderSidebarTree() {
                     l.style.color = '#555';
                     l.style.fontWeight = 'normal';
                 });
+                allAssetsLink.style.color = '#007bff';
+            };
+        }
+
+        const tempAssetsLink = document.getElementById('tempAssetsLink');
+        if (tempAssetsLink) {
+            tempAssetsLink.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.currentDashboardParent = { ID: 'TEMP_VIEW', Name: 'Temporary Assets', type: 'virtual' };
+                
+                // Set active state
+                sidebarMenu.querySelectorAll('.tree-link').forEach(l => {
+                    l.style.color = '#555';
+                    l.style.fontWeight = 'normal';
+                });
+                tempAssetsLink.style.color = '#007bff';
+                tempAssetsLink.style.fontWeight = 'bold';
+
+                renderDashboard(window.allAssets, () => []); // We'll handle fetching temp assets in renderDashboard
             };
         }
 
@@ -1765,6 +1839,72 @@ export function renderDashboard(assets, filteredAssets) {
     if (!manager) {
         console.warn('HierarchyManager not yet initialized. Postponing renderDashboard.');
         assetGrid.innerHTML = '<div style="padding: 20px; color: #666;">Loading hierarchy...</div>';
+        return;
+    }
+
+    // Special Case: Temporary Assets View
+    if (window.currentDashboardParent && window.currentDashboardParent.ID === 'TEMP_VIEW') {
+        const dashboardTitle = document.getElementById('dashboard-title');
+        if (dashboardTitle) {
+            dashboardTitle.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="btnDashboardBack" class="icon-button" style="background: #eee; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; cursor: pointer;">←</button>
+                    <span>Temporary Assets</span>
+                </div>
+            `;
+            const btnBack = document.getElementById('btnDashboardBack');
+            if (btnBack) {
+                btnBack.onclick = () => {
+                    window.currentDashboardParent = null;
+                    renderDashboard(window.allAssets, () => window.allAssets);
+                };
+            }
+        }
+
+        assetGrid.innerHTML = '<div style="grid-column: 1 / -1; padding: 20px; text-align: center;">Loading temporary assets...</div>';
+        
+        fetch('/api/temporary-assets')
+            .then(r => r.json())
+            .then(tempAssets => {
+                if (tempAssets.length === 0) {
+                    assetGrid.innerHTML = `
+                        <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                            <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                            <p>No temporary assets found.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                assetGrid.innerHTML = '';
+                // Group by project if needed, or just show all
+                tempAssets.forEach(asset => {
+                    const card = document.createElement('div');
+                    card.classList.add('asset-card');
+                    card.style.cursor = 'default';
+                    card.innerHTML = `
+                        <div class="asset-card-icon">⏳</div>
+                        <div class="asset-card-header">
+                            <span class="asset-card-title">${asset.ItemName}</span>
+                        </div>
+                        <div style="padding: 10px; font-size: 12px; color: #666;">
+                            <div>Project ID: ${asset.ProjectId}</div>
+                            <div>Make/Model: ${asset.Make || '-'} / ${asset.Model || '-'}</div>
+                            <div>Qty: ${asset.Quantity}</div>
+                            <div>Est. Price: ${asset.EstimatedPrice} ${asset.Currency}</div>
+                        </div>
+                        <div style="padding: 10px; display: flex; gap: 5px; justify-content: center;">
+                            <button onclick="makeAssetPermanent('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #e6f7ff; color: #1890ff; border-color: #91d5ff;">Convert</button>
+                            <button onclick="deleteTempAsset('${asset.ID}')" class="btn-action" style="font-size: 11px; background: #fff1f0; color: #cf1322; border-color: #ffa39e;">Delete</button>
+                        </div>
+                    `;
+                    assetGrid.appendChild(card);
+                });
+            })
+            .catch(err => {
+                console.error('Error loading temp assets:', err);
+                assetGrid.innerHTML = '<div style="grid-column: 1 / -1; color: red; text-align: center; padding: 20px;">Error loading temporary assets</div>';
+            });
         return;
     }
 
@@ -2837,6 +2977,83 @@ export function setupDashboardFormHandlers() {
             } catch (err) {
                 console.error('Kind submission error:', err);
                 alert('Failed to save category');
+            }
+        };
+    }
+
+    // Unified Reporting System Handlers
+    const btnReportDashboard = document.getElementById('btnReportDashboard');
+    if (btnReportDashboard) {
+        btnReportDashboard.onclick = () => {
+            const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+            const parent = window.currentDashboardParent;
+            const parentName = parent ? parent.Name : 'All Assets';
+            
+            let assetsToReport = [];
+            if (parent && parent.ID === 'TEMP_VIEW') {
+                // For temporary assets, we'd need to fetch them or get them from the grid
+                alert('Generating report for Temporary Assets...');
+                // Simplified: Just print the current view
+                window.print();
+                return;
+            }
+
+            // Get current assets in view
+            if (!parent) {
+                assetsToReport = window.allAssets || [];
+            } else {
+                const manager = window.hierarchyManager;
+                if (manager) {
+                    const descendants = manager.getDescendants(parent.ID, true);
+                    const kindNames = descendants.filter(d => d.type === 'kind').map(d => d.Name);
+                    assetsToReport = (window.allAssets || []).filter(a => kindNames.includes(a.Type));
+                }
+            }
+
+            if (assetsToReport.length === 0) {
+                alert('No assets to report in current view.');
+                return;
+            }
+
+            console.log(`Generating report for ${assetsToReport.length} assets in ${parentName}`);
+            
+            // For now, let's use a simple CSV export for the dashboard as well
+            const headers = ['ID', 'ItemName', 'Type', 'Status', 'Make', 'Model', 'SrNo', 'Location', 'AssignedTo'];
+            const csvContent = [
+                headers.join(','),
+                ...assetsToReport.map(a => [
+                    a.ID,
+                    `"${a.ItemName || ''}"`,
+                    `"${a.Type || ''}"`,
+                    `"${a.Status || ''}"`,
+                    `"${a.Make || ''}"`,
+                    `"${a.Model || ''}"`,
+                    `"${a.SrNo || ''}"`,
+                    `"${a.CurrentLocation || ''}"`,
+                    `"${a.AssignedTo || ''}"`
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `AssetReport_${category}_${parentName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }
+
+    const btnReportSheet = document.getElementById('btnReportSheet');
+    if (btnReportSheet) {
+        btnReportSheet.onclick = () => {
+            if (window.tabulatorInstance) {
+                const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+                window.tabulatorInstance.download("xlsx", `AssetSheet_${category}_${new Date().toISOString().split('T')[0]}.xlsx`, { sheetName: "Assets" });
+            } else {
+                alert('Sheet view is not initialized.');
             }
         };
     }
