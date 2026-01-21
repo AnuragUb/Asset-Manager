@@ -238,55 +238,110 @@ function showDCPreview(result, customer, date) {
     modal.style.display = 'flex';
 }
 
-function initSheetView() {
+async function initSheetView() {
     console.log('initSheetView() called');
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-    const assets = (window.allAssets || []).filter(a => 
-        a.Category === category && 
-        !(a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true')
-    );
+    
+    let assets = [];
+    let isTemp = window.currentDashboardParent && window.currentDashboardParent.ID === 'TEMP_VIEW';
 
-    console.log('Assets for sheet view:', assets.length);
+    if (isTemp) {
+        if (!window.currentTempAssets || window.currentTempAssets.length === 0) {
+            console.log('Fetching temporary assets for sheet view...');
+            try {
+                const response = await fetch('/api/temporary-assets');
+                window.currentTempAssets = await response.json();
+            } catch (err) {
+                console.error('Error fetching temp assets for sheet:', err);
+            }
+        }
+        assets = window.currentTempAssets || [];
+        console.log('Loading temporary assets into sheet view:', assets.length);
+    } else {
+        assets = (window.allAssets || []).filter(a => 
+            a.Category === category && 
+            !(a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true')
+        );
+        console.log('Assets for sheet view:', assets.length);
+    }
 
     if (window.tabulatorInstance) {
+        // Update columns if switching between temp and regular
+        if (isTemp) {
+            const tempColumns = [
+                { title: "ID", field: "ID", width: 120, headerFilter: "input" },
+                { title: "Item Name", field: "ItemName", headerFilter: "input" },
+                { title: "Project ID", field: "ProjectId", width: 120, headerFilter: "input" },
+                { title: "Quantity", field: "Quantity", width: 100, headerFilter: "number" },
+                { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number" },
+                { title: "Currency", field: "Currency", width: 80 },
+                { title: "Make", field: "Make", headerFilter: "input" },
+                { title: "Model", field: "Model", headerFilter: "input" },
+                { title: "Status", field: "Status", width: 120 }
+            ];
+            window.tabulatorInstance.setColumns(tempColumns);
+        } else {
+            // Restore regular columns (simplified for now, ideally we'd re-run the column logic)
+            // For simplicity, let's just destroy and recreate if columns change significantly
+            // Or better, just recreate the whole thing if we're switching modes
+            window.tabulatorInstance.destroy();
+            window.tabulatorInstance = null;
+            return initSheetView(); 
+        }
+
         window.tabulatorInstance.setData(assets).then(() => {
             robustRedraw(window.tabulatorInstance);
         });
         return;
     }
 
-    const columns = [
-        { title: "ID", field: "ID", width: 150, headerFilter: "input" },
-        { title: "Type", field: "Type", width: 120, headerFilter: "input" },
-        { title: "Item Name", field: "ItemName", editor: "input", headerFilter: "input" },
-        { title: "Status", field: "Status", width: 120, editor: "select", editorParams: { values: ["In Store", "In Use", "In Repair", "Others"] }, headerFilter: "select", headerFilterParams: { values: ["In Store", "In Use", "In Repair", "Others"] } },
-        { title: "Make", field: "Make", editor: "input", headerFilter: "input" },
-        { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
-        { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
-        { title: "Location", field: "CurrentLocation", editor: "input", headerFilter: "input" },
-        { title: "Assigned To", field: "AssignedTo", editor: "list", editorParams: { 
-            values: () => (window.allEmployees || []).map(e => e.Name),
-            autocomplete: true,
-            allowEmpty: true,
-            listOnEmpty: true
-        }, headerFilter: "input" }
-    ];
+    let columns = [];
+    if (isTemp) {
+        columns = [
+            { title: "ID", field: "ID", width: 120, headerFilter: "input" },
+            { title: "Item Name", field: "ItemName", headerFilter: "input" },
+            { title: "Project ID", field: "ProjectId", width: 120, headerFilter: "input" },
+            { title: "Quantity", field: "Quantity", width: 100, headerFilter: "number" },
+            { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number" },
+            { title: "Currency", field: "Currency", width: 80 },
+            { title: "Make", field: "Make", headerFilter: "input" },
+            { title: "Model", field: "Model", headerFilter: "input" },
+            { title: "Status", field: "Status", width: 120 }
+        ];
+    } else {
+        columns = [
+            { title: "ID", field: "ID", width: 150, headerFilter: "input" },
+            { title: "Type", field: "Type", width: 120, headerFilter: "input" },
+            { title: "Item Name", field: "ItemName", editor: "input", headerFilter: "input" },
+            { title: "Status", field: "Status", width: 120, editor: "select", editorParams: { values: ["In Store", "In Use", "In Repair", "Others"] }, headerFilter: "select", headerFilterParams: { values: ["In Store", "In Use", "In Repair", "Others"] } },
+            { title: "Make", field: "Make", editor: "input", headerFilter: "input" },
+            { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
+            { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
+            { title: "Location", field: "CurrentLocation", editor: "input", headerFilter: "input" },
+            { title: "Assigned To", field: "AssignedTo", editor: "list", editorParams: { 
+                values: () => (window.allEmployees || []).map(e => e.Name),
+                autocomplete: true,
+                allowEmpty: true,
+                listOnEmpty: true
+            }, headerFilter: "input" }
+        ];
 
-    if (category === 'IT') {
+        if (category === 'IT') {
+            columns.push(
+                { title: "MAC Address", field: "MACAddress", editor: "input", headerFilter: "input" },
+                { title: "IP Address", field: "IPAddress", editor: "input", headerFilter: "input" },
+                { title: "Port", field: "PhysicalPort", editor: "input", headerFilter: "input" },
+                { title: "VLAN", field: "VLAN", editor: "input", headerFilter: "input" },
+                { title: "Socket ID", field: "SocketID", editor: "input", headerFilter: "input" },
+                { title: "User ID", field: "UserID", editor: "input", headerFilter: "input" }
+            );
+        }
+
         columns.push(
-            { title: "MAC Address", field: "MACAddress", editor: "input", headerFilter: "input" },
-            { title: "IP Address", field: "IPAddress", editor: "input", headerFilter: "input" },
-            { title: "Port", field: "PhysicalPort", editor: "input", headerFilter: "input" },
-            { title: "VLAN", field: "VLAN", editor: "input", headerFilter: "input" },
-            { title: "Socket ID", field: "SocketID", editor: "input", headerFilter: "input" },
-            { title: "User ID", field: "UserID", editor: "input", headerFilter: "input" }
+            { title: "Parent ID", field: "ParentId", editor: "input", headerFilter: "input" },
+            { title: "Last Updated", field: "LastUpdated", width: 150, hozAlign: "center" }
         );
     }
-
-    columns.push(
-        { title: "Parent ID", field: "ParentId", editor: "input", headerFilter: "input" },
-        { title: "Last Updated", field: "LastUpdated", width: 150, hozAlign: "center" }
-    );
 
     window.tabulatorInstance = new Tabulator("#excel-grid", {
         ...TABULATOR_BASE_CONFIG,
@@ -1166,7 +1221,7 @@ window.showTempAssetDetails = async function(assetId) {
 };
 
 window.makeAssetPermanent = async function(id) {
-    if (!confirm('Convert this temporary asset to a permanent asset?')) return;
+    if (!confirm('Convert this temporary asset to a permanent asset in the inventory?')) return;
     
     try {
         const response = await fetch(`/api/temporary-assets/${id}/make-permanent`, {
@@ -1176,9 +1231,9 @@ window.makeAssetPermanent = async function(id) {
             }
         });
         
-        if (response.ok) {
-            const result = await response.json();
-            alert(`Asset converted successfully! New ID: ${result.assetId || result.permanentId}`);
+        const result = await response.json();
+        if (result.success) {
+            alert(`Asset converted successfully! New ID: ${result.permanentId || result.assetId}`);
             
             // Refresh Dashboard if visible
             if (typeof renderDashboard === 'function') {
@@ -1187,13 +1242,12 @@ window.makeAssetPermanent = async function(id) {
             if (window.loadAssets) await window.loadAssets();
             
             // Refresh Project view if active
-            if (currentProjectId) {
+            if (typeof currentProjectId !== 'undefined' && currentProjectId) {
                 if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
                 if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
             }
         } else {
-            const err = await response.text();
-            alert('Error converting asset: ' + err);
+            alert('Error: ' + (result.error || 'Failed to convert'));
         }
     } catch (err) {
         console.error('Conversion error:', err);
@@ -1209,21 +1263,22 @@ window.deleteTempAsset = async function(id) {
             method: 'DELETE'
         });
         
-        if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
             alert('Temporary asset deleted.');
             
             // Refresh Dashboard if visible
             if (typeof renderDashboard === 'function') {
                 renderDashboard(window.allAssets, () => []); 
             }
+            if (window.loadAssets) await window.loadAssets();
             
             // Refresh Project view if active
-            if (currentProjectId) {
+            if (typeof currentProjectId !== 'undefined' && currentProjectId) {
                 if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
             }
         } else {
-            const err = await response.text();
-            alert('Error deleting asset: ' + err);
+            alert('Error: ' + (result.error || 'Failed to delete'));
         }
     } catch (err) {
         console.error('Delete error:', err);
@@ -1441,69 +1496,6 @@ window.unassignAsset = async function(assetId) {
     } catch (err) {
         console.error('Error unassigning asset:', err);
         alert('Error unassigning asset');
-    }
-};
-
-window.makeAssetPermanent = async function(tempAssetId) {
-    if (!confirm('Convert this temporary asset to a permanent asset in the inventory?')) return;
-    
-    try {
-        const response = await fetch(`/api/temporary-assets/${tempAssetId}/make-permanent`, {
-            method: 'POST',
-            headers: {
-                'x-user': localStorage.getItem('username') || 'web'
-            }
-        });
-        const result = await response.json();
-        if (result.success) {
-            alert(`Asset converted successfully! New ID: ${result.permanentId}`);
-            
-            // Refresh Dashboard if visible
-            if (typeof renderDashboard === 'function') {
-                renderDashboard(window.allAssets, () => []); 
-            }
-            if (window.loadAssets) await window.loadAssets();
-            
-            // Refresh Project view if active
-            if (currentProjectId) {
-                if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
-                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
-            }
-        } else {
-            alert('Error: ' + (result.error || 'Failed to convert'));
-        }
-    } catch (err) {
-        console.error('Error converting asset:', err);
-        alert('Error converting asset');
-    }
-};
-
-window.deleteTempAsset = async function(tempAssetId) {
-    if (!confirm('Are you sure you want to delete this temporary item?')) return;
-    
-    try {
-        const response = await fetch(`/api/temporary-assets/${tempAssetId}`, { method: 'DELETE' });
-        const result = await response.json();
-        if (result.success) {
-            alert('Temporary item deleted successfully!');
-            
-            // Refresh Dashboard if visible
-            if (typeof renderDashboard === 'function') {
-                renderDashboard(window.allAssets, () => []); 
-            }
-            if (window.loadAssets) await window.loadAssets();
-
-            // Refresh Project view if active
-            if (currentProjectId) {
-                if (typeof loadProjectAssets === 'function') await loadProjectAssets(currentProjectId);
-                if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
-            }
-        } else {
-            alert('Error: ' + (result.error || 'Failed to delete'));
-        }
-    } catch (err) {
-        console.error('Error deleting temp asset:', err);
-        alert('Error deleting temp asset');
     }
 };
 
@@ -1909,6 +1901,7 @@ export function renderDashboard(assets, filteredAssets) {
         fetch('/api/temporary-assets')
             .then(r => r.json())
             .then(tempAssets => {
+                window.currentTempAssets = tempAssets;
                 if (tempAssets.length === 0) {
                     assetGrid.innerHTML = `
                         <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
@@ -3034,10 +3027,39 @@ export function setupDashboardFormHandlers() {
             
             let assetsToReport = [];
             if (parent && parent.ID === 'TEMP_VIEW') {
-                // For temporary assets, we'd need to fetch them or get them from the grid
-                alert('Generating report for Temporary Assets...');
-                // Simplified: Just print the current view
-                window.print();
+                const assetsToReport = window.currentTempAssets || [];
+                if (assetsToReport.length === 0) {
+                    alert('No temporary assets to report.');
+                    return;
+                }
+                
+                console.log(`Generating report for ${assetsToReport.length} temporary assets`);
+                
+                const headers = ['ID', 'ItemName', 'ProjectId', 'Quantity', 'EstimatedPrice', 'Currency', 'Make', 'Model', 'Status'];
+                const csvContent = [
+                    headers.join(','),
+                    ...assetsToReport.map(a => [
+                        a.ID,
+                        `"${a.ItemName || ''}"`,
+                        `"${a.ProjectId || ''}"`,
+                        a.Quantity || 0,
+                        a.EstimatedPrice || 0,
+                        `"${a.Currency || 'INR'}"`,
+                        `"${a.Make || ''}"`,
+                        `"${a.Model || ''}"`,
+                        `"${a.Status || 'Temporary'}"`
+                    ].join(','))
+                ].join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `TemporaryAssetsReport_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
                 return;
             }
 
@@ -3094,7 +3116,16 @@ export function setupDashboardFormHandlers() {
         btnReportSheet.onclick = () => {
             if (window.tabulatorInstance) {
                 const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-                window.tabulatorInstance.download("xlsx", `AssetSheet_${category}_${new Date().toISOString().split('T')[0]}.xlsx`, { sheetName: "Assets" });
+                const parent = window.currentDashboardParent;
+                let filename = `AssetSheet_${category}_${new Date().toISOString().split('T')[0]}.xlsx`;
+                
+                if (parent && parent.ID === 'TEMP_VIEW') {
+                    filename = `TemporaryAssetsSheet_${new Date().toISOString().split('T')[0]}.xlsx`;
+                } else if (parent && parent.Name) {
+                    filename = `AssetSheet_${category}_${parent.Name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+                }
+
+                window.tabulatorInstance.download("xlsx", filename, { sheetName: "Assets" });
             } else {
                 alert('Sheet view is not initialized.');
             }

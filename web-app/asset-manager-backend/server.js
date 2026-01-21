@@ -1554,25 +1554,19 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         const tempAsset = db.prepare('SELECT * FROM temporary_assets WHERE ID = ?').get(id);
         if (!tempAsset) return res.status(404).send('Temporary asset not found');
 
-        // Create permanent asset
-        let newAssetId = `AST${Date.now()}`;
-        
-        // Double check if this ID exists (very unlikely but for safety)
-        const existing = db.prepare('SELECT ID FROM assets WHERE ID = ?').get(newAssetId);
-        if (existing) {
-            newAssetId = `AST${Date.now()}${Math.floor(Math.random() * 1000)}`;
-        }
+        // Get project location for ID generation
+        const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(tempAsset.ProjectId);
+        const location = project ? project.Location : 'MUMBAI';
 
+        // Create permanent asset using modern ID generation
+        const newAssetId = generateModernAssetId(location);
+        
         const ip = getLocalIP();
         const port = process.env.PORT || 8080;
         const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newAssetId)}`;
         const qrCode = await qrcode.toDataURL(urlText, { width: 512 });
 
         db.transaction(() => {
-            // Get project location if possible
-            const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(tempAsset.ProjectId);
-            const location = project ? project.Location : 'MUMBAI';
-
             // 1. Insert into assets
             db.prepare(`
                 INSERT INTO assets (
