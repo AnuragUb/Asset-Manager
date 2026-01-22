@@ -134,7 +134,7 @@ function showAssetsInModal(assets, titleText) {
             tr.innerHTML = `
                 <td>${a.ID || '-'}</td>
                 <td style="text-align: center; font-size: 20px;">
-                    ${(a.Icon && a.Icon.startsWith('/icons/')) 
+                    ${(a.Icon && (a.Icon.startsWith('/') || a.Icon.startsWith('http'))) 
                         ? `<img src="${a.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
                         : (a.Icon || '📦')}
                 </td>

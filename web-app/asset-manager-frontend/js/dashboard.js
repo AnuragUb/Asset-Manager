@@ -457,8 +457,7 @@ export function setupChildrenUI() {
             }
 
             const matches = (window.allAssets || []).filter(a => 
-                (a.ID?.toLowerCase().includes(query) || a.ItemName?.toLowerCase().includes(query)) &&
-                !a.NoQR // Only link assets with QR codes
+                (a.ID?.toLowerCase().includes(query) || a.ItemName?.toLowerCase().includes(query))
             ).slice(0, 10);
 
             if (matches.length > 0) {
@@ -521,9 +520,11 @@ export function addChildField(data = null) {
     row.className = 'child-asset-row';
     row.style = 'display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 8px; align-items: center; background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #e9ecef;';
     
-    const id = `child_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    // Store existing ID if available
+    const assetId = data?.ID || '';
     
     row.innerHTML = `
+        <input type="hidden" class="child-id" value="${assetId}">
         <input type="text" class="child-name" placeholder="Component Name (e.g. RAM)" value="${data?.ItemName || ''}" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
         <input type="text" class="child-make" placeholder="Make" value="${data?.Make || ''}" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
         <input type="text" class="child-srno" placeholder="Serial No" value="${data?.SrNo || ''}" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
@@ -1134,7 +1135,8 @@ window.showProjectDetails = async function(projectId) {
         // Calculate total value in project currency
         let totalValue = 0;
         assets.forEach(a => {
-            if (a.AssignmentType !== 'Temporary') {
+            const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+            if (a.AssignmentType !== 'Temporary' && !isComp) {
                 totalValue += convertCurrency(a.EstimatedPrice || 0, a.Currency || 'INR', currentProjectCurrency);
             }
         });
@@ -1144,7 +1146,10 @@ window.showProjectDetails = async function(projectId) {
         
         projectStats.innerHTML = `
             <div class="stat-item">
-                <span class="stat-value">${assets.filter(a => a.AssignmentType !== 'Temporary').length}</span>
+                <span class="stat-value">${assets.filter(a => {
+                    const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+                    return a.AssignmentType !== 'Temporary' && !isComp;
+                }).length}</span>
                 <span class="stat-label">Permanent Assets</span>
             </div>
             <div class="stat-item">
@@ -1240,7 +1245,11 @@ async function loadProjectAssets(projectId) {
                     <td><strong>${a.ID}</strong></td>
                     <td>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span>${a.Icon || (isTemp ? '🧩' : '📦')}</span>
+                            <span style="display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;">
+                                ${(a.Icon && (a.Icon.startsWith('/') || a.Icon.startsWith('http'))) 
+                                    ? `<img src="${a.Icon}" style="width: 20px; height: 20px; object-fit: contain;">`
+                                    : (a.Icon || (isTemp ? '🧩' : '📦'))}
+                            </span>
                             ${displayName}
                         </div>
                     </td>
@@ -1284,7 +1293,11 @@ window.showAssetDetails = async function(assetId) {
     
     let html = `
         <div>
-            <div style="font-size: 60px; margin-bottom: 10px; text-align: center;">${asset.Icon || '📦'}</div>
+            <div style="font-size: 60px; margin-bottom: 10px; text-align: center; display: flex; align-items: center; justify-content: center; height: 80px;">
+                ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                    ? `<img src="${asset.Icon}" style="width: 60px; height: 60px; object-fit: contain;">`
+                    : (asset.Icon || '📦')}
+            </div>
             <p><strong>Item Name:</strong> ${asset.ItemName}</p>
             <p><strong>Status:</strong> <span class="status-pill status-${(asset.Status || 'In Store').toLowerCase().replace(/\s+/g, '-')}">${asset.Status || 'In Store'}</span></p>
             <p><strong>Category:</strong> ${asset.Type || '-'}</p>
@@ -2275,6 +2288,11 @@ export function renderDashboard(assets, filteredAssets) {
             .filter(d => d.type === 'kind')
             .map(d => d.Name);
         
+        // Include 'Component' kind in recursive assets if it's not already in descendantKindNames
+        if (!descendantKindNames.includes('Component')) {
+            descendantKindNames.push('Component');
+        }
+        
         recursiveAssets = assets.filter(a => descendantKindNames.includes(a.Type) && a.Category === category);
     }
 
@@ -2309,18 +2327,83 @@ export function renderDashboard(assets, filteredAssets) {
             return;
         }
 
-        displayNodes.forEach(node => {
+        // If we have a search query, show individual matching assets that don't fit into categories
+    const query = window.currentSearchQuery;
+    if (query && assetsToRender.length > 0) {
+        const searchResultsHeader = document.createElement('div');
+        searchResultsHeader.style = 'grid-column: 1 / -1; margin: 20px 0 10px 0; padding: 10px; background: #e9f5ff; border-radius: 4px; font-weight: bold; color: #007bff; display: flex; align-items: center; gap: 10px;';
+        searchResultsHeader.innerHTML = `<span>🔍 Search Results for "${query}"</span> <span style="font-weight: normal; font-size: 12px; color: #666;">(${assetsToRender.length} matches)</span>`;
+        assetGrid.appendChild(searchResultsHeader);
+
+        // Show top 20 matches as individual items if they are not many, or just show them
+        const topMatches = assetsToRender.slice(0, 50);
+        topMatches.forEach(asset => {
+            const item = document.createElement('div');
+            item.className = 'asset-card search-result-card';
+            item.style = 'padding: 10px; display: flex; align-items: center; gap: 15px; cursor: pointer; height: auto; min-height: 60px;';
+            item.onclick = () => {
+                // Open the appropriate view or modal
+                window.location.href = `/asset/${asset.ID}`;
+            };
+
+            const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
+            
+            item.innerHTML = `
+                <div style="font-size: 24px; width: 40px; text-align: center;">
+                    ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                        ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
+                        : (asset.Icon || '📦')}
+                </div>
+                <div style="flex: 1; overflow: hidden;">
+                    <div style="font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${asset.ItemName}</div>
+                    <div style="font-size: 11px; color: #666;">
+                        ID: ${asset.ID} • ${asset.Type} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <span class="status-badge ${asset.Status ? asset.Status.toLowerCase().replace(' ', '-') : ''}" style="font-size: 10px; padding: 2px 6px;">${asset.Status}</span>
+                </div>
+            `;
+            assetGrid.appendChild(item);
+        });
+
+        if (assetsToRender.length > 50) {
+            const more = document.createElement('div');
+            more.style = 'grid-column: 1 / -1; text-align: center; padding: 10px; color: #999; font-size: 12px;';
+            more.textContent = `... and ${assetsToRender.length - 50} more results. Use the Sheet View for a full list.`;
+            assetGrid.appendChild(more);
+        }
+
+        const separator = document.createElement('hr');
+        separator.style = 'grid-column: 1 / -1; border: none; border-top: 1px solid #eee; margin: 20px 0;';
+        assetGrid.appendChild(separator);
+
+        const categoryHeader = document.createElement('div');
+        categoryHeader.style = 'grid-column: 1 / -1; margin-bottom: 10px; font-weight: bold; color: #666;';
+        categoryHeader.textContent = 'Browse by Category';
+        assetGrid.appendChild(categoryHeader);
+    }
+
+    displayNodes.forEach(node => {
         const isKind = node.type === 'kind';
         const nodeName = node.Name;
         
         // Calculate stats recursively for this node
         const nodeDescendants = manager.getDescendants(node.ID, true);
         const nodeKindNames = nodeDescendants.filter(d => d.type === 'kind').map(d => d.Name);
+        
+        // Include 'Component' kind in node stats
+        if (!nodeKindNames.includes('Component')) {
+            nodeKindNames.push('Component');
+        }
+
         const nodeAssets = assets.filter(a => nodeKindNames.includes(a.Type) && a.Category === category);
         
         const realAssets = nodeAssets.filter(a => {
             const p = a.isPlaceholder;
-            return !(p === true || p === 'true' || p === 1 || p === '1');
+            const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+            const isPlaceholder = p === true || p === 'true' || p === 1 || p === '1';
+            return !isPlaceholder && !isComp;
         });
         
         const total = realAssets.length;
@@ -2355,7 +2438,7 @@ export function renderDashboard(assets, filteredAssets) {
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
             <div class="asset-card-icon">
-                ${(node.Icon && node.Icon.startsWith('/icons/')) 
+                ${(node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
                     ? `<img src="${node.Icon}" style="width: 48px; height: 48px; object-fit: contain;">`
                     : (node.Icon || (isKind ? '📦' : '📂'))}
             </div>
@@ -2489,7 +2572,8 @@ export function openAddKindModal() {
                 filteredFolders.forEach(f => {
                     const opt = document.createElement('option');
                     opt.value = f.Name;
-                    opt.textContent = `${f.Icon || '📁'} ${f.Name}`;
+                    const icon = (f.Icon && (f.Icon.startsWith('/') || f.Icon.startsWith('http'))) ? '📁' : (f.Icon || '📁');
+                    opt.textContent = `${icon} ${f.Name}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -2502,7 +2586,8 @@ export function openAddKindModal() {
                 filteredKinds.forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name;
-                    opt.textContent = `${k.Icon || '📦'} ${k.Name}`;
+                    const icon = (k.Icon && (k.Icon.startsWith('/') || k.Icon.startsWith('http'))) ? '📦' : (k.Icon || '📦');
+                    opt.textContent = `${icon} ${k.Name}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -2754,7 +2839,7 @@ function showAssetList(nodeOrKindName) {
                     ` : (a.ID || a.Id || '-')}
                 </td>
                 <td style="text-align: center; font-size: 20px;">
-                    ${(a.Icon && a.Icon.startsWith('/icons/')) 
+                    ${(a.Icon && (a.Icon.startsWith('/') || a.Icon.startsWith('http'))) 
                         ? `<img src="${a.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
                         : (a.Icon || '📦')}
                 </td>
@@ -3188,8 +3273,10 @@ export function setupDashboardFormHandlers() {
                 const components = [];
                 form.querySelectorAll('.child-asset-row').forEach(row => {
                     const name = row.querySelector('.child-name').value;
+                    const id = row.querySelector('.child-id').value;
                     if (name) {
                         components.push({
+                            ID: id || undefined,
                             ItemName: name,
                             Make: row.querySelector('.child-make').value,
                             SrNo: row.querySelector('.child-srno').value,

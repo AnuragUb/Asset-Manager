@@ -189,7 +189,11 @@
                     <div class="asset-card-header">
                         <span class="asset-card-title">${asset.Name} (${asset.Total})</span>
                     </div>
-                    <div class="asset-card-icon">${asset.Icon || '📦'}</div>
+                    <div class="asset-card-icon">
+                        ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                            ? `<img src="${asset.Icon}" style="width: 48px; height: 48px; object-fit: contain;">` 
+                            : (asset.Icon || '📦')}
+                    </div>
                     <div class="asset-card-status">
                         <div class="asset-card-status-item">
                             <span class="asset-card-status-label">In Use</span>

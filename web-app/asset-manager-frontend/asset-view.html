@@ -411,7 +411,11 @@
 
             let html = `
                 <div class="header-card">
-                    <div class="header-icon">${asset.Icon || '📦'}</div>
+                    <div class="header-icon">
+                        ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                            ? `<img src="${asset.Icon}" style="width: 100%; height: 100%; object-fit: contain;">`
+                            : (asset.Icon || '📦')}
+                    </div>
                     <div class="header-info" style="flex: 1;">
                         <div class="status-pill">${asset.Status}</div>
                         <h1>${asset.ItemName}</h1>
@@ -442,7 +446,11 @@
                         <div class="section-title">Part Of / Parent</div>
                         <div class="hierarchy-item">
                             <a href="/asset/${parent.ID}" class="hierarchy-link">
-                                <span style="font-size: 24px;">${parent.Icon || '📦'}</span>
+                                <span style="font-size: 24px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                    ${(parent.Icon && (parent.Icon.startsWith('/') || parent.Icon.startsWith('http'))) 
+                                        ? `<img src="${parent.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                                        : (parent.Icon || '📦')}
+                                </span>
                                 <div>
                                     <div style="font-weight: 600;">${parent.ItemName}</div>
                                     <div style="font-size: 11px; color: var(--text-muted);">${parent.ID}</div>
@@ -572,7 +580,11 @@
                                 return `
                                     <div class="hierarchy-item no-link" style="opacity: 0.85;">
                                         <div class="hierarchy-link" style="cursor: default; pointer-events: none; text-decoration: none;">
-                                            <span style="font-size: 24px;">${child.Icon || '🧩'}</span>
+                                            <span style="font-size: 24px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                                ${(child.Icon && (child.Icon.startsWith('/') || child.Icon.startsWith('http'))) 
+                                                    ? `<img src="${child.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                                                    : (child.Icon || '🧩')}
+                                            </span>
                                             <div>
                                                 <div style="font-weight: 600; color: var(--text-main);">${child.ItemName}</div>
                                                 <div style="font-size: 11px; color: var(--text-muted);">${child.SrNo ? `S/N: ${child.SrNo}` : 'Component'} • ${child.Status}</div>
@@ -585,7 +597,11 @@
                                 return `
                                     <div class="hierarchy-item">
                                         <a href="/asset/${child.ID}" class="hierarchy-link">
-                                            <span style="font-size: 24px;">${child.Icon || '📦'}</span>
+                                            <span style="font-size: 24px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                                ${(child.Icon && (child.Icon.startsWith('/') || child.Icon.startsWith('http'))) 
+                                                    ? `<img src="${child.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                                                    : (child.Icon || '📦')}
+                                            </span>
                                             <div>
                                                 <div style="font-weight: 600;">${child.ItemName}</div>
                                                 <div style="font-size: 11px; color: var(--text-muted);">${child.ID} • ${child.Status}</div>

@@ -5425,5 +5425,149 @@
     "Severity": "INFO",
     "Details": "Sent EXPIRING SOON email notification to Swapnil@Cineom.in",
     "Timestamp": "2026-01-21T03:30:06.051Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset created: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T11:12:36.820Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T11:13:05.459Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T11:16:55.771Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T11:17:35.385Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T11:29:03.490Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767778323412",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Active",
+    "Timestamp": "2026-01-21T12:30:43.085Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1768283809553",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Planning",
+    "Timestamp": "2026-01-21T12:30:53.095Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767778323412",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Completed",
+    "Timestamp": "2026-01-21T12:30:57.128Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1767948998483",
+    "Severity": "INFO",
+    "Details": "Project status updated to: On Hold",
+    "Timestamp": "2026-01-21T12:31:03.532Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T12:44:14.817Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T12:44:40.340Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "AUD2601050180",
+    "Severity": "INFO",
+    "Details": "Asset updated: Sony Earbuds",
+    "Timestamp": "2026-01-21T12:44:57.697Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-21T12:50:52.028Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T04:39:03.200Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T04:52:19.967Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1768992612112",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Planning",
+    "Timestamp": "2026-01-22T08:01:25.515Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1768992612112",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Active",
+    "Timestamp": "2026-01-22T08:01:28.492Z"
+  },
+  {
+    "Action": "UPDATE_STATUS",
+    "User": "undefined",
+    "AssetId": "PRJ1768992612112",
+    "Severity": "INFO",
+    "Details": "Project status updated to: Active",
+    "Timestamp": "2026-01-22T08:01:29.713Z"
   }
 ]

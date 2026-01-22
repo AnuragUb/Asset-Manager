@@ -6,6 +6,7 @@ const multer = require('multer');
 const fs = require('fs');
 const os = require('os');
 const { exec, execSync } = require('child_process');
+const dns = require('dns').promises;
 const Evilscan = require('evilscan');
 const find = require('local-devices');
 const XLSX = require('xlsx');
@@ -492,8 +493,29 @@ app.get('/api/assets', (req, res) => {
       params.push(projectId);
     }
 
-    const assets = db.prepare(query).all(...params);
-    res.json(assets);
+    let assets = db.prepare(query).all(...params);
+
+    // Get all component IDs (both QR and non-QR) to mark them
+    const componentIds = new Set(db.prepare('SELECT ID FROM components').all().map(c => c.ID));
+
+    // Also fetch non-QR components to include them in the overall asset list
+    const nonQrComponents = db.prepare('SELECT * FROM components WHERE NoQR = 1').all();
+    
+    // Process primary assets and mark those that are actually components
+    const processedAssets = assets.map(a => ({
+      ...a,
+      isComponent: componentIds.has(a.ID) || a.ParentId != null
+    }));
+
+    // Merge them. 
+    const allItems = [...processedAssets, ...nonQrComponents.map(c => ({
+      ...c,
+      isComponent: true,
+      IN: '0', OUT: '0', Balance: '0',
+      isPlaceholder: 0
+    }))];
+
+    res.json(allItems);
   } catch (err) {
     console.error('Failed to fetch assets:', err);
     try {
@@ -505,7 +527,9 @@ app.get('/api/assets', (req, res) => {
 
 app.get('/api/asset-details/:id', (req, res) => {
   const id = req.params.id;
-  const asset = db.prepare(`
+  
+  // Try assets table first
+  let asset = db.prepare(`
     SELECT a.*, 
            it.MACAddress, it.IPAddress, it.NetworkType, 
            it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
@@ -513,9 +537,18 @@ app.get('/api/asset-details/:id', (req, res) => {
     LEFT JOIN asset_it_details it ON a.ID = it.AssetID
     WHERE a.ID = ?
   `).get(id);
+
+  // If not found in assets, try components table
+  if (!asset) {
+    asset = db.prepare('SELECT * FROM components WHERE ID = ?').get(id);
+    if (asset) {
+      asset.isComponent = true;
+    }
+  }
+
   if (!asset) return res.status(404).send('Asset not found');
 
-  const children = db.prepare('SELECT * FROM assets WHERE ParentId = ?').all(id);
+  const children = db.prepare('SELECT * FROM components WHERE ParentId = ?').all(id);
   const history = db.prepare('SELECT * FROM audit_log WHERE AssetId = ? ORDER BY Timestamp DESC').all(id);
   const parent = asset.ParentId ? db.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.ParentId) : null;
 
@@ -997,34 +1030,25 @@ app.post('/api/assets', async (req, res) => {
     // Handle nested components (new child assets)
     if (Array.isArray(asset.components) && asset.components.length > 0) {
       const compStmt = db.prepare(`
-        INSERT INTO assets (
-          ID, ItemName, Status, Make, Model, SrNo, Type,
-          Category, Icon, isPlaceholder, ParentId,
-          CurrentLocation, "IN", "OUT", Balance,
-          DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO components (
+          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
+          Category, LastUpdated, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const comp of asset.components) {
         const compId = generateModernAssetId(asset.CurrentLocation || '');
         compStmt.run(
           compId,
+          newId, // ParentId
           comp.ItemName || '',
-          comp.Status || asset.Status || 'In Store',
           comp.Make || '',
           comp.Model || '',
           comp.SrNo || '',
+          comp.Status || asset.Status || 'In Store',
           comp.Type || 'Component',
           comp.Category || asset.Category || '',
-          comp.Icon || '🧩',
-          0,
-          newId, // ParentId
-          asset.CurrentLocation || '',
-          '0', '0', '0',
-          '', '', '',
           new Date().toISOString(),
-          null, // No QR for components
-          '',
           1 // NoQR = true
         );
       }
@@ -1032,9 +1056,34 @@ app.post('/api/assets', async (req, res) => {
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds) && asset.linkedIds.length > 0) {
-      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
+      const compStmt = db.prepare(`
+        INSERT OR REPLACE INTO components (
+          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
+          Category, LastUpdated, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const getAssetStmt = db.prepare('SELECT * FROM assets WHERE ID = ?');
+
       for (const linkId of asset.linkedIds) {
-        linkStmt.run(newId, linkId);
+        const existingAsset = getAssetStmt.get(linkId);
+        if (existingAsset) {
+          compStmt.run(
+            linkId,
+            newId,
+            existingAsset.ItemName,
+            existingAsset.Make,
+            existingAsset.Model,
+            existingAsset.SrNo,
+            existingAsset.Status,
+            existingAsset.Type,
+            existingAsset.Category,
+            new Date().toISOString(),
+            0 // NoQR = false (it's a QR asset)
+          );
+          // Also clear ParentId in assets table for consistency
+          db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(linkId);
+        }
       }
     }
 
@@ -1405,14 +1454,16 @@ app.get('/api/projects/:id/assets', (req, res) => {
         const assets = db.prepare(`
                 SELECT 
                     a.ID, a.ItemName, a.Status, a.Make, a.Model, a.Type, a.Category, a.Icon,
-                    pa.Type as AssignmentType, pa.AssignedDate, 0 as EstimatedPrice, a.Currency
+                    pa.Type as AssignmentType, pa.AssignedDate, 0 as EstimatedPrice, a.Currency,
+                    EXISTS (SELECT 1 FROM components c WHERE c.ID = a.ID) as isComponent
                 FROM assets a
                 JOIN project_assets pa ON a.ID = pa.AssetID
                 WHERE pa.ProjectID = ?
                 UNION ALL
                 SELECT 
                     ta.ID, ta.ItemName, ta.Status, ta.Make, ta.Model, ta.Type, ta.Category, '🧩' as Icon,
-                    'Temporary' as AssignmentType, ta.Timestamp as AssignedDate, ta.EstimatedPrice, ta.Currency
+                    'Temporary' as AssignmentType, ta.Timestamp as AssignedDate, ta.EstimatedPrice, ta.Currency,
+                    0 as isComponent
                 FROM temporary_assets ta
                 WHERE ta.ProjectId = ? AND ta.IsPermanent = 0
         `).all(id, id);
@@ -1636,17 +1687,59 @@ app.put('/api/assets/:id', (req, res) => {
     const asset = req.body;
     console.log(`Updating asset ${id}:`, JSON.stringify(asset));
     
-    // Check if asset exists
-    const existing = db.prepare(`
+    // Check if asset exists in assets table
+    let existing = db.prepare(`
       SELECT a.*, it.MACAddress, it.IPAddress, it.NetworkType, it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
       FROM assets a
       LEFT JOIN asset_it_details it ON a.ID = it.AssetID
       WHERE a.ID = ?
     `).get(id);
+
+    let isComp = false;
+    if (!existing) {
+      // Check components table
+      existing = db.prepare('SELECT * FROM components WHERE ID = ?').get(id);
+      if (existing) {
+        isComp = true;
+      }
+    }
+
     if (!existing) {
       return res.status(404).send('Asset not found');
     }
 
+    if (isComp) {
+      // Update component in components table
+      const compStmt = db.prepare(`
+        UPDATE components SET
+          ItemName = ?, Make = ?, Model = ?, SrNo = ?, Status = ?,
+          Type = ?, Category = ?, LastUpdated = ?
+        WHERE ID = ?
+      `);
+      compStmt.run(
+        asset.ItemName || existing.ItemName || '',
+        asset.Make || existing.Make || '',
+        asset.Model || existing.Model || '',
+        asset.SrNo || existing.SrNo || '',
+        asset.Status || existing.Status || 'In Store',
+        asset.Type || existing.Type || 'Component',
+        asset.Category || existing.Category || '',
+        new Date().toISOString(),
+        id
+      );
+
+      appendAudit({ 
+        Action: 'UPDATE_COMPONENT', 
+        User: req.headers['x-user'] || 'web', 
+        AssetId: id, 
+        Severity: 'INFO', 
+        Details: `Component updated: ${asset.ItemName || existing.ItemName}` 
+      });
+
+      return res.json({ success: true });
+    }
+
+    // --- Original Assets table update logic ---
     // Log assignment change if applicable
     if (asset.AssignedTo !== undefined && existing.AssignedTo !== asset.AssignedTo) {
       // Validate only if we are setting a non-empty user
@@ -1723,50 +1816,102 @@ app.put('/api/assets/:id', (req, res) => {
       );
     }
 
-    // Handle nested components (new child assets)
-    if (Array.isArray(asset.components) && asset.components.length > 0) {
-      const compStmt = db.prepare(`
-        INSERT INTO assets (
-          ID, ItemName, Status, Make, Model, SrNo, Type,
-          Category, Icon, isPlaceholder, ParentId,
-          CurrentLocation, "IN", "OUT", Balance,
-          DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    // Handle nested components (child assets)
+    if (Array.isArray(asset.components)) {
+      // Get current NoQR components in components table
+      const currentComponents = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 1').all(id).map(c => c.ID);
+      const updatedCompIds = [];
+
+      const insertStmt = db.prepare(`
+        INSERT INTO components (
+          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
+          Category, LastUpdated, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const updateStmt = db.prepare(`
+        UPDATE components SET
+          ItemName = ?, Make = ?, Model = ?, SrNo = ?, Status = ?,
+          Type = ?, Category = ?, LastUpdated = ?, NoQR = 1
+        WHERE ID = ? AND ParentId = ?
       `);
 
       for (const comp of asset.components) {
-        const compId = generateModernAssetId(asset.CurrentLocation || existing.CurrentLocation || '');
-        compStmt.run(
-          compId,
-          comp.ItemName || '',
-          comp.Status || asset.Status || existing.Status || 'In Store',
-          comp.Make || '',
-          comp.Model || '',
-          comp.SrNo || '',
-          comp.Type || 'Component',
-          comp.Category || asset.Category || existing.Category || '',
-          comp.Icon || '🧩',
-          0,
-          id, // ParentId
-          asset.CurrentLocation || existing.CurrentLocation || '',
-          '0', '0', '0',
-          '', '', '',
-          new Date().toISOString(),
-          null, // No QR
-          '',
-          1 // NoQR = true
-        );
+        if (comp.ID && currentComponents.includes(comp.ID)) {
+          // Update existing component
+          updateStmt.run(
+            comp.ItemName || '',
+            comp.Make || '',
+            comp.Model || '',
+            comp.SrNo || '',
+            comp.Status || asset.Status || existing.Status || 'In Store',
+            comp.Type || 'Component',
+            comp.Category || asset.Category || existing.Category || '',
+            new Date().toISOString(),
+            comp.ID,
+            id
+          );
+          updatedCompIds.push(comp.ID);
+        } else {
+          // Insert new component
+          const compId = generateModernAssetId(asset.CurrentLocation || existing.CurrentLocation || '');
+          insertStmt.run(
+            compId,
+            id, // ParentId
+            comp.ItemName || '',
+            comp.Make || '',
+            comp.Model || '',
+            comp.SrNo || '',
+            comp.Status || asset.Status || existing.Status || 'In Store',
+            comp.Type || 'Component',
+            comp.Category || asset.Category || existing.Category || '',
+            new Date().toISOString(),
+            1 // NoQR = true
+          );
+          updatedCompIds.push(compId);
+        }
+      }
+
+      // Delete orphaned NoQR components
+      const orphanedIds = currentComponents.filter(childId => !updatedCompIds.includes(childId));
+      if (orphanedIds.length > 0) {
+        const deleteStmt = db.prepare('DELETE FROM components WHERE ID = ? AND ParentId = ?');
+        for (const orphanId of orphanedIds) {
+          deleteStmt.run(orphanId, id);
+        }
       }
     }
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds)) {
-      // First, unassign all current children that are NOT in the new linkedIds list 
-      // AND were not just added as new components (which wouldn't be in the DB yet anyway)
-      // Actually, it's safer to just update all in linkedIds to point to this parent.
-      const linkStmt = db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?');
+      const compStmt = db.prepare(`
+        INSERT OR REPLACE INTO components (
+          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
+          Category, LastUpdated, NoQR
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const getAssetStmt = db.prepare('SELECT * FROM assets WHERE ID = ?');
+
       for (const linkId of asset.linkedIds) {
-        linkStmt.run(id, linkId);
+        const existingAsset = getAssetStmt.get(linkId);
+        if (existingAsset) {
+          compStmt.run(
+            linkId,
+            id,
+            existingAsset.ItemName,
+            existingAsset.Make,
+            existingAsset.Model,
+            existingAsset.SrNo,
+            existingAsset.Status,
+            existingAsset.Type,
+            existingAsset.Category,
+            new Date().toISOString(),
+            0 // NoQR = false
+          );
+          // Also clear ParentId in assets table for consistency
+          db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(linkId);
+        }
       }
     }
 
@@ -1797,6 +1942,10 @@ app.delete('/api/assets/:id', (req, res) => {
       appendAudit({ Action: 'DELETE_DENIED', User: username, AssetId: id, Severity: 'WARN', Details: 'Unauthorized delete attempt' });
       return res.status(403).send('Forbidden');
     }
+
+    // Delete from components table as well
+    db.prepare('DELETE FROM components WHERE ID = ?').run(id);
+    db.prepare('DELETE FROM components WHERE ParentId = ?').run(id);
 
     const stmt = db.prepare('DELETE FROM assets WHERE ID = ?');
     const result = stmt.run(id);
@@ -1999,6 +2148,129 @@ app.get('/api/network-info', (req, res) => {
   }
 });
 
+// --- Network Scanning Helpers ---
+
+/**
+ * Robust hostname resolution for Windows environments.
+ * Tries: DNS Reverse Lookup -> nbtstat (NetBIOS) -> ping -a
+ */
+async function resolveHostname(ip) {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execAsync = util.promisify(exec);
+
+  // 1. Try DNS Reverse Lookup
+  try {
+    const hostnames = await dns.reverse(ip);
+    if (hostnames && hostnames.length > 0) {
+      console.log(`[Resolve] DNS found ${ip} -> ${hostnames[0]}`);
+      return hostnames[0];
+    }
+  } catch (e) {}
+
+  // 2. Try nbtstat -A (NetBIOS - excellent for local Windows/Samba networks)
+  try {
+    const { stdout } = await execAsync(`nbtstat -A ${ip}`, { timeout: 2000 });
+    // nbtstat output contains the name in a table format:
+    // "    NAME           <00>  UNIQUE      Registered"
+    const match = stdout.match(/\s+([A-Z0-9-]+)\s+<00>\s+UNIQUE/i);
+    if (match && match[1]) {
+      const name = match[1].trim();
+      console.log(`[Resolve] NetBIOS found ${ip} -> ${name}`);
+      return name;
+    }
+  } catch (e) {}
+
+  // 3. Try ping -a (System resolver)
+  try {
+    const { stdout } = await execAsync(`ping -a -n 1 -w 500 ${ip}`, { timeout: 2000 });
+    // ping -a output: "Pinging HOST [IP] with 32 bytes of data:"
+    const match = stdout.match(/Pinging\s+([^\s\[]+)\s+\[/i);
+    if (match && match[1] && match[1] !== ip) {
+      console.log(`[Resolve] Ping -a found ${ip} -> ${match[1]}`);
+      return match[1];
+    }
+  } catch (e) {}
+
+  return 'Unknown';
+}
+
+/**
+ * MAC Address to Manufacturer lookup using a public API.
+ * Includes a simple cache and rate limiting (max 1 request per 600ms).
+ */
+const macCache = new Map();
+let lastMacLookupTime = 0;
+
+async function getManufacturer(mac) {
+  if (!mac || mac === 'Unknown' || mac === '?') return 'Unknown';
+  
+  // Use only OUI (first 6 chars) for lookup to be faster and more private
+  const cleanMac = mac.replace(/[:-]/g, '').toUpperCase().substring(0, 6);
+  if (macCache.has(cleanMac)) {
+    console.log(`[MAC] Cache hit for ${mac}: ${macCache.get(cleanMac)}`);
+    return macCache.get(cleanMac);
+  }
+
+  // Rate limiting: Ensure at least 600ms between requests to avoid api.macvendors.com limits
+  const now = Date.now();
+  const waitTime = Math.max(0, 600 - (now - lastMacLookupTime));
+  if (waitTime > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  lastMacLookupTime = Date.now();
+
+  const https = require('https');
+  console.log(`[MAC] Looking up manufacturer for OUI ${cleanMac} (${mac})...`);
+  
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'api.macvendors.com',
+      path: `/${encodeURIComponent(cleanMac)}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'AssetManager/1.0',
+        'Accept': 'text/plain'
+      },
+      timeout: 5000
+    };
+
+    const req = https.get(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          const mfg = data.trim() || 'Unknown';
+          console.log(`[MAC] Result for ${mac}: ${mfg}`);
+          macCache.set(cleanMac, mfg);
+          resolve(mfg);
+        } else if (res.statusCode === 429) {
+          console.warn(`[MAC] Rate limited (429) for ${mac}`);
+          resolve('Unknown (Rate Limited)');
+        } else if (res.statusCode === 404) {
+          console.log(`[MAC] Not found (404) for ${mac}`);
+          macCache.set(cleanMac, 'Unknown');
+          resolve('Unknown');
+        } else {
+          console.log(`[MAC] No result (Status ${res.statusCode}) for ${mac}`);
+          resolve('Unknown');
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error(`[MAC] Lookup error for ${mac}:`, err.message);
+      resolve('Unknown');
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      console.warn(`[MAC] Lookup timeout for ${mac}`);
+      resolve('Unknown (Timeout)');
+    });
+  });
+}
+
 app.get('/api/scan', async (req, res) => {
   const target = req.query.target;
   const ports = req.query.ports;
@@ -2008,9 +2280,6 @@ app.get('/api/scan', async (req, res) => {
   try {
     console.log(`Starting discovery scan on target: ${target}`);
     
-    // 1. Discovery phase: Use local-devices to get the current ARP table
-    // On Windows, running with a specific address often fails due to command syntax differences
-    // Running find() without arguments is the most stable way to get local devices
     let devices = [];
     try {
       devices = await find();
@@ -2019,56 +2288,38 @@ app.get('/api/scan', async (req, res) => {
       console.error('ARP Discovery error (non-fatal):', arpErr);
     }
 
-    // 2. Port scanning phase using Evilscan
-    // We use a wider set of ports and include 'R' (Refused) to detect active hosts 
-    // even if they block specific ports but respond with a TCP RST.
     const scanPorts = ports || '21,22,23,25,53,80,110,135,139,443,445,1433,3306,3389,5357,8080,8443';
-    
     const options = {
       target: target,
       port: scanPorts,
       status: 'O', 
       banner: true,
       timeout: 1000, 
-      concurrency: 200 // Further increased for speed
+      concurrency: 200
     };
 
     const scanner = new Evilscan(options);
     const finalResults = {};
-
-    // Seed results with ARP discovery (if they match the target subnet/range)
     const targetPrefix = target.includes('/') ? target.split('/')[0].split('.').slice(0, 3).join('.') : target.split('.').slice(0, 3).join('.');
-    
-    // Add local interfaces to discovery results FIRST and ENSURE they are in finalResults
     const localNets = os.networkInterfaces();
-    console.log(`[Scan] Checking local interfaces against target: ${target} (Prefix: ${targetPrefix})`);
     
     for (const name of Object.keys(localNets)) {
       for (const iface of localNets[name]) {
-        // Log all interfaces for debugging
-        console.log(`[Scan] Found interface ${name}: ${iface.address} (MAC: ${iface.mac}, Internal: ${iface.internal}, Family: ${iface.family})`);
-        
         if (!iface.internal && (iface.family === 'IPv4' || iface.family === 4)) {
           const localEntry = {
             ip: iface.address,
             name: os.hostname() + ' (Local)',
             mac: iface.mac || 'Unknown',
+            manufacturer: 'Local Interface',
             ports: [],
             status: 'online'
           };
           
-          // Match logic:
-          // 1. Exact IP match (e.g. user scanned their own IP)
-          // 2. Subnet match (e.g. 192.168.1.0/24)
-          // 3. Prefix match (e.g. 192.168.1)
           const isExactMatch = iface.address === target;
           const isSubnetMatch = iface.address.startsWith(targetPrefix);
           
           if (isExactMatch || isSubnetMatch) {
-            console.log(`[Scan] SUCCESS: Adding local interface ${iface.address} to results`);
             finalResults[iface.address] = localEntry;
-          } else {
-            console.log(`[Scan] SKIP: Interface ${iface.address} does not match target ${target}`);
           }
         }
       }
@@ -2080,6 +2331,7 @@ app.get('/api/scan', async (req, res) => {
           ip: d.ip,
           name: d.name && d.name !== '?' ? d.name : 'Unknown',
           mac: d.mac && d.mac !== '?' ? d.mac : 'Unknown',
+          manufacturer: 'Unknown',
           ports: [],
           status: 'online'
         };
@@ -2087,82 +2339,100 @@ app.get('/api/scan', async (req, res) => {
     });
 
     scanner.on('result', (data) => {
-      // Any response (open or closed/refused) means the host is online
       if (!finalResults[data.ip]) {
         finalResults[data.ip] = {
           ip: data.ip,
           name: 'Unknown',
           mac: 'Unknown',
+          manufacturer: 'Unknown',
           ports: [],
           status: 'online'
         };
       }
-      
       if (data.status === 'open' && !finalResults[data.ip].ports.includes(data.port)) {
         finalResults[data.ip].ports.push(data.port);
       }
     });
 
-    scanner.on('error', (err) => {
-      console.error('Scanner error:', err);
-    });
+    scanner.on('error', (err) => { console.error('Scanner error:', err); });
 
     scanner.on('done', async () => {
-      // 3. Post-scan ARP refresh: Now that we've exchanged packets with these IPs,
-      // the system ARP table is much more likely to be accurate.
-      // We wait a tiny bit to allow the OS to update its ARP table.
       await new Promise(resolve => setTimeout(resolve, 1200));
       
       try {
-        console.log('Refreshing ARP cache after port scan...');
-        
-        // On Windows, 'arp -a' is often more reliable for recent hits than the library
-        const { exec } = require('child_process');
-        const util = require('util');
-        const execAsync = util.promisify(exec);
-        
+        // Phase A: Resolve Hostnames (this pings the devices and populates ARP table)
+        console.log(`[Scan] Starting robust hostname resolution for ${Object.keys(finalResults).length} devices...`);
+        const hostnamePromises = Object.keys(finalResults).map(async (ip) => {
+          const device = finalResults[ip];
+          if (!device.name || device.name === 'Unknown') {
+            const resolvedName = await resolveHostname(ip);
+            if (resolvedName !== 'Unknown') {
+              device.name = resolvedName;
+            }
+          }
+        });
+        await Promise.all(hostnamePromises);
+
+        // Phase B: Final ARP refresh to catch MACs revealed by pings
+        console.log('[Scan] Refreshing MAC addresses from ARP table...');
         try {
-          const { stdout } = await execAsync('arp -a');
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            const match = line.match(/(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:-]{17})/);
-            if (match) {
-              const ip = match[1];
-              const mac = match[2].replace(/-/g, ':').toLowerCase();
-              if (finalResults[ip]) {
-                // If the MAC in finalResults is 'Unknown' or different from what's in ARP table, update it
-                // EXCEPT if it's the local machine (we already have that accurately)
-                const isLocal = Object.values(localNets).some(ifaces => ifaces.some(i => i.address === ip));
-                if (!isLocal) {
-                  console.log(`[Scan] Updating MAC for ${ip} from system ARP: ${mac}`);
+          const freshDevices = await find();
+          freshDevices.forEach(d => {
+            if (finalResults[d.ip] && (finalResults[d.ip].mac === 'Unknown')) {
+               finalResults[d.ip].mac = d.mac || 'Unknown';
+            }
+          });
+          
+          const { execSync } = require('child_process');
+          try {
+            const stdout = execSync('arp -a').toString();
+            const lines = stdout.split('\n');
+            for (const line of lines) {
+              const match = line.match(/(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:-]{17})/);
+              if (match) {
+                const ip = match[1];
+                const mac = match[2].replace(/-/g, ':').toLowerCase();
+                if (finalResults[ip] && (finalResults[ip].mac === 'Unknown')) {
                   finalResults[ip].mac = mac;
                 }
               }
             }
-          }
-        } catch (arpExecErr) {
-          console.error('System ARP exec error:', arpExecErr);
-        }
+          } catch (e) {}
+        } catch (e) {}
 
-        // Also run the library as a fallback
-        const freshDevices = await find();
-        freshDevices.forEach(d => {
-          if (finalResults[d.ip]) {
-            const isLocal = Object.values(localNets).some(ifaces => ifaces.some(i => i.address === d.ip));
-            if (!isLocal && d.mac && d.mac !== '?' && d.mac !== 'Unknown') {
-              finalResults[d.ip].mac = d.mac;
-            }
+        // Phase C: Resolve Manufacturers for all found MACs
+        const uniqueMacs = new Set();
+        Object.values(finalResults).forEach(d => {
+          if (d.mac && d.mac !== 'Unknown' && d.manufacturer === 'Unknown') {
+            uniqueMacs.add(d.mac);
           }
         });
-      } catch (arpErr) {
-        console.error('Post-scan ARP refresh error:', arpErr);
+
+        console.log(`[Scan] Looking up manufacturers for ${uniqueMacs.size} unique MAC addresses...`);
+        const manufacturerPromises = Array.from(uniqueMacs).map(async (mac) => {
+          const mfg = await getManufacturer(mac);
+          Object.values(finalResults).forEach(d => {
+            if (d.mac === mac) {
+              d.manufacturer = mfg;
+            }
+          });
+        });
+        
+        // Wait for manufacturers with a generous timeout (60s)
+        await Promise.race([
+          Promise.all(manufacturerPromises),
+          new Promise(resolve => setTimeout(resolve, 60000))
+        ]);
+
+      } catch (err) {
+        console.error('Post-scan processing error:', err);
       }
       
+      console.log(`[Scan] Completed. Sending ${Object.keys(finalResults).length} results.`);
       res.json(Object.values(finalResults));
     });
 
     scanner.run();
-
   } catch (err) {
     console.error('Scan process error:', err);
     res.status(500).send('Scan failed: ' + err.message);
@@ -2190,6 +2460,17 @@ async function runNetworkMonitor() {
       // Normalize MAC for comparison
       const mac = device.mac.toLowerCase();
 
+      // NEW: Try to resolve hostname and manufacturer for background devices if they don't have one
+      let hostname = device.name && device.name !== '?' ? device.name : 'Unknown';
+      if (hostname === 'Unknown' && device.ip) {
+        hostname = await resolveHostname(device.ip);
+      }
+
+      let manufacturer = 'Unknown';
+      if (device.mac && device.mac !== 'unknown') {
+        manufacturer = await getManufacturer(device.mac);
+      }
+
       // Check if this MAC address is linked to any asset in our database
       const existing = db.prepare(`
         SELECT AssetID, IPAddress, MACAddress 
@@ -2200,7 +2481,7 @@ async function runNetworkMonitor() {
       if (existing) {
         // If the IP has changed, update it
         if (existing.IPAddress !== device.ip) {
-          console.log(`[NetworkMonitor] Detected IP change for Asset ${existing.AssetID}: ${existing.IPAddress} -> ${device.ip} (MAC: ${mac})`);
+          console.log(`[NetworkMonitor] Detected IP change for Asset ${existing.AssetID}: ${existing.IPAddress} -> ${device.ip} (MAC: ${mac}, Host: ${hostname}, Mfg: ${manufacturer})`);
           
           db.prepare('UPDATE asset_it_details SET IPAddress = ? WHERE AssetID = ?')
             .run(device.ip, existing.AssetID);
@@ -2213,7 +2494,7 @@ async function runNetworkMonitor() {
             User: 'SYSTEM',
             AssetId: existing.AssetID,
             Severity: 'INFO',
-            Details: `Automatically updated IP from ${existing.IPAddress} to ${device.ip} based on network scan.`
+            Details: `Automatically updated IP from ${existing.IPAddress} to ${device.ip} (Hostname: ${hostname}, Manufacturer: ${manufacturer}) based on background network scan.`
           });
           
           updateCount++;

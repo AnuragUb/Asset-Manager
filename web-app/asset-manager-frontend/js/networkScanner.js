@@ -130,6 +130,10 @@ export function renderScannerResults(results) {
                 }},
                 {title: "Hostname", field: "name", sorter: "string", width: 150},
                 {title: "MAC Address", field: "mac", sorter: "string", width: 150},
+                {title: "Manufacturer", field: "manufacturer", sorter: "string", width: 150, formatter: (cell) => {
+                    const val = cell.getValue();
+                    return val && val !== 'Unknown' ? val : '<span style="color:#999; font-style:italic;">Unknown</span>';
+                }},
                 {title: "Open Ports", field: "ports", formatter: (cell) => {
                     const ports = cell.getValue();
                     return ports && ports.length > 0 ? ports.join(', ') : '<span style="color:#999; font-style:italic;">None detected</span>';

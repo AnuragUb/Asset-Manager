@@ -166,7 +166,8 @@ async function loadAssetKinds() {
                 filteredFolders.forEach(f => {
                     const opt = document.createElement('option');
                     opt.value = f.Name;
-                    opt.textContent = `${f.Icon || '📁'} ${f.Name}`;
+                    const icon = (f.Icon && (f.Icon.startsWith('/') || f.Icon.startsWith('http'))) ? '📁' : (f.Icon || '📁');
+                    opt.textContent = `${icon} ${f.Name}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -179,7 +180,8 @@ async function loadAssetKinds() {
                 filteredKinds.forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name;
-                    opt.textContent = `${k.Icon || '📦'} ${k.Name}`;
+                    const icon = (k.Icon && (k.Icon.startsWith('/') || k.Icon.startsWith('http'))) ? '📦' : (k.Icon || '📦');
+                    opt.textContent = `${icon} ${k.Name}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);

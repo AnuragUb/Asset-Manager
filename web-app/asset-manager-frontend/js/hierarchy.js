@@ -134,7 +134,11 @@ export class HierarchyManager {
                         <span class="tree-toggle" style="width: 14px; text-align: center; color: #999; font-size: 10px; visibility: ${hasChildren ? 'visible' : 'hidden'}">
                             ${hasChildren ? '▶' : ''}
                         </span>
-                        <span class="tree-icon">${node.Icon || (node.type === 'folder' ? '📁' : '📦')}</span>
+                        <span class="tree-icon" style="display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;">
+                            ${(node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
+                                ? `<img src="${node.Icon}" style="width: 16px; height: 16px; object-fit: contain;">`
+                                : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
+                        </span>
                         <span class="tree-link" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
                     </div>
                     ${hasChildren ? `
