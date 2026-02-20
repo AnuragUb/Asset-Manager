@@ -82,6 +82,8 @@
                 <div id="assetCardsContainer" class="asset-cards-container">
                     <!-- Asset cards will be dynamically inserted here -->
                 </div>
+                <div id="assetGrid" class="asset-cards-container"></div>
+                <div id="assetKanban" class="kanban-container" style="display: none;"></div>
             </div>
 
             <div id="admin" class="view">
@@ -104,18 +106,22 @@
 
             <div id="it-assets" class="view">
                 <h2>IT Assets</h2>
-                <table id="tblItAssets">
-                    <thead>
-                        <tr>
-                            <th>Asset Tag</th>
-                            <th>Model</th>
-                            <th>User</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tblBodyItAssets">
-                        <!-- Rows will be dynamically inserted here -->
-                    </tbody>
-                </table>
+                <div class="table-container">
+                    <table id="tblItAssets">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>IP Address</th>
+                                <th>MAC Address</th>
+                                <th>Assigned To</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tblBodyItAssets">
+                            <!-- Rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
                 <!-- IT Assets specific forms/buttons -->
             </div>
         </main>
@@ -238,25 +244,45 @@
             });
         }
 
-        function renderItAssets() {
-            // Simulate rendering IT Assets content
-            tblBodyItAssets.innerHTML = '';
-            // Assuming there's an itAssets array or similar
-            assets.forEach((a, idx) => { // Using 'assets' as a placeholder for IT assets data
-                const trItAssets = document.createElement('tr');
-                trItAssets.innerHTML = `<td>${a.AssetTag || a.ID}</td><td>${a.Model}</td><td>${a.User}</td>`;
-                trItAssets.onclick = () => {
-                    Array.from(tblBodyItAssets.querySelectorAll('tr')).forEach(r => r.classList.remove('selected'));
-                    trItAssets.classList.add('selected');
-                    selectedOriginalIdItAssets = String(a.ID || a.Id || '');
-                    selectedOriginalIndexItAssets = findOriginalIndex(a);
-                    selectedAssetItAssets = a;
-                    selectedIdxItAssets = idx;
-                    setItAssetFields(a);
-                    console.log('IT Assets selectedIdxItAssets:', selectedIdxItAssets);
-                };
-                tblBodyItAssets.appendChild(trItAssets);
-            });
+        async function renderItAssets() {
+            tblBodyItAssets.innerHTML = '<tr><td colspan="5">Loading IT assets...</td></tr>';
+            try {
+                const response = await fetch('/api/assets');
+                if (!response.ok) throw new Error('Failed to fetch assets');
+                const allAssets = await response.json();
+                const itAssets = allAssets.filter(a => a.Category === 'IT');
+                
+                tblBodyItAssets.innerHTML = '';
+                if (itAssets.length === 0) {
+                    tblBodyItAssets.innerHTML = '<tr><td colspan="5">No IT assets found.</td></tr>';
+                    return;
+                }
+
+                itAssets.forEach((a, idx) => {
+                    const trItAssets = document.createElement('tr');
+                    trItAssets.style.cursor = 'pointer';
+                    trItAssets.innerHTML = `
+                        <td>${a.ID || '-'}</td>
+                        <td>${a.ItemName || '-'}</td>
+                        <td>${a.IPAddress || '-'}</td>
+                        <td>${a.MACAddress || '-'}</td>
+                        <td>${a.AssignedTo || 'Unassigned'}</td>
+                    `;
+                    trItAssets.onclick = () => {
+                        // View asset details - since this is a simple app, maybe just alert or console log for now
+                        // or if there's a showAssetDetails function, use it
+                        if (typeof showAssetDetails === 'function') {
+                            showAssetDetails(a.ID);
+                        } else {
+                            console.log('Selected Asset:', a);
+                        }
+                    };
+                    tblBodyItAssets.appendChild(trItAssets);
+                });
+            } catch (err) {
+                console.error('Error loading IT assets:', err);
+                tblBodyItAssets.innerHTML = '<tr><td colspan="5">Error loading IT assets.</td></tr>';
+            }
         }
 
 

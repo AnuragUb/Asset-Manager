@@ -12,11 +12,23 @@ export class DataProcessor {
             'Model': { label: 'Model', synonyms: ['model', 'model no', 'model number'] },
             'SrNo': { label: 'Serial Number', synonyms: ['serial', 'srno', 's/n', 'sn', 'serial no'] },
             'Status': { label: 'Status', synonyms: ['status', 'state', 'condition'] },
-            'CurrentLocation': { label: 'Location', synonyms: ['location', 'site', 'place'] },
-            'AssignedTo': { label: 'Assigned To', synonyms: ['assigned', 'user', 'owner', 'employee'] },
+            'CurrentLocation': { label: 'Location', synonyms: ['location', 'site', 'place', 'current location'] },
+            'AssignedTo': { label: 'Assigned To', synonyms: ['assigned', 'user', 'owner', 'employee', 'employee id'] },
+            'ParentId': { label: 'Parent ID', synonyms: ['parent id', 'parent', 'container'] },
             'MACAddress': { label: 'MAC Address', synonyms: ['mac', 'physical address', 'ethernet'] },
             'IPAddress': { label: 'IP Address', synonyms: ['ip', 'network address'] },
-            'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] }
+            'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] },
+            'PurchaseDate': { label: 'Purchase Date', synonyms: ['purchase date', 'date of purchase', 'bought on'] },
+            'asset_value': { label: 'Value', synonyms: ['value', 'price', 'cost', 'amount'] },
+            'warranty_months': { label: 'Warranty (Months)', synonyms: ['warranty', 'warranty months', 'warranty period'] },
+            'amc_months': { label: 'AMC', synonyms: ['amc', 'amc months', 'annual maintenance'] },
+            'warranty_tracking': { label: 'Warranty Tracking', synonyms: ['warranty tracking', 'tracking enabled'] },
+            'Remarks': { label: 'Remarks', synonyms: ['remarks', 'notes', 'comment'] },
+            'NetworkType': { label: 'Network Type', synonyms: ['network type', 'connection type', 'wifi/lan'] },
+            'PhysicalPort': { label: 'Physical Port', synonyms: ['port', 'switch port', 'jack'] },
+            'VLAN': { label: 'VLAN', synonyms: ['vlan', 'virtual lan', 'network segment'] },
+            'SocketID': { label: 'Socket ID', synonyms: ['socket', 'wall socket', 'patch panel'] },
+            'UserID': { label: 'Network User ID', synonyms: ['network user', 'system login', 'login id', 'ad user'] }
         };
     }
 

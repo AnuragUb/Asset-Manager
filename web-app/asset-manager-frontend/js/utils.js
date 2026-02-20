@@ -1,6 +1,20 @@
 export function showView(viewName) {
     console.log(`showView('${viewName}') called`);
     try {
+        // Execute cleanup for the current active view before switching
+        const currentActive = document.querySelector('#main-content > .view.active');
+        if (currentActive) {
+            const currentViewId = currentActive.id;
+            if (viewCleanupRegistry[currentViewId]) {
+                console.log(`Executing cleanup for ${currentViewId}`);
+                try {
+                    viewCleanupRegistry[currentViewId]();
+                } catch (cleanupErr) {
+                    console.error(`Error cleaning up view ${currentViewId}:`, cleanupErr);
+                }
+            }
+        }
+
         // Only target top-level views to avoid hiding sub-views unintentionally
         const views = document.querySelectorAll('#main-content > .view');
         console.log(`Found ${views.length} top-level views to manage`);
@@ -15,6 +29,13 @@ export function showView(viewName) {
             targetView.classList.remove('hidden');
             targetView.classList.add('active');
             console.log(`Switched to view: ${viewName}`);
+            
+            // Reset dashboard hierarchy state if switching to a non-dashboard view
+            // to ensure it starts fresh when returning
+            if (viewName !== 'dashboardView' && window.currentDashboardParent) {
+                console.log('Resetting currentDashboardParent for non-dashboard view');
+                window.currentDashboardParent = null;
+            }
         } else {
             console.warn(`View not found: ${viewName}`);
         }
@@ -32,14 +53,6 @@ export function showView(viewName) {
             
             if (sidebar) {
                 sidebar.classList.remove('hidden');
-                
-                // Ensure sidebar toggle works
-                const toggleBtn = document.getElementById('sidebarToggle');
-                if (toggleBtn) {
-                    toggleBtn.onclick = () => {
-                        sidebar.classList.toggle('collapsed');
-                    };
-                }
             }
             document.body.classList.remove('login-page');
         }
@@ -55,11 +68,56 @@ export function showView(viewName) {
     }
 }
 
+export function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return; // Should allow fallback to alert if container missing?
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    // Icon based on type
+    let icon = 'ℹ️';
+    if (type === 'success') icon = '✅';
+    if (type === 'error') icon = '❌';
+    if (type === 'warning') icon = '⚠️';
+
+    toast.innerHTML = `
+        <span style="font-size: 1.2em;">${icon}</span>
+        <span>${message}</span>
+    `;
+
+    container.appendChild(toast);
+
+    // Auto remove
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease-in';
+        setTimeout(() => toast.remove(), 290);
+    }, 3000);
+}
+
+// Expose to window for legacy code
+window.showToast = showToast;
+
+/**
+ * View Cleanup Registry
+ * Allows modules to register cleanup functions that run when leaving a view.
+ */
+const viewCleanupRegistry = {};
+
+export function registerViewCleanup(viewId, cleanupFn) {
+    if (typeof cleanupFn === 'function') {
+        viewCleanupRegistry[viewId] = cleanupFn;
+        console.log(`Registered cleanup for view: ${viewId}`);
+    } else {
+        console.warn(`Invalid cleanup function for view: ${viewId}`);
+    }
+}
+
 /**
  * Standard Tabulator Configuration and Redraw Logic
  */
 export const TABULATOR_BASE_CONFIG = {
-    layout: "fitData",
+    layout: "fitColumns",
     height: "100%",
     resizableColumnFit: false,
     movableColumns: true,

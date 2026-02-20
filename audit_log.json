@@ -5569,5 +5569,861 @@
     "Severity": "INFO",
     "Details": "Project status updated to: Active",
     "Timestamp": "2026-01-22T08:01:29.713Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "TEST-ASSET",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to itsupport@cineom.in",
+    "Timestamp": "2026-01-22T09:47:16.666Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "web",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 8 assets",
+    "Timestamp": "2026-01-22T10:04:02.001Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T10:06:42.011Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-D4KL6K-I",
+    "Severity": "INFO",
+    "Details": "Asset created: Nvidia Quadro Graphic Card",
+    "Timestamp": "2026-01-22T10:10:02.804Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T10:14:20.979Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T10:31:28.085Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WD8THD-A",
+    "Severity": "INFO",
+    "Details": "Asset updated: HDD 2TB",
+    "Timestamp": "2026-01-22T11:27:47.094Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-22T11:59:13.406Z"
+  },
+  {
+    "Action": "ASSIGN",
+    "User": "undefined",
+    "AssetId": "TEST-SERVER-001",
+    "Severity": "INFO",
+    "Details": "Asset assigned from \"Nobody\" to \"Nobody\"",
+    "Timestamp": "2026-01-23T06:39:15.491Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-23T10:09:50.262Z"
+  },
+  {
+    "Action": "ASSIGN",
+    "User": "undefined",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset assigned from \"Nobody\" to \"Gokarna\"",
+    "Timestamp": "2026-01-23T11:40:16.712Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-23T11:40:16.732Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "test-user",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 1 assets",
+    "Timestamp": "2026-01-27T04:44:21.741Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "test-user",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 2 assets",
+    "Timestamp": "2026-01-27T06:53:51.096Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "test-user",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 2 assets",
+    "Timestamp": "2026-01-27T06:59:34.324Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "test-user",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 3 assets",
+    "Timestamp": "2026-01-27T07:32:59.973Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LAP2601035116",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP Laptop",
+    "Timestamp": "2026-01-27T07:53:51.756Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LAP2601035116",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP Laptop",
+    "Timestamp": "2026-01-27T07:54:06.884Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "LOC-0126-WMWZLG-B",
+    "Severity": "INFO",
+    "Details": "Asset updated: Supermicro 3U Server",
+    "Timestamp": "2026-01-27T08:31:47.300Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "TEST-SERVER-001",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test Server",
+    "Timestamp": "2026-01-27T08:32:03.739Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "System",
+    "AssetId": "DC1769503004063",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/5637 for Sudhir Lodhi",
+    "Timestamp": "2026-01-27T08:36:44.080Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "undefined",
+    "AssetId": "MUM-0126-AJW99D-Q",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Workstation",
+    "Timestamp": "2026-01-28T05:06:49.242Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "MUM-0126-986738-P",
+    "Severity": "INFO",
+    "Details": "Project updated: OwnerEmail",
+    "Timestamp": "2026-01-28T07:55:02.094Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "MUM-0126-986738-P",
+    "Severity": "INFO",
+    "Details": "Project updated: CoordinatorEmail",
+    "Timestamp": "2026-01-28T07:55:14.857Z"
+  },
+  {
+    "Action": "UPDATE_IT_DETAILS",
+    "User": "admin",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "IT details updated: Network: DHCP",
+    "Timestamp": "2026-01-28T08:01:30.640Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test Asset",
+    "Timestamp": "2026-01-28T08:01:30.649Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "PRJ1767779659829",
+    "Severity": "INFO",
+    "Details": "Project updated: OwnerEmail",
+    "Timestamp": "2026-01-28T08:02:24.481Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "PRJ1767779659829",
+    "Severity": "INFO",
+    "Details": "Project updated: CoordinatorEmail",
+    "Timestamp": "2026-01-28T08:02:37.714Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to itsupport@cineom.in",
+    "Timestamp": "2026-01-28T08:56:12.872Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to itsupport@cineom.in",
+    "Timestamp": "2026-01-28T08:56:15.950Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to sudhir.lodhi@cineom.in",
+    "Timestamp": "2026-01-28T08:56:19.003Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test Asset",
+    "Timestamp": "2026-01-28T09:01:22.420Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "System",
+    "AssetId": "DC1769590945215",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/5902 for Sudhir Lodhi",
+    "Timestamp": "2026-01-28T09:02:25.234Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Asset created: Badwana Video Cable",
+    "Timestamp": "2026-01-28T10:06:03.715Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "qa",
+    "AssetId": "DC1769600408948",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/5402 for Test Customer",
+    "Timestamp": "2026-01-28T11:40:08.977Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "qa",
+    "AssetId": "DC1769601519325",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/9841 for Post-Migration",
+    "Timestamp": "2026-01-28T11:58:39.359Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "trae",
+    "AssetId": "DC1769621195850",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/8265 for Customer A",
+    "Timestamp": "2026-01-28T17:26:35.893Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "System",
+    "AssetId": "DC1769622240064",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/1739 for Sudhir Lodhi",
+    "Timestamp": "2026-01-28T17:44:00.087Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "System",
+    "AssetId": "DC1769622441809",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan DC/2026/7426 for Sudhir Lodhi",
+    "Timestamp": "2026-01-28T17:47:21.833Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Asset created: Cable Roll",
+    "Timestamp": "2026-01-28T19:08:00.619Z"
+  },
+  {
+    "Action": "QTY_SPLIT",
+    "User": "admin",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Split 3 M to MUM-0126-YHGYYB-G",
+    "Timestamp": "2026-01-28T19:08:01.146Z"
+  },
+  {
+    "Action": "QTY_ISSUE",
+    "User": "admin",
+    "AssetId": "MUM-0126-YHGYYB-G",
+    "Severity": "INFO",
+    "Details": "Issued 1 M -> Job123",
+    "Timestamp": "2026-01-28T19:08:03.078Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "QTY-TEST-20260128194339",
+    "Severity": "INFO",
+    "Details": "Asset created: Quantity Test Roll",
+    "Timestamp": "2026-01-28T19:43:39.505Z"
+  },
+  {
+    "Action": "QTY_SPLIT",
+    "User": "admin",
+    "AssetId": "QTY-TEST-20260128194339",
+    "Severity": "INFO",
+    "Details": "Split 30 m to MUM-0126-3P7YHS-M",
+    "Timestamp": "2026-01-28T19:48:05.859Z"
+  },
+  {
+    "Action": "QTY_ISSUE",
+    "User": "admin",
+    "AssetId": "MUM-0126-3P7YHS-M",
+    "Severity": "INFO",
+    "Details": "Issued 10 m -> Job-123",
+    "Timestamp": "2026-01-28T19:48:45.920Z"
+  },
+  {
+    "Action": "QTY_CONSUME",
+    "User": "admin",
+    "AssetId": "MUM-0126-3P7YHS-M",
+    "Severity": "INFO",
+    "Details": "Consumed 5 m",
+    "Timestamp": "2026-01-28T19:48:45.932Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Asset updated: Badwana Video Cable",
+    "Timestamp": "2026-01-29T05:42:56.360Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Asset updated: Badwana Video Cable",
+    "Timestamp": "2026-01-29T06:21:12.920Z"
+  },
+  {
+    "Action": "QTY_SPLIT",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Split 20 Meters to MUM-0126-RF8PVA-V",
+    "Timestamp": "2026-01-29T06:22:32.936Z"
+  },
+  {
+    "Action": "QTY_SPLIT",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Split 30 Meters to MUM-0126-QB4SCY-U",
+    "Timestamp": "2026-01-29T06:50:46.761Z"
+  },
+  {
+    "Action": "QTY_CONSUME",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Consumed 30 Meters",
+    "Timestamp": "2026-01-29T07:04:45.084Z"
+  },
+  {
+    "Action": "QTY_ISSUE",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Issued 50 Meters -> Employee: Arnav Thatte (1181)",
+    "Timestamp": "2026-01-29T07:05:52.099Z"
+  },
+  {
+    "Action": "QTY_CONSUME",
+    "User": "admin",
+    "AssetId": "MUM-0126-6FDXZH-Y",
+    "Severity": "INFO",
+    "Details": "Consumed 30 Meters",
+    "Timestamp": "2026-01-29T07:57:29.587Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset created: Beldana Video Cables",
+    "Timestamp": "2026-01-29T10:09:39.357Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "user",
+    "AssetId": "MUM-0126-QR6FGT-Y",
+    "Severity": "INFO",
+    "Details": "Asset created: Test HP Laptop",
+    "Timestamp": "2026-01-29T12:39:54.494Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "user",
+    "AssetId": "MUM-0126-QR6FGT-Y",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test HP Laptop",
+    "Timestamp": "2026-01-29T12:42:53.248Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "user",
+    "AssetId": "LAP-MUM-0126-VV7BWM-A",
+    "Severity": "INFO",
+    "Details": "Asset created: Dell Laptop",
+    "Timestamp": "2026-01-29T12:52:55.112Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T06:52:04.935Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T06:52:27.473Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T07:11:08.416Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "test-user",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Asset updated: Cable Roll",
+    "Timestamp": "2026-01-30T07:39:18.145Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "test-user",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Asset updated: Cable Roll",
+    "Timestamp": "2026-01-30T07:39:57.067Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "test-user",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Asset updated: Cable Roll",
+    "Timestamp": "2026-01-30T07:43:24.944Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "test-user",
+    "AssetId": "MUM-0126-WAGGPB-W",
+    "Severity": "INFO",
+    "Details": "Asset updated: Cable Roll",
+    "Timestamp": "2026-01-30T07:44:28.649Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T08:34:12.721Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T12:00:10.129Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T12:01:21.583Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T12:01:58.170Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-30T12:02:23.791Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "OFF-0126-6KUQM2-K",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 1",
+    "Timestamp": "2026-01-31T05:47:48.481Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "OFF-0126-6KUQM2-K",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 1",
+    "Timestamp": "2026-01-31T05:48:01.615Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "OFF-0126-6KUQM2-K",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 1",
+    "Timestamp": "2026-01-31T05:48:02.862Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "OFF-0126-6KUQM2-K",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 1",
+    "Timestamp": "2026-01-31T05:48:06.018Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "OFF-0126-6KUQM2-K",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 1",
+    "Timestamp": "2026-01-31T05:48:11.883Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-31T05:49:53.312Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-31T05:50:26.209Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-01-31T05:51:03.651Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-01-31T06:03:24.672Z"
+  },
+  {
+    "Action": "CONVERT_TEMP",
+    "User": "web",
+    "AssetId": "MUM-0226-DDH2H6-T",
+    "Severity": "INFO",
+    "Details": "Converted temporary asset \"Xiaomi Phone\" to permanent asset. Linked to Project ID: PRJ1767782956396",
+    "Timestamp": "2026-02-04T10:18:34.154Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "PRJ1768283809553",
+    "Severity": "INFO",
+    "Details": "Project updated: Status",
+    "Timestamp": "2026-02-11T05:09:41.448Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "admin",
+    "AssetId": "MUM-0126-986738-P",
+    "Severity": "INFO",
+    "Details": "Project updated: Status",
+    "Timestamp": "2026-02-11T05:09:42.542Z"
+  },
+  {
+    "Action": "UPDATE_IT_DETAILS",
+    "User": "admin",
+    "AssetId": "OFF-0126-KVQWVF-V",
+    "Severity": "INFO",
+    "Details": "IT details updated: Network: DHCP",
+    "Timestamp": "2026-02-11T07:18:20.709Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "OFF-0126-KVQWVF-V",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 2",
+    "Timestamp": "2026-02-11T07:18:20.722Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-02-13T05:17:15.151Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-7MGDLL-F",
+    "Severity": "INFO",
+    "Details": "Asset updated: Beldana Video Cables",
+    "Timestamp": "2026-02-13T05:17:37.782Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "LAP-MUM-0126-VV7BWM-A",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Laptop",
+    "Timestamp": "2026-02-13T05:17:42.482Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "LAP-MUM-0126-VV7BWM-A",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Laptop",
+    "Timestamp": "2026-02-13T05:17:45.495Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-02-13T05:17:48.734Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-02-13T05:17:56.366Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test Asset",
+    "Timestamp": "2026-02-13T07:10:23.239Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-XNKJGA-H",
+    "Severity": "INFO",
+    "Details": "Asset updated: Test Asset",
+    "Timestamp": "2026-02-13T07:10:25.502Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0226-9ME4YQ-I",
+    "Severity": "INFO",
+    "Details": "Asset created: Asci Switch",
+    "Timestamp": "2026-02-13T07:12:44.554Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "LAP-MUM-0126-VV7BWM-A",
+    "Severity": "INFO",
+    "Details": "Asset updated: Dell Laptop",
+    "Timestamp": "2026-02-13T07:13:19.640Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "TEST0001",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 0",
+    "Timestamp": "2026-02-17T10:16:39.541Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "TEST0001",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 0",
+    "Timestamp": "2026-02-17T10:16:43.693Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "TEST0001",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 0",
+    "Timestamp": "2026-02-17T10:16:44.780Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "DEL-0226-VLLDWT-I",
+    "Severity": "INFO",
+    "Details": "Asset created: Microsoft 365",
+    "Timestamp": "2026-02-17T10:21:45.189Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "DEL-0226-VLLDWT-I",
+    "Severity": "INFO",
+    "Details": "Asset updated: Microsoft 365",
+    "Timestamp": "2026-02-17T10:22:12.118Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-02-17T10:22:41.091Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "web",
+    "AssetId": "MUM-0126-43EEKD-S",
+    "Severity": "INFO",
+    "Details": "Asset updated: HP LaserJet (P/S)",
+    "Timestamp": "2026-02-17T10:22:54.881Z"
+  },
+  {
+    "Action": "UPDATE_PROJECT",
+    "User": "web",
+    "AssetId": "MUM-0226-484229-P",
+    "Severity": "INFO",
+    "Details": "Project updated: Location",
+    "Timestamp": "2026-02-17T11:12:06.996Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "TEST-ASSET",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to itsupport@cineom.in",
+    "Timestamp": "2026-02-19T09:08:00.101Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-0226-LXB2WR-G",
+    "Severity": "INFO",
+    "Details": "Asset created: Server Grodawna Switch",
+    "Timestamp": "2026-02-19T09:38:10.949Z"
+  },
+  {
+    "Action": "UPDATE",
+    "User": "admin",
+    "AssetId": "OFF-0126-KVQWVF-V",
+    "Severity": "INFO",
+    "Details": "Asset updated: Bulk Test Asset 2",
+    "Timestamp": "2026-02-20T06:19:19.752Z"
+  },
+  {
+    "Action": "QTY_SPLIT",
+    "User": "admin",
+    "AssetId": "OFF-0126-KVQWVF-V",
+    "Severity": "INFO",
+    "Details": "Split 3 pcs to OFF-0126-KVQWVF-DGE-V",
+    "Timestamp": "2026-02-20T06:23:28.803Z"
+  },
+  {
+    "Action": "NETWORK_CRED_CREATE",
+    "User": "admin",
+    "AssetId": "NC-1771572861451-258",
+    "Severity": "INFO",
+    "Details": "Created network credential for Accounts Printer ( HP Printer)",
+    "Timestamp": "2026-02-20T07:34:21.650Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "TEST-ASSET",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRING SOON email notification to itsupport@cineom.in",
+    "Timestamp": "2026-02-20T09:41:11.631Z"
   }
 ]

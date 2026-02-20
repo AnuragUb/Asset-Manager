@@ -54,7 +54,12 @@ export function initWarrantyView() {
                     // Maybe show all assets or clear?
                     // For now, let's show all assets in the category
                     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-                    const assets = (window.allAssets || []).filter(a => a.Category === category && !a.isPlaceholder);
+                    const assets = (window.allAssets || []).filter(a => 
+                        a.Category === category && 
+                        !a.isPlaceholder && 
+                        a.warranty_tracking !== 0 && 
+                        a.warranty_tracking !== false
+                    );
                     showAssetsInModal(assets, `All ${category} Assets`);
                 } else {
                     const range = warrantyRanges.find(r => r.label === rangeLabel);
@@ -87,6 +92,87 @@ export function initWarrantyView() {
     }
 }
 
+window.downloadWarrantyReport = function() {
+    console.log('downloadWarrantyReport() called');
+    const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+    const assets = (window.allAssets || []).filter(a => 
+        a.Category === category && 
+        !a.isPlaceholder && 
+        a.warranty_tracking !== 0 && 
+        a.warranty_tracking !== false
+    );
+    
+    if (assets.length === 0) {
+        alert('No assets found for the current category to generate a report.');
+        return;
+    }
+
+    // Prepare data for Excel
+    const reportData = assets.map(a => {
+        // Calculate warranty and AMC status
+        const purchaseDate = a.PurchaseDate ? new Date(a.PurchaseDate) : null;
+        let warrantyStatus = 'N/A';
+        let amcStatus = 'N/A';
+
+        if (purchaseDate) {
+            const today = new Date();
+            if (a.warranty_months) {
+                const expiry = new Date(purchaseDate);
+                expiry.setMonth(expiry.getMonth() + parseInt(a.warranty_months));
+                const diff = (expiry - today) / (1000 * 60 * 60 * 24 * 30.44);
+                warrantyStatus = diff > 0 ? `${Math.round(diff)} months remaining` : 'Expired';
+            }
+            if (a.amc_months) {
+                const expiry = new Date(purchaseDate);
+                expiry.setMonth(expiry.getMonth() + parseInt(a.amc_months));
+                const diff = (expiry - today) / (1000 * 60 * 60 * 24 * 30.44);
+                amcStatus = diff > 0 ? `${Math.round(diff)} months remaining` : 'Expired';
+            }
+        }
+
+        // Components logic (if present)
+        // In this system, components are usually children assets or linked via ParentId
+        const components = (window.allAssets || [])
+            .filter(comp => comp.ParentId === a.ID)
+            .map(comp => comp.ItemName)
+            .join(', ');
+
+        return {
+            'Asset ID': a.ID,
+            'Item Name': a.ItemName,
+            'Status': a.Status,
+            'Make': a.Make || '',
+            'Model': a.Model || '',
+            'Serial No': a.SrNo || '',
+            'Current Location': a.CurrentLocation || '',
+            'Purchase Details': a.PurchaseDetails || '',
+            'Purchase Date': a.PurchaseDate || '',
+            'Warranty (Months)': a.warranty_months || 0,
+            'Warranty Status': warrantyStatus,
+            'AMC (Months)': a.amc_months || 0,
+            'AMC Status': amcStatus,
+            'Asset Value': a.asset_value || 0,
+            'Currency': a.Currency || 'INR',
+            'Components': components || 'None'
+        };
+    });
+
+    try {
+        // Create worksheet
+        const ws = XLSX.utils.json_to_sheet(reportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Warranty Report");
+
+        // Save file
+        const fileName = `WarrantyReport_${category}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        console.log('Report generated successfully:', fileName);
+    } catch (err) {
+        console.error('Error generating Excel report:', err);
+        alert('Failed to generate Excel report. Make sure SheetJS is loaded.');
+    }
+};
+
 function populateWarrantyFilter() {
     const filterSelect = document.getElementById('warrantyFilterSelect');
     if (!filterSelect) return;
@@ -109,6 +195,9 @@ function filterAssetsByRange(range) {
 
     return assets.filter(asset => {
         if (asset.isPlaceholder || asset.Category !== category) return false;
+        // Skip assets where warranty tracking is explicitly disabled (0 or false)
+        if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return false;
+        
         const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
         return months >= range.min && months < maxMonths;
     });
@@ -152,9 +241,6 @@ function showAssetsInModal(assets, titleText) {
                     </div>
                 </td>
                 <td>${a.ParentId || '-'}</td>
-                <td>${a.IN || '0'}</td>
-                <td>${a.OUT || '0'}</td>
-                <td>${a.Balance || '0'}</td>
                 <td>
                     <div style="display: flex; flex-direction: column; gap: 5px;">
                         <button class="edit-asset-btn" data-id="${a.ID}" style="background: #0078d4; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">Edit</button>
@@ -287,16 +373,30 @@ export function updateWarrantyChart() {
     console.log('updateWarrantyChart() called');
     
     // 1. Pie Chart
-    const ctx = document.getElementById('warrantyPieChart')?.getContext('2d');
+    const canvas = document.getElementById('warrantyPieChart');
+    const ctx = canvas?.getContext('2d');
     const legendContainer = document.getElementById('warrantyLegend');
     
     if (ctx) {
+        if (typeof Chart === 'undefined') {
+            console.error('WARRANTY: Chart.js library not loaded');
+            if (canvas.parentElement) {
+                canvas.parentElement.innerHTML = '<div style="color:#666; text-align:center; padding:20px;">Chart library missing. Please reload.</div>';
+            }
+            return;
+        }
+
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
         const assets = (window.allAssets || []).filter(a => a.Category === category);
         const counts = warrantyRanges.map(() => 0);
+        let hasTrackableAssets = false;
 
         assets.forEach(asset => {
             if (asset.isPlaceholder) return;
+            // Skip assets where warranty tracking is explicitly disabled (0 or false)
+            if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return;
+            
+            hasTrackableAssets = true;
             const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
             
             let matchIndex = -1;
@@ -315,65 +415,94 @@ export function updateWarrantyChart() {
             warrantyChart.destroy();
         }
 
-        warrantyChart = new Chart(ctx, {
-            type: 'pie',
-            data: {
-                labels: warrantyRanges.map(r => r.label),
-                datasets: [{
-                    data: counts,
-                    backgroundColor: warrantyRanges.map(r => r.color),
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    title: { display: true, text: 'Asset Warranty Status' },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.raw || 0;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                                return `${label}: ${value} (${percentage}%)`;
+        if (!hasTrackableAssets) {
+            console.log('WARRANTY: No trackable assets found for chart');
+            // Render an empty "No Data" chart or clear
+            warrantyChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['No Data'],
+                    datasets: [{
+                        data: [1],
+                        backgroundColor: ['#e0e0e0'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, text: 'No Warranty Data Available' },
+                        tooltip: { enabled: false }
+                    }
+                }
+            });
+        } else {
+            warrantyChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: warrantyRanges.map(r => r.label),
+                    datasets: [{
+                        data: counts,
+                        backgroundColor: warrantyRanges.map(r => r.color),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: true, text: 'Asset Warranty Status' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
+            });
+        }
 
         // 2. Custom Legend
         if (legendContainer) {
-            const total = counts.reduce((a, b) => a + b, 0);
-            legendContainer.innerHTML = warrantyRanges.map((range, i) => `
-                <div class="warranty-legend-item" data-index="${i}" style="display: flex; align-items: center; margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid ${range.color}; cursor: pointer; transition: background 0.2s;">
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; font-size: 14px;">${range.label}</div>
-                        <div style="font-size: 12px; color: #666;">Min: ${range.min} months</div>
+            if (!hasTrackableAssets) {
+                legendContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#999;">No assets with warranty tracking enabled found in this category.</div>';
+            } else {
+                const total = counts.reduce((a, b) => a + b, 0);
+                legendContainer.innerHTML = warrantyRanges.map((range, i) => `
+                    <div class="warranty-legend-item" data-index="${i}" style="display: flex; align-items: center; margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid ${range.color}; cursor: pointer; transition: background 0.2s;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 14px;">${range.label}</div>
+                            <div style="font-size: 12px; color: #666;">Min: ${range.min} months</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: bold; font-size: 16px;">${counts[i]}</div>
+                            <div style="font-size: 11px; color: #888;">${total > 0 ? Math.round((counts[i] / total) * 100) : 0}%</div>
+                        </div>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-weight: bold; font-size: 16px;">${counts[i]}</div>
-                        <div style="font-size: 11px; color: #888;">${total > 0 ? Math.round((counts[i] / total) * 100) : 0}%</div>
-                    </div>
-                </div>
-            `).reverse().join('');
+                `).reverse().join('');
 
-            legendContainer.querySelectorAll('.warranty-legend-item').forEach(item => {
-                item.onclick = () => {
-                    const index = parseInt(item.getAttribute('data-index'));
-                    const range = warrantyRanges[index];
-                    if (range) {
-                        const filtered = filterAssetsByRange(range);
-                        showAssetsInModal(filtered, `Assets: ${range.label}`);
-                    }
-                };
-                item.onmouseover = () => { item.style.background = '#eef2f7'; };
-                item.onmouseout = () => { item.style.background = '#f8f9fa'; };
-            });
+                legendContainer.querySelectorAll('.warranty-legend-item').forEach(item => {
+                    item.onclick = () => {
+                        const index = parseInt(item.getAttribute('data-index'));
+                        const range = warrantyRanges[index];
+                        if (range) {
+                            const filtered = filterAssetsByRange(range);
+                            showAssetsInModal(filtered, `Assets: ${range.label}`);
+                        }
+                    };
+                    item.onmouseover = () => { item.style.background = '#eef2f7'; };
+                    item.onmouseout = () => { item.style.background = '#f8f9fa'; };
+                });
+            }
         }
     } else {
         console.warn('warrantyPieChart context not found');
@@ -422,6 +551,9 @@ export function updateWarrantySummaryTable() {
             
             const rangeAssets = assets.filter(asset => {
                 if (asset.isPlaceholder || asset.Category !== category) return false;
+                // Skip assets where warranty tracking is explicitly disabled (0 or false)
+                if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return false;
+                
                 const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
                 return months >= range.min && months < maxMonths;
             });
@@ -475,6 +607,73 @@ window.viewWarrantyAssetsByLabel = (label) => {
     }
 };
 
+export function downloadWarrantyReport() {
+    const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+    let assets = (window.allAssets || []).filter(a => 
+        a.Category === category && 
+        !a.isPlaceholder && 
+        a.warranty_tracking !== 0 && 
+        a.warranty_tracking !== false
+    );
+
+    // Apply warranty range filter if active
+    const filterSelect = document.getElementById('warrantyFilterSelect');
+    if (filterSelect && filterSelect.value !== 'all') {
+        const range = warrantyRanges.find(r => r.label === filterSelect.value);
+        if (range) {
+            assets = assets.filter(asset => {
+                const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
+                // Find the correct range for this asset
+                let matchIndex = -1;
+                for (let i = warrantyRanges.length - 1; i >= 0; i--) {
+                    if (months >= warrantyRanges[i].min) {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+                return matchIndex !== -1 && warrantyRanges[matchIndex].label === range.label;
+            });
+        }
+    }
+
+    if (assets.length === 0) {
+        alert('No assets to report.');
+        return;
+    }
+
+    const reportData = assets.map(a => {
+        // Find components
+        const components = (window.allAssets || [])
+            .filter(c => c.ParentId === a.ID)
+            .map(c => c.ItemName)
+            .join(', ');
+
+        return {
+            'Asset ID': a.ID,
+            'Item Name': a.ItemName,
+            'Make': a.Make || '',
+            'Model': a.Model || '',
+            'Serial No': a.SrNo || '',
+            'Current Location': a.CurrentLocation || '',
+            'Purchase Details': a.PurchaseDetails || '',
+            'Warranty (Months)': a.warranty_months || 0,
+            'AMC (Months)': a.amc_months || 0,
+            'Asset Value': a.asset_value || 0,
+            'Purchase Date': a.PurchaseDate || '',
+            'Components': components || '-'
+        };
+    });
+
+    // Generate Excel using XLSX library
+    const ws = XLSX.utils.json_to_sheet(reportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Warranty Report");
+    
+    const filename = `WarrantyReport_${category}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, filename);
+}
+
 window.initWarrantyView = initWarrantyView;
 window.updateWarrantyChart = updateWarrantyChart;
 window.updateWarrantySummaryTable = updateWarrantySummaryTable;
+window.downloadWarrantyReport = downloadWarrantyReport;

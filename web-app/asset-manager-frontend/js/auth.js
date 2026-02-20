@@ -41,17 +41,21 @@ export function setupAuth(onLoginSuccess) {
             console.log('Attempting login for:', username, 'Category:', category);
 
             try {
-                const response = await fetch('/api/login', {
+                const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password, category })
                 });
 
                 if (response.ok) {
-                    const user = await response.json();
-                    user.category = category; // Ensure category is attached
+                    const payload = await response.json();
+                    const user = payload && payload.user ? payload.user : payload;
+                    user.category = category;
                     localStorage.setItem('currentUser', JSON.stringify(user));
                     localStorage.setItem('selectedAssetCategory', category);
+                    if (window.location.hash) {
+                        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+                    }
                     onLoginSuccess(user);
                 } else {
                     const error = await response.json();
@@ -65,10 +69,18 @@ export function setupAuth(onLoginSuccess) {
     }
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
             localStorage.removeItem('currentUser');
             localStorage.removeItem('selectedAssetCategory');
-            window.location.reload();
+            window.location.href = '/';
         });
     }
 }

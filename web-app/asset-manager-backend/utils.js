@@ -117,12 +117,13 @@ function dateCode(date) {
 }
 
 /**
- * Generates a modern Asset ID in the format: (City) - (MMYY) - (Unique Base 32) - (Checksum)
- * Example: MUM-0126-9K7XQ2-Z
+ * Generates a modern Asset ID in the format: [KIND-] (City) - (MMYY) - (Unique Base 32) - (Checksum)
+ * Example: SSD-MUM-0126-9K7XQ2-Z or MUM-0126-9K7XQ2-Z
  * @param {string} location - The location name to derive city code from
+ * @param {string} kindName - The name of the asset kind to look up identifier
  * @returns {string} The generated Asset ID
  */
-function generateModernAssetId(location) {
+function generateModernAssetId(location, kindName) {
     const city = locCode(location); // MUM, DEL, etc.
     const now = new Date();
     const mm = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -136,7 +137,19 @@ function generateModernAssetId(location) {
         unique += b32[Math.floor(Math.random() * b32.length)];
     }
     
-    const base = `${city}-${mmyy}-${unique}`;
+    let base = `${city}-${mmyy}-${unique}`;
+
+    // Try to get Kind Identifier
+    if (kindName) {
+        try {
+            const kind = db.prepare('SELECT Identifier FROM asset_kinds WHERE Name = ?').get(kindName);
+            if (kind && kind.Identifier && kind.Identifier.trim() !== '') {
+                base = `${kind.Identifier.trim().toUpperCase()}-${base}`;
+            }
+        } catch (err) {
+            console.error('Error fetching kind identifier for ID generation:', err);
+        }
+    }
     
     // Simple Checksum (A-Z) calculated from all non-hyphen characters
     let sum = 0;
@@ -147,6 +160,79 @@ function generateModernAssetId(location) {
     const checksum = String.fromCharCode(65 + (sum % 26));
     
     return `${base}-${checksum}`;
+}
+
+/**
+ * Generates a Split Asset ID based on parent ID.
+ * Format: (ParentBase) - (Unique 3 chars) - (Checksum)
+ * @param {string} parentId - The parent asset ID
+ * @returns {string} The generated Split Asset ID
+ */
+function generateSplitAssetId(parentId) {
+    // Parent format: CITY-MMYY-UNIQUE6-CHECKSUM
+    // We want to keep CITY-MMYY-UNIQUE6 and add a 3-char suffix
+    const parts = parentId.split('-');
+    let base = '';
+    
+    if (parts.length >= 3) {
+        // Standard format: CITY-MMYY-UNIQUE6-CHECKSUM
+        // Keep everything except the last part (checksum)
+        base = parts.slice(0, 3).join('-');
+    } else {
+        // Fallback for non-standard IDs
+        base = parentId;
+    }
+
+    const b32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let suffix = '';
+    for (let i = 0; i < 3; i++) {
+        suffix += b32[Math.floor(Math.random() * b32.length)];
+    }
+
+    const newBase = `${base}-${suffix}`;
+
+    // Calculate new checksum
+    let sum = 0;
+    const cleanBase = newBase.replace(/-/g, '');
+    for (let i = 0; i < cleanBase.length; i++) {
+        sum += cleanBase.charCodeAt(i);
+    }
+    const checksum = String.fromCharCode(65 + (sum % 26));
+
+    return `${newBase}-${checksum}`;
+}
+
+/**
+ * Generates a Project ID in the format: Location-MMYY-6digituniquecde-identifierbit
+ * Example: MUM-0126-000001-P
+ * @param {string} location - The location name
+ * @returns {string} The generated Project ID
+ */
+function generateProjectId(location) {
+    const city = locCode(location);
+    const now = new Date();
+    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+    const yy = now.getFullYear().toString().slice(-2);
+    const mmyy = `${mm}${yy}`;
+    
+    // 6-digit unique code (random for now, could be incremental if needed)
+    // Using random for consistency with Asset ID generation style
+    const unique = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+    
+    // Identifier bit 'P' for Project
+    return `${city}-${mmyy}-${unique}-P`;
+}
+
+/**
+ * Standardized QR Payload Generator for Projects
+ * @param {object} project - Project data
+ * @param {string} ip - Server IP
+ * @param {number|string} port - Server Port
+ * @returns {string} JSON string for QR code
+ */
+function generateProjectQRPayload(project, ip, port) {
+    const id = project.ID || project.id;
+    return `http://${ip}:${port}/project/${encodeURIComponent(id)}`;
 }
 
 function generateTempAssetId(location) {
@@ -198,12 +284,19 @@ const TALLY_CONFIG = {
     port: 9000
 };
 
+function getTallyConfig() {
+    const dynamic = readJson(dynamicFile);
+    return dynamic.tally_settings || TALLY_CONFIG;
+}
+
 async function sendTallyRequest(xml) {
     const http = require('http');
+    const config = getTallyConfig();
+    
     return new Promise((resolve, reject) => {
         const req = http.request({
-            hostname: TALLY_CONFIG.host,
-            port: TALLY_CONFIG.port,
+            hostname: config.host,
+            port: config.port,
             method: 'POST',
             headers: {
                 'Content-Type': 'text/xml',
@@ -253,6 +346,9 @@ module.exports = {
     purposeCode,
     dateCode,
     generateModernAssetId,
+    generateSplitAssetId,
+    generateProjectId,
+    generateProjectQRPayload,
     generateTempAssetId,
     makeIdForAsset,
     assetsFile,
@@ -261,5 +357,6 @@ module.exports = {
     dynamicFile,
     sendTallyRequest,
     parseTallyXml,
-    TALLY_CONFIG
+    TALLY_CONFIG,
+    getTallyConfig
 };

@@ -15,7 +15,9 @@ db.prepare(`
         password TEXT NOT NULL,
         fullname TEXT,
         role TEXT DEFAULT 'user',
+        employee_id TEXT,
         client_id TEXT,
+        company_id TEXT,
         project_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -28,11 +30,11 @@ if (fs.existsSync(usersFile)) {
         const userData = JSON.parse(fs.readFileSync(usersFile, 'utf8'));
         const users = userData.users || [];
         
-        const insert = db.prepare('INSERT OR IGNORE INTO users (username, password, fullname, role) VALUES (?, ?, ?, ?)');
+        const insert = db.prepare('INSERT OR IGNORE INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
         
         db.transaction((usersToInsert) => {
             for (const user of usersToInsert) {
-                insert.run(user.username, user.password, user.fullname, user.role);
+                insert.run(user.username, user.password, user.fullname, user.role, null, 'CINEOM', 'CINEOM');
             }
         })(users);
         
@@ -42,7 +44,7 @@ if (fs.existsSync(usersFile)) {
     }
 } else {
     // Add default admin if no file exists
-    db.prepare('INSERT OR IGNORE INTO users (username, password, fullname, role) VALUES (?, ?, ?, ?)').run('admin', 'admin123', 'Administrator', 'superuser');
+    db.prepare('INSERT OR IGNORE INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run('admin', 'admin123', 'Administrator', 'superuser', 'EMP-ADMIN', 'CINEOM', 'CINEOM');
 }
 
 console.log('User migration complete.');

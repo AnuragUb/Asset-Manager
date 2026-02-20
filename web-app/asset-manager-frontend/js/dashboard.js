@@ -1,4 +1,4 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator } from './utils.js?v=3.8';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast } from './utils.js?v=3.8';
 import { HierarchyManager } from './hierarchy.js?v=3.8';
 import { DataProcessor } from './dataProcessor.js?v=4.1';
 import { initScannerView } from './networkScanner.js?v=3.8';
@@ -12,6 +12,115 @@ let searchVisible = false;
 let selectedDCAssets = [];
 let selectedBatchAssets = [];
 let isSelectionMode = false;
+let dcItemsByAssetId = {};
+
+function toNumber(value) {
+    const n = Number(String(value ?? '').replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : null;
+}
+
+function round2(n) {
+    return Math.round(n * 100) / 100;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function matchesQuery(asset, query) {
+    if (!query) return true;
+    const terms = query.toLowerCase().trim().split(/\s+/);
+    if (terms.length === 0) return true;
+    
+    // Fields to search in
+    const searchFields = [
+        asset.ID,
+        asset.ItemName,
+        asset.Make,
+        asset.Model,
+        asset.SrNo,
+        asset.CurrentLocation,
+        asset.AssignedTo,
+        asset.Type,
+        asset.Category,
+        asset.Status,
+        asset.Remarks,
+        asset.IPAddress,
+        asset.MACAddress,
+        asset.User,
+        asset.Department
+    ];
+    
+    // Check if EVERY term matches AT LEAST ONE field (AND logic across terms)
+    // Example: "laptop mumbai" -> "laptop" in Type AND "mumbai" in Location
+    const match = terms.every(term => 
+        searchFields.some(field => 
+            field && String(field).toLowerCase().includes(term)
+        )
+    );
+    
+    return match;
+}
+
+// Export for use in other modules if needed (though currently only used in dashboard.js)
+window.matchesQuery = matchesQuery;
+
+function numberToWordsIndian(n) {
+    const num = Math.floor(Math.abs(Number(n) || 0));
+    if (num === 0) return 'Zero';
+
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    const twoDigits = (x) => {
+        if (x < 20) return ones[x];
+        const t = Math.floor(x / 10);
+        const o = x % 10;
+        return `${tens[t]}${o ? ' ' + ones[o] : ''}`.trim();
+    };
+
+    const threeDigits = (x) => {
+        const h = Math.floor(x / 100);
+        const r = x % 100;
+        const parts = [];
+        if (h) parts.push(`${ones[h]} Hundred`);
+        if (r) parts.push(twoDigits(r));
+        return parts.join(' ').trim();
+    };
+
+    let remaining = num;
+    const crore = Math.floor(remaining / 10000000);
+    remaining %= 10000000;
+    const lakh = Math.floor(remaining / 100000);
+    remaining %= 100000;
+    const thousand = Math.floor(remaining / 1000);
+    remaining %= 1000;
+    const hundredPart = remaining;
+
+    const out = [];
+    if (crore) out.push(`${threeDigits(crore)} Crore`);
+    if (lakh) out.push(`${threeDigits(lakh)} Lakh`);
+    if (thousand) out.push(`${threeDigits(thousand)} Thousand`);
+    if (hundredPart) out.push(threeDigits(hundredPart));
+    return out.join(' ').trim();
+}
+
+function formatAmountWords(amount) {
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '';
+    const abs = Math.abs(n);
+    const rupees = Math.floor(abs);
+    const paise = Math.round((abs - rupees) * 100);
+    const rupeeWords = numberToWordsIndian(rupees);
+    const paiseWords = paise ? numberToWordsIndian(paise) : '';
+    const core = paise ? `${rupeeWords} Rupees and ${paiseWords} Paise` : `${rupeeWords} Rupees`;
+    return `${n < 0 ? 'Minus ' : ''}${core} Only`;
+}
 
 function toggleSelectionMode(enable) {
     isSelectionMode = enable;
@@ -52,6 +161,170 @@ function toggleSelectionMode(enable) {
     }
 }
 
+function renderAssetKanban(assets) {
+    if (!assets) {
+        console.error('[Dashboard] renderAssetKanban called with undefined assets');
+        return;
+    }
+    console.log('[Dashboard] renderAssetKanban() called with', assets.length, 'assets');
+    const kanban = document.getElementById('assetKanban');
+    const grid = document.getElementById('assetCardsContainer') || document.getElementById('assetGrid');
+    const gridWrapper = document.getElementById('assetGridWrapper');
+    
+    if (!kanban) return;
+    
+    // Explicitly toggle visibility
+    kanban.classList.remove('hidden');
+    kanban.style.display = 'flex';
+    if (grid) grid.style.display = 'none';
+    if (gridWrapper) gridWrapper.style.display = 'none';
+
+    kanban.innerHTML = '';
+
+    const statuses = ['In Store', 'Owned', 'Sold', 'Demo', 'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped'];
+    
+    statuses.forEach(status => {
+        const statusAssets = assets.filter(a => (a.Status || 'In Store') === status);
+        
+        const column = document.createElement('div');
+        column.className = 'kanban-column';
+        column.dataset.status = status;
+
+        column.innerHTML = `
+            <div class="kanban-column-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #ddd;">
+                <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #5e6c84;">${status.toUpperCase()}</h3>
+                <span style="background: #dfe1e6; color: #172b4d; padding: 2px 8px; border-radius: 10px; font-size: 11px;">${statusAssets.length}</span>
+            </div>
+            <div class="kanban-cards-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; min-height: 100px;">
+            </div>
+        `;
+
+        const cardsContainer = column.querySelector('.kanban-cards-container');
+        
+        // Drag and drop for columns
+        cardsContainer.ondragover = (e) => {
+            e.preventDefault();
+            cardsContainer.style.background = 'rgba(0,0,0,0.05)';
+        };
+        cardsContainer.ondragleave = () => {
+            cardsContainer.style.background = 'transparent';
+        };
+        cardsContainer.ondrop = async (e) => {
+            e.preventDefault();
+            cardsContainer.style.background = 'transparent';
+            const assetId = e.dataTransfer.getData('assetId');
+            const newStatus = column.dataset.status;
+            
+            if (assetId && newStatus) {
+                try {
+                    const response = await fetch(`/api/assets/${assetId}`, {
+                        method: 'PUT',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'x-user': localStorage.getItem('username') || 'web'
+                        },
+                        body: JSON.stringify({ Status: newStatus })
+                    });
+                    
+                    if (response.ok) {
+                        // Refresh dashboard data
+                        if (window.loadAssets) {
+                            await window.loadAssets();
+                            renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                        }
+                    } else {
+                        const error = await response.text();
+                        showToast(`Failed to update status: ${error}`, 'error');
+                    }
+                } catch (err) {
+                    console.error('Error updating asset status:', err);
+                    showToast('Error updating asset status. Check console for details.', 'error');
+                }
+            }
+        };
+        
+        statusAssets.forEach(asset => {
+            const card = document.createElement('div');
+            card.className = 'kanban-card';
+            card.draggable = true;
+            card.dataset.id = asset.ID;
+            card.style.background = 'white';
+            card.style.borderRadius = '4px';
+            card.style.padding = '10px';
+            card.style.boxShadow = '0 1px 0 rgba(9,30,66,.25)';
+            card.style.cursor = 'grab';
+            card.style.borderLeft = '4px solid ' + getStatusColor(status);
+            
+            card.onclick = () => showAssetDetails(asset.ID);
+            
+            card.ondragstart = (e) => {
+                e.dataTransfer.setData('assetId', asset.ID);
+                card.style.opacity = '0.5';
+            };
+            card.ondragend = () => {
+                card.style.opacity = '1';
+            };
+
+            card.innerHTML = `
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <div style="font-size: 20px; width: 30px; text-align: center; flex-shrink: 0;">
+                        ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                            ? `<img src="${asset.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                            : (asset.Icon || '📦')}
+                    </div>
+                    <div style="flex: 1; overflow: hidden;">
+                        <div style="font-size: 13px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${asset.ItemName}">${asset.ItemName}</div>
+                        <div style="font-size: 11px; color: #5e6c84;">ID: ${asset.ID}</div>
+                        <div style="font-size: 11px; color: #5e6c84; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${asset.Make || ''} ${asset.Model || ''}</div>
+                        ${asset.SrNo ? `<div style="font-size: 11px; color: #5e6c84; margin-top: 3px;">SN: ${asset.SrNo}</div>` : ''}
+                        <div style="font-size: 10px; color: #007bff; margin-top: 5px; font-weight: 500;">${asset.Type}</div>
+                        <div style="font-size: 10px; margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? `
+                                <span style="color: #0078d4; font-weight: 600; display: flex; align-items: center; gap: 3px;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>
+                            ` : ''}
+                            <button onclick="event.stopPropagation(); showQuantityHistoryModal('${asset.ID}')" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;">📅 History</button>
+                        </div>
+                        ${asset.AssignedTo ? `<div style="font-size: 10px; color: #666; margin-top: 5px; font-style: italic;">👤 ${asset.AssignedTo}</div>` : ''}
+                    </div>
+                </div>
+            `;
+            cardsContainer.appendChild(card);
+        });
+
+        kanban.appendChild(column);
+    });
+}
+
+function navigateToAssetPage(assetId) {
+    if (!assetId) return;
+    // Redirect to the asset details page
+    window.location.href = `/asset/${assetId}`;
+}
+
+window.navigateToAssetPage = navigateToAssetPage;
+
+function navigateToProjectPage(projectId) {
+    if (!projectId) return;
+    window.location.href = `/project/${projectId}`;
+}
+window.navigateToProjectPage = navigateToProjectPage;
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'Owned': return '#36b37e';
+        case 'Sold': return '#ff5630';
+        case 'Demo': return '#ffab00';
+        case 'In-Use': return '#0052cc';
+        case 'Rental': return '#6554c0';
+        case 'Stand By': return '#42526e';
+        case 'In-Repair': return '#ff8b00';
+        case 'Scraped': return '#bf2600';
+        default: return '#dfe1e6';
+    }
+}
+
+window.renderAssetKanban = renderAssetKanban;
+
 function updateBatchOverlay() {
     const countSpan = document.getElementById('selectedCount');
     if (countSpan) countSpan.textContent = selectedBatchAssets.length;
@@ -78,11 +351,30 @@ function initDCView() {
     const dcEmptyState = document.getElementById('dcEmptyState');
     const btnGenerateDC = document.getElementById('btnGenerateDC');
     const btnPrintDC = document.getElementById('btnPrintDC');
+    const dcOpenId = document.getElementById('dcOpenId');
+    const btnOpenDC = document.getElementById('btnOpenDC');
     
     // Set default date
     const dateInput = document.getElementById('dcDate');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    if (btnOpenDC) {
+        btnOpenDC.onclick = () => {
+            const id = String(dcOpenId?.value || '').trim();
+            if (!id) return showToast('Please enter a DC ID', 'warning');
+            if (window.openDeliveryChallan) window.openDeliveryChallan(id);
+        };
+    }
+
+    if (dcOpenId) {
+        dcOpenId.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                btnOpenDC?.click();
+            }
+        };
     }
 
     // Search assets for DC
@@ -135,12 +427,61 @@ function initDCView() {
     // Generate DC Button
     if (btnGenerateDC) {
         btnGenerateDC.onclick = async () => {
-            const customerName = document.getElementById('dcCustomerName').value;
-            const deliveryDate = document.getElementById('dcDate').value;
+            const customerName = (document.getElementById('dcCustomerName')?.value || '').trim();
+            const deliveryDate = document.getElementById('dcDate')?.value || '';
             const assetIds = selectedDCAssets.map(a => a.ID);
 
-            if (!customerName) return alert('Please enter customer name');
-            if (assetIds.length === 0) return alert('Please select at least one asset');
+            if (!customerName) return showToast('Please enter customer name', 'warning');
+            if (assetIds.length === 0) return showToast('Please select at least one asset', 'warning');
+
+            const payload = {
+                company: {
+                    name: document.getElementById('dcCompanyName')?.value || '',
+                    address: document.getElementById('dcCompanyAddress')?.value || '',
+                    gstin: document.getElementById('dcCompanyGST')?.value || '',
+                    cin: document.getElementById('dcCompanyCIN')?.value || '',
+                    stateName: document.getElementById('dcCompanyState')?.value || '',
+                    stateCode: document.getElementById('dcCompanyStateCode')?.value || ''
+                },
+                consignee: {
+                    name: document.getElementById('dcConsigneeName')?.value || '',
+                    address: document.getElementById('dcConsigneeAddress')?.value || '',
+                    gstin: document.getElementById('dcConsigneeGST')?.value || '',
+                    stateName: document.getElementById('dcConsigneeState')?.value || '',
+                    stateCode: document.getElementById('dcConsigneeStateCode')?.value || ''
+                },
+                buyer: {
+                    name: document.getElementById('dcBuyerName')?.value || '',
+                    address: document.getElementById('dcBuyerAddress')?.value || '',
+                    gstin: document.getElementById('dcBuyerGST')?.value || '',
+                    stateName: document.getElementById('dcBuyerState')?.value || '',
+                    stateCode: document.getElementById('dcBuyerStateCode')?.value || ''
+                },
+                meta: {
+                    customerName,
+                    deliveryDate,
+                    referenceNo: document.getElementById('dcRefNo')?.value || '',
+                    buyerOrderNo: document.getElementById('dcBuyerOrderNo')?.value || '',
+                    dispatchDocNo: document.getElementById('dcDispatchDocNo')?.value || '',
+                    otherReferences: document.getElementById('dcOtherReferences')?.value || '',
+                    dispatchedThrough: document.getElementById('dcDispatchedThrough')?.value || '',
+                    destination: document.getElementById('dcDestination')?.value || '',
+                    termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || ''
+                },
+                items: assetIds.map((assetId, index) => {
+                    const row = dcItemsByAssetId[assetId] || {};
+                    return {
+                        sr: index + 1,
+                        assetId,
+                        description: row.description || assetId,
+                        hsn: row.hsn || '',
+                        qty: row.qty ?? 1,
+                        per: row.per || 'NO',
+                        rate: row.rate ?? '',
+                        amount: row.amount ?? ''
+                    };
+                })
+            };
 
             try {
                 btnGenerateDC.textContent = 'Generating...';
@@ -153,19 +494,20 @@ function initDCView() {
                         CustomerName: customerName,
                         DeliveryDate: deliveryDate,
                         AssetIds: assetIds,
-                        CreatedBy: localStorage.getItem('username') || 'System'
+                        CreatedBy: localStorage.getItem('username') || 'System',
+                        payload
                     })
                 });
 
                 const result = await response.json();
                 if (result.success) {
-                    showDCPreview(result, customerName, deliveryDate);
+                    showDCPreview(result);
                 } else {
-                    alert('Error creating DC: ' + result.error);
+                    showToast('Error creating DC: ' + result.error, 'error');
                 }
             } catch (err) {
                 console.error('DC Creation Error:', err);
-                alert('Failed to connect to server');
+                showToast('Failed to connect to server', 'error');
             } finally {
                 btnGenerateDC.textContent = 'Generate DC & QR Code';
                 btnGenerateDC.disabled = false;
@@ -176,18 +518,40 @@ function initDCView() {
     // Print DC Button
     if (btnPrintDC) {
         btnPrintDC.onclick = () => {
-            window.print();
+            const body = document.body;
+            const cleanup = () => {
+                body.classList.remove('print-dc');
+                window.removeEventListener('afterprint', cleanup);
+            };
+            body.classList.add('print-dc');
+            window.addEventListener('afterprint', cleanup);
+            setTimeout(() => window.print(), 50);
         };
     }
 }
 
 function addAssetToDC(asset) {
     selectedDCAssets.push(asset);
+    if (!dcItemsByAssetId[asset.ID]) {
+        const rateCandidate = toNumber(asset.asset_value);
+        const qty = 1;
+        const amount = rateCandidate === null ? '' : round2(rateCandidate * qty);
+        dcItemsByAssetId[asset.ID] = {
+            assetId: asset.ID,
+            description: `${asset.ItemName || asset.ID}${asset.Model ? ' - ' + asset.Model : ''}`,
+            hsn: '',
+            qty,
+            per: 'NO',
+            rate: rateCandidate === null ? '' : rateCandidate,
+            amount: amount === '' ? '' : amount
+        };
+    }
     renderSelectedAssets();
 }
 
 function removeAssetFromDC(assetId) {
     selectedDCAssets = selectedDCAssets.filter(a => a.ID !== assetId);
+    delete dcItemsByAssetId[assetId];
     renderSelectedAssets();
 }
 
@@ -202,15 +566,57 @@ function renderSelectedAssets() {
     }
 
     dcEmptyState.style.display = 'none';
-    dcSelectedAssetsBody.innerHTML = selectedDCAssets.map(a => `
-        <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 10px; font-family: monospace; font-size: 12px;">${a.ID}</td>
-            <td style="padding: 10px;">${a.ItemName}</td>
-            <td style="padding: 10px; text-align: center;">
-                <button onclick="removeAssetFromDC('${a.ID}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>
-            </td>
-        </tr>
-    `).join('');
+    dcSelectedAssetsBody.innerHTML = selectedDCAssets.map(a => {
+        const row = dcItemsByAssetId[a.ID] || {};
+        return `
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.ID}</td>
+                <td style="padding: 10px;">
+                    <input data-dc-field="description" data-asset-id="${a.ID}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                </td>
+                <td style="padding: 10px; width: 90px;">
+                    <input data-dc-field="hsn" data-asset-id="${a.ID}" value="${String(row.hsn || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                </td>
+                <td style="padding: 10px; width: 70px;">
+                    <input data-dc-field="qty" data-asset-id="${a.ID}" value="${row.qty ?? 1}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
+                </td>
+                <td style="padding: 10px; width: 90px;">
+                    <input data-dc-field="rate" data-asset-id="${a.ID}" value="${row.rate ?? ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
+                </td>
+                <td style="padding: 10px; width: 100px; text-align: right; font-variant-numeric: tabular-nums;">
+                    <span data-dc-field="amount" data-asset-id="${a.ID}">${row.amount ?? ''}</span>
+                </td>
+                <td style="padding: 10px; text-align: center; width: 60px;">
+                    <button onclick="removeAssetFromDC('${a.ID}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    dcSelectedAssetsBody.querySelectorAll('input[data-dc-field]').forEach((input) => {
+        input.oninput = () => {
+            const assetId = input.getAttribute('data-asset-id');
+            const field = input.getAttribute('data-dc-field');
+            if (!assetId || !field) return;
+
+            const existing = dcItemsByAssetId[assetId] || { assetId };
+            const next = { ...existing, [field]: input.value };
+            if (field === 'qty' || field === 'rate') {
+                const qty = toNumber(next.qty);
+                const rate = toNumber(next.rate);
+                if (qty !== null) next.qty = qty;
+                if (rate !== null) next.rate = rate;
+                if (qty !== null && rate !== null) {
+                    next.amount = round2(qty * rate);
+                } else {
+                    next.amount = '';
+                }
+                const amountEl = dcSelectedAssetsBody.querySelector(`span[data-dc-field="amount"][data-asset-id="${assetId}"]`);
+                if (amountEl) amountEl.textContent = next.amount ?? '';
+            }
+            dcItemsByAssetId[assetId] = next;
+        };
+    });
 }
 
 // Expose to global for onclick handlers and main.js navigation
@@ -218,25 +624,180 @@ window.removeAssetFromDC = removeAssetFromDC;
 window.initDCView = initDCView;
 window.initSheetView = initSheetView;
 
-function showDCPreview(result, customer, date) {
+function showDCPreview(result) {
     const modal = document.getElementById('dcPreviewModal');
-    const itemsBody = document.getElementById('dcPreviewItemsBody');
-    
-    document.getElementById('dcChallanNoDisplay').textContent = result.challanNo;
-    document.getElementById('dcCustomerDisplay').textContent = customer;
-    document.getElementById('dcDateDisplay').textContent = date;
-    document.getElementById('dcQRCodeImage').src = result.qrCode;
+    const printable = document.getElementById('printableDC');
+    const payload = result?.payload && typeof result.payload === 'object' ? result.payload : {};
+    const company = payload.company || {};
+    const consignee = payload.consignee || {};
+    const buyer = payload.buyer || {};
+    const meta = payload.meta || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
 
-    itemsBody.innerHTML = selectedDCAssets.map((a, index) => `
-        <tr>
-            <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
-            <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${a.ID}</td>
-            <td style="padding: 10px; border: 1px solid #ddd;">${a.ItemName} ${a.Model ? '- ' + a.Model : ''}</td>
-        </tr>
-    `).join('');
+    if (printable) {
+        const itemsHtml = items.map((it, idx) => {
+            const qty = it.qty ?? '';
+            const rate = it.rate ?? '';
+            const amount = it.amount ?? '';
+            return `
+                <tr>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">${idx + 1}</td>
+                    <td style="padding: 7px; border: 1px solid #222; font-family: monospace; white-space: nowrap; width: 150px;">${escapeHtml(it.assetId || '')}</td>
+                    <td style="padding: 7px; border: 1px solid #222;">${escapeHtml(it.description || '')}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">${escapeHtml(it.hsn || '')}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px; font-variant-numeric: tabular-nums;">${escapeHtml(qty)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">${escapeHtml(it.per || 'NO')}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums;">${escapeHtml(rate)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums;">${escapeHtml(amount)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const totalAmount = items.reduce((acc, it) => {
+            const n = toNumber(it.amount);
+            return acc + (n === null ? 0 : n);
+        }, 0);
+        const totalWords = formatAmountWords(round2(totalAmount));
+        const challanNo = result.challanNo || result.ChallanNo || '';
+        const dcId = result.id || result.ID || '';
+        const dated = meta.deliveryDate || meta.dated || result.deliveryDate || result.DeliveryDate || '';
+
+        printable.innerHTML = `
+            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif;">
+                <div style="display: grid; grid-template-columns: 1fr 260px; gap: 12px; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 10px;">
+                    <div>
+                        <div style="font-size: 16px; font-weight: 800; letter-spacing: 0.3px;">${escapeHtml(company.name || '')}</div>
+                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(company.address || '')}</div>
+                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
+                            ${(company.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(company.gstin)}</div>` : ''}
+                            ${(company.cin || '').trim() ? `<div><span style="color:#555;">CIN:</span> ${escapeHtml(company.cin)}</div>` : ''}
+                            ${(company.stateName || company.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(company.stateName || '')}${company.stateCode ? ' (' + escapeHtml(company.stateCode) + ')' : ''}</div>` : ''}
+                        </div>
+                    </div>
+                    <div style="border-left: 1px solid #222; padding-left: 12px;">
+                        <div style="text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 1px;">DELIVERY CHALLAN</div>
+                        <div style="display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px; margin-top: 10px; font-size: 12px;">
+                            <div style="color:#555;">DC No</div><div style="font-weight:800;">${escapeHtml(challanNo)}</div>
+                            <div style="color:#555;">Dated</div><div style="font-weight:800;">${escapeHtml(dated)}</div>
+                            ${dcId ? `<div style="color:#555;">DC ID</div><div style="font-weight:700; font-family: monospace;">${escapeHtml(dcId)}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div style="border: 1px solid #222; padding: 10px;">
+                        <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px;">Consignee (Ship To)</div>
+                        <div style="font-size: 13px; font-weight: 800;">${escapeHtml(consignee.name || meta.customerName || '')}</div>
+                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(consignee.address || '')}</div>
+                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
+                            ${(consignee.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(consignee.gstin)}</div>` : ''}
+                            ${(consignee.stateName || consignee.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(consignee.stateName || '')}${consignee.stateCode ? ' (' + escapeHtml(consignee.stateCode) + ')' : ''}</div>` : ''}
+                        </div>
+                    </div>
+                    <div style="border: 1px solid #222; padding: 10px;">
+                        <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px;">Buyer (Bill To)</div>
+                        <div style="font-size: 13px; font-weight: 800;">${escapeHtml(buyer.name || meta.customerName || '')}</div>
+                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(buyer.address || '')}</div>
+                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
+                            ${(buyer.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(buyer.gstin)}</div>` : ''}
+                            ${(buyer.stateName || buyer.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(buyer.stateName || '')}${buyer.stateCode ? ' (' + escapeHtml(buyer.stateCode) + ')' : ''}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="border: 1px solid #222; padding: 10px; margin-bottom: 10px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+                        <div><span style="color:#555;">Reference No</span>: ${escapeHtml(meta.referenceNo || '')}</div>
+                        <div><span style="color:#555;">Buyer’s Order No</span>: ${escapeHtml(meta.buyerOrderNo || '')}</div>
+                        <div><span style="color:#555;">Dispatch Doc No</span>: ${escapeHtml(meta.dispatchDocNo || '')}</div>
+                        <div><span style="color:#555;">Other References</span>: ${escapeHtml(meta.otherReferences || '')}</div>
+                        <div><span style="color:#555;">Dispatched Through</span>: ${escapeHtml(meta.dispatchedThrough || '')}</div>
+                        <div><span style="color:#555;">Destination</span>: ${escapeHtml(meta.destination || '')}</div>
+                    </div>
+                    ${(meta.termsOfDelivery || '').trim() ? `<div style="margin-top: 8px; font-size: 12px;"><span style="color:#555;">Terms of Delivery</span>: ${escapeHtml(meta.termsOfDelivery)}</div>` : ''}
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; border: 1px solid #222;">
+                    <thead>
+                        <tr style="background: #f4f4f4;">
+                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">Srl</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: left; width: 150px;">Asset ID</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: left;">Description of Goods</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">HSN/SAC</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px;">Qty</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">Per</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px;">Rate</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml || `<tr><td colspan="8" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
+                        <tr>
+                            <td colspan="7" style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800;">Total</td>
+                            <td style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums;">${escapeHtml(round2(totalAmount))}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px;">
+                    <div style="display: grid; grid-template-columns: 190px 1fr; gap: 8px;">
+                        <div style="color:#555;">Amount Chargeable (in words)</div>
+                        <div style="font-weight: 700;">${escapeHtml(totalWords)}</div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 160px 1fr; gap: 12px; margin-top: 14px; align-items: end;">
+                    <div>
+                        <div style="height: 60px;"></div>
+                        <div style="border-top: 1px solid #222; width: 190px; padding-top: 6px; font-size: 12px;">Receiver's Signature</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 10px; color: #666; margin-bottom: 6px;">VALIDATE</div>
+                        <img src="${result.qrCode || result.QRCode || ''}" style="width: 120px; height: 120px; border: 1px solid #eee; padding: 6px;" />
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="height: 60px;"></div>
+                        <div style="border-top: 1px solid #222; width: 190px; padding-top: 6px; font-size: 12px; margin-left: auto;">Authorized Signatory</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
     modal.style.display = 'flex';
 }
+
+async function openDeliveryChallan(dcId) {
+    const id = String(dcId || '').trim();
+    if (!id) return;
+
+    const nav = document.getElementById('nav-dc');
+    if (nav) nav.click();
+
+    try {
+        const res = await fetch(`/api/dc/${encodeURIComponent(id)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            showToast('Failed to load DC: ' + (data.error || res.statusText), 'error');
+            return;
+        }
+
+        const dc = data.dc || {};
+        showDCPreview({
+            id: dc.ID,
+            challanNo: dc.ChallanNo,
+            qrCode: dc.QRCode,
+            payload: data.payload || null,
+            deliveryDate: dc.DeliveryDate,
+            customerName: dc.CustomerName
+        });
+    } catch (err) {
+        console.error('Failed to load DC:', err);
+        showToast('Failed to load DC', 'error');
+    }
+}
+
+window.openDeliveryChallan = openDeliveryChallan;
 
 async function initSheetView() {
     console.log('initSheetView() called');
@@ -262,6 +823,37 @@ async function initSheetView() {
             a.Category === category && 
             !(a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true')
         );
+
+        const parent = window.currentDashboardParent;
+        const manager = window.hierarchyManager;
+
+        if (parent && manager) {
+            let parentNode = manager.findNode(parent.ID);
+            if (parentNode) {
+                const descendants = manager.getDescendants(parentNode.ID, true);
+                const descendantKindNames = descendants.map(d => d.Name);
+
+                assets = assets.filter(a => {
+                    const assetType = (a.Type || '').toLowerCase().trim();
+                    const assetName = (a.Name || '').toLowerCase().trim();
+
+                    return descendantKindNames.some(kindName => {
+                        const k = (kindName || '').toLowerCase().trim();
+                        const t = assetType;
+
+                        if (t === k) return true;
+                        if (t === k + 's' || t + 's' === k) return true;
+                        if (t === k + 'es' || t + 'es' === k) return true;
+                        if (k.endsWith('y') && t === k.slice(0, -1) + 'ies') return true;
+                        if (t.endsWith('y') && k === t.slice(0, -1) + 'ies') return true;
+                        if (assetName === k) return true;
+
+                        return false;
+                    });
+                });
+            }
+        }
+
         console.log('Assets for sheet view:', assets.length);
     }
 
@@ -278,7 +870,7 @@ async function initSheetView() {
                 { title: "Make", field: "Make", headerFilter: "input" },
                 { title: "Model", field: "Model", headerFilter: "input" },
                 { title: "Status", field: "Status", width: 120 },
-                { title: "Actions", width: 150, hozAlign: "center", formatter: function(cell) {
+                { title: "Actions", width: 150, hozAlign: "center", headerFilter: false, formatter: function(cell) {
                     return `
                         <div style="display: flex; gap: 5px;">
                             <button class="btn-action" style="font-size: 10px; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Convert</button>
@@ -325,7 +917,7 @@ async function initSheetView() {
             { title: "Make", field: "Make", headerFilter: "input" },
             { title: "Model", field: "Model", headerFilter: "input" },
             { title: "Status", field: "Status", width: 120 },
-            { title: "Actions", width: 150, hozAlign: "center", formatter: function(cell) {
+            { title: "Actions", width: 150, hozAlign: "center", headerFilter: false, formatter: function(cell) {
                 return `
                     <div style="display: flex; gap: 5px;">
                         <button class="btn-action" style="font-size: 10px; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Convert</button>
@@ -376,7 +968,7 @@ async function initSheetView() {
         columns.push(
             { title: "Parent ID", field: "ParentId", editor: "input", headerFilter: "input" },
             { title: "Last Updated", field: "LastUpdated", width: 150, hozAlign: "center" },
-            { title: "Actions", width: 100, hozAlign: "center", formatter: function(cell) {
+            { title: "Actions", width: 100, hozAlign: "center", headerFilter: false, formatter: function(cell) {
                 return `<button class="btn-action" style="font-size: 10px; background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; border-radius: 4px; padding: 2px 6px; cursor: pointer;">Delete</button>`;
             }, cellClick: function(e, cell) {
                 e.stopPropagation();
@@ -386,8 +978,18 @@ async function initSheetView() {
         );
     }
 
+    console.log('[SheetView] Initializing Tabulator with', assets ? assets.length : 'null', 'assets');
+    console.log('[SheetView] Assets type:', typeof assets, 'IsArray:', Array.isArray(assets));
+
+    // Ensure assets is an array to prevent "Received: object" error
+    if (!Array.isArray(assets)) {
+        console.warn('[SheetView] Assets is not an array, converting...');
+        assets = Array.from(assets || []);
+    }
+
     window.tabulatorInstance = new Tabulator("#excel-grid", {
         ...TABULATOR_BASE_CONFIG,
+        paginationSize: 10,
         data: assets,
         placeholder: "No assets found",
         initialSort: [
@@ -416,27 +1018,10 @@ async function initSheetView() {
     robustRedraw(window.tabulatorInstance);
 }
 
-function matchesQuery(asset, query) {
-    const fields = [
-        asset.ID, asset.Id, 
-        asset.SrNo, 
-        asset.ItemName, asset.Name, 
-        asset.Make, 
-        asset.Model, 
-        asset.DispatchReceiveDt, 
-        asset.PurchaseDate,
-        asset.AssignedTo,
-        asset.ParentId,
-        asset.MACAddress,
-        asset.IPAddress,
-        asset.PhysicalPort,
-        asset.VLAN,
-        asset.SocketID,
-        asset.UserID
-    ].map(f => String(f || '').toLowerCase());
-    
-    return fields.some(f => f.includes(query));
-}
+// matchesQuery is already defined at top of file
+// function matchesQuery(asset, query) {
+// ...
+// }
 
 export function setupChildrenUI() {
     const btnAddChild = document.getElementById('btnAddChildField');
@@ -456,14 +1041,29 @@ export function setupChildrenUI() {
                 return;
             }
 
-            const matches = (window.allAssets || []).filter(a => 
-                (a.ID?.toLowerCase().includes(query) || a.ItemName?.toLowerCase().includes(query))
-            ).slice(0, 10);
+            const currentAssetId = document.getElementById('assetDbId')?.value;
+            const matches = (window.allAssets || []).filter(a => {
+                const s = query;
+                return (
+                    (a.ID?.toLowerCase().includes(s) || 
+                     a.ItemName?.toLowerCase().includes(s) || 
+                     a.SrNo?.toLowerCase().includes(s) ||
+                     a.Make?.toLowerCase().includes(s) ||
+                     a.Model?.toLowerCase().includes(s)) &&
+                    (!a.ParentId || a.ParentId === '' || a.ParentId === currentAssetId)
+                );
+            }).slice(0, 10);
 
             if (matches.length > 0) {
                 resultsContainer.innerHTML = matches.map(m => `
-                    <div class="search-result-item" data-id="${m.ID}" style="padding: 5px 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 12px;">
-                        <b>${m.ID}</b> - ${m.ItemName}
+                    <div class="search-result-item" data-id="${m.ID}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 12px; display: flex; flex-direction: column; line-height: 1.3;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="font-weight: bold;">${m.ItemName}</span>
+                            <span style="color: #666; font-size: 11px;">${m.SrNo || 'No Serial'}</span>
+                        </div>
+                        <div style="font-size: 10px; color: #999;">
+                            ID: ${m.ID} ${m.Make ? ` | ${m.Make}` : ''} ${m.Model ? ` | ${m.Model}` : ''}
+                        </div>
                     </div>
                 `).join('');
                 resultsContainer.style.display = 'block';
@@ -492,9 +1092,73 @@ export function setupChildrenUI() {
     }
 }
 
+export function setupConversionUI() {
+    console.log('setupConversionUI() initialized');
+    const btnApply = document.getElementById('btnApplyConversion');
+    if (!btnApply) {
+        console.warn('btnApplyConversion not found in DOM');
+        return;
+    }
+    
+    btnApply.onclick = () => {
+        console.log('Apply Conversion clicked');
+            const qtyUnitEl = document.getElementById('itemQtyUnit');
+            const qtyTotalEl = document.getElementById('itemQtyTotal');
+            const convUnitEl = document.getElementById('itemConvUnit');
+            const convFactorEl = document.getElementById('itemConvFactor');
+            const convModeEl = document.getElementById('itemConvMode');
+
+            if (!qtyUnitEl || !qtyTotalEl || !convUnitEl || !convFactorEl || !convModeEl) return;
+
+            const convUnit = convUnitEl.value.trim();
+            const convFactor = parseFloat(convFactorEl.value);
+            const convMode = convModeEl.value; // 'multiply' or 'divide'
+
+            if (!convUnit) {
+                showToast('Please enter a conversion unit.', 'warning');
+                return;
+            }
+            if (isNaN(convFactor) || convFactor <= 0) {
+                showToast('Please enter a valid positive conversion factor.', 'warning');
+                return;
+            }
+
+            const currentQty = parseFloat(qtyTotalEl.value) || 0;
+            let newQty;
+            let operationLabel;
+
+            if (convMode === 'divide') {
+                newQty = (currentQty / convFactor).toFixed(4);
+                operationLabel = 'divide';
+            } else {
+                newQty = (currentQty * convFactor).toFixed(4);
+                operationLabel = 'multiply';
+            }
+
+            if (confirm(`Are you sure you want to convert base unit from "${qtyUnitEl.value || 'None'}" to "${convUnit}"?\n\nThis will ${operationLabel} current quantity (${currentQty}) by ${convFactor} resulting in ${newQty} ${convUnit}.`)) {
+                qtyUnitEl.value = convUnit;
+                qtyTotalEl.value = parseFloat(newQty); // Remove trailing zeros
+                
+                // Keep the conversion parameters for persistence so they can be reused
+                // Only clear the "Apply" state visually if needed, but we want them saved
+                // convUnitEl.value = ''; // Don't clear these yet, let the save collect them
+                // convFactorEl.value = '';
+                
+                showToast(`Successfully converted base unit to ${convUnit}. Click "Save Changes" to finalize.`, 'success');
+            }
+        };
+}
+
 export function addLinkedComponent(asset) {
     const linkedList = document.getElementById('linkedComponentsList');
     if (!linkedList) return;
+
+    // Safety check: Don't add if already assigned to another parent
+    const currentAssetId = document.getElementById('assetDbId')?.value;
+    if (asset.ParentId && asset.ParentId !== '' && asset.ParentId !== currentAssetId) {
+        showToast(`Asset ${asset.ID} is already assigned to parent ${asset.ParentId}`, 'warning');
+        return;
+    }
 
     // Avoid duplicates
     if (linkedList.querySelector(`[data-id="${asset.ID}"]`)) return;
@@ -502,10 +1166,18 @@ export function addLinkedComponent(asset) {
     const tag = document.createElement('div');
     tag.className = 'linked-component-tag';
     tag.setAttribute('data-id', asset.ID);
-    tag.style = 'background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;';
+    tag.style = 'background: #e7f3ff; color: #0078d4; padding: 4px 10px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 8px; border: 1px solid #0078d4;';
+    
+    // Display Format: Name (SerialNo) [ID as tooltip/small]
+    const displayName = asset.ItemName || 'Component';
+    const displaySr = asset.SrNo ? `(${asset.SrNo})` : '';
+    
     tag.innerHTML = `
-        <span>${asset.ID}</span>
-        <span class="remove-link" style="cursor: pointer; font-weight: bold;">&times;</span>
+        <div style="display: flex; flex-direction: column; line-height: 1.2;">
+            <span style="font-weight: bold;">${displayName} ${displaySr}</span>
+            <span style="font-size: 9px; opacity: 0.7;">ID: ${asset.ID}</span>
+        </div>
+        <span class="remove-link" style="cursor: pointer; font-weight: bold; font-size: 14px;">&times;</span>
     `;
 
     tag.querySelector('.remove-link').onclick = () => tag.remove();
@@ -540,6 +1212,7 @@ export function setupDashboard() {
 
     // Setup Children / Components UI
     setupChildrenUI();
+    setupConversionUI();
     
     // Navigation is now handled centrally in main.js. 
     // This function only handles dashboard-specific UI initialization.
@@ -571,14 +1244,14 @@ export function setupDashboard() {
                 
                 const result = await response.json();
                 if (response.ok) {
-                    alert(`Tally Sync Successful!\n${result.message}`);
+                    showToast(`Tally Sync Successful! ${result.message}`, 'success');
                     if (window.loadAssets) await window.loadAssets(); // Refresh assets
                 } else {
-                    alert(`Tally Sync Failed: ${result.message}\n\nTip: ${result.tip || ''}`);
+                    showToast(`Tally Sync Failed: ${result.message}`, 'error');
                 }
             } catch (err) {
                 console.error('Tally Sync Error:', err);
-                alert('Failed to connect to backend for Tally sync.');
+                showToast('Failed to connect to backend for Tally sync.', 'error');
             } finally {
                 btnSyncTally.textContent = originalText;
                 btnSyncTally.disabled = false;
@@ -590,7 +1263,7 @@ export function setupDashboard() {
     const btnSyncGraph = document.getElementById('btnSyncGraph');
     if (btnSyncGraph) {
         btnSyncGraph.onclick = () => {
-            alert('Microsoft Graph API integration requires Azure AD app registration. Please configure Client ID in settings.');
+            showToast('Microsoft Graph API integration requires Azure AD app registration. Please configure Client ID in settings.', 'info');
             console.log('Graph API Sync requested');
         };
     }
@@ -614,7 +1287,7 @@ export function setupDashboard() {
     if (btnProceedBatchPrint) {
         btnProceedBatchPrint.onclick = () => {
             if (selectedBatchAssets.length === 0) {
-                alert('Please select at least one asset to print.');
+                showToast('Please select at least one asset to print.', 'warning');
                 return;
             }
             showBatchPrintPreview();
@@ -714,70 +1387,6 @@ export function setupDashboard() {
         btnSearchBy.onclick = () => {
             searchVisible = !searchVisible;
             searchPanel.style.display = searchVisible ? 'block' : 'none';
-        };
-    }
-
-    // --- Project System Initialization ---
-    const btnSideSubmitProject = document.getElementById('btnSideSubmitProject');
-    if (btnSideSubmitProject) {
-        btnSideSubmitProject.onclick = async () => {
-            const name = document.getElementById('sideProjectName').value.trim();
-            const client = document.getElementById('sideProjectClient').value.trim();
-            const location = document.getElementById('sideProjectLocation').value;
-            const currency = document.getElementById('sideProjectCurrency').value;
-            const description = document.getElementById('sideProjectDesc').value.trim();
-            const startDate = document.getElementById('sideProjectStartDate').value;
-            const endDate = document.getElementById('sideProjectEndDate').value;
-            
-            if (!name || !client) {
-                alert('Please fill in both Project Name and Client Name');
-                return;
-            }
-
-            try {
-                btnSideSubmitProject.disabled = true;
-                btnSideSubmitProject.textContent = 'Creating...';
-                
-                const response = await fetch('/api/projects', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        name, 
-                        client, 
-                        location,
-                        currency,
-                        description,
-                        startDate,
-                        endDate,
-                        status: 'Active'
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.id) {
-                    // Reset form fields
-                    document.getElementById('sideProjectName').value = '';
-                    document.getElementById('sideProjectClient').value = '';
-                    document.getElementById('sideProjectDesc').value = '';
-                    document.getElementById('sideProjectStartDate').value = '';
-                    document.getElementById('sideProjectEndDate').value = '';
-                    
-                    // Close modal
-                    const modal = document.getElementById('createProjectModal');
-                    if (modal) modal.style.display = 'none';
-                    
-                    alert('Project created successfully!');
-                    initProjectsView();
-                } else {
-                    alert('Error creating project: ' + (data.error || 'Unknown error'));
-                }
-            } catch (err) {
-                console.error('Error creating project:', err);
-                alert('Error creating project: ' + err.message);
-            } finally {
-                btnSideSubmitProject.disabled = false;
-                btnSideSubmitProject.textContent = 'Initialize Project';
-            }
         };
     }
 
@@ -902,6 +1511,19 @@ window.initProjectsView = async function() {
     console.log('initProjectsView() called');
     const projectsGrid = document.getElementById('projectsGrid');
     const projectCount = document.getElementById('projectCount');
+    const assetKanban = document.getElementById('assetKanban');
+    const assetGrid = document.getElementById('assetGrid');
+
+    // Ensure Asset Kanban/Grid is hidden when entering Project View
+    if (assetKanban) assetKanban.style.display = 'none';
+    if (assetGrid) assetGrid.style.display = 'none';
+    if (projectsGrid) {
+        projectsGrid.style.display = 'flex'; // Restore project grid visibility
+        projectsGrid.classList.remove('hidden'); // Ensure it's not hidden by class
+    }
+    
+    // Also ensure the parent dashboard view is visible if needed, 
+    // but usually this function is called after showing the view.
     
     if (!projectsGrid) {
         console.error('CRITICAL: projectsGrid element not found!');
@@ -977,7 +1599,14 @@ window.initProjectsView = async function() {
                           <div class="project-status-pill ${statusClass}" style="font-size: 0.65rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; text-transform: uppercase; white-space: nowrap;">
                             ${status}
                           </div>
-                          <div style="font-size: 0.65rem; color: #aaa; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.ID}</div>
+                          <div style="font-size: 0.65rem; color: #aaa; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;">
+                            ${p.ID}
+                            <button onclick="event.stopPropagation(); showQRModal('${p.ID}', '${p.Name.replace(/'/g, "\\'")}')" 
+                                    style="border: none; background: none; padding: 2px; cursor: pointer; opacity: 0.6; display: flex; align-items: center;" 
+                                    title="Show Project QR Code">
+                                <span style="font-size: 14px;">🔳</span>
+                            </button>
+                          </div>
                         </div>
                         
                         <h3 style="margin: 0.5rem 0; color: #1a1a1a; font-size: 1rem; line-height: 1.4; font-weight: 700; word-break: break-word;">${p.Name}</h3>
@@ -1039,18 +1668,18 @@ window.dropProject = async function(ev, newStatus) {
         initProjectsView(); // Refresh board
     } catch (err) {
         console.error('Failed to move project:', err);
-        alert('Failed to move project');
+        showToast('Failed to move project', 'error');
     }
 };
 
-window.updateProjectStatus = async function(projectId, status) {
+window.updateProjectField = async function(projectId, field, value) {
     const response = await fetch(`/api/projects/${projectId}`, {
         method: 'PATCH',
         headers: {
             'Content-Type': 'application/json',
             'x-user': localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')).username : 'web'
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ [field]: value })
     });
 
     let data;
@@ -1066,7 +1695,12 @@ window.updateProjectStatus = async function(projectId, status) {
     return data;
 };
 
+window.updateProjectStatus = async function(projectId, status) {
+    return window.updateProjectField(projectId, 'Status', status);
+};
+
 window.showProjectDetails = async function(projectId) {
+    console.log(`[ProjectDetails] Opening details for project ID: "${projectId}"`);
     currentProjectId = projectId;
     const modal = document.getElementById('projectDetailsModal');
     const title = document.getElementById('modalProjectTitle');
@@ -1074,57 +1708,143 @@ window.showProjectDetails = async function(projectId) {
     const projectStats = document.getElementById('projectStats');
     const clientUserAction = document.getElementById('clientUserAction');
     
+    if (!modal) {
+        console.error('[ProjectDetails] Modal "projectDetailsModal" not found in DOM');
+        return;
+    }
+    if (!clientInfo) {
+        console.error('[ProjectDetails] Container "projectClientInfo" not found in DOM');
+        return;
+    }
+
+    // Show loading state
+    console.log('[ProjectDetails] Showing loading state and modal...');
+    clientInfo.innerHTML = '<div style="text-align:center; padding: 20px;"><div class="spinner"></div><p>Loading project details...</p></div>';
+    modal.style.display = 'flex';
+
     // Hide client user creation for non-admins
     const userStr = localStorage.getItem('currentUser');
     if (userStr) {
-        const user = JSON.parse(userStr);
-        if (clientUserAction) {
-            clientUserAction.style.display = (user.role === 'admin' || user.role === 'superuser') ? 'block' : 'none';
+        try {
+            const user = JSON.parse(userStr);
+            console.log('[ProjectDetails] Current user role:', user.role);
+            if (clientUserAction) {
+                clientUserAction.style.display = (user.role === 'admin' || user.role === 'superuser') ? 'block' : 'none';
+            }
+        } catch (e) {
+            console.warn('[ProjectDetails] Failed to parse currentUser from localStorage');
         }
     }
 
     try {
+        console.log(`[ProjectDetails] Fetching details from /api/projects/${projectId}...`);
         const response = await fetch(`/api/projects/${projectId}`);
+        if (!response.ok) {
+            console.error(`[ProjectDetails] Fetch failed with status: ${response.status}`);
+            throw new Error(`Project not found (${response.status})`);
+        }
         const project = await response.json();
+        console.log('[ProjectDetails] Received project data:', project);
         
         currentProjectCurrency = project.Currency || 'INR';
         const projectSymbol = getCurrencySymbol(currentProjectCurrency);
         
-        title.textContent = project.Name;
+        if (title) title.textContent = `Project: ${project.Name || project.ProjectName || project.ID}`;
+        
+        // Comprehensive Project Information Grid
+        console.log('[ProjectDetails] Rendering project info grid...');
         clientInfo.innerHTML = `
-            <div class="info-group">
-                <label>Client</label>
-                <div class="value">${project.ClientName}</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <div style="font-size: 60px; margin-bottom: 15px; text-align: center; display: flex; align-items: center; justify-content: center; height: 100px; background: #f0f7ff; border-radius: 12px; border: 1px solid #d0e7ff;">
+                        🏗️
+                    </div>
+                    <div class="info-group" style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Client Name</label>
+                        <div class="value" style="font-weight: 700; font-size: 1.2rem; color: #0052cc; margin-top: 4px;">${project.ClientName || 'N/A'}</div>
+                    </div>
+                    <div class="info-group" style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Location</label>
+                        <div class="value" style="font-weight: 600; color: #333; display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                            📍 ${project.Location || 'MUMBAI'}
+                        </div>
+                    </div>
+                    <div class="info-group" style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Status</label>
+                        <select class="status-select" onchange="updateProjectStatus('${project.ID}', this.value).then(() => initProjectsView())" style="
+                            padding: 6px 12px;
+                            border-radius: 6px;
+                            border: 2px solid #e2e8f0;
+                            font-size: 0.9rem;
+                            font-weight: 600;
+                            background: #fff;
+                            cursor: pointer;
+                            width: 100%;
+                            margin-top: 6px;
+                            transition: border-color 0.2s;
+                        ">
+                            <option value="Planning" ${project.Status === 'Planning' ? 'selected' : ''}>📋 Planning</option>
+                            <option value="Active" ${project.Status === 'Active' ? 'selected' : ''}>⚡ Active</option>
+                            <option value="Completed" ${project.Status === 'Completed' ? 'selected' : ''}>✅ Completed</option>
+                            <option value="On Hold" ${project.Status === 'On Hold' ? 'selected' : ''}>⏸️ On Hold</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <div style="margin-bottom: 20px; text-align: center; background: white; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                        <img src="/api/qr/${encodeURIComponent(project.ID)}?v=${Date.now()}" style="width: 140px; height: 140px; cursor: pointer; transition: transform 0.2s;" 
+                             onclick="showQRModal('${project.ID}', '${(project.Name || project.ProjectName || project.ID).replace(/'/g, "\\'")}')" 
+                             onmouseover="this.style.transform='scale(1.05)'"
+                             onmouseout="this.style.transform='scale(1)'"
+                             title="Click to enlarge">
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 8px; font-weight: 500;">Project QR Code</div>
+                    </div>
+                    <div class="info-group" style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Timeline</label>
+                        <div class="value" style="font-weight: 600; color: #333; display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                            📅 ${project.StartDate ? new Date(project.StartDate).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : 'TBD'} 
+                            <span style="color: #94a3b8;">→</span> 
+                            ${project.EndDate ? new Date(project.EndDate).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : 'TBD'}
+                        </div>
+                    </div>
+                    <div class="info-group" style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Financials</label>
+                        <div class="value" style="font-weight: 700; color: #059669; font-size: 1rem; margin-top: 4px;">
+                            ${projectSymbol} <span id="projectTotalValue">Loading...</span> <span style="font-size: 0.8rem; color: #666; font-weight: 500;">(${currentProjectCurrency})</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="info-group">
-                <label>Location</label>
-                <div class="value">${project.Location || 'MUMBAI'}</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
+                <div class="info-group">
+                    <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Owner Email</label>
+                    <div style="position: relative; margin-top: 4px;">
+                        <input type="email" class="form-input" value="${project.OwnerEmail || ''}" 
+                            onchange="updateProjectField('${project.ID}', 'OwnerEmail', this.value)" 
+                            style="width: 100%; padding: 8px 12px; font-size: 0.9rem; border: 1px solid #e2e8f0; border-radius: 6px; font-weight: 500;"
+                            placeholder="owner@example.com">
+                    </div>
+                </div>
+                <div class="info-group">
+                    <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Coordinator Email</label>
+                    <div style="position: relative; margin-top: 4px;">
+                        <input type="email" class="form-input" value="${project.CoordinatorEmail || ''}" 
+                            onchange="updateProjectField('${project.ID}', 'CoordinatorEmail', this.value)" 
+                            style="width: 100%; padding: 8px 12px; font-size: 0.9rem; border: 1px solid #e2e8f0; border-radius: 6px; font-weight: 500;"
+                            placeholder="coordinator@example.com">
+                    </div>
+                </div>
             </div>
-            <div class="info-group">
-                <label>Currency</label>
-                <div class="value">${currentProjectCurrency} (${projectSymbol})</div>
+            <div class="info-group" style="margin-top: 15px;">
+                <label style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Description / Scope</label>
+                <div class="value" style="background: #f8fafc; padding: 12px; border-radius: 8px; border-left: 4px solid #0052cc; min-height: 50px; margin-top: 6px; font-size: 0.95rem; line-height: 1.5;">
+                    ${project.Description || '<span style="color: #94a3b8; font-style: italic;">No description provided</span>'}
+                </div>
             </div>
-            <div class="info-group">
-                <label>Start Date</label>
-                <div class="value">${project.StartDate ? new Date(project.StartDate).toLocaleDateString() : 'Not set'}</div>
-            </div>
-            <div class="info-group">
-                <label>Status</label>
-                <select class="status-select" onchange="updateProjectStatus('${project.ID}', this.value).then(() => initProjectsView())" style="
-                    padding: 4px 12px;
-                    border-radius: 4px;
-                    border: 1px solid #ddd;
-                    font-size: 0.85rem;
-                    background: #fff;
-                    cursor: pointer;
-                    width: 100%;
-                    margin-top: 4px;
-                ">
-                    <option value="Planning" ${project.Status === 'Planning' ? 'selected' : ''}>Planning</option>
-                    <option value="Active" ${project.Status === 'Active' ? 'selected' : ''}>Active</option>
-                    <option value="Completed" ${project.Status === 'Completed' ? 'selected' : ''}>Completed</option>
-                    <option value="On Hold" ${project.Status === 'On Hold' ? 'selected' : ''}>On Hold</option>
-                </select>
+            <div style="margin-top: 25px; text-align: right; border-top: 2px solid #f1f5f9; padding-top: 20px; display: flex; justify-content: flex-end; gap: 12px;">
+                 <button onclick="navigateToProjectPage('${project.ID}')" class="btn-action" style="background: #36b37e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                    🌐 Full View Page
+                 </button>
             </div>
         `;
 
@@ -1144,31 +1864,41 @@ window.showProjectDetails = async function(projectId) {
             totalValue += convertCurrency(a.EstimatedPrice || 0, a.Currency || 'INR', currentProjectCurrency);
         });
         
-        projectStats.innerHTML = `
-            <div class="stat-item">
-                <span class="stat-value">${assets.filter(a => {
-                    const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
-                    return a.AssignmentType !== 'Temporary' && !isComp;
-                }).length}</span>
-                <span class="stat-label">Permanent Assets</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value">${tempAssets.length}</span>
-                <span class="stat-label">Temp Assets</span>
-            </div>
-            <div class="stat-item" style="grid-column: span 2;">
-                <span class="stat-value">${projectSymbol}${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                <span class="stat-label">Total Est. Value (${currentProjectCurrency})</span>
-            </div>
-        `;
+        if (projectStats) {
+            projectStats.innerHTML = `
+                <div class="stat-item">
+                    <span class="stat-value">${assets.filter(a => {
+                        const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+                        return a.AssignmentType !== 'Temporary' && !isComp;
+                    }).length}</span>
+                    <span class="stat-label">Permanent Assets</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${tempAssets.length}</span>
+                    <span class="stat-label">Temp Assets</span>
+                </div>
+                <div class="stat-item" style="grid-column: span 2;">
+                    <span class="stat-value">${projectSymbol}${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    <span class="stat-label">Total Est. Value (${currentProjectCurrency})</span>
+                </div>
+            `;
+        }
 
         // Ensure we show the first tab by default
-        switchProjectTab('assets');
+        if (typeof switchProjectTab === 'function') {
+            switchProjectTab('assets');
+        }
 
-        modal.style.display = 'block';
+        modal.style.display = 'flex'; // Keep it as flex for centering
     } catch (err) {
         console.error('Error loading project details:', err);
-        alert('Error loading project details');
+        clientInfo.innerHTML = `
+            <div style="text-align:center; color: red; padding: 20px;">
+                <p>❌ Error: ${err.message}</p>
+                <button onclick="document.getElementById('projectDetailsModal').style.display='none'" class="btn-action">Close</button>
+            </div>
+        `;
+        if (projectStats) projectStats.innerHTML = '';
     }
 };
 
@@ -1273,49 +2003,96 @@ async function loadProjectAssets(projectId) {
 }
 
 window.showAssetDetails = async function(assetId) {
-    console.log('showAssetDetails() for:', assetId);
-    const asset = (window.allAssets || []).find(a => a.ID === assetId);
-    if (!asset) {
-        alert('Asset not found in local cache. Fetching from server...');
-        // Optional: Fetch from server if not found
-        return;
+    console.log(`[AssetDetails] Opening details for asset ID: "${assetId}"`);
+    
+    let asset = (window.allAssets || []).find(a => a.ID === assetId);
+    if (asset) {
+        console.log('[AssetDetails] Found asset in local cache');
     }
-
+    
     const modal = document.getElementById('assetDetailsModal');
     const content = document.getElementById('assetDetailsContent');
     const title = document.getElementById('assetDetailsTitle');
     const btnEdit = document.getElementById('btnEditFromDetails');
     const btnDelete = document.getElementById('btnDeleteFromDetails');
 
-    if (!modal || !content) return;
+    if (!modal) {
+        console.error('[AssetDetails] Modal "assetDetailsModal" not found in DOM');
+        return;
+    }
+    if (!content) {
+        console.error('[AssetDetails] Container "assetDetailsContent" not found in DOM');
+        return;
+    }
 
+    // Show loading state in modal
+    console.log('[AssetDetails] Showing loading state and modal...');
+    content.innerHTML = '<div style="text-align:center; padding: 20px;"><div class="spinner"></div><p>Loading asset details...</p></div>';
+    modal.style.display = 'flex';
+
+    if (!asset) {
+        console.log(`[AssetDetails] Asset not found in local cache. Fetching from server: /api/asset-details/${assetId}...`);
+        try {
+            const response = await fetch(`/api/asset-details/${encodeURIComponent(assetId)}`);
+            if (!response.ok) {
+                console.error(`[AssetDetails] Server fetch failed with status: ${response.status}`);
+                throw new Error(`Asset not found (${response.status})`);
+            }
+            const data = await response.json();
+            console.log('[AssetDetails] Received asset data from server:', data);
+            asset = data.asset;
+        } catch (err) {
+            console.error('[AssetDetails] Error fetching asset details:', err);
+            content.innerHTML = `<div style="text-align:center; color: red; padding: 20px;">
+                <p>❌ Error: ${err.message}</p>
+                <button onclick="document.getElementById('assetDetailsModal').style.display='none'" class="btn-action">Close</button>
+            </div>`;
+            return;
+        }
+    }
+
+    if (!asset) {
+        console.error('[AssetDetails] Asset data is still null after attempt');
+        content.innerHTML = `<div style="text-align:center; padding: 20px;">
+            <p>❌ Asset not found.</p>
+            <button onclick="document.getElementById('assetDetailsModal').style.display='none'" class="btn-action">Close</button>
+        </div>`;
+        return;
+    }
+
+    console.log('[AssetDetails] Rendering asset details...');
     title.textContent = `Asset Details: ${asset.ID}`;
     
     let html = `
-        <div>
-            <div style="font-size: 60px; margin-bottom: 10px; text-align: center; display: flex; align-items: center; justify-content: center; height: 80px;">
-                ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
-                    ? `<img src="${asset.Icon}" style="width: 60px; height: 60px; object-fit: contain;">`
-                    : (asset.Icon || '📦')}
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <div style="font-size: 60px; margin-bottom: 10px; text-align: center; display: flex; align-items: center; justify-content: center; height: 80px;">
+                    ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                        ? `<img src="${asset.Icon}" style="width: 60px; height: 60px; object-fit: contain;">`
+                        : (asset.Icon || '📦')}
+                </div>
+                <p><strong>Item Name:</strong> ${asset.ItemName}</p>
+                <p><strong>Status:</strong> <span class="status-pill status-${(asset.Status || 'In Store').toLowerCase().replace(/\s+/g, '-')}">${asset.Status || 'In Store'}</span></p>
+                <p><strong>Category:</strong> ${asset.Type || '-'}</p>
+                <p><strong>Make:</strong> ${asset.Make || '-'}</p>
+                <p><strong>Model:</strong> ${asset.Model || '-'}</p>
+                <p><strong>Serial No:</strong> ${asset.SrNo || '-'}</p>
             </div>
-            <p><strong>Item Name:</strong> ${asset.ItemName}</p>
-            <p><strong>Status:</strong> <span class="status-pill status-${(asset.Status || 'In Store').toLowerCase().replace(/\s+/g, '-')}">${asset.Status || 'In Store'}</span></p>
-            <p><strong>Category:</strong> ${asset.Type || '-'}</p>
-            <p><strong>Make:</strong> ${asset.Make || '-'}</p>
-            <p><strong>Model:</strong> ${asset.Model || '-'}</p>
-            <p><strong>Serial No:</strong> ${asset.SrNo || '-'}</p>
+            <div>
+                <p><strong>Location:</strong> ${asset.CurrentLocation || '-'}</p>
+                <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
+                <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
+                <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
+                <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
+                <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
+                <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
+                    <img src="/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}" style="width: 120px; height: 120px;" onerror="this.style.display='none'">
+                    <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code (Dynamic)</div>
+                </div>
+            </div>
         </div>
-        <div>
-            <p><strong>Location:</strong> ${asset.CurrentLocation || '-'}</p>
-            <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
-            <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
-            <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
-            <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
-            <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
-            <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
-                <img src="/api/qr/${encodeURIComponent(asset.ID)}" style="width: 120px; height: 120px;" onerror="this.style.display='none'">
-                <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code / Asset URL</div>
-            </div>
+        <div style="margin-top: 20px; text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
+             <button onclick="navigateToAssetPage('${asset.ID}')" class="btn-action" style="background: #36b37e; margin-right: 10px;">🌐 Full View Page</button>
         </div>
     `;
 
@@ -1334,15 +2111,13 @@ window.showAssetDetails = async function(assetId) {
             window.deleteAsset(asset.ID);
         };
     }
-
-    modal.style.display = 'flex';
 };
 
 window.showTempAssetDetails = async function(assetId) {
     console.log('showTempAssetDetails() for:', assetId);
     const asset = (window.currentTempAssets || []).find(a => a.ID === assetId);
     if (!asset) {
-        alert('Temporary asset details not available.');
+        showToast('Temporary asset details not available.', 'warning');
         return;
     }
 
@@ -1401,9 +2176,9 @@ window.deleteAsset = async function(assetId) {
         });
         
         if (response.ok) {
-            alert('Asset deleted successfully');
+            showToast('Asset deleted successfully', 'success');
             if (window.loadAssets) await window.loadAssets();
-            if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, () => window.allAssets);
+            if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
             
             // If we are in sheet view, refresh it
             const sheetView = document.getElementById('sheetView');
@@ -1412,11 +2187,11 @@ window.deleteAsset = async function(assetId) {
             }
         } else {
             const err = await response.text();
-            alert('Error deleting asset: ' + err);
+            showToast('Error deleting asset: ' + err, 'error');
         }
     } catch (err) {
         console.error('Delete error:', err);
-        alert('Failed to delete asset');
+        showToast('Failed to delete asset', 'error');
     }
 };
 
@@ -1433,7 +2208,7 @@ window.makeAssetPermanent = async function(id) {
         
         const result = await response.json();
         if (result.success) {
-            alert(`Asset converted successfully! New ID: ${result.permanentId || result.assetId}`);
+            showToast(`Asset converted successfully! New ID: ${result.permanentId || result.assetId}`, 'success');
             
             // Refresh Dashboard if visible
             if (typeof renderDashboard === 'function') {
@@ -1447,11 +2222,11 @@ window.makeAssetPermanent = async function(id) {
                 if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
             }
         } else {
-            alert('Error: ' + (result.error || 'Failed to convert'));
+            showToast('Error: ' + (result.error || 'Failed to convert'), 'error');
         }
     } catch (err) {
         console.error('Conversion error:', err);
-        alert('Failed to convert asset');
+        showToast('Failed to convert asset', 'error');
     }
 };
 
@@ -1465,7 +2240,7 @@ window.deleteTempAsset = async function(id) {
         
         const result = await response.json();
         if (result.success) {
-            alert('Temporary asset deleted.');
+            showToast('Temporary asset deleted.', 'success');
             
             // Refresh Dashboard if visible
             if (typeof renderDashboard === 'function') {
@@ -1478,11 +2253,11 @@ window.deleteTempAsset = async function(id) {
                 if (typeof loadProjectTempAssets === 'function') await loadProjectTempAssets(currentProjectId);
             }
         } else {
-            alert('Error: ' + (result.error || 'Failed to delete'));
+            showToast('Error: ' + (result.error || 'Failed to delete'), 'error');
         }
     } catch (err) {
         console.error('Delete error:', err);
-        alert('Failed to delete asset');
+        showToast('Failed to delete asset', 'error');
     }
 };
 
@@ -1579,13 +2354,13 @@ window.showCreateClientUserModal = async function() {
         });
         const result = await response.json();
         if (result.success) {
-            alert('Client user account created successfully!');
+            showToast('Client user account created successfully!', 'success');
         } else {
-            alert('Error: ' + result.error);
+            showToast('Error: ' + result.error, 'error');
         }
     } catch (err) {
         console.error('Error creating client user:', err);
-        alert('Error creating client user');
+        showToast('Error creating client user', 'error');
     }
 };
 
@@ -1814,87 +2589,58 @@ window.generateProjectBOM = async function() {
             return;
         }
 
-        const summary = {};
-        const projectSymbol = getCurrencySymbol(currentProjectCurrency);
-
-        allItems.forEach(item => {
-            const name = item.ItemName || item.Name || 'Unnamed Asset';
-            const make = item.Make || '';
-            const model = item.Model || '';
-            const currency = item.Currency || 'INR';
-            
-            const idStr = (item.ID || '').toString();
-            const isTempId = idStr.startsWith('TEMP') || idStr.startsWith('MUMT-');
-            const type = item.AssignmentType || (item.ID && isTempId ? 'Temporary' : 'Permanent');
-            
-            // Convert price to project currency
-            const priceInProjectCurr = convertCurrency(item.EstimatedPrice || 0, currency, currentProjectCurrency);
-            
-            const key = `${name} (${make} ${model}) [${type}]`.trim();
-            if (!summary[key]) {
-                summary[key] = { 
-                    name, make, model, type,
-                    count: 0, 
-                    price: priceInProjectCurr
-                };
-            }
-            summary[key].count += (item.Quantity || 1);
-        });
-
         let html = `
             <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #0078d4;">
-                <h3 style="margin-top: 0; color: #2c3e50; font-size: 16px;">Consolidated Bill of Materials</h3>
-                <p style="margin-bottom: 0; color: #666; font-size: 13px;">Project Base Currency: <strong>${currentProjectCurrency}</strong>. All items converted for uniformity.</p>
+                <h3 style="margin-top: 0; color: #2c3e50; font-size: 16px;">Project Bill of Materials</h3>
+                <p style="margin-bottom: 0; color: #666; font-size: 13px;">For now, BOM lists all assets assigned to this project.</p>
             </div>
             <div class="table-container">
                 <table class="project-table">
                     <thead>
                         <tr>
-                            <th>Item Description</th>
-                            <th style="text-align: center;">Type</th>
-                            <th style="text-align: center;">Qty</th>
-                            <th style="text-align: right;">Unit Price (${currentProjectCurrency})</th>
-                            <th style="text-align: right;">Total (${currentProjectCurrency})</th>
+                            <th>ID</th>
+                            <th>Item Name</th>
+                            <th>Make</th>
+                            <th>Model</th>
+                            <th>Status</th>
+                            <th>Category</th>
+                            <th>Type</th>
                         </tr>
                     </thead>
                     <tbody>
         `;
-        
-        let grandTotal = 0;
-        for (const data of Object.values(summary)) {
-            const total = data.count * data.price;
-            grandTotal += total;
+
+        allItems.forEach(item => {
+            const id = item.ID || '';
+            const name = item.ItemName || item.Name || 'Unnamed Asset';
+            const make = item.Make || '';
+            const model = item.Model || '';
+            const status = item.Status || '';
+            const category = item.Category || '';
+            
+            const idStr = id.toString();
+            const isTempId = idStr.startsWith('TEMP') || idStr.startsWith('MUMT-');
+            const type = item.AssignmentType || (id && isTempId ? 'Temporary' : 'Permanent');
 
             html += `
                 <tr>
-                    <td>
-                        <strong>${data.name}</strong><br>
-                        <small style="color: #666;">${data.make} ${data.model}</small>
-                    </td>
-                    <td style="text-align: center;">
-                        <span class="status-pill ${data.type === 'Permanent' ? 'status-active' : ''}" style="font-size: 10px;">
-                            ${data.type}
-                        </span>
-                    </td>
-                    <td style="text-align: center;">${data.count}</td>
-                    <td style="text-align: right;">${projectSymbol}${data.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td style="text-align: right;"><strong>${projectSymbol}${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                    <td><small style="font-family: monospace;">${id}</small></td>
+                    <td>${name}</td>
+                    <td>${make}</td>
+                    <td>${model}</td>
+                    <td>${status}</td>
+                    <td>${category}</td>
+                    <td>${type}</td>
                 </tr>
             `;
-        }
-        
+        });
+
         html += `
                     </tbody>
-                    <tfoot>
-                        <tr style="background: #f8f9fa; font-size: 1.1em; border-top: 2px solid #dee2e6;">
-                            <td colspan="4" style="text-align: right; padding: 15px;"><strong>Project Grand Total (${currentProjectCurrency}):</strong></td>
-                            <td style="text-align: right; padding: 15px; color: #0078d4;"><strong>${projectSymbol}${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
-                        </tr>
-                    </tfoot>
                 </table>
             </div>
             <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
-                <button class="btn-action" style="background: #6c757d; color: white;" onclick="window.printBOM()">🖨️ Print BOM/BOQ</button>
+                <button class="btn-action" style="background: #6c757d; color: white;" onclick="window.printBOM()">🖨️ Print BOM</button>
                 <button class="btn-action" onclick="alert('Export functionality coming soon!')">📥 Export CSV</button>
             </div>
         `;
@@ -1910,6 +2656,13 @@ export function renderSidebarTree() {
     
     const sidebarMenu = document.getElementById('sidebar-tree');
     if (!sidebarMenu) return Promise.resolve();
+
+    const getActiveDashboardSubView = () => {
+        const container = document.getElementById('dashboard-container');
+        if (!container) return null;
+        const active = container.querySelector('.view.active');
+        return active ? active.id : null;
+    };
 
     // Fetch folders and kinds
     return Promise.all([
@@ -1932,9 +2685,9 @@ export function renderSidebarTree() {
 
         sidebarMenu.innerHTML = `
             <li style="list-style: none;">
-                <div class="menu-item-wrapper active" style="padding: 10px 20px; background-color: #e9f5ff; display: flex; align-items: center; gap: 8px; border-left: 4px solid #007bff;">
-                    <span class="tree-toggle-main" style="cursor:pointer; color: #007bff; width: 20px; display: inline-block; text-align: center;">▼</span>
-                    <a href="#" class="menu-item toggle-submenu active" id="allAssetsLink" style="text-decoration: none; color: #007bff; font-weight: bold; flex: 1;">All Assets</a>
+                <div class="menu-item-wrapper active" style="padding: 10px 20px;">
+                    <span class="tree-toggle-main">▼</span>
+                    <a href="#" class="menu-item toggle-submenu active" id="allAssetsLink">All Assets</a>
                 </div>
                 <div id="sidebar-hierarchy-container" style="display: block;">
                     <div class="tree-node" style="user-select: none;">
@@ -1968,16 +2721,14 @@ export function renderSidebarTree() {
                 window.currentDashboardParent = null;
                 
                 // Determine which view to refresh
-                const sheetView = document.getElementById('sheet-view');
-                if (sheetView && sheetView.style.display !== 'none') {
+                const activeSubViewId = getActiveDashboardSubView();
+                if (activeSubViewId === 'sheet-view') {
                     if (window.initSheetView) window.initSheetView();
-                } else {
-                    // Default to dashboard grid view
+                } else if (!activeSubViewId || activeSubViewId === 'home-view') {
                     const homeView = document.getElementById('home-view');
                     if (homeView) {
                         homeView.style.display = 'flex';
                         homeView.classList.remove('hidden');
-                        // Hide other subviews if we forced home-view
                         document.querySelectorAll('.view').forEach(v => {
                             if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
                                 v.style.display = 'none';
@@ -1985,15 +2736,21 @@ export function renderSidebarTree() {
                             }
                         });
                     }
-                    renderDashboard(window.allAssets, () => window.allAssets);
+                    const filteredAssets = window.getFilteredAssets ? window.getFilteredAssets : () => [];
+                    renderDashboard(window.allAssets, filteredAssets);
                 }
                 
                 // Reset sidebar active states
-                sidebarMenu.querySelectorAll('.tree-link').forEach(l => {
-                    l.style.color = '#555';
-                    l.style.fontWeight = 'normal';
+                sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
+                sidebarMenu.querySelectorAll('.tree-link, .menu-item').forEach(l => {
+                    l.classList.remove('active');
+                    l.style.color = '';
+                    l.style.fontWeight = '';
                 });
-                allAssetsLink.style.color = '#007bff';
+                
+                const wrapper = allAssetsLink.closest('.menu-item-wrapper');
+                if (wrapper) wrapper.classList.add('active');
+                allAssetsLink.classList.add('active');
             };
         }
 
@@ -2005,24 +2762,26 @@ export function renderSidebarTree() {
                 window.currentDashboardParent = { ID: 'TEMP_VIEW', Name: 'Temporary Assets', type: 'virtual' };
                 
                 // Set active state
-                sidebarMenu.querySelectorAll('.tree-link').forEach(l => {
-                    l.style.color = '#555';
-                    l.style.fontWeight = 'normal';
+                sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
+                sidebarMenu.querySelectorAll('.tree-link, .menu-item').forEach(l => {
+                    l.classList.remove('active');
+                    l.style.color = '';
+                    l.style.fontWeight = '';
                 });
-                tempAssetsLink.style.color = '#007bff';
-                tempAssetsLink.style.fontWeight = 'bold';
+
+                const wrapper = tempAssetsLink.closest('.tree-item-wrapper');
+                if (wrapper) wrapper.classList.add('active');
+                tempAssetsLink.classList.add('active');
 
                 // Determine which view to refresh
-                const sheetView = document.getElementById('sheet-view');
-                if (sheetView && sheetView.style.display !== 'none') {
+                const activeSubViewId = getActiveDashboardSubView();
+                if (activeSubViewId === 'sheet-view') {
                     if (window.initSheetView) window.initSheetView();
-                } else {
-                    // Default to dashboard grid view
+                } else if (!activeSubViewId || activeSubViewId === 'home-view') {
                     const homeView = document.getElementById('home-view');
                     if (homeView) {
                         homeView.style.display = 'flex';
                         homeView.classList.remove('hidden');
-                        // Hide other subviews if we forced home-view
                         document.querySelectorAll('.view').forEach(v => {
                             if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
                                 v.style.display = 'none';
@@ -2067,27 +2826,29 @@ export function renderSidebarTree() {
                         console.log('[Sidebar] Node selected:', node.Name);
                         
                         // Set active state
-                        container.querySelectorAll('.tree-link').forEach(l => {
-                            l.style.color = '#555';
-                            l.style.fontWeight = 'normal';
+                        sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
+                        sidebarMenu.querySelectorAll('.tree-link, .menu-item').forEach(l => {
+                            l.classList.remove('active');
+                            l.style.color = '';
+                            l.style.fontWeight = '';
                         });
-                        link.style.color = '#007bff';
-                        link.style.fontWeight = 'bold';
+                        
+                        const wrapper = link.closest('.tree-item-wrapper');
+                        if (wrapper) wrapper.classList.add('active');
+                        link.classList.add('active');
 
                         // Navigate dashboard to this parent
                         window.currentDashboardParent = node;
                         
                         // Determine which view to refresh
-                        const sheetView = document.getElementById('sheet-view');
-                        if (sheetView && sheetView.style.display !== 'none') {
+                        const activeSubViewId = getActiveDashboardSubView();
+                        if (activeSubViewId === 'sheet-view') {
                             if (window.initSheetView) window.initSheetView();
-                        } else {
-                            // Default to dashboard grid view
+                        } else if (!activeSubViewId || activeSubViewId === 'home-view') {
                             const homeView = document.getElementById('home-view');
                             if (homeView && homeView.style.display === 'none') {
                                 homeView.style.display = 'flex';
                                 homeView.classList.remove('hidden');
-                                // Hide other subviews if we forced home-view
                                 document.querySelectorAll('.view').forEach(v => {
                                     if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
                                         v.style.display = 'none';
@@ -2095,13 +2856,26 @@ export function renderSidebarTree() {
                                     }
                                 });
                             }
-                            renderDashboard(window.allAssets, () => window.allAssets);
+                            renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
                         }
                         
                         // If it's a leaf kind, also open the list modal immediately
                         if (node.type === 'kind' && (!node.children || node.children.length === 0)) {
                             showAssetList(node);
                         }
+                    }
+                };
+            });
+
+            // Handle Edit Kind buttons
+            container.querySelectorAll('.edit-kind-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    const node = manager.findNode(id);
+                    if (node && node.type === 'kind') {
+                        openEditKindModal(node);
                     }
                 };
             });
@@ -2119,6 +2893,198 @@ export function renderSidebarTree() {
     });
 }
 
+function renderAssetHealthWidget(assets, title) {
+    let healthWidget = document.getElementById('assetHealthWidget');
+    const homeView = document.getElementById('home-view');
+
+    if (!healthWidget) {
+        healthWidget = document.createElement('div');
+        healthWidget.id = 'assetHealthWidget';
+        healthWidget.style.display = 'none'; // Default hidden
+        
+        if (homeView && homeView.firstChild) {
+            homeView.insertBefore(healthWidget, homeView.firstChild);
+        } else if (homeView) {
+            homeView.appendChild(healthWidget);
+        }
+    }
+
+    // Create Toggle Button if not exists
+    let toggleBtn = document.getElementById('btnToggleHealth');
+    const dashboardTitleContainer = document.querySelector('#dashboard-title > div');
+
+    const insertToggleBtn = (container, btn) => {
+        const firstSpan = container.querySelector('span');
+        if (firstSpan) {
+            if (firstSpan.nextSibling) {
+                container.insertBefore(btn, firstSpan.nextSibling);
+            } else {
+                container.appendChild(btn);
+            }
+        } else {
+            container.appendChild(btn);
+        }
+    };
+
+    if (!toggleBtn && dashboardTitleContainer) {
+        toggleBtn = document.createElement('div');
+        toggleBtn.id = 'btnToggleHealth';
+        
+        // Check current state
+        const isVisible = healthWidget.style.display !== 'none';
+        const arrow = isVisible ? '▲' : '▼';
+        const bg = isVisible ? '#f0f7ff' : 'white';
+        const color = isVisible ? '#007bff' : '#555';
+        const border = isVisible ? '#b3d7ff' : '#e0e0e0';
+
+        toggleBtn.innerHTML = `
+            <span style="font-weight: 600; font-size: 11px;">Asset Overview</span>
+            <span id="toggleHealthArrow" style="font-size: 9px; color: #777;">${arrow}</span>
+        `;
+        
+        // Styling to fit in the title bar
+        toggleBtn.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: ${bg};
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid ${border};
+            color: ${color};
+            user-select: none;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            margin-left: 5px;
+        `;
+        
+        insertToggleBtn(dashboardTitleContainer, toggleBtn);
+
+        toggleBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent title bar clicks if any
+            const isHidden = healthWidget.style.display === 'none';
+            healthWidget.style.display = isHidden ? 'grid' : 'none';
+            document.getElementById('toggleHealthArrow').textContent = isHidden ? '▲' : '▼';
+            toggleBtn.style.background = isHidden ? '#f0f7ff' : 'white';
+            toggleBtn.style.color = isHidden ? '#007bff' : '#555';
+            toggleBtn.style.borderColor = isHidden ? '#b3d7ff' : '#e0e0e0';
+        };
+    } else if (toggleBtn && dashboardTitleContainer && !dashboardTitleContainer.contains(toggleBtn)) {
+        // If button exists but lost parent (e.g. title re-render), re-append it
+        insertToggleBtn(dashboardTitleContainer, toggleBtn);
+    }
+    
+    // Apply styles to widget
+    // We maintain the current display state (unless it's the first render where we set it to none above)
+    const currentDisplay = healthWidget.style.display;
+    
+    healthWidget.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+    healthWidget.style.gap = '15px';
+    healthWidget.style.marginBottom = '20px';
+    healthWidget.style.padding = '15px';
+    healthWidget.style.background = '#f8f9fa';
+    healthWidget.style.borderRadius = '8px';
+    healthWidget.style.border = '1px solid #e0e0e0';
+    // Ensure we don't accidentally override the hidden state if it was hidden
+    healthWidget.style.display = currentDisplay === 'none' ? 'none' : 'grid';
+
+    const validAssets = assets.filter(a => !a.isPlaceholder && !a.isComponent);
+    const total = validAssets.length;
+    
+    const stats = {
+        'Owned': { count: validAssets.filter(a => a.Status === 'Owned').length, color: '#36b37e' },
+        'In-Use': { count: validAssets.filter(a => a.Status === 'In-Use').length, color: '#0052cc' },
+        'Stand By': { count: validAssets.filter(a => a.Status === 'Stand By').length, color: '#42526e' },
+        'In-Repair': { count: validAssets.filter(a => a.Status === 'In-Repair').length, color: '#ff8b00' },
+        'Demo': { count: validAssets.filter(a => a.Status === 'Demo').length, color: '#ffab00' },
+        'Rental': { count: validAssets.filter(a => a.Status === 'Rental').length, color: '#6554c0' },
+        'Sold': { count: validAssets.filter(a => a.Status === 'Sold').length, color: '#ff5630' },
+        'Scraped': { count: validAssets.filter(a => a.Status === 'Scraped').length, color: '#bf2600' }
+    };
+
+    let html = `
+        <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #007bff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">Total ${title}</div>
+            <div style="font-size: 24px; font-weight: bold; color: #333;">${total}</div>
+        </div>
+    `;
+
+    Object.entries(stats).forEach(([status, data]) => {
+        if (data.count > 0 || ['Owned', 'In-Use', 'Stand By'].includes(status)) {
+            const percentage = total > 0 ? Math.round((data.count / total) * 100) : 0;
+            html += `
+                <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid ${data.color}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">${status}</div>
+                    <div style="font-size: 24px; font-weight: bold; color: ${data.color};">${data.count} <span style="font-size: 12px; color: #999; font-weight: normal;">(${percentage}%)</span></div>
+                </div>
+            `;
+        }
+    });
+
+    healthWidget.innerHTML = html;
+}
+
+export function renderSkeletons() {
+    const assetGrid = document.getElementById('assetGrid');
+    if (!assetGrid) return;
+
+    assetGrid.innerHTML = '';
+    for (let i = 0; i < 8; i++) {
+        const skeleton = document.createElement('div');
+        skeleton.className = 'skeleton-card';
+        skeleton.innerHTML = `
+            <div class="skeleton skeleton-icon"></div>
+            <div class="skeleton skeleton-title"></div>
+            <div class="skeleton-stats">
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+            </div>
+        `;
+        assetGrid.appendChild(skeleton);
+    }
+}
+window.renderSkeletons = renderSkeletons;
+
+let isAssetKanbanActive = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const btnToggleKanban = document.getElementById('btnToggleKanban');
+    if (btnToggleKanban) {
+        btnToggleKanban.onclick = () => {
+            isAssetKanbanActive = !isAssetKanbanActive;
+            const assetGrid = document.getElementById('assetGrid');
+            const assetGridWrapper = document.getElementById('assetGridWrapper');
+            const assetKanban = document.getElementById('assetKanban');
+            const projectsGrid = document.getElementById('projectsGrid');
+            const btnSpan = btnToggleKanban.querySelector('span');
+            
+            if (isAssetKanbanActive) {
+                if (assetGrid) assetGrid.style.display = 'none';
+                if (assetGridWrapper) assetGridWrapper.style.display = 'none';
+                if (projectsGrid) projectsGrid.style.display = 'none';
+                if (assetKanban) {
+                    assetKanban.classList.remove('hidden');
+                    assetKanban.style.display = 'flex';
+                }
+                if (btnSpan) btnSpan.textContent = '📦 Grid View';
+                renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+            } else {
+                if (assetGrid) assetGrid.style.display = 'grid';
+                if (assetGridWrapper) assetGridWrapper.style.display = 'block';
+                if (projectsGrid) projectsGrid.style.display = 'none';
+                if (assetKanban) {
+                    assetKanban.classList.add('hidden');
+                    assetKanban.style.display = 'none';
+                }
+                if (btnSpan) btnSpan.textContent = '📋 Kanban';
+                renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+            }
+        };
+    }
+});
+
 export function renderDashboard(assets, filteredAssets) {
     window.allAssets = assets;
     console.log('[Dashboard] renderDashboard() called');
@@ -2129,15 +3095,45 @@ export function renderDashboard(assets, filteredAssets) {
     if (!assetGrid) return;
     assetGrid.innerHTML = '';
     
-    const assetsToRender = filteredAssets();
+    if (typeof filteredAssets !== 'function') {
+        console.error('[Dashboard] filteredAssets is not a function:', filteredAssets);
+        assetGrid.innerHTML = '<div style="padding: 20px; color: red;">Error: Invalid filter function</div>';
+        return;
+    }
+    
+    const assetsToRender = filteredAssets() || [];
     const kinds = window.allAssetKinds || [];
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
     const manager = window.hierarchyManager;
+
+    const assetKanban = document.getElementById('assetKanban');
+    const projectsGrid = document.getElementById('projectsGrid');
+    const isHomeViewActive = document.getElementById('home-view') && !document.getElementById('home-view').classList.contains('hidden');
+    const isProjectViewActive = document.getElementById('projects-view') && !document.getElementById('projects-view').classList.contains('hidden');
+    
+    // If we are in project view, don't let renderDashboard hide the projectsGrid
+    // and don't let it show asset containers.
+    if (isProjectViewActive && !isAssetKanbanActive) {
+        console.log('[Dashboard] Project view is active, skipping asset dashboard render');
+        if (assetGrid) assetGrid.style.display = 'none';
+        if (assetKanban) {
+            assetKanban.classList.add('hidden');
+            assetKanban.style.display = 'none';
+        }
+        return;
+    }
+
+    const assetGridWrapper = document.getElementById('assetGridWrapper');
+
+
+
     if (!manager) {
         console.warn('HierarchyManager not yet initialized. Postponing renderDashboard.');
         assetGrid.innerHTML = '<div style="padding: 20px; color: #666;">Loading hierarchy...</div>';
         return;
     }
+
+
 
     // Special Case: Temporary Assets View
     if (window.currentDashboardParent && window.currentDashboardParent.ID === 'TEMP_VIEW') {
@@ -2153,7 +3149,7 @@ export function renderDashboard(assets, filteredAssets) {
             if (btnBack) {
                 btnBack.onclick = () => {
                     window.currentDashboardParent = null;
-                    renderDashboard(window.allAssets, () => window.allAssets);
+                    renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
                 };
             }
         }
@@ -2193,6 +3189,9 @@ export function renderDashboard(assets, filteredAssets) {
                                 <span class="asset-card-status-value" style="font-size: 9px; color: #007bff; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">${asset.ProjectId}</span>
                             </div>
                         </div>
+                        <div style="font-size: 9px; margin-top: 5px; text-align: center;">
+                            <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; display: inline-flex; align-items: center; gap: 3px;">🔗 Qty API</a>
+                        </div>
                         <div style="position: absolute; bottom: 0; left: 0; right: 0; display: flex; height: 28px; border-top: 1px solid #eee; background: #fff; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; overflow: hidden;">
                             <button onclick="event.stopPropagation(); makeAssetPermanent('${asset.ID}')" style="flex: 1; border: none; background: #f0f7ff; color: #007bff; font-size: 10px; font-weight: 600; cursor: pointer; border-right: 1px solid #eee; transition: all 0.2s;" onmouseover="this.style.background='#e6f0ff'" onmouseout="this.style.background='#f0f7ff'">Convert</button>
                             <button onclick="event.stopPropagation(); deleteTempAsset('${asset.ID}')" style="flex: 1; border: none; background: #fff1f0; color: #f5222d; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ffe8e6'" onmouseout="this.style.background='#fff1f0'">Delete</button>
@@ -2218,12 +3217,25 @@ export function renderDashboard(assets, filteredAssets) {
     const dashboardTitle = document.getElementById('dashboard-title');
     if (dashboardTitle) {
         dashboardTitle.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #eee; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; cursor: pointer;">←</button>' : ''}
                 <span>${parentNode ? parentNode.Name : `${category} Assets`}</span>
-                <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: 10px; opacity: 0.6;">Debug</button>
+                ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
+                <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
             </div>
         `;
+        
+        // Add Clear Search Handler
+        const btnClearSearch = document.getElementById('btnClearSearch');
+        if (btnClearSearch) {
+            btnClearSearch.onclick = (e) => {
+                e.stopPropagation();
+                window.currentSearchQuery = '';
+                const searchInput = document.getElementById('dashboardSearch');
+                if (searchInput) searchInput.value = '';
+                renderDashboard(window.allAssets, filteredAssets);
+            };
+        }
         
         // Add Back Handler
         const btnBack = document.getElementById('btnDashboardBack');
@@ -2257,14 +3269,18 @@ export function renderDashboard(assets, filteredAssets) {
 
     let displayNodes = [];
     let recursiveAssets = [];
+    let overviewTitle = '';
 
     if (!parentNode) {
         // "All Assets" view: Show Tier 1 categories as cards
         displayNodes = manager.getModuleTree(category);
         console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
         
-        // In "All Assets" view, the filteredAssets already contains what we want
-        recursiveAssets = filteredAssets();
+        // In "All Assets" view, we want to show the overview for the entire category
+        // We filter manually to ensure we get the full breakdown, ignoring any grid-specific status filters
+        recursiveAssets = assets.filter(a => a.Category === category);
+        console.log(`[Dashboard] All Assets view - recursiveAssets count: ${recursiveAssets.length}`);
+        overviewTitle = `${category} Assets`;
         
         if (displayNodes.length === 0) {
             assetGrid.innerHTML = `
@@ -2284,16 +3300,90 @@ export function renderDashboard(assets, filteredAssets) {
         // If it's a "Kind", show its specific assets + children's assets
         // If it's a "Folder", show all assets under its children
         const descendants = manager.getDescendants(parentNode.ID, true);
-        const descendantKindNames = descendants
-            .filter(d => d.type === 'kind')
-            .map(d => d.Name);
+        // Include both kinds and folders in the match list
+        // This ensures that if an asset has a Type matching a Folder name (e.g. 'Hardware'), it still shows up
+        const descendantKindNames = descendants.map(d => d.Name);
+            
+        console.log(`[Dashboard] Selected Node: ${parentNode.Name} (${parentNode.type})`);
+        console.log(`[Dashboard] Descendant Kinds:`, descendantKindNames);
         
-        // Include 'Component' kind in recursive assets if it's not already in descendantKindNames
-        if (!descendantKindNames.includes('Component')) {
-            descendantKindNames.push('Component');
+        recursiveAssets = assets.filter(a => {
+            if (a.Category !== category) return false;
+            
+            const assetType = (a.Type || '').toLowerCase().trim();
+            const assetName = (a.Name || '').toLowerCase().trim();
+            
+            return descendantKindNames.some(kindName => {
+                const k = kindName.toLowerCase().trim();
+                const t = assetType;
+                
+                // 1. Exact match
+                if (t === k) return true;
+                
+                // 2. Standard plural 's' (Laptop <-> Laptops)
+                if (t === k + 's' || t + 's' === k) return true;
+                
+                // 3. Plural 'es' (Box <-> Boxes)
+                if (t === k + 'es' || t + 'es' === k) return true;
+                
+                // 4. Plural 'ies' <-> 'y' (Battery <-> Batteries)
+                if (k.endsWith('y') && t === k.slice(0, -1) + 'ies') return true;
+                if (t.endsWith('y') && k === t.slice(0, -1) + 'ies') return true;
+
+                // 5. Name fallback
+                if (assetName === k) return true;
+                
+                return false;
+            });
+        });
+        console.log(`[Dashboard] Filtered recursiveAssets: ${recursiveAssets.length}`);
+        
+        overviewTitle = `${parentNode.Name} Assets`;
+    }
+
+    // --- KANBAN VIEW LOGIC (Moved after hierarchy filtering) ---
+    if (isAssetKanbanActive) {
+        if (assetGrid) assetGrid.style.display = 'none';
+        if (assetGridWrapper) assetGridWrapper.style.display = 'none';
+        if (projectsGrid) projectsGrid.style.display = 'none'; 
+        if (assetKanban) {
+            assetKanban.classList.remove('hidden');
+            assetKanban.style.display = 'flex'; 
+        }
+
+        // Apply search filter to the HIERARCHY-FILTERED assets
+        // We use 'recursiveAssets' which is already filtered by current hierarchy node
+        let kanbanAssets = recursiveAssets; 
+        if (window.currentSearchQuery) {
+            kanbanAssets = recursiveAssets.filter(a => matchesQuery(a, window.currentSearchQuery));
         }
         
-        recursiveAssets = assets.filter(a => descendantKindNames.includes(a.Type) && a.Category === category);
+        renderAssetKanban(kanbanAssets);
+        return;
+    } else {
+        // Ensure standard view elements are visible if we are not in Kanban mode
+        if (assetGrid) assetGrid.style.display = 'grid';
+        if (assetGridWrapper) assetGridWrapper.style.display = 'block';
+        if (assetKanban) {
+            assetKanban.classList.add('hidden');
+            assetKanban.style.display = 'none';
+        }
+        
+        if (projectsGrid) {
+             projectsGrid.style.display = 'none';
+        }
+    }
+
+    // Render Asset Health Widget (Filtered by Hierarchy)
+    // Always show it unless explicitly hidden by search query
+    const toggleBtn = document.getElementById('btnToggleHealth');
+    if (!window.currentSearchQuery) {
+        renderAssetHealthWidget(recursiveAssets, overviewTitle);
+        if (toggleBtn) toggleBtn.style.display = 'inline-flex';
+    } else {
+        const healthWidget = document.getElementById('assetHealthWidget');
+        if (healthWidget) healthWidget.style.display = 'none';
+        if (toggleBtn) toggleBtn.style.display = 'none';
     }
 
     // If it's a leaf kind (no children), show a message and automatically open the list
@@ -2340,30 +3430,40 @@ export function renderDashboard(assets, filteredAssets) {
         topMatches.forEach(asset => {
             const item = document.createElement('div');
             item.className = 'asset-card search-result-card';
-            item.style = 'padding: 10px; display: flex; align-items: center; gap: 15px; cursor: pointer; height: auto; min-height: 60px;';
-            item.onclick = () => {
-                // Open the appropriate view or modal
-                window.location.href = `/asset/${asset.ID}`;
+            // Use minimal inline styles, rely on .search-result-card CSS
+            item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative;';
+            item.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof editAsset === 'function') {
+                    editAsset(asset);
+                } else {
+                    console.error('editAsset function not found');
+                }
             };
 
             const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
+            const statusColor = getStatusColor(asset.Status);
             
             item.innerHTML = `
-                <div style="font-size: 24px; width: 40px; text-align: center;">
+                <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
+                <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">
                     ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
                         ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
                         : (asset.Icon || '📦')}
                 </div>
-                <div style="flex: 1; overflow: hidden;">
-                    <div style="font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${asset.ItemName}</div>
-                    <div style="font-size: 11px; color: #666;">
-                        ID: ${asset.ID} • ${asset.Type} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
+                <div class="search-result-info">
+                    <div class="search-result-title">${asset.ItemName}</div>
+                    <div class="search-result-subtitle">
+                        ID: ${asset.ID} • ${asset.Type} • ${asset.CurrentLocation || 'No Location'} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
+                        ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? ` • <span style="color: #0078d4; font-weight: 600;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>` : ''}
+                        • <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
                     </div>
                 </div>
-                <div style="text-align: right;">
-                    <span class="status-badge ${asset.Status ? asset.Status.toLowerCase().replace(' ', '-') : ''}" style="font-size: 10px; padding: 2px 6px;">${asset.Status}</span>
+                <div style="text-align: right; flex-shrink: 0;">
+                    <span class="status-badge" style="font-size: 10px; padding: 2px 6px; background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40; border-radius: 4px;">${asset.Status || 'Owned'}</span>
                 </div>
             `;
+            // item.style.position = 'relative'; // Already set above
             assetGrid.appendChild(item);
         });
 
@@ -2392,11 +3492,6 @@ export function renderDashboard(assets, filteredAssets) {
         const nodeDescendants = manager.getDescendants(node.ID, true);
         const nodeKindNames = nodeDescendants.filter(d => d.type === 'kind').map(d => d.Name);
         
-        // Include 'Component' kind in node stats
-        if (!nodeKindNames.includes('Component')) {
-            nodeKindNames.push('Component');
-        }
-
         const nodeAssets = assets.filter(a => nodeKindNames.includes(a.Type) && a.Category === category);
         
         const realAssets = nodeAssets.filter(a => {
@@ -2407,17 +3502,36 @@ export function renderDashboard(assets, filteredAssets) {
         });
         
         const total = realAssets.length;
-        const inUse = realAssets.filter(a => a.Status === 'In Use').length;
-        const inStore = realAssets.filter(a => a.Status === 'In Store').length;
-        const inRepair = realAssets.filter(a => a.Status === 'In Repair').length;
-        const others = total - (inUse + inStore + inRepair);
+        
+        // Calculate aggregate quantity for root assets in this kind/category
+        let aggregateQty = 0;
+        let qtyUnit = '';
+        let hasQuantityTracking = false;
+        
+        realAssets.forEach(a => {
+            if (a.quantity_unit) {
+                hasQuantityTracking = true;
+                if (!qtyUnit) qtyUnit = a.quantity_unit;
+                
+                // Only aggregate if units match to avoid confusing mixed units
+                if (a.quantity_unit.toLowerCase() === qtyUnit.toLowerCase()) {
+                    aggregateQty += Number(a.quantity_total || 0);
+                }
+            }
+        });
+
+
 
         const assetCard = document.createElement('div');
         assetCard.classList.add('asset-card');
+        assetCard.style.position = 'relative'; // Ensure absolute children (like add button) stay within card
         assetCard.setAttribute('data-kind', nodeName); // For global listener fallback
         if (isSelectionMode) assetCard.classList.add('selection-mode');
         
         assetCard.style.cursor = 'pointer';
+        // Add color ribbon for categories based on dominant status if needed, or just generic brand color
+        // For categories, we'll use a subtle top border instead of a side ribbon
+        assetCard.style.borderTop = `3px solid ${total > 0 ? '#007bff' : '#ddd'}`;
         assetCard.onclick = (e) => {
                     e.stopPropagation(); // Prevent global listener from firing redundant showAssetList(null)
                     
@@ -2435,36 +3549,28 @@ export function renderDashboard(assets, filteredAssets) {
                     }
                 };
 
+        const displayImg = node.DisplayImage || node.Icon;
+        const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
+
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
             <div class="asset-card-icon">
-                ${(node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
-                    ? `<img src="${node.Icon}" style="width: 48px; height: 48px; object-fit: contain;">`
-                    : (node.Icon || (isKind ? '📦' : '📂'))}
+                ${isUrl 
+                    ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;">`
+                    : (displayImg || (isKind ? '📦' : '📂'))}
             </div>
             <div class="asset-card-header">
                 <span class="asset-card-title">${nodeName} (${total})</span>
+                ${hasQuantityTracking ? `
+                    <div style="font-size: 11px; color: #0078d4; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 12px;">⚖️</span> 
+                        <span>${aggregateQty.toLocaleString()} ${qtyUnit}</span>
+                    </div>
+                ` : ''}
             </div>
-            <div class="asset-card-status">
-                <div class="asset-card-status-item">
-                    <span class="asset-card-status-value">${inUse}</span>
-                    <span class="asset-card-status-label">In Use</span>
-                </div>
-                <div class="asset-card-status-item">
-                    <span class="asset-card-status-value">${inStore}</span>
-                    <span class="asset-card-status-label">In Store</span>
-                </div>
-                <div class="asset-card-status-item">
-                    <span class="asset-card-status-value">${inRepair}</span>
-                    <span class="asset-card-status-label">Repair</span>
-                </div>
-                <div class="asset-card-status-item">
-                    <span class="asset-card-status-value">${others}</span>
-                    <span class="asset-card-status-label">Other</span>
-                </div>
-            </div>
-        `;
 
+        `;
+        
         // Add handler for the "+" button on the card
         if (isKind) {
             const addBtn = assetCard.querySelector('.asset-card-add-button');
@@ -2479,10 +3585,12 @@ export function renderDashboard(assets, filteredAssets) {
         assetGrid.appendChild(assetCard);
     });
 
-    // If there are NO sub-nodes, or we are at a leaf "Kind", we might want to show assets directly?
-    // The user said: "under the parent asset kind i should see children under them grandchildren so on and so forth"
-    // This implies the dashboard is for navigating the HIERARCHY.
-    // Asset lists are usually shown in a modal when clicking a card.
+    // Ensure Kanban is handled separately and correctly
+    if (isAssetKanbanActive) {
+        // Clear grid and show kanban
+        assetGrid.innerHTML = '';
+        renderAssetKanban(assetsToRender);
+    }
 }
 
 function showBatchPrintPreview() {
@@ -2550,6 +3658,14 @@ export function openAddKindModal() {
     if (modal) {
         modal.style.display = 'flex';
         
+        // Reset modal title
+        const modalTitle = modal.querySelector('h2');
+        if (modalTitle) modalTitle.textContent = 'Add New Asset Category';
+
+        // Reset the form
+        const form = document.getElementById('addAssetKindForm');
+        if (form) form.reset();
+        
         // Populate the Parent Kind dropdown
         const parentSelect = document.getElementById('newKindParent');
         if (parentSelect) {
@@ -2598,6 +3714,70 @@ export function openAddKindModal() {
     }
 }
 
+export function openEditKindModal(node) {
+    console.log('openEditKindModal() called for:', node);
+    const modal = document.getElementById('addAssetKindModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        
+        // Change modal title
+        const modalTitle = modal.querySelector('h2');
+        if (modalTitle) modalTitle.textContent = 'Edit Asset Category';
+
+        // Pre-populate fields
+        const nameInput = document.getElementById('newKindName');
+        const iconInput = document.getElementById('newKindIcon');
+        const parentSelect = document.getElementById('newKindParent');
+        const imageInput = document.getElementById('newKindImage');
+        const identifierInput = document.getElementById('newKindIdentifier');
+        
+        if (nameInput) nameInput.value = node.Name || '';
+        if (iconInput) iconInput.value = node.Icon || '';
+        if (imageInput) imageInput.value = node.DisplayImage || '';
+        if (identifierInput) identifierInput.value = node.Identifier || '';
+        
+        // Populate the Parent Kind dropdown
+        if (parentSelect) {
+            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
+            const allKinds = window.allAssetKinds || [];
+            const allFolders = window.allFolders || [];
+            
+            const filteredKinds = allKinds.filter(k => k.Module === currentCategory && k.Name !== node.Name);
+            const filteredFolders = allFolders.filter(f => f.Module === currentCategory);
+            
+            parentSelect.innerHTML = '<option value="">None (Top Level)</option>';
+            
+            if (filteredFolders.length > 0) {
+                const group = document.createElement('optgroup');
+                group.label = 'Folders';
+                filteredFolders.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.Name;
+                    opt.textContent = `${(f.Icon && f.Icon.startsWith('/') ? '📁' : (f.Icon || '📁'))} ${f.Name}`;
+                    group.appendChild(opt);
+                });
+                parentSelect.appendChild(group);
+            }
+
+            if (filteredKinds.length > 0) {
+                const group = document.createElement('optgroup');
+                group.label = 'Existing Categories';
+                filteredKinds.forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.Name;
+                    opt.textContent = `${(k.Icon && k.Icon.startsWith('/') ? '📦' : (k.Icon || '📦'))} ${k.Name}`;
+                    group.appendChild(opt);
+                });
+                parentSelect.appendChild(group);
+            }
+            
+            parentSelect.value = node.ParentID || node.ParentName || '';
+        }
+    } else {
+        console.error('CRITICAL: addAssetKindModal NOT found in DOM');
+    }
+}
+
 export function openAddItemModal(kind) {
     console.log('openAddItemModal() called for kind:', kind);
     const modal = document.getElementById('addAssetItemModal');
@@ -2606,9 +3786,45 @@ export function openAddItemModal(kind) {
         
         // Reset the form and hidden ID
         const form = document.getElementById('addAssetItemForm');
-        if (form) form.reset();
+            if (form) {
+                form.reset();
+                if (window.updateIconPreview) window.updateIconPreview('📦');
+            }
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
+
+        const qtyUnit = document.getElementById('itemQtyUnit');
+        const qtyTotal = document.getElementById('itemQtyTotal');
+        const qtyPrecision = document.getElementById('itemQtyPrecision');
+        const qtyNote = document.getElementById('itemQtyNote');
+        if (qtyUnit) qtyUnit.disabled = false;
+        if (qtyTotal) qtyTotal.disabled = false;
+        if (qtyPrecision) qtyPrecision.disabled = false;
+        if (qtyNote) qtyNote.disabled = false;
+
+        const convUnit = document.getElementById('itemConvUnit');
+        const convFactor = document.getElementById('itemConvFactor');
+        const btnApplyConv = document.getElementById('btnApplyConversion');
+        if (convUnit) {
+            convUnit.value = '';
+            convUnit.disabled = false;
+        }
+        if (convFactor) {
+            convFactor.value = '';
+            convFactor.disabled = false;
+        }
+        if (btnApplyConv) {
+            btnApplyConv.disabled = false;
+        }
+
+        // Ensure conversion UI is set up
+        setupConversionUI();
+
+        const qtyHint = document.getElementById('qtyEditHint');
+        if (qtyHint) {
+            qtyHint.style.display = 'none';
+            qtyHint.textContent = '';
+        }
 
         // Clear children list
         const childrenContainer = document.getElementById('childrenListContainer');
@@ -2648,6 +3864,19 @@ export function openAddItemModal(kind) {
                     title.textContent = `Add New ${kindSelect.value}`;
                 }
                 
+                // Update identifier display
+                const selectedKind = allKinds.find(k => k.Name === kindSelect.value);
+                const idDisplay = document.getElementById('kindIdentifierDisplay');
+                const idValue = document.getElementById('kindIdentifierValue');
+                if (idDisplay && idValue) {
+                    if (selectedKind && selectedKind.Identifier) {
+                        idValue.textContent = selectedKind.Identifier;
+                        idDisplay.style.display = 'block';
+                    } else {
+                        idDisplay.style.display = 'none';
+                    }
+                }
+
                 // Toggle IT fields
                 const itFields = document.getElementById('itFields');
                 if (itFields) {
@@ -2659,6 +3888,19 @@ export function openAddItemModal(kind) {
                 kindSelect.value = kind;
                 const title = document.getElementById('addItemModalTitle');
                 if (title) title.textContent = `Add New ${kind}`;
+                
+                // Update identifier display for initial kind
+                const selectedKind = allKinds.find(k => k.Name === kind);
+                const idDisplay = document.getElementById('kindIdentifierDisplay');
+                const idValue = document.getElementById('kindIdentifierValue');
+                if (idDisplay && idValue) {
+                    if (selectedKind && selectedKind.Identifier) {
+                        idValue.textContent = selectedKind.Identifier;
+                        idDisplay.style.display = 'block';
+                    } else {
+                        idDisplay.style.display = 'none';
+                    }
+                }
             } else {
                 kindSelect.value = "";
                 const title = document.getElementById('addItemModalTitle');
@@ -2699,7 +3941,9 @@ export async function editAsset(asset) {
     openAddItemModal(asset.Type);
     
     const title = document.getElementById('addItemModalTitle');
+    const submitBtn = document.querySelector('#addAssetItemForm button[type="submit"]');
     if (title) title.textContent = `Edit Asset: ${asset.ID}`;
+    if (submitBtn) submitBtn.textContent = 'Save Changes';
     
     // Fill the hidden ID
     const assetDbId = document.getElementById('assetDbId');
@@ -2708,15 +3952,15 @@ export async function editAsset(asset) {
     // Fill basic fields
     document.getElementById('itemKind').value = asset.Type || '';
     document.getElementById('itemName').value = asset.ItemName || '';
-    document.getElementById('itemIcon').value = asset.Icon || '';
-    document.getElementById('itemStatus').value = asset.Status || 'In Store';
+    const iconVal = asset.Icon || '';
+    document.getElementById('itemIcon').value = iconVal;
+    if (window.updateIconPreview) window.updateIconPreview(iconVal);
+    
+    document.getElementById('itemStatus').value = asset.Status || 'Owned';
     document.getElementById('itemMake').value = asset.Make || '';
     document.getElementById('itemModel').value = asset.Model || '';
     document.getElementById('itemSrNo').value = asset.SrNo || '';
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
-    document.getElementById('itemIn').value = asset.IN || '0';
-    document.getElementById('itemOut').value = asset.OUT || '0';
-    document.getElementById('itemBalance').value = asset.Balance || '0';
     
     if (asset.DispatchReceiveDt) {
         // Handle date format if needed
@@ -2727,6 +3971,74 @@ export async function editAsset(asset) {
     document.getElementById('itemRemarks').value = asset.Remarks || '';
     document.getElementById('itemAssignedTo').value = asset.AssignedTo || '';
     document.getElementById('itemParentId').value = asset.ParentId || '';
+
+    const qtyUnit = document.getElementById('itemQtyUnit');
+    const qtyTotal = document.getElementById('itemQtyTotal');
+    const qtyPrecision = document.getElementById('itemQtyPrecision');
+    const qtyNote = document.getElementById('itemQtyNote');
+    if (qtyUnit) qtyUnit.value = asset.quantity_unit || '';
+    if (qtyTotal) qtyTotal.value = (asset.quantity_total ?? '') === null ? '' : (asset.quantity_total ?? '');
+    if (qtyPrecision) qtyPrecision.value = (asset.quantity_precision ?? 0);
+    if (qtyNote) qtyNote.value = asset.quantity_note || '';
+    if (qtyUnit) qtyUnit.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+    if (qtyTotal) qtyTotal.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+    if (qtyPrecision) qtyPrecision.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+    if (qtyNote) qtyNote.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+
+    const convUnit = document.getElementById('itemConvUnit');
+    const convFactor = document.getElementById('itemConvFactor');
+    const convMode = document.getElementById('itemConvMode');
+    const btnApplyConv = document.getElementById('btnApplyConversion');
+
+    if (convUnit) convUnit.value = asset.conversion_unit || '';
+    if (convFactor) convFactor.value = (asset.conversion_factor ?? '') === null ? '' : (asset.conversion_factor ?? '');
+    if (convMode) convMode.value = asset.conversion_mode || 'multiply';
+    
+    const isConvDisabled = !!(asset.quantity_root_id && asset.quantity_root_id !== asset.ID);
+    if (convUnit) convUnit.disabled = isConvDisabled;
+    if (convFactor) convFactor.disabled = isConvDisabled;
+    if (convMode) convMode.disabled = isConvDisabled;
+    if (btnApplyConv) btnApplyConv.disabled = isConvDisabled;
+ 
+     // Ensure conversion UI is set up
+     setupConversionUI();
+
+    // Populate quantity tracking toggle
+    const isQtyTrackedToggle = document.getElementById('itemIsQtyTracked');
+    const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
+    if (isQtyTrackedToggle && qtyFieldsContainer) {
+      isQtyTrackedToggle.checked = asset.is_quantity_tracked === 1;
+      // Show/hide quantity fields based on toggle state
+      qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+      // Add event listener for toggle changes to handle UI visibility
+      isQtyTrackedToggle.onchange = () => {
+        qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+      };
+    }
+    
+    const isRootAsset = !!(asset.quantity_root_id && String(asset.quantity_root_id) === String(asset.ID));
+    const qtyHint = document.getElementById('qtyEditHint');
+    if (qtyHint) {
+        if (asset.quantity_root_id && !isRootAsset) {
+            qtyHint.style.display = 'block';
+            qtyHint.style.background = '#fff7ed';
+            qtyHint.style.border = '1px solid #ffedd5';
+            qtyHint.style.color = '#9a3412';
+            qtyHint.innerHTML = `Quantity setup can’t be edited here. Use <a href="/asset/${encodeURIComponent(asset.ID)}" target="_blank" style="color: #9a3412; text-decoration: underline; font-weight: 800;">Asset Details</a> to Split / Issue / Consume.`;
+        } else if (isRootAsset) {
+            qtyHint.style.display = 'block';
+            qtyHint.style.background = '#f0fdf4';
+            qtyHint.style.border = '1px solid #dcfce7';
+            qtyHint.style.color = '#166534';
+            qtyHint.innerHTML = `<span style="font-weight: 600;">Root Asset:</span> You can update the base unit and total quantity here using the conversion tool.`;
+        } else {
+            qtyHint.style.display = 'block';
+            qtyHint.style.background = '#f8fafc';
+            qtyHint.style.border = '1px solid #e2e8f0';
+            qtyHint.style.color = '#64748b';
+            qtyHint.innerHTML = `<span style="font-style: italic;">Quantity tracking is not yet enabled for this asset. Fill the fields above to initialize it.</span>`;
+        }
+    }
 
     // Warranty Details
     const warrantyField = document.getElementById('itemWarranty');
@@ -2740,6 +4052,12 @@ export async function editAsset(asset) {
     if (valueField) valueField.value = asset.asset_value || 0;
     if (currencyField) currencyField.value = asset.Currency || 'INR';
     if (purchaseDateField) purchaseDateField.value = asset.PurchaseDate || '';
+
+    const warrantyTrackingToggle = document.getElementById('itemWarrantyTracking');
+    if (warrantyTrackingToggle) {
+        // Default to true if the field doesn't exist (legacy assets)
+        warrantyTrackingToggle.checked = asset.warranty_tracking !== 0 && asset.warranty_tracking !== false;
+    }
 
     // IT Specific Fields
     if (localStorage.getItem('selectedAssetCategory') === 'IT') {
@@ -2765,6 +4083,64 @@ export async function editAsset(asset) {
         const response = await fetch(`/api/asset-details/${encodeURIComponent(asset.ID)}`);
         if (response.ok) {
             const data = await response.json();
+            
+            // Populate quantity history timeline
+            const historySection = document.getElementById('qtyHistorySection');
+            const timelineContainer = document.getElementById('qtyHistoryTimeline');
+            
+            if (historySection) {
+                 // Always try to add the link to the header if possible, or ensure it's there
+                 const historyHeader = historySection.querySelector('h4');
+                 if (historyHeader) {
+                     historyHeader.innerHTML = `Quantity History & Timeline 
+                         <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" 
+                            style="float: right; font-size: 11px; color: #0056b3; background: #e7f3ff; padding: 2px 8px; border-radius: 4px; text-decoration: none; border: 1px solid #b3d7ff;">
+                            🔗 Qty API
+                         </a>`;
+                 }
+            }
+
+            if (historySection) {
+                historySection.style.display = 'block';
+                if (timelineContainer) {
+                    if (data.quantityEvents && data.quantityEvents.length > 0) {
+                        timelineContainer.innerHTML = data.quantityEvents.map(e => {
+                            const date = new Date(e.timestamp).toLocaleString();
+                            const color = e.type === 'ISSUE' ? '#3b82f6' : 
+                                         e.type === 'CONSUME' ? '#ef4444' : 
+                                         e.type === 'ADJUST' ? '#f59e0b' : 
+                                         e.type === 'SPLIT' ? '#8b5cf6' : '#0078d4';
+                            
+                            const icon = e.type === 'ISSUE' ? '📤' : 
+                                        e.type === 'CONSUME' ? '🔥' : 
+                                        e.type === 'ADJUST' ? '🛠️' : 
+                                        e.type === 'SPLIT' ? '✂️' : '⚖️';
+                            
+                            return `
+                                <div style="padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid ${color}; background: #fff; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span>${icon}</span>
+                                            <span style="font-weight: 800; color: ${color}; text-transform: uppercase; font-size: 11px;">${e.type}</span>
+                                        </div>
+                                        <span style="color: #64748b; font-size: 11px;">${date}</span>
+                                    </div>
+                                    <div style="color: #1e293b; font-weight: 700; margin-bottom: 2px;">By ${e.actor}</div>
+                                    ${e.note ? `<div style="color: #475569; font-style: italic; margin-top: 4px; padding: 4px 8px; background: #f8fafc; border-radius: 4px; border-left: 2px solid #cbd5e1;">"${e.note}"</div>` : ''}
+                                    ${e.metadata ? `
+                                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-family: monospace; font-size: 11px; color: #475569;">
+                                            ${Object.entries(e.metadata).map(([k, v]) => `<div><b style="color: #1e293b;">${k}:</b> ${v}</div>`).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('');
+                    } else {
+                        timelineContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No quantity history recorded yet.</div>';
+                    }
+                }
+            }
+
             const childrenContainer = document.getElementById('childrenListContainer');
             if (childrenContainer && data.children) {
                 // Filter for children without QR codes (NoQR = 1)
@@ -2814,10 +4190,27 @@ function showAssetList(nodeOrKindName) {
     body.innerHTML = '';
     
     const query = window.currentSearchQuery || '';
-    let assets = (window.allAssets || []).filter(a => 
-        nodeKindNames.includes(a.Type) && 
-        !(a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true')
-    );
+    let assets = (window.allAssets || []).filter(a => {
+        // Robust matching logic (synced with renderDashboard)
+        const assetType = (a.Type || '').toLowerCase().trim();
+        const assetName = (a.Name || '').toLowerCase().trim();
+        
+        const typeMatch = nodeKindNames.some(kindName => {
+            const k = kindName.toLowerCase().trim();
+            const t = assetType;
+            
+            if (t === k) return true;
+            if (t === k + 's' || t + 's' === k) return true;
+            if (t === k + 'es' || t + 'es' === k) return true;
+            if (k.endsWith('y') && t === k.slice(0, -1) + 'ies') return true;
+            if (t.endsWith('y') && k === t.slice(0, -1) + 'ies') return true;
+            if (assetName === k) return true;
+            return false;
+        });
+
+        const isPlaceholder = (a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true');
+        return typeMatch && !isPlaceholder;
+    });
 
     // Apply search filter if present
     if (query) {
@@ -2825,7 +4218,7 @@ function showAssetList(nodeOrKindName) {
     }
     
     if (assets.length === 0) {
-        body.innerHTML = `<tr><td colspan="16" style="text-align:center;">No ${query ? 'matching ' : ''}assets found for this kind.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="13" style="text-align:center;">No ${query ? 'matching ' : ''}assets found for this kind.</td></tr>`;
     } else {
         assets.forEach(a => {
             const isSelected = selectedBatchAssets.some(sa => sa.ID === a.ID);
@@ -2858,10 +4251,16 @@ function showAssetList(nodeOrKindName) {
                     ` : '-'}
                 </td>
                 <td>${a.warranty_months ? `${a.warranty_months}m` : '-'}</td>
+                <td>
+                    <div style="font-size: 11px;">
+                        ${(a.is_quantity_tracked === 1 || a.quantity_unit || a.quantity_total) ? `
+                            <strong style="color: #0078d4;">⚖️ ${a.quantity_total ?? 0}</strong> ${a.quantity_unit || ''}
+                            ${a.quantity_available !== undefined ? `<br><span style="color: #666;">Avail: ${a.quantity_available}</span>` : ''}
+                        ` : ''}
+                        <br><a href="/api/quantity/events/${encodeURIComponent(a.ID)}" target="_blank" onclick="event.stopPropagation()" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 5px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px;">🔗 Qty API</a>
+                    </div>
+                </td>
                 <td>${a.ParentId || '-'}</td>
-                <td>${a.IN || '0'}</td>
-                <td>${a.OUT || '0'}</td>
-                <td>${a.Balance || '0'}</td>
                 <td>
                     <div style="display: flex; flex-direction: column; gap: 5px;">
                         <a href="/asset/${a.ID}" target="_blank" class="view-link" style="color: var(--primary); text-decoration: none; font-weight: 600; font-size: 12px;">View Page</a>
@@ -3013,6 +4412,17 @@ window.triggerIconUpload = (targetId) => {
     document.getElementById('iconUploadInput').click();
 };
 
+window.updateIconPreview = (val) => {
+    const preview = document.getElementById('itemIconPreview');
+    if (!preview) return;
+    
+    if (val && (val.startsWith('/') || val.startsWith('http'))) {
+        preview.innerHTML = `<img src="${val}" style="width: 100%; height: 100%; object-fit: contain;">`;
+    } else {
+        preview.innerHTML = val || '📦';
+    }
+};
+
 document.getElementById('iconUploadInput').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -3028,7 +4438,9 @@ document.getElementById('iconUploadInput').onchange = async (e) => {
         const result = await response.json();
         if (result.success) {
             if (currentIconTargetId) {
-                document.getElementById(currentIconTargetId).value = result.path;
+                const input = document.getElementById(currentIconTargetId);
+                input.value = result.path;
+                window.updateIconPreview(result.path);
             }
             await fetchAndPopulateIcons();
             alert('Icon uploaded successfully!');
@@ -3182,7 +4594,7 @@ async function handleBulkUpload(file, kind, category) {
                             if (window.loadAssets) {
                                 await window.loadAssets();
                                 // Specifically re-render the dashboard to update counts
-                                renderDashboard(window.allAssets, () => window.allAssets);
+                                renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
                             }
                         } else {
                         const errText = await response.text();
@@ -3240,9 +4652,6 @@ export function setupDashboardFormHandlers() {
                     Model: formData.get('itemModel'),
                     SrNo: formData.get('itemSrNo'),
                     CurrentLocation: formData.get('itemLocation'),
-                    IN: formData.get('itemIn') || 0,
-                    OUT: formData.get('itemOut') || 0,
-                    Balance: formData.get('itemBalance') || 0,
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
                     Remarks: formData.get('itemRemarks'),
@@ -3255,8 +4664,93 @@ export function setupDashboardFormHandlers() {
                     amc_months: formData.get('itemAMC') || 0,
                     asset_value: formData.get('itemValue') || 0,
                     Currency: formData.get('itemCurrency') || 'INR',
-                    PurchaseDate: formData.get('itemPurchaseDate')
+                    PurchaseDate: formData.get('itemPurchaseDate'),
+                    warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
+                    is_quantity_tracked: document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0
                 };
+
+                // FormData ignores disabled fields, so we get values directly from DOM
+                const qtyUnitEl = document.getElementById('itemQtyUnit');
+                const qtyTotalEl = document.getElementById('itemQtyTotal');
+                const qtyPrecisionEl = document.getElementById('itemQtyPrecision');
+                
+                const qtyUnitValue = qtyUnitEl ? qtyUnitEl.value.trim() : '';
+                const qtyTotalValue = qtyTotalEl ? qtyTotalEl.value.trim() : '';
+                const qtyPrecisionValue = qtyPrecisionEl ? qtyPrecisionEl.value.trim() : '';
+                const qtyNote = String(formData.get('itemQtyNote') || '').trim();
+
+                console.log('Collected Qty Values:', {
+                    qtyUnitValue,
+                    qtyTotalValue,
+                    qtyPrecisionValue,
+                    qtyNote,
+                    formDataQtyUnit: formData.get('itemQtyUnit')
+                });
+
+                const isQtyTracked = document.getElementById('itemIsQtyTracked')?.checked;
+
+                if (isQtyTracked) {
+                    // Validation
+                    if (!qtyUnitValue) throw new Error('Quantity unit is required when quantity tracking is enabled.');
+                    const qtyTotal = Number(qtyTotalValue);
+                    if (!Number.isFinite(qtyTotal) || qtyTotal <= 0) throw new Error('Quantity total must be a number > 0.');
+                    const qtyPrecision = qtyPrecisionValue === '' ? 0 : Number(qtyPrecisionValue);
+                    if (!Number.isFinite(qtyPrecision) || qtyPrecision < 0) throw new Error('Quantity precision must be a number >= 0.');
+
+                    asset.quantity_unit = qtyUnitValue;
+                    asset.quantity_total = qtyTotal;
+                    asset.quantity_precision = Math.floor(qtyPrecision);
+                    if (qtyNote) asset.quantity_note = qtyNote;
+
+                    console.log('Asset object with quantity:', asset);
+
+                    // Also include conversion unit/factor if they are disabled (inherited)
+                    // but we might want to update them if they were part of the conversion
+                    const convUnitEl = document.getElementById('itemConvUnit');
+                    const convFactorEl = document.getElementById('itemConvFactor');
+                    const convModeEl = document.getElementById('itemConvMode');
+                    
+                    if (convUnitEl) asset.conversion_unit = convUnitEl.value.trim();
+                    if (convFactorEl) {
+                        const cfValue = convFactorEl.value.trim();
+                        if (cfValue !== '') {
+                            const cf = parseFloat(cfValue);
+                            asset.conversion_factor = isNaN(cf) ? null : cf;
+                        } else {
+                            asset.conversion_factor = null;
+                        }
+                    }
+                    if (convModeEl) asset.conversion_mode = convModeEl.value;
+                } else {
+                    // If tracking is disabled, we might want to explicitly set fields to null/0
+                    // or just leave them as they are. Given the user's request, 
+                    // disabling tracking should probably hide the info.
+                    asset.quantity_unit = null;
+                    asset.quantity_total = 0;
+                    asset.quantity_available = 0;
+                    asset.is_quantity_tracked = 0;
+                }
+
+                // Collect conversion fields independently if they are NOT disabled (for non-root assets or initial setup)
+                // This ensures fields are captured if hasAnyQty logic is skipped
+                const convUnitEl = document.getElementById('itemConvUnit');
+                if (convUnitEl && !convUnitEl.disabled && !asset.conversion_unit) {
+                    const convUnit = String(formData.get('itemConvUnit') || '').trim();
+                    const convFactorRaw = String(formData.get('itemConvFactor') || '').trim();
+                    const convMode = formData.get('itemConvMode') || 'multiply';
+                    
+                    asset.conversion_unit = convUnit;
+                    asset.conversion_mode = convMode;
+                    
+                    if (convFactorRaw !== '') {
+                        const convFactor = Number(convFactorRaw);
+                        if (Number.isFinite(convFactor) && convFactor > 0) {
+                            asset.conversion_factor = convFactor;
+                        }
+                    } else {
+                        asset.conversion_factor = null;
+                    }
+                }
 
                 // Add IT fields if applicable
                 if (category === 'IT') {
@@ -3319,6 +4813,30 @@ export function setupDashboardFormHandlers() {
     // Add Asset Kind Form Handler
     const kindForm = document.getElementById('addAssetKindForm');
     if (kindForm) {
+        window.uploadKindImage = async (input) => {
+            if (!input.files || !input.files[0]) return;
+            
+            const formData = new FormData();
+            formData.append('image', input.files[0]);
+            
+            try {
+                const response = await fetch('/api/asset_kinds/upload-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    document.getElementById('newKindImage').value = result.url;
+                } else {
+                    alert('Failed to upload image');
+                }
+            } catch (err) {
+                console.error('Image upload error:', err);
+                alert('Error uploading image');
+            }
+        };
+
         kindForm.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(kindForm);
@@ -3328,6 +4846,8 @@ export function setupDashboardFormHandlers() {
                 Name: formData.get('newKindName'),
                 Icon: formData.get('newKindIcon'),
                 ParentID: formData.get('newKindParent'),
+                DisplayImage: formData.get('newKindImage'),
+                Identifier: formData.get('newKindIdentifier'),
                 Module: category
             };
 
@@ -3339,7 +4859,7 @@ export function setupDashboardFormHandlers() {
                 });
                 
                 if (response.ok) {
-                    alert('Category added successfully!');
+                    alert('Category saved successfully!');
                     document.getElementById('addAssetKindModal').style.display = 'none';
                     kindForm.reset();
                     if (window.loadAssets) await window.loadAssets();
@@ -3357,13 +4877,19 @@ export function setupDashboardFormHandlers() {
 
     // Unified Reporting System Handlers
     const btnReportDashboard = document.getElementById('btnReportDashboard');
+
+
     if (btnReportDashboard) {
         btnReportDashboard.onclick = () => {
+            const reportType = confirm('Would you like to generate a Category Summary Report?\n\n(Click "Cancel" for a Detailed Asset Report)') ? 'kind' : 'asset';
+            
             const category = localStorage.getItem('selectedAssetCategory') || 'IT';
             const parent = window.currentDashboardParent;
             const parentName = parent ? parent.Name : 'All Assets';
             
             let assetsToReport = [];
+            
+            // Handle Temporary Assets View specifically
             if (parent && parent.ID === 'TEMP_VIEW') {
                 assetsToReport = window.currentTempAssets || [];
                 if (assetsToReport.length === 0) {
@@ -3401,7 +4927,12 @@ export function setupDashboardFormHandlers() {
                 return;
             }
 
-            // Get current assets in view
+            if (reportType === 'kind') {
+                generateKindSummaryReport(category);
+                return;
+            }
+
+            // Get current assets in view for detailed report
             if (!parent) {
                 assetsToReport = window.allAssets || [];
             } else {
@@ -3420,34 +4951,104 @@ export function setupDashboardFormHandlers() {
 
             console.log(`Generating report for ${assetsToReport.length} assets in ${parentName}`);
             
-            // For now, let's use a simple CSV export for the dashboard as well
-            const headers = ['ID', 'ItemName', 'Type', 'Status', 'Make', 'Model', 'SrNo', 'Location', 'AssignedTo'];
-            const csvContent = [
-                headers.join(','),
-                ...assetsToReport.map(a => [
-                    a.ID,
-                    `"${a.ItemName || ''}"`,
-                    `"${a.Type || ''}"`,
-                    `"${a.Status || ''}"`,
-                    `"${a.Make || ''}"`,
-                    `"${a.Model || ''}"`,
-                    `"${a.SrNo || ''}"`,
-                    `"${a.CurrentLocation || ''}"`,
-                    `"${a.AssignedTo || ''}"`
-                ].join(','))
-            ].join('\n');
+            // Standard Detailed Asset Report (Excel)
+            const reportData = assetsToReport.map(a => {
+                // Get components if any
+                const components = (window.allAssets || []).filter(comp => comp.ParentId === a.ID).map(comp => comp.ItemName).join(', ');
+                
+                return {
+                    'ID': a.ID,
+                    'Item Name': a.ItemName || '',
+                    'Type': a.Type || '',
+                    'Status': a.Status || 'Owned',
+                    'Make': a.Make || '',
+                    'Model': a.Model || '',
+                    'Serial No': a.SrNo || '',
+                    'Current Location': a.CurrentLocation || '',
+                    'Assigned To': a.AssignedTo || '',
+                    'Purchase Details': a.PurchaseDetails || '',
+                    'Purchase Date': a.PurchaseDate || '',
+                    'Warranty (Months)': a.warranty_months || 0,
+                    'AMC (Months)': a.amc_months || 0,
+                    'Asset Value': a.asset_value || 0,
+                    'Currency': a.Currency || 'INR',
+                    'Components': components || 'None'
+                };
+            });
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `AssetReport_${category}_${parentName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            try {
+                const ws = XLSX.utils.json_to_sheet(reportData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Asset Report");
+                XLSX.writeFile(wb, `AssetReport_${category}_${parentName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            } catch (err) {
+                console.error('Error generating detailed asset report:', err);
+                // Fallback to CSV if XLSX fails
+                const headers = Object.keys(reportData[0]);
+                const csvContent = [
+                    headers.join(','),
+                    ...reportData.map(row => headers.map(h => `"${row[h] || ''}"`).join(','))
+                ].join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `AssetReport_${category}_${parentName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
         };
     }
+
+function generateKindSummaryReport(moduleCategory) {
+    const kinds = window.allAssetKinds || [];
+    const assets = window.allAssets || [];
+    const moduleKinds = kinds.filter(k => k.Category === moduleCategory);
+    
+    const reportData = moduleKinds.map(kind => {
+        const kindAssets = assets.filter(a => a.Type === kind.Name && a.Category === moduleCategory);
+        const total = kindAssets.length;
+        
+        const stats = {
+            'Category': kind.Name,
+            'Total Assets': total,
+            'Owned': kindAssets.filter(a => a.Status === 'Owned').length,
+            'Sold': kindAssets.filter(a => a.Status === 'Sold').length,
+            'Demo': kindAssets.filter(a => a.Status === 'Demo').length,
+            'In-Use': kindAssets.filter(a => a.Status === 'In-Use').length,
+            'Rental': kindAssets.filter(a => a.Status === 'Rental').length,
+            'Stand By': kindAssets.filter(a => a.Status === 'Stand By').length,
+            'In-Repair': kindAssets.filter(a => a.Status === 'In-Repair').length,
+            'Scraped': kindAssets.filter(a => a.Status === 'Scraped').length
+        };
+        return stats;
+    });
+
+    try {
+        const ws = XLSX.utils.json_to_sheet(reportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Category Summary");
+        XLSX.writeFile(wb, `CategorySummary_${moduleCategory}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (err) {
+        console.error('Error generating category report:', err);
+        // Fallback to CSV if XLSX fails
+        const headers = Object.keys(reportData[0]);
+        const csvContent = [
+            headers.join(','),
+            ...reportData.map(row => headers.map(h => row[h]).join(','))
+        ].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `CategorySummary_${moduleCategory}.csv`;
+        link.click();
+    }
+}
+
+window.generateKindSummaryReport = generateKindSummaryReport;
 
     const btnReportSheet = document.getElementById('btnReportSheet');
     if (btnReportSheet) {
@@ -3470,3 +5071,170 @@ export function setupDashboardFormHandlers() {
         };
     }
 }
+
+// QR Code Modal Functions
+window.showQRModal = function(id, name) {
+    const modal = document.getElementById('qrModal');
+    const img = document.getElementById('qrModalImage');
+    const title = document.getElementById('qrModalTitle');
+    const idText = document.getElementById('qrModalId');
+    
+    if (!modal || !img) return;
+    
+    title.textContent = name || 'QR Code';
+    img.src = `/api/qr/${encodeURIComponent(id)}`;
+    idText.textContent = id;
+    
+    modal.style.display = 'flex';
+};
+
+window.printQR = function() {
+    const img = document.getElementById('qrModalImage');
+    if (!img) return;
+    
+    const printWindow = window.open('', '', 'height=600,width=800');
+    printWindow.document.write('<html><head><title>Print QR Code</title>');
+    printWindow.document.write('</head><body style="text-align:center; padding: 50px;">');
+    printWindow.document.write(`<h2 style="font-family: sans-serif; margin-bottom: 20px;">${document.getElementById('qrModalTitle').textContent}</h2>`);
+    printWindow.document.write(`<img src="${img.src}" style="width: 400px; height: 400px;">`);
+    printWindow.document.write(`<p style="font-family: monospace; font-size: 24px; margin-top: 20px;">${document.getElementById('qrModalId').textContent}</p>`);
+    printWindow.document.write('</body></html>');
+    
+    printWindow.document.close();
+    printWindow.focus();
+    // Wait for image to load before printing
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 500);
+};
+
+// --- QR SCANNER LOGIC REMOVED ---
+
+/**
+ * Shows the Quantity History Modal for a given asset
+ * Fetches events from /api/quantity/events/:id
+ */
+async function showQuantityHistoryModal(assetId) {
+    const modal = document.getElementById('qtyHistoryModal');
+    const loading = document.getElementById('qtyHistoryLoading');
+    const content = document.getElementById('qtyHistoryContent');
+    const tbody = document.getElementById('qtyHistoryTableBody');
+    
+    if (!modal || !loading || !content || !tbody) {
+        console.error('Quantity Modal elements not found');
+        return;
+    }
+
+    // Reset and show modal
+    modal.style.display = 'block';
+    loading.style.display = 'block';
+    content.style.display = 'none';
+    tbody.innerHTML = '';
+    
+    // Reset Header
+    document.getElementById('qtyModalAssetName').textContent = 'Loading...';
+    document.getElementById('qtyModalAssetId').textContent = assetId;
+    document.getElementById('qtyModalCurrentStock').textContent = '-';
+
+    try {
+        const response = await fetch(`/api/quantity/events/${encodeURIComponent(assetId)}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to fetch events');
+        }
+
+        // Update Header
+        const asset = (window.allAssets || []).find(a => a.ID === assetId);
+        if (asset) {
+            document.getElementById('qtyModalAssetName').textContent = asset.ItemName;
+            document.getElementById('qtyModalAssetIcon').innerHTML = (asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                ? `<img src="${asset.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                : (asset.Icon || '📦');
+            
+            const unit = asset.quantity_unit || '';
+            const total = asset.quantity_total ?? 0;
+            document.getElementById('qtyModalCurrentStock').textContent = `${total} ${unit}`;
+        } else {
+             document.getElementById('qtyModalAssetName').textContent = `Asset ${assetId}`;
+        }
+
+        // Render Events
+        if (!data.events || data.events.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: #666;">No quantity events found.</td></tr>';
+        } else {
+            // Sort by timestamp descending
+            const events = data.events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            tbody.innerHTML = events.map(e => {
+                const date = new Date(e.timestamp).toLocaleString();
+                const meta = e.metadata || {};
+                
+                // Calculate net change for this asset from lines
+                const myLines = (e.lines || []).filter(l => l.asset_id === assetId);
+                let changeStr = '';
+                
+                if (myLines.length > 0) {
+                    changeStr = myLines.map(l => {
+                        const val = l.delta_total !== 0 ? l.delta_total : l.delta_available;
+                        const color = val > 0 ? 'green' : (val < 0 ? 'red' : 'gray');
+                        const sign = val > 0 ? '+' : '';
+                        return `<span style="color:${color}; font-weight:600;">${sign}${val} ${l.unit}</span>`;
+                    }).join('<br>');
+                } else {
+                    changeStr = '<span style="color:#999;">-</span>';
+                }
+
+                // Format metadata
+                let metaStr = '';
+                if (e.note) metaStr += `<div>${escapeHtml(e.note)}</div>`;
+                if (meta.orderNo) metaStr += `<div style="font-size:11px; color:#666;">Order: ${escapeHtml(meta.orderNo)}</div>`;
+                if (meta.ref) metaStr += `<div style="font-size:11px; color:#666;">Ref: ${escapeHtml(meta.ref)}</div>`;
+
+                return `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 10px; font-size: 12px;">${date}</td>
+                        <td style="padding: 10px; font-size: 12px;">
+                            <span class="badge ${getEventTypeClass(e.type)}">${e.type}</span>
+                        </td>
+                        <td style="padding: 10px; font-size: 12px;">${escapeHtml(e.actor || 'System')}</td>
+                        <td style="padding: 10px; font-size: 12px;">${changeStr}</td>
+                        <td style="padding: 10px; font-size: 12px;">${metaStr}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+    } catch (err) {
+        console.error('Error fetching quantity history:', err);
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: red; padding: 20px;">Error loading history: ${err.message}</td></tr>`;
+    } finally {
+        loading.style.display = 'none';
+        content.style.display = 'block';
+    }
+}
+
+function getEventTypeClass(type) {
+    switch(type) {
+        case 'ISSUE': return 'badge-warning'; 
+        case 'CONSUME': return 'badge-danger'; 
+        case 'RECEIVE': return 'badge-success'; 
+        case 'ADJUST': return 'badge-info'; 
+        default: return 'badge-secondary'; 
+    }
+}
+
+// Helper for CSS classes if not already defined
+const style = document.createElement('style');
+style.textContent = `
+    .badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+    .badge-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .badge-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .badge-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .badge-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .badge-secondary { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+`;
+document.head.appendChild(style);
+
+window.showQuantityHistoryModal = showQuantityHistoryModal;

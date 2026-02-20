@@ -1,17 +1,87 @@
-console.log('MAIN.JS: Entry point (v4.5)');
-import { showView } from './utils.js?v=4.5';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=4.5';
-import { initScannerView } from './networkScanner.js?v=4.5';
-import { renderItAssets } from './itAssets.js?v=4.5';
-import { setupAuth } from './auth.js?v=4.5';
-import { HierarchyManager } from './hierarchy.js?v=4.5';
-import { initEmployeeView, loadEmployees } from './employees.js?v=4.5';
-import { setupOcr } from './ocr.js?v=4.5';
-import { initWarrantyView } from './warranty.js?v=4.5';
-import { initSettingsView } from './settings.js?v=4.5';
+console.log('MAIN.JS: Entry point (v5.0)');
+import { showView } from './utils.js?v=5.1';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.4';
+import { initScannerView } from './networkScanner.js?v=5.1';
+import { initQrScannerView } from './qrScanner.js';
+import { renderItAssets } from './itAssets.js?v=5.1';
+import { setupAuth } from './auth.js?v=5.1';
+import { HierarchyManager } from './hierarchy.js?v=5.1';
+import { initEmployeeView, loadEmployees } from './employees.js?v=5.1';
+import { setupOcr } from './ocr.js?v=5.1';
+import { initWarrantyView } from './warranty.js?v=5.1';
+import { initProjectsView } from './projects.js?v=5.3';
+import { initSettingsView } from './settings.js?v=5.1';
+import { renderAdmin } from './admin.js?v=5.1';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
+
+function updateNavigationVisibility(user) {
+    if (!user || !user.role) return;
+    
+    const role = user.role;
+    const isSuperUser = role === 'superuser';
+    const isAdmin = role === 'admin';
+    const isManager = role === 'manager';
+    const isClient = role === 'client';
+    
+    // Helper to show/hide by ID
+    const setVisible = (id, visible) => {
+        const el = document.getElementById(id);
+        if (el) {
+            // Hide the parent li element to remove it from the list layout completely
+            const li = el.closest('li');
+            if (li) {
+                li.style.display = visible ? 'block' : 'none';
+            } else {
+                el.style.display = visible ? 'block' : 'none';
+            }
+        }
+    };
+
+    // Define visibility rules
+    // Settings: Superuser, Admin
+    setVisible('nav-settings', isSuperUser || isAdmin);
+    
+    // Employees: Superuser, Admin
+    setVisible('nav-employees', isSuperUser || isAdmin);
+    
+    // Network: Superuser, Admin, IT User, IT Manager
+    const isItUser = role === 'it_user';
+    const isItManager = role === 'it_manager';
+    setVisible('nav-scanner', isSuperUser || isAdmin || isItUser || isItManager);
+
+    // QR Scanner: Superuser, Admin, Manager, User, IT User, IT Manager
+    setVisible('nav-qr-scanner', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
+    
+    // Warranty: Superuser, Admin, Manager, User, IT User, IT Manager
+    setVisible('nav-warranty', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
+    
+    // Delivery Challan (DC): Superuser, Admin, Manager, User, IT User, IT Manager
+    setVisible('nav-dc', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
+    
+    // OCR: Superuser, Admin, Manager, User, IT User, IT Manager
+    setVisible('nav-ocr', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
+    
+    // Releases: Superuser, Admin
+    setVisible('nav-releases', isSuperUser || isAdmin);
+    
+    // Admin: Superuser, Admin
+    setVisible('nav-admin', isSuperUser || isAdmin);
+
+    // Client restrictions
+    if (isClient) {
+        setVisible('nav-sheet', false);
+        setVisible('nav-scanner', false);
+        setVisible('nav-ocr', false);
+        setVisible('nav-warranty', false);
+        setVisible('nav-settings', false);
+        setVisible('nav-releases', false);
+        // Clients might only see Dashboard and Projects
+    }
+}
+window.updateNavigationVisibility = updateNavigationVisibility;
 
 // Global diagnostic for Warranty
 window.checkWarranty = () => {
@@ -97,34 +167,6 @@ let folders = [];
 // Instantiate Hierarchy Manager
 window.hierarchyManager = new HierarchyManager();
 
-// --- System Integrity Check ---
-const originalFetch = window.fetch;
-window.fetch = async (...args) => {
-    const response = await originalFetch(...args);
-    if (response.status === 403) {
-        const data = await response.clone().json().catch(() => ({}));
-        if (data.error === 'SYSTEM_RESTRICTED') {
-            document.body.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; font-family: sans-serif; text-align: center; padding: 20px;">
-                    <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 500px;">
-                        <div style="font-size: 60px; margin-bottom: 20px;">🔒</div>
-                        <h1 style="color: #1a1a1a; margin-bottom: 15px;">System Restricted</h1>
-                        <p style="color: #666; line-height: 1.6; margin-bottom: 25px;">
-                            The license for this application instance has expired or has been revoked. 
-                            Please contact the developer for payment and restoration of services.
-                        </p>
-                        <div style="font-size: 12px; color: #999; border-top: 1px solid #eee; pt-15px;">
-                            Error Code: LIC-REVOKED-2026
-                        </div>
-                    </div>
-                </div>
-            `;
-            throw new Error("SYSTEM_RESTRICTED");
-        }
-    }
-    return response;
-};
-
 async function loadAssetKinds() {
     console.log('loadAssetKinds() called');
     try {
@@ -135,6 +177,25 @@ async function loadAssetKinds() {
 
         if (kindsRes.ok) {
             assetKinds = await kindsRes.json();
+
+            // [Auto-Fix] Reparent orphaned kinds (Client-side Patch)
+            // This ensures common asset types appear under their logical folders even if DB links are missing
+            const orphans = {
+                'Laptop': 'Computing Devices',
+                'Server': 'Computing Devices',
+                'Mobile Phones': 'Computing Devices',
+                'Video Cables': 'Peripherals',
+                'Component': 'Hardware'
+            };
+            
+            assetKinds.forEach(k => {
+                // Only patch if it has NO parent
+                if (!k.ParentName && !k.ParentID && orphans[k.Name]) {
+                    console.log(`[Auto-Fix] Reparenting orphan kind '${k.Name}' to '${orphans[k.Name]}'`);
+                    k.ParentName = orphans[k.Name];
+                }
+            });
+
             window.allAssetKinds = assetKinds;
         }
         if (foldersRes.ok) {
@@ -194,23 +255,35 @@ async function loadAssetKinds() {
 
 async function loadAssets() {
     console.log('loadAssets() called');
+    
+    // Show skeletons if we are in dashboard view
+    const dashboardView = document.getElementById('dashboardView');
+    if (dashboardView && !dashboardView.classList.contains('hidden')) {
+        if (typeof window.renderSkeletons === 'function') {
+            window.renderSkeletons();
+        }
+    }
+
     try {
         await Promise.all([
             loadAssetKinds(),
             loadEmployees()
         ]);
         
-        let url = '/api/assets';
+        let url = '/api/assets?all=true';
         if (currentUser && currentUser.role === 'client' && currentUser.projectId) {
-            url += `?projectId=${currentUser.projectId}`;
+            url += `&projectId=${currentUser.projectId}`;
         }
         
         const response = await fetch(url);
         if (response.ok) {
             const data = await response.json();
-            console.log('Raw assets from backend:', data.length);
+            // Handle both array (legacy/all) and paginated object (new)
+            const assetsData = Array.isArray(data) ? data : (data.data || []);
+            
+            console.log('Raw assets from backend:', assetsData.length);
             // Map backend fields to frontend expected fields
-            const processedAssets = data.map(a => ({
+            const processedAssets = assetsData.map(a => ({
                 ...a,
                 Name: a.Type || a.ItemName,
                 Status: a.Status || 'In Store'
@@ -276,16 +349,72 @@ window.loadAssets = loadAssets;
 window.saveAsset = saveAsset;
 window.editAsset = editAsset;
 
+function handleInitialUrl() {
+    const hash = window.location.hash;
+    console.log('[InitialURL] Checking hash:', hash);
+    if (!hash) return;
+
+    // Format: #view-name?id=XYZ
+    const parts = hash.substring(1).split('?');
+    const viewName = parts[0];
+    const queryString = parts[1] || '';
+    const params = new URLSearchParams(queryString);
+    const id = params.get('id');
+
+    console.log(`[InitialURL] Parsed View: ${viewName}, ID: ${id}`);
+
+    if (viewName === 'projects-view' && id) {
+        console.log('[InitialURL] Triggering project details for:', id);
+        // Switch to projects view first
+        const navProjects = document.getElementById('nav-projects');
+        if (navProjects) {
+            navProjects.click();
+            // Wait a bit for the view to initialize
+            setTimeout(() => {
+                if (window.showProjectDetails) {
+                    window.showProjectDetails(id);
+                } else {
+                    console.error('[InitialURL] window.showProjectDetails not found');
+                }
+            }, 500);
+        }
+    } else if (viewName === 'dc-view' && id) {
+        const navDc = document.getElementById('nav-dc');
+        if (navDc) {
+            navDc.click();
+            setTimeout(() => {
+                if (window.openDeliveryChallan) {
+                    window.openDeliveryChallan(id);
+                }
+            }, 500);
+        }
+    } else if (viewName === 'asset-details' && id) {
+        console.log('[InitialURL] Triggering asset details for:', id);
+        if (window.showAssetDetails) {
+            window.showAssetDetails(id);
+        }
+    }
+}
+
 let currentUser = null;
 let filteredAssets = () => {
     const selectedCategory = localStorage.getItem('selectedAssetCategory');
     console.log('Filtering assets for category:', selectedCategory);
-    if (!selectedCategory) return assets;
-    const filtered = assets.filter(a => a.Category === selectedCategory);
-    console.log(`Found ${filtered.length} assets for category ${selectedCategory}`);
-    return filtered;
+    let result = assets;
+    if (selectedCategory) {
+        result = result.filter(a => a.Category === selectedCategory);
+    }
+    
+    // Apply Status Filter (Raul Drunk Style)
+    if (window.currentStatusFilter) {
+        console.log('Applying status filter:', window.currentStatusFilter);
+        result = result.filter(a => (a.Status || 'Owned') === window.currentStatusFilter);
+    }
+    
+    console.log(`Found ${result.length} assets for category ${selectedCategory} and status ${window.currentStatusFilter || 'ALL'}`);
+    return result;
 }; 
-
+window.getFilteredAssets = filteredAssets;
 // Test if we can find the elements we need
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded (main.js) - Initializing navigation');
@@ -295,11 +424,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup navigation early, before auth
     setupNavigation();
     
+    // Ensure login view is shown first
+    showView('loginView');
+    
+    // Initialize dynamic background
+    initLoginAnimations();
+    initLoginModuleSelector();
+    initSignupModal();
+    
     setupOcr();
     
     setupAuth(async (user) => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
+        
+        // Update Navigation Visibility based on Role
+        updateNavigationVisibility(user);
+
+        if (window.location.hash) {
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        }
         
         // Update header title based on category
         const appTitle = document.querySelector('.app-title');
@@ -360,18 +504,6 @@ document.addEventListener('DOMContentLoaded', () => {
             setupDashboardFormHandlers();
             renderDashboard(assets, filteredAssets);
 
-            // Redirect client users to their project view
-            if (currentUser && currentUser.role === 'client' && currentUser.projectId) {
-                console.log('Client user detected, showing project details:', currentUser.projectId);
-                
-                // Show dashboard view first (which contains projects-view)
-                showView('dashboardView');
-                
-                // Then show projects view specifically
-                const projectsNav = document.getElementById('nav-projects');
-                if (projectsNav) projectsNav.click();
-            }
-
             // Check for edit parameter in URL
             const urlParams = new URLSearchParams(window.location.search);
             const editId = urlParams.get('edit');
@@ -381,15 +513,54 @@ document.addEventListener('DOMContentLoaded', () => {
                     editAsset(assetToEdit);
                 }
                 // Clear the parameter without reloading
-                const newUrl = window.location.pathname;
-                window.history.replaceState({}, document.title, newUrl);
-            }
-        } else {
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+        }
+
+        // Handle hash-based routing and details (e.g. from QR scan)
+        handleInitialUrl();
+    } else {
             console.error('Could NOT find dashboardView element!');
             alert('Error: Dashboard view not found in the page.');
         }
     });
 });
+
+function switchDashboardSubView(subViewName) {
+    const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'qr-scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view', 'admin-view'];
+    console.log(`Switching dashboard subview to: ${subViewName}`);
+    
+    // Show/Hide Sidebar based on subview
+    const sidebar = document.getElementById('app-sidebar');
+    if (sidebar) {
+        const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view', 'settings-view'];
+        if (showSidebarViews.includes(subViewName)) {
+            sidebar.classList.remove('hidden');
+            sidebar.style.display = 'block';
+        } else {
+            sidebar.classList.add('hidden');
+            sidebar.style.display = 'none';
+        }
+    }
+
+    subViews.forEach(sv => {
+        const subEl = document.getElementById(sv);
+        if (subEl) {
+            if (sv === subViewName) {
+                subEl.classList.remove('hidden');
+                subEl.classList.add('active');
+                subEl.style.display = 'flex';
+                subEl.style.flexDirection = 'column';
+                subEl.style.flex = '1';
+            } else {
+                subEl.classList.add('hidden');
+                subEl.classList.remove('active');
+                subEl.style.display = 'none';
+            }
+        }
+    });
+}
+window.switchDashboardSubView = switchDashboardSubView;
 
 function setupNavigation() {
     console.log('setupNavigation() called - Diagnostic Check');
@@ -429,7 +600,7 @@ function setupNavigation() {
             subView: 'projects-view', 
             init: () => {
                 console.log('nav-projects init');
-                if (window.initProjectsView) window.initProjectsView();
+                if (typeof initProjectsView === 'function') initProjectsView();
                 if (typeof renderSidebarTree === 'function') {
                     renderSidebarTree();
                 }
@@ -444,6 +615,11 @@ function setupNavigation() {
             view: 'dashboardView', 
             subView: 'scanner-view', 
             init: () => typeof initScannerView === 'function' && initScannerView() 
+        },
+        'nav-qr-scanner': { 
+            view: 'dashboardView', 
+            subView: 'qr-scanner-view', 
+            init: () => typeof initQrScannerView === 'function' && initQrScannerView() 
         },
         'nav-ocr': { 
             view: 'dashboardView', 
@@ -470,6 +646,15 @@ function setupNavigation() {
                 }
             } 
         },
+        'nav-admin': {
+            view: 'dashboardView',
+            subView: 'admin-view',
+            init: () => {
+                if (typeof renderAdmin === 'function') {
+                    renderAdmin();
+                }
+            }
+        },
         'nav-settings': {
             view: 'dashboardView',
             subView: 'settings-view',
@@ -482,7 +667,231 @@ function setupNavigation() {
         }
     };
 
-    console.log('Nav items to attach:', Object.keys(navLinks));
+    // --- Mobile Sidebar & Animated Toggle Logic ---
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    if (sidebarToggle) {
+        // Clone to remove old listeners
+        const newToggle = sidebarToggle.cloneNode(true);
+        sidebarToggle.parentNode.replaceChild(newToggle, sidebarToggle);
+        
+        let startY = 0;
+        let currentStage = 0;
+        let isDragging = false;
+        let dragStartTime = 0;
+
+        const setStage = (stage) => {
+            newToggle.classList.remove('stage-0', 'stage-1', 'stage-2', 'stage-3', 'stage-4');
+            newToggle.classList.add(`stage-${stage}`);
+            currentStage = stage;
+        };
+        
+        const isSidebarOpen = () => {
+            const s = document.getElementById('app-sidebar');
+            if (!s) return false;
+            if (window.innerWidth <= 768) {
+                return s.classList.contains('mobile-open');
+            }
+            return !s.classList.contains('collapsed');
+        };
+
+        const updateCompactLayout = () => {
+            const appHeader = document.getElementById('app-header');
+            const container = document.getElementById('app-container');
+            if (!appHeader || !container) return;
+            const headerCompact = appHeader.classList.contains('top-bar-collapsed');
+            container.classList.toggle('layout-tight-top', headerCompact && isSidebarOpen());
+        };
+
+        const sidebar = document.getElementById('app-sidebar');
+        if (isSidebarOpen()) {
+             setStage(4);
+        }
+
+        const toggleTopBar = () => {
+            const appHeader = document.getElementById('app-header');
+            const titleEl = document.querySelector('.app-title');
+            if (!appHeader) return;
+
+            const willCollapse = !appHeader.classList.contains('top-bar-collapsed');
+            appHeader.classList.toggle('top-bar-collapsed');
+
+            const navCenter = appHeader.querySelector('.nav-center');
+            const headerRight = appHeader.querySelector('.header-right');
+            const pill = appHeader.querySelector('.top-bar-pill');
+            const headerLeft = appHeader.querySelector('.header-left');
+            const burger = appHeader.querySelector('.burger-container');
+
+            if (titleEl) {
+                titleEl.style.display = willCollapse ? 'none' : '';
+            }
+
+            if (willCollapse) {
+                appHeader.style.display = 'inline-flex';
+                appHeader.style.width = 'auto';
+                appHeader.style.maxWidth = 'none';
+                appHeader.style.padding = '6px 12px';
+                appHeader.style.margin = '16px 0 10px 16px';
+                appHeader.style.borderRadius = '999px';
+                appHeader.style.background = '#000';
+                appHeader.style.alignSelf = 'flex-start';
+                appHeader.style.justifyContent = 'center';
+
+                if (navCenter) navCenter.style.display = 'none';
+                if (headerRight) headerRight.style.display = 'none';
+
+                if (headerLeft) headerLeft.style.margin = '0';
+                if (burger) burger.style.marginLeft = '0';
+
+                if (pill) {
+                    pill.style.background = 'transparent';
+                    pill.style.boxShadow = 'none';
+                    pill.style.padding = '0';
+                    pill.style.margin = '0';
+                }
+            } else {
+                appHeader.style.display = '';
+                appHeader.style.width = '';
+                appHeader.style.maxWidth = '';
+                appHeader.style.padding = '';
+                appHeader.style.margin = '';
+                appHeader.style.borderRadius = '';
+                appHeader.style.background = '';
+                appHeader.style.alignSelf = '';
+                appHeader.style.justifyContent = '';
+
+                if (navCenter) navCenter.style.display = '';
+                if (headerRight) headerRight.style.display = '';
+
+                if (headerLeft) headerLeft.style.margin = '';
+                if (burger) burger.style.marginLeft = '';
+
+                if (pill) {
+                    pill.style.background = '';
+                    pill.style.boxShadow = '';
+                    pill.style.padding = '';
+                    pill.style.margin = '';
+                }
+            }
+
+            updateCompactLayout();
+        };
+
+        const toggleSidebar = () => {
+            const sidebar = document.getElementById('app-sidebar');
+            const isMobile = window.innerWidth <= 768;
+            
+            if (isMobile) {
+                sidebar.classList.toggle('mobile-open');
+                let backdrop = document.querySelector('.mobile-backdrop');
+                if (!backdrop) {
+                    backdrop = document.createElement('div');
+                    backdrop.className = 'mobile-backdrop';
+                    document.body.appendChild(backdrop);
+                    backdrop.addEventListener('click', () => {
+                        sidebar.classList.remove('mobile-open');
+                        backdrop.classList.remove('active');
+                        setStage(0);
+                        updateCompactLayout();
+                    });
+                }
+                if (isSidebarOpen()) {
+                    backdrop.classList.add('active');
+                    setStage(4);
+                } else {
+                    backdrop.classList.remove('active');
+                    setStage(0);
+                }
+            } else {
+                sidebar.classList.toggle('collapsed');
+                if (isSidebarOpen()) {
+                    setStage(4);
+                } else {
+                    setStage(0);
+                }
+            }
+
+            updateCompactLayout();
+        };
+
+        const onStart = (y) => {
+            startY = y;
+            isDragging = false;
+            dragStartTime = Date.now();
+        };
+
+        const onMove = (y) => {
+            if (!startY) return;
+            const deltaY = y - startY;
+            
+            // Fix: Any significant movement counts as dragging, preventing the click
+            if (Math.abs(deltaY) > 2) isDragging = true;
+            
+            // Only engage drag animation if pulling DOWN
+            if (deltaY > 0) {
+                // 2px per stage
+                let stage = Math.floor(deltaY / 2); // 2px per stage as requested
+                if (stage > 4) stage = 4;
+                
+                if (stage !== currentStage) {
+                    setStage(stage);
+                }
+            }
+        };
+
+        const onEnd = (e) => {
+            if (!startY) return;
+            const timeElapsed = Date.now() - dragStartTime;
+            
+            if (!isDragging && timeElapsed < 300) {
+                console.log('Toggle Click - Top Bar');
+                toggleTopBar();
+                
+                if (isSidebarOpen()) {
+                    setStage(4);
+                } else {
+                    setStage(0);
+                }
+            } else {
+                if (currentStage >= 4) {
+                    console.log('Pull Down Complete - Toggle Sidebar');
+                    toggleSidebar();
+                } else {
+                    if (isSidebarOpen()) {
+                        setStage(4);
+                    } else {
+                        setStage(0);
+                    }
+                }
+            }
+            startY = 0;
+            isDragging = false;
+        };
+
+        // Prevent default click behavior to avoid conflicts
+        newToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        // Mouse Events
+        newToggle.addEventListener('mousedown', (e) => onStart(e.clientY));
+        // Attach move/up to window to handle drag out
+        window.addEventListener('mousemove', (e) => { if (startY) onMove(e.clientY); });
+        window.addEventListener('mouseup', (e) => { if (startY) onEnd(e); });
+
+        // Touch Events
+        newToggle.addEventListener('touchstart', (e) => {
+            onStart(e.touches[0].clientY);
+            // e.preventDefault(); // Prevent scroll? Maybe not, as we want to allow scroll if not pulling?
+        }, { passive: true });
+        
+        newToggle.addEventListener('touchmove', (e) => {
+            if (startY) onMove(e.touches[0].clientY);
+        }, { passive: true });
+        
+        newToggle.addEventListener('touchend', (e) => onEnd(e));
+    }
+
     Object.entries(navLinks).forEach(([id, config]) => {
         const el = document.getElementById(id);
         if (el) {
@@ -509,40 +918,7 @@ function setupNavigation() {
 
                     // 2. Handle sub-views within dashboard
                     if (config.view === 'dashboardView') {
-                        const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
-                        console.log(`Switching to subview: ${config.subView}`);
-                        
-                        // Show/Hide Sidebar based on subview
-                        const sidebar = document.getElementById('app-sidebar');
-                        if (sidebar) {
-                            // Show sidebar for core dashboard views
-                            const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view', 'settings-view'];
-                            if (showSidebarViews.includes(config.subView)) {
-                                sidebar.classList.remove('hidden');
-                                sidebar.style.display = 'block';
-                            } else {
-                                sidebar.classList.add('hidden');
-                                sidebar.style.display = 'none';
-                            }
-                        }
-
-                        subViews.forEach(sv => {
-                            const subEl = document.getElementById(sv);
-                            if (subEl) {
-                                if (sv === config.subView) {
-                                    console.log(`Showing subview element: ${sv}`);
-                                    subEl.classList.remove('hidden');
-                                    subEl.classList.add('active'); // Add active class for CSS display: flex
-                                    subEl.style.display = 'flex';
-                                    subEl.style.flexDirection = 'column';
-                                    subEl.style.flex = '1';
-                                } else {
-                                    subEl.classList.add('hidden');
-                                    subEl.classList.remove('active'); // Remove active class
-                                    subEl.style.display = 'none';
-                                }
-                            }
-                        });
+                        switchDashboardSubView(config.subView);
                     } else {
                         // For non-dashboard views (like adminView, qrView), hide sidebar
                         const sidebar = document.getElementById('app-sidebar');

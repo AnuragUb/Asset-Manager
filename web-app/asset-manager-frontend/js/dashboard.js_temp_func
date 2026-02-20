@@ -1,0 +1,132 @@
+
+/**
+ * Shows the Quantity History Modal for a given asset
+ * Fetches events from /api/quantity/events/:id
+ */
+async function showQuantityHistoryModal(assetId) {
+    const modal = document.getElementById('qtyHistoryModal');
+    const loading = document.getElementById('qtyHistoryLoading');
+    const content = document.getElementById('qtyHistoryContent');
+    const tbody = document.getElementById('qtyHistoryTableBody');
+    
+    if (!modal || !loading || !content || !tbody) {
+        console.error('Quantity Modal elements not found');
+        return;
+    }
+
+    // Reset and show modal
+    modal.style.display = 'block';
+    loading.style.display = 'block';
+    content.style.display = 'none';
+    tbody.innerHTML = '';
+    
+    // Reset Header
+    document.getElementById('qtyModalAssetName').textContent = 'Loading...';
+    document.getElementById('qtyModalAssetId').textContent = assetId;
+    document.getElementById('qtyModalCurrentStock').textContent = '-';
+
+    try {
+        const response = await fetch(`/api/quantity/events/${encodeURIComponent(assetId)}`);
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to fetch events');
+        }
+
+        // Update Header
+        // We might need to fetch basic asset details if not included, but let's see what we have
+        // The API returns events and rootId. It doesn't seem to return asset name directly unless we fetch it separately
+        // or if we pass it in. For now, we'll try to find it in window.allAssets if available.
+        const asset = (window.allAssets || []).find(a => a.ID === assetId);
+        if (asset) {
+            document.getElementById('qtyModalAssetName').textContent = asset.ItemName;
+            document.getElementById('qtyModalAssetIcon').innerHTML = (asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                ? `<img src="${asset.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
+                : (asset.Icon || '📦');
+            
+            const unit = asset.quantity_unit || '';
+            const total = asset.quantity_total ?? 0;
+            document.getElementById('qtyModalCurrentStock').textContent = `${total} ${unit}`;
+        } else {
+             document.getElementById('qtyModalAssetName').textContent = `Asset ${assetId}`;
+        }
+
+        // Render Events
+        if (!data.events || data.events.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: #666;">No quantity events found.</td></tr>';
+        } else {
+            // Sort by timestamp descending
+            const events = data.events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            tbody.innerHTML = events.map(e => {
+                const date = new Date(e.timestamp).toLocaleString();
+                const meta = e.metadata || {};
+                
+                // Calculate net change for this asset from lines
+                // lines is an array of { asset_id, delta_available, delta_total, unit }
+                const myLines = (e.lines || []).filter(l => l.asset_id === assetId);
+                let changeStr = '';
+                
+                if (myLines.length > 0) {
+                    changeStr = myLines.map(l => {
+                        const val = l.delta_total !== 0 ? l.delta_total : l.delta_available;
+                        const color = val > 0 ? 'green' : (val < 0 ? 'red' : 'gray');
+                        const sign = val > 0 ? '+' : '';
+                        return `<span style="color:${color}; font-weight:600;">${sign}${val} ${l.unit}</span>`;
+                    }).join('<br>');
+                } else {
+                    changeStr = '<span style="color:#999;">-</span>';
+                }
+
+                // Format metadata
+                let metaStr = '';
+                if (e.note) metaStr += `<div>${escapeHtml(e.note)}</div>`;
+                if (meta.orderNo) metaStr += `<div style="font-size:11px; color:#666;">Order: ${escapeHtml(meta.orderNo)}</div>`;
+                if (meta.ref) metaStr += `<div style="font-size:11px; color:#666;">Ref: ${escapeHtml(meta.ref)}</div>`;
+
+                return `
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 10px; font-size: 12px;">${date}</td>
+                        <td style="padding: 10px; font-size: 12px;">
+                            <span class="badge ${getEventTypeClass(e.type)}">${e.type}</span>
+                        </td>
+                        <td style="padding: 10px; font-size: 12px;">${escapeHtml(e.actor || 'System')}</td>
+                        <td style="padding: 10px; font-size: 12px;">${changeStr}</td>
+                        <td style="padding: 10px; font-size: 12px;">${metaStr}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+    } catch (err) {
+        console.error('Error fetching quantity history:', err);
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: red; padding: 20px;">Error loading history: ${err.message}</td></tr>`;
+    } finally {
+        loading.style.display = 'none';
+        content.style.display = 'block';
+    }
+}
+
+function getEventTypeClass(type) {
+    switch(type) {
+        case 'ISSUE': return 'badge-warning'; // Yellow/Orange
+        case 'CONSUME': return 'badge-danger'; // Red
+        case 'RECEIVE': return 'badge-success'; // Green
+        case 'ADJUST': return 'badge-info'; // Blue
+        default: return 'badge-secondary'; // Gray
+    }
+}
+
+// Helper for CSS classes if not already defined
+const style = document.createElement('style');
+style.textContent = `
+    .badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+    .badge-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .badge-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .badge-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .badge-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    .badge-secondary { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+`;
+document.head.appendChild(style);
+
+window.showQuantityHistoryModal = showQuantityHistoryModal;

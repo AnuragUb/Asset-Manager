@@ -4,7 +4,23 @@ console.log('SETTINGS.JS: Module loaded');
 export function initSettingsView() {
     console.log('initSettingsView() called');
     loadEmailSettings();
+    loadTallySettings();
     setupSettingsHandlers();
+}
+
+async function loadTallySettings() {
+    try {
+        const response = await fetch('/api/settings/tally');
+        if (response.ok) {
+            const settings = await response.json();
+            const hostEl = document.getElementById('tallyHost');
+            const portEl = document.getElementById('tallyPort');
+            if (hostEl) hostEl.value = settings.host || 'localhost';
+            if (portEl) portEl.value = settings.port || 9000;
+        }
+    } catch (err) {
+        console.error('Failed to load Tally settings:', err);
+    }
 }
 
 async function loadEmailSettings() {
@@ -76,6 +92,33 @@ function setupSettingsHandlers() {
         };
     }
 
+    const tallyForm = document.getElementById('tallySettingsForm');
+    if (tallyForm) {
+        tallyForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const host = document.getElementById('tallyHost').value;
+            const port = document.getElementById('tallyPort').value;
+            
+            try {
+                const response = await fetch('/api/settings/tally', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ host, port })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('Tally settings saved successfully!');
+                } else {
+                    alert('Error saving settings: ' + result.error);
+                }
+            } catch (err) {
+                console.error('Save error:', err);
+                alert('Failed to save Tally settings');
+            }
+        };
+    }
+
     const testBtn = document.getElementById('btnTestEmail');
     if (testBtn) {
         testBtn.onclick = async () => {
@@ -111,6 +154,33 @@ function setupSettingsHandlers() {
             } finally {
                 testBtn.disabled = false;
                 testBtn.textContent = 'Send Test Email';
+            }
+        };
+    }
+
+    const runCheckBtn = document.getElementById('btnRunWarrantyCheck');
+    if (runCheckBtn) {
+        runCheckBtn.onclick = async () => {
+            runCheckBtn.disabled = true;
+            runCheckBtn.textContent = 'Running Check...';
+
+            try {
+                const response = await fetch('/api/settings/email/run-check', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('Warranty check completed! Any necessary alerts have been sent.');
+                } else {
+                    alert('Check failed: ' + result.error);
+                }
+            } catch (err) {
+                console.error('Check error:', err);
+                alert('Failed to trigger warranty check');
+            } finally {
+                runCheckBtn.disabled = false;
+                runCheckBtn.textContent = 'Run Warranty Check Now';
             }
         };
     }

@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:minify-main": "terser dist/js/main.js -o dist/js/main.min.js",
     "build:copy-js": "copyfiles -u 1 \"js/**/*.js\" dist/js",
-    "build": "run-s build:copy-js build:minify-main"
+    "build": "npm run build:copy-js && npm run build:minify-main"
   },
   "keywords": [],
   "author": "",

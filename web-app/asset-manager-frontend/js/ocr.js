@@ -1,9 +1,12 @@
 /**
  * OCR & Document Data Extraction
- * Version: 1.0
+ * Version: 1.1 (Enhanced UI Fallback)
  */
 
+import { processDocument, extractColumn, processToExcelV2 } from './integration_client.js?v=5.1';
+
 export function setupOcr() {
+    console.log('OCR Module Loaded v1.1 (Enhanced Fallback)');
     if (window.ocrInitialized) return;
     window.ocrInitialized = true;
 
@@ -15,7 +18,7 @@ export function setupOcr() {
     const fileName = document.getElementById('ocrFileName');
     const fileSize = document.getElementById('ocrFileSize');
     const clearFileBtn = document.getElementById('ocrClearFile');
-    const processBtn = document.getElementById('btnProcessOCR');
+    const aiProcessBtn = document.getElementById('btnProcessDocumentAI');
     const resultText = document.getElementById('ocrResultText');
     const loadingOverlay = document.getElementById('ocrLoadingOverlay');
     const exportExcelBtn = document.getElementById('btnExportOcrExcel');
@@ -27,28 +30,18 @@ export function setupOcr() {
     let extractedBlocks = [];
     let currentOcrFilename = null;
 
+    function apiBase() {
+        try {
+            return (window.location && window.location.protocol === 'file:') ? 'http://localhost:8080' : '';
+        } catch (e) {
+            return '';
+        }
+    }
+
     // Add view toggle
     if (!document.getElementById('btnToggleOcrView')) {
         const toolbar = exportPdfBtn.parentElement;
         
-        // Add Original Pro PDF download
-        const downloadProBtn = document.createElement('button');
-        downloadProBtn.id = 'btnDownloadProPdf';
-        downloadProBtn.className = 'action-button';
-        downloadProBtn.style.cssText = 'padding: 5px 15px; font-size: 13px; background: #1890ff; color: white; margin-right: 8px;';
-        downloadProBtn.innerHTML = '📄 Download Original Pro PDF';
-        downloadProBtn.onclick = () => {
-            if (currentOcrFilename) {
-                const a = document.createElement('a');
-                a.href = `/uploads/${currentOcrFilename}`;
-                a.download = currentOcrFilename;
-                a.click();
-            } else {
-                alert('Please process or open a document first.');
-            }
-        };
-        toolbar.prepend(downloadProBtn);
-
         // Add Smart Filter button
         const smartFilterBtn = document.createElement('button');
         smartFilterBtn.id = 'btnSmartFilter';
@@ -68,6 +61,55 @@ export function setupOcr() {
             alert(`Smart Filter: Selected ${count} blocks matching product information keywords.`);
         };
         toolbar.appendChild(smartFilterBtn);
+
+        // Add Extract Product Info button
+        const extractProductBtn = document.createElement('button');
+        extractProductBtn.id = 'btnExtractProductInfo';
+        extractProductBtn.className = 'action-button';
+        extractProductBtn.style.cssText = 'padding: 5px 15px; font-size: 13px; background: #eb2f96; color: white; margin-right: 8px;';
+        extractProductBtn.innerHTML = '🛍️ Extract Products';
+        extractProductBtn.onclick = async () => {
+            if (!selectedFile) {
+                alert('Please select a file first.');
+                return;
+            }
+            
+            try {
+                extractProductBtn.disabled = true;
+                extractProductBtn.textContent = '⏳ Extracting...';
+                
+                console.log("Extracting product info...");
+                
+                // Call the new service
+                const descriptions = await extractColumn(selectedFile);
+                
+                // Do something with the result (e.g., display it)
+                console.log("Found products:", descriptions);
+                
+                if (descriptions && descriptions.length > 0) {
+                    // Add as a new block
+                    extractedBlocks.push({
+                        text: descriptions.join('\n'),
+                        type: 'block',
+                        selected: true,
+                        source: 'Product Extraction'
+                    });
+                    
+                    renderBlocks();
+                    
+                    alert(`Extracted ${descriptions.length} items!\nAdded to Data Blocks view.`);
+                } else {
+                    alert('No product descriptions found.');
+                }
+                
+            } catch (error) {
+                alert("Failed to extract data: " + error.message);
+            } finally {
+                extractProductBtn.disabled = false;
+                extractProductBtn.innerHTML = '🛍️ Extract Products';
+            }
+        };
+        toolbar.appendChild(extractProductBtn);
 
         const toggleBtn = document.createElement('button');
         toggleBtn.id = 'btnToggleOcrView';
@@ -228,7 +270,7 @@ export function setupOcr() {
         
         dropZone.style.display = 'none';
         fileInfo.style.display = 'flex';
-        processBtn.disabled = false;
+        if (aiProcessBtn) aiProcessBtn.disabled = false;
     }
 
     clearFileBtn.onclick = () => {
@@ -237,7 +279,7 @@ export function setupOcr() {
         fileInput.value = '';
         dropZone.style.display = 'flex';
         fileInfo.style.display = 'none';
-        processBtn.disabled = true;
+        if (aiProcessBtn) aiProcessBtn.disabled = true;
         resultText.value = '';
         exportExcelBtn.disabled = true;
         exportWordBtn.disabled = true;
@@ -311,6 +353,14 @@ export function setupOcr() {
             
             const leftHeader = document.createElement('div');
             leftHeader.style.cssText = 'display: flex; align-items: center; gap: 12px;';
+
+            // Source Badge (if available)
+            if (block.source) {
+                const sourceBadge = document.createElement('span');
+                sourceBadge.style.cssText = 'font-size: 10px; background: #f0f0f0; color: #666; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase;';
+                sourceBadge.textContent = block.source;
+                leftHeader.appendChild(sourceBadge);
+            }
 
             // Selection Checkbox
             const checkbox = document.createElement('input');
@@ -404,41 +454,69 @@ export function setupOcr() {
             
             if (block.type === 'table') {
                 const tableContainer = document.createElement('div');
-                tableContainer.style.cssText = 'margin-bottom: 10px; overflow-x: auto; background: white; border-radius: 4px; border: 1px solid #eee;';
+                // Ensure overflow-x works by setting max-width and overflow-x: auto
+                tableContainer.style.cssText = 'margin-bottom: 10px; overflow-x: auto; background: white; border-radius: 4px; border: 1px solid #eee; width: 100%; max-width: 100%;';
                 
                 const table = document.createElement('table');
-                table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 12px; font-family: "Courier New", monospace;';
+                // Use white-space: nowrap to force horizontal scrolling for wide tables
+                table.style.cssText = 'border-collapse: collapse; font-size: 12px; font-family: "Courier New", monospace; white-space: nowrap; min-width: 100%;';
                 
-                const lines = block.text.split('\n');
-                lines.forEach((line, rIdx) => {
-                    if (!line.trim()) return;
-                    const tr = document.createElement('tr');
-                    const cells = line.split(/ {2,}|\t+/);
-                    
-                    cells.forEach((cell, cIdx) => {
-                        const td = document.createElement(rIdx === 0 ? 'th' : 'td');
-                        td.contentEditable = 'true';
-                        td.textContent = cell.trim();
-                        td.style.cssText = 'padding: 8px; border: 1px solid #f0f0f0; text-align: left; white-space: pre; font-family: "Courier New", monospace; outline: none;';
-                        if (rIdx === 0) {
-                            td.style.background = '#fafafa';
-                            td.style.fontWeight = '600';
-                        }
+                const createCell = (text, isHeader) => {
+                    const td = document.createElement(isHeader ? 'th' : 'td');
+                    td.contentEditable = 'true';
+                    td.textContent = text ? text.trim() : '';
+                    td.style.cssText = 'padding: 8px; border: 1px solid #f0f0f0; text-align: left; white-space: nowrap; font-family: "Courier New", monospace; outline: none; min-width: 120px;';
+                    if (isHeader) {
+                        td.style.background = '#fafafa';
+                        td.style.fontWeight = '600';
+                    }
+                    return td;
+                };
+
+                if (block.tableData) {
+                    // Render using structured data
+                    const renderRows = (rows, isHeader) => {
+                        if (!rows) return;
+                        rows.forEach(row => {
+                            const tr = document.createElement('tr');
+                            row.cells.forEach(cell => {
+                                tr.appendChild(createCell(cell.text, isHeader));
+                            });
+                            table.appendChild(tr);
+                        });
+                    };
+
+                    renderRows(block.tableData.header_rows, true);
+                    renderRows(block.tableData.body_rows, false);
+                    if (!block.tableData.header_rows && !block.tableData.body_rows && block.tableData.rows) {
+                        renderRows(block.tableData.rows, false);
+                    }
+                } else {
+                    // Fallback to text parsing
+                    const lines = block.text.split('\n');
+                    lines.forEach((line, rIdx) => {
+                        if (!line.trim()) return;
+                        const tr = document.createElement('tr');
+                        const cells = line.split(/ {2,}|\t+/);
                         
-                        td.oninput = () => {
-                            // Reconstruct the line from cells
-                            const rowCells = Array.from(tr.cells).map(c => c.textContent);
-                            const currentText = extractedBlocks[index].text;
-                            const updatedLines = currentText.split('\n');
-                            updatedLines[rIdx] = rowCells.join('    '); // Use 4 spaces as separator
-                            extractedBlocks[index].text = updatedLines.join('\n');
-                            updateResultText();
-                        };
-                        
-                        tr.appendChild(td);
+                        cells.forEach((cell, cIdx) => {
+                            const td = createCell(cell, rIdx === 0);
+                            
+                            td.oninput = () => {
+                                // Reconstruct the line from cells
+                                const rowCells = Array.from(tr.cells).map(c => c.textContent);
+                                const currentText = extractedBlocks[index].text;
+                                const updatedLines = currentText.split('\n');
+                                updatedLines[rIdx] = rowCells.join('    '); // Use 4 spaces as separator
+                                extractedBlocks[index].text = updatedLines.join('\n');
+                                updateResultText();
+                            };
+                            
+                            tr.appendChild(td);
+                        });
+                        table.appendChild(tr);
                     });
-                    table.appendChild(tr);
-                });
+                }
                 
                 tableContainer.appendChild(table);
                 blockDiv.appendChild(tableContainer);
@@ -513,7 +591,7 @@ export function setupOcr() {
     // History management
     async function loadOcrHistory() {
         try {
-            const response = await fetch('/api/ocr/history');
+            const response = await fetch(`${apiBase()}/api/ocr/history`);
             const history = await response.json();
             
             const historyContainer = document.getElementById('ocrHistoryList');
@@ -560,13 +638,13 @@ export function setupOcr() {
                         ${date} • ${(file.size / 1024 / 1024).toFixed(2)} MB
                         ${hasBlocks ? '<span style="color: #52c41a; margin-left: 8px;">• ✍️ Editable</span>' : ''}
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
-                        <div style="display: flex; gap: 8px;">
-                            <button class="load-ocr" style="flex: 2; background: #52c41a; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">Open in Editor</button>
-                            <button onclick="window.open('${file.url}', '_blank')" style="flex: 1; background: #fff; color: #1890ff; border: 1px solid #1890ff; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">PDF</button>
+                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+                            <div style="display: flex; gap: 8px;">
+                                <button class="load-ocr" style="flex: 2; background: #52c41a; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">Open in Editor</button>
+                                <button onclick="window.open('${apiBase()}${file.url}', '_blank')" style="flex: 1; background: #fff; color: #1890ff; border: 1px solid #1890ff; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">PDF</button>
+                            </div>
+                            <a href="${apiBase()}${file.url}" download="${file.name}" style="background: #1890ff; color: white; border: none; padding: 6px; border-radius: 4px; text-decoration: none; font-size: 11px; text-align: center; font-weight: 600;">Download Searchable PDF</a>
                         </div>
-                        <a href="${file.url}" download="${file.name}" style="background: #1890ff; color: white; border: none; padding: 6px; border-radius: 4px; text-decoration: none; font-size: 11px; text-align: center; font-weight: 600;">Download Searchable PDF</a>
-                    </div>
                 `;
 
                 card.querySelector('.load-ocr').onclick = async () => {
@@ -579,7 +657,7 @@ export function setupOcr() {
                     
                     try {
                         loadingOverlay.style.display = 'flex';
-                        const res = await fetch(`/api/ocr/history/${file.name}/blocks`);
+                            const res = await fetch(`${apiBase()}/api/ocr/history/${file.name}/blocks`);
                         if (!res.ok) throw new Error('Failed to load blocks');
                         const blocks = await res.json();
                         
@@ -589,6 +667,11 @@ export function setupOcr() {
                         
                         console.log('OCR: Loaded blocks:', extractedBlocks.length);
                         
+                        // Enable export buttons
+                        if (exportExcelBtn) exportExcelBtn.disabled = false;
+                        if (exportWordBtn) exportWordBtn.disabled = false;
+                        if (exportPdfBtn) exportPdfBtn.disabled = false;
+
                         // Update UI
                         const saveBtn = document.getElementById('btnSaveOcrBlocks');
                         if (saveBtn) {
@@ -646,7 +729,7 @@ export function setupOcr() {
                     if (confirm('Permanently delete this hosted OCR file?')) {
                         const filename = e.target.getAttribute('data-filename');
                         try {
-                            const res = await fetch(`/api/ocr/history/${filename}`, { method: 'DELETE' });
+                            const res = await fetch(`${apiBase()}/api/ocr/history/${filename}`, { method: 'DELETE' });
                             if (res.ok) loadOcrHistory();
                         } catch (err) {
                             console.error('Delete failed:', err);
@@ -660,132 +743,215 @@ export function setupOcr() {
         }
     }
 
-    // Process OCR
-    processBtn.onclick = async () => {
-        if (!selectedFile) return;
+    // AI-only processing is handled below in aiProcessBtn.onclick
 
-        const formData = new FormData();
-        formData.append('document', selectedFile);
+    // Process with Document AI
+    if (aiProcessBtn) {
+        aiProcessBtn.onclick = async () => {
+            if (!selectedFile) return;
 
-        loadingOverlay.style.display = 'flex';
-        processBtn.disabled = true;
+            loadingOverlay.style.display = 'flex';
+            aiProcessBtn.disabled = true;
 
-        try {
-            const response = await fetch('/api/ocr/process', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-            if (data.blocks) {
-            extractedBlocks = data.blocks || [];
-            
-            // Set current filename for saving
-            if (data.downloadUrl) {
-                currentOcrFilename = data.downloadUrl.split('/').pop();
-                const saveBtn = document.getElementById('btnSaveOcrBlocks');
-                if (saveBtn) saveBtn.style.display = 'inline-block';
-            }
-            
-            // Show a notification
-            const bView = document.getElementById('ocrBlocksView');
-            if (bView) {
-                const existingHint = bView.parentNode.querySelector('.ocr-status-hint');
-                if (existingHint) existingHint.remove();
+            try {
+                console.log('OCR: Processing with Document AI...', selectedFile.name);
+                const result = await processDocument(selectedFile);
                 
-                const hint = document.createElement('div');
-                hint.className = 'ocr-status-hint';
-                hint.style.cssText = 'background: #e6f7ff; border: 1px solid #91d5ff; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #0050b3; display: flex; justify-content: space-between; align-items: center;';
-                hint.innerHTML = `
-                    <div><strong>✅ Pro Processing Complete:</strong> ${selectedFile.name}. Download the searchable PDF below or edit the blocks.</div>
-                    <button onclick="document.getElementById('btnDownloadProPdf').click()" style="background: #1890ff; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;">Get Pro PDF</button>
-                `;
-                bView.parentNode.insertBefore(hint, bView);
+                // Handle different response formats (standard Document AI vs user's specific format)
+                const data = result.data || result;
+                console.log('OCR: Data received:', data);
                 
-                // Show Pro Mode indicator if applicable
-                if (data.isPro) {
-                    const indicator = document.createElement('div');
-                    indicator.id = 'ocrProIndicator';
-                    indicator.style.cssText = 'background: #f6ffed; border: 1px solid #b7eb8f; color: #52c41a; padding: 10px 15px; border-radius: 4px; font-size: 13px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; font-weight: 600;';
+                if (result && (result.data || result.status === 'success' || result.ocr_results || result.text)) {
+                    // Map Document AI result to the format expected by renderBlocks
                     
-                    const leftPart = document.createElement('div');
-                    leftPart.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-                    leftPart.innerHTML = '<span style="font-size: 16px;">✓</span> Pro OCR Engine Active (OCRmyPDF)';
-                    indicator.appendChild(leftPart);
+                    let newBlocks = [];
+                    
+                    // 1. Check for full text (from result.data.text or result.ocr_results)
+                    let fullText = data.text || (data.ocr_results && Array.isArray(data.ocr_results) && data.ocr_results.map(r => r.text).join('\n'));
 
-                    if (data.downloadUrl) {
-                        const btnGroup = document.createElement('div');
-                        btnGroup.style.cssText = 'display: flex; gap: 8px;';
-
-                        const viewBtn = document.createElement('button');
-                        viewBtn.textContent = 'View Pro PDF';
-                        viewBtn.style.cssText = 'background: #1890ff; color: white; padding: 4px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px;';
-                        viewBtn.onclick = () => {
-                            window.open(data.downloadUrl, '_blank');
-                        };
-                        btnGroup.appendChild(viewBtn);
-
-                        const downloadBtn = document.createElement('a');
-                        downloadBtn.href = data.downloadUrl;
-                        downloadBtn.download = (selectedFile ? selectedFile.name.split('.')[0] : 'pro_ocr') + '_editable.pdf';
-                        downloadBtn.textContent = 'Download PDF';
-                        downloadBtn.style.cssText = 'background: #52c41a; color: white; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 11px;';
-                        btnGroup.appendChild(downloadBtn);
-
-                        indicator.appendChild(btnGroup);
+                    // Fallback: Check deep for text if not found at top level
+                    if (!fullText && data.analyzeResult && data.analyzeResult.content) {
+                        fullText = data.analyzeResult.content;
                     }
                     
-                    const existing = document.getElementById('ocrProIndicator');
-                    if (existing) existing.remove();
-                    bView.parentNode.insertBefore(indicator, bView);
+                    // Fallback: If still no text, try to stringify the data so user sees something
+                    if (!fullText) {
+                         console.warn('OCR: No text field found in response. Using JSON dump.');
+                         fullText = "No direct text content found. Raw Response:\n" + JSON.stringify(data, null, 2);
+                    }
+
+                    // Full text block disabled to avoid duplication with Layout blocks.
+                    // Will be added as fallback if no other blocks are found.
+
+                    // 2. Check for entities (names, dates, amounts, etc.)
+                    const entities = data.entities || data.extraction_results;
+                    if (entities && entities.length > 0) {
+                        const entityText = entities.map(ent => {
+                            const label = ent.type || ent.label || 'Entity';
+                            const value = ent.mention_text || ent.text || ent.value || 'N/A';
+                            // Confidence hidden per user request
+                            return `[${label}]: ${value}`;
+                        }).join('\n');
+
+                        newBlocks.push({
+                            text: entityText,
+                            type: 'header',
+                            selected: true,
+                            source: 'Document AI (Extraction)'
+                        });
+                    }
+
+                    // 3. Check for tables
+                    const tables = data.tables || (data.extraction_results && data.extraction_results.filter(r => r.type === 'table'));
+                    if (tables && tables.length > 0) {
+                        tables.forEach((table, tIdx) => {
+                            // Convert Document AI table format to our table text format
+                            let tableText = '';
+                            if (table.header_rows) {
+                                tableText += table.header_rows.map(row => row.cells.map(c => c.text).join('    ')).join('\n') + '\n';
+                            }
+                            if (table.body_rows) {
+                                tableText += table.body_rows.map(row => row.cells.map(c => c.text).join('    ')).join('\n');
+                            }
+                            // Fallback for different table formats
+                            if (!tableText && table.rows) {
+                                tableText = table.rows.map(row => row.cells.map(c => c.text || c.value).join('    ')).join('\n');
+                            }
+
+                            if (tableText.trim()) {
+                                newBlocks.push({
+                                    text: tableText,
+                                    type: 'table',
+                                    selected: true,
+                                    source: `Document AI (Table ${tIdx + 1})`,
+                                    tableData: table
+                                });
+                            }
+                        });
+                    }
+
+                    // 4. Check for layout/segments
+                    const segments = data.segments || data.layout_results;
+                    if (segments && segments.length > 0) {
+                        segments.forEach(seg => {
+                            if (seg.text) {
+                                newBlocks.push({
+                                    text: seg.text,
+                                    type: seg.type || 'block',
+                                    selected: true,
+                                    source: 'Document AI (Layout)'
+                                });
+                            }
+                        });
+                    }
+
+                    // Fallback: If no structured blocks were found, use the full text
+                    if (newBlocks.length === 0 && fullText) {
+                        newBlocks.push({
+                            text: fullText,
+                            type: 'block',
+                            selected: true,
+                            source: 'Document AI (Text)'
+                        });
+                    }
+
+                    // Update UI status hint
+                    const bView = document.getElementById('ocrBlocksView');
+                    
+                    // 5. Check for downloadable files from AI (Excel, Word, etc.)
+                    const downloadFiles = data.downloads || data.files || [];
+                    if (downloadFiles.length > 0 && bView) {
+                        // Remove existing downloads if any
+                        const existingDownloads = bView.parentNode.querySelector('.ai-downloads');
+                        if (existingDownloads) existingDownloads.remove();
+
+                        const downloadContainer = document.createElement('div');
+                        downloadContainer.className = 'ai-downloads';
+                        downloadContainer.style.cssText = 'background: #f6ffed; border: 1px solid #b7eb8f; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px;';
+                        downloadContainer.innerHTML = '<strong>📁 AI Generated Files:</strong><div style="display: flex; gap: 10px; margin-top: 5px;"></div>';
+                        const btnGroup = downloadContainer.querySelector('div');
+                        
+                        downloadFiles.forEach(file => {
+                            const link = document.createElement('a');
+                            link.href = file.url;
+                            link.textContent = `Download ${file.type || 'File'}`;
+                            link.className = 'action-button green';
+                            link.style.cssText = 'padding: 3px 10px; font-size: 11px; text-decoration: none;';
+                            link.download = file.name || 'document';
+                            btnGroup.appendChild(link);
+                        });
+                        
+                        bView.parentNode.insertBefore(downloadContainer, bView);
+                    }
+
+                    extractedBlocks = newBlocks.length > 0 ? newBlocks : [{ text: 'No text extracted', type: 'block' }];
+                    
+                    // Populate raw text textarea
+                    if (resultText && fullText) {
+                        resultText.value = fullText;
+                    } else if (resultText) {
+                        resultText.value = extractedBlocks.map(b => b.text).join('\n\n');
+                    }
+                    
+                    if (bView) {
+                        const existingHint = bView.parentNode.querySelector('.ocr-status-hint');
+                        if (existingHint) existingHint.remove();
+                        
+                        const hint = document.createElement('div');
+                        hint.className = 'ocr-status-hint';
+                        hint.style.cssText = 'background: #f9f0ff; border: 1px solid #d3adf7; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #531dab; display: flex; justify-content: space-between; align-items: center;';
+                        hint.innerHTML = `
+                            <div><strong>✨ Document AI Analysis Complete:</strong> ${selectedFile.name}. Extracted ${newBlocks.length} data blocks.</div>
+                        `;
+                        bView.parentNode.insertBefore(hint, bView);
+                    }
+
+                    renderBlocks();
+                    if (window.switchOcrTab) window.switchOcrTab('blocks');
+                    updateResultText();
+
+                    // Enable export buttons
+                    if (exportExcelBtn) exportExcelBtn.disabled = false;
+                    if (exportWordBtn) exportWordBtn.disabled = false;
+                    if (exportPdfBtn) exportPdfBtn.disabled = false;
                 } else {
-                    const existing = document.getElementById('ocrProIndicator');
-                    if (existing) existing.remove();
-                }
-            }
-
-                renderBlocks();
-                
-                // Automatically switch to blocks view
-                if (window.switchOcrTab) window.switchOcrTab('blocks');
-
-                // Scroll to results
-                const resultsArea = document.getElementById('ocrResultsArea');
-                if (resultsArea) {
-                    resultsArea.scrollIntoView({ behavior: 'smooth' });
+                    throw new Error('Document AI returned no data.');
                 }
 
-                loadOcrHistory(); // Refresh history
-                exportExcelBtn.disabled = false;
-                exportWordBtn.disabled = false;
-                exportPdfBtn.disabled = false;
-            } else {
-                alert('Error: ' + (data.error || 'Failed to extract text'));
+            } catch (err) {
+                console.error('Document AI Process error:', err);
+                alert('Error processing with Document AI: ' + err.message);
+            } finally {
+                loadingOverlay.style.display = 'none';
+                aiProcessBtn.disabled = false;
             }
-        } catch (err) {
-            console.error('OCR Error:', err);
-            alert('Error processing document');
-        } finally {
-            loadingOverlay.style.display = 'none';
-            processBtn.disabled = false;
-        }
-    };
+        };
+    }
 
     // Export Handlers
     exportPdfBtn.onclick = async () => {
-        if (extractedBlocks.length === 0) return;
+        const selectedBlocks = extractedBlocks.filter(b => b.selected !== false);
+        console.log('OCR: Exporting to PDF. Selected blocks:', selectedBlocks.length);
+        
+        if (selectedBlocks.length === 0) {
+            alert('Please select at least one block to export.');
+            return;
+        }
 
         try {
-            const response = await fetch('/api/ocr/export/pdf', {
+            const apiUrl = `${apiBase()}/api/ocr/export/pdf`;
+            console.log(`OCR: Sending export request to ${apiUrl}...`);
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    blocks: extractedBlocks,
+                    blocks: selectedBlocks,
                     filename: selectedFile ? selectedFile.name.split('.')[0] + '_reconstructed' : 'exported'
                 })
             });
 
             if (response.ok) {
+                console.log('OCR: Export response OK. Downloading PDF...');
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -793,19 +959,30 @@ export function setupOcr() {
                 a.download = (selectedFile ? selectedFile.name.split('.')[0] + '_reconstructed' : 'exported') + '.pdf';
                 document.body.appendChild(a);
                 a.click();
-                a.remove();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                }, 100);
             } else {
-                alert('Failed to export PDF');
+                const errorText = await response.text();
+                console.error(`OCR: PDF Export failed with status ${response.status}:`, errorText);
+                alert(`Failed to export PDF (${response.status}): ${errorText}`);
             }
         } catch (err) {
             console.error('Export Error:', err);
-            alert('Error exporting PDF');
+            if (err.message.includes('Failed to fetch')) {
+                 alert('Network Error: Could not connect to the server for PDF export. Please check if the backend server is running.');
+            } else {
+                 alert('Error exporting PDF: ' + err.message);
+            }
         }
     };
 
     // Export Functions
     async function handleExport(type) {
+        console.log(`OCR: Exporting to ${type}. Total blocks:`, extractedBlocks.length);
         const selectedBlocks = extractedBlocks.filter(b => b.selected !== false);
+        console.log(`OCR: Selected blocks for export:`, selectedBlocks.length);
         
         if (selectedBlocks.length === 0) {
             alert('Please select at least one block to export.');
@@ -816,7 +993,9 @@ export function setupOcr() {
         const filename = `${originalName}_extracted`;
 
         try {
-            const response = await fetch(`/api/ocr/export/${type}`, {
+            const apiUrl = `${apiBase()}/api/ocr/export/${type}`;
+            console.log(`OCR: Sending export request to ${apiUrl}...`);
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -827,6 +1006,7 @@ export function setupOcr() {
             });
 
             if (response.ok) {
+                console.log(`OCR: Export response OK. Downloading file...`);
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -834,19 +1014,50 @@ export function setupOcr() {
                 a.download = `${filename}.${type === 'excel' ? 'xlsx' : 'docx'}`;
                 document.body.appendChild(a);
                 a.click();
-                window.URL.revokeObjectURL(url);
-                a.remove();
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                }, 100);
             } else {
-                alert('Export failed');
+                const errorText = await response.text();
+                console.error(`OCR: Export failed with status ${response.status}:`, errorText);
+                alert(`Export failed (${response.status}): ${errorText}`);
             }
         } catch (err) {
             console.error('Export error:', err);
-            alert('Error exporting file: ' + err.message);
+            if (err.message.includes('Failed to fetch')) {
+                 alert('Network Error: Could not connect to the server. Please check if the backend server is running and accessible.');
+            } else {
+                 alert('Error exporting file: ' + err.message);
+            }
         }
     }
 
     exportExcelBtn.onclick = () => handleExport('excel');
-    exportWordBtn.onclick = () => handleExport('word');
+    // exportWordBtn.onclick = () => handleExport('word');
+    
+    // Mapped to new V2 Excel Logic as per user request
+    exportWordBtn.onclick = async () => {
+        if (!selectedFile) {
+            alert('Please select a file first.');
+            return;
+        }
+        
+        const originalText = exportWordBtn.innerHTML;
+        try {
+            exportWordBtn.disabled = true;
+            exportWordBtn.innerHTML = '⏳ Processing V2...';
+            
+            await processToExcelV2(selectedFile);
+            
+        } catch (err) {
+            console.error(err);
+            alert('V2 Export Failed: ' + err.message);
+        } finally {
+            exportWordBtn.disabled = false;
+            exportWordBtn.innerHTML = originalText;
+        }
+    };
 
     // Tab Switching Logic
     window.switchOcrTab = (tab) => {

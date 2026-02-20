@@ -205,6 +205,27 @@ body {
     border-radius: 8px;
 }
 
+.kanban-container {
+    display: flex;
+    overflow-x: auto;
+    padding: 20px;
+    gap: 15px;
+    background-color: #f0f2f5;
+    border-radius: 8px;
+    min-height: 500px;
+    align-items: flex-start;
+}
+
+.kanban-column {
+    min-width: 280px;
+    flex: 0 0 280px;
+    background-color: #ebedf0;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+}
+
 .asset-card {
     background-color: #fff;
     border-radius: 8px;
@@ -267,6 +288,112 @@ body {
 .asset-card-status-value {
     font-weight: 600;
     color: #2c3e50;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+    padding: 24px 28px 20px;
+    max-width: 640px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid #e5e7eb;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 20px;
+    color: #1f2933;
+}
+
+.modal .form-group {
+    margin-bottom: 14px;
+}
+
+.modal .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #4b5563;
+    margin-bottom: 6px;
+}
+
+.modal input[type="text"],
+.modal input[type="number"],
+.modal input[type="email"],
+.modal input[type="password"],
+.modal select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.modal input[type="text"]:focus,
+.modal input[type="number"]:focus,
+.modal input[type="email"]:focus,
+.modal input[type="password"]:focus,
+.modal select:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 1px rgba(0, 123, 255, 0.15);
+}
+
+.modal .login-button,
+.modal .action-button {
+    width: 100%;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 14px;
+}
+
+.close-modal {
+    float: right;
+    font-size: 20px;
+    cursor: pointer;
+    color: #9ca3af;
+}
+
+.close-modal:hover {
+    color: #4b5563;
+}
+
+.input-error {
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+}
+#sheet-view {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+#sheet-view .grid-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: auto;
+}
+
+#excel-grid {
+    flex: 1;
+    min-height: 0;
 }
 
 .asset-card-add-button {
@@ -405,4 +532,372 @@ tr.selected {
 
 #searchPanel button:hover {
     background-color: #0056b3;
+}
+
+ 
+ / *   - - -   R a u l   D r u n k   N a v   I n t e g r a t i o n   ( A p p e n d e d )   - - -   * / 
+ 
+ : r o o t   { 
+ 
+         - - n a v - o u t e r - b g :   l i n e a r - g r a d i e n t ( 1 8 0 d e g ,   # 1 f 1 f 1 f   0 % ,   # 1 1 1   1 0 0 % ) ; 
+ 
+         - - n a v - i n n e r - b g :   # 0 a 0 a 0 a ; 
+ 
+         - - t e x t - c o l o r :   # 8 8 8 ; 
+ 
+         - - t e x t - h o v e r :   # c c c ; 
+ 
+         - - t e x t - a c t i v e :   # f f f ; 
+ 
+         - - a c t i v e - b u b b l e - b g :   l i n e a r - g r a d i e n t ( 1 8 0 d e g ,   # 3 3 3   0 % ,   # 1 f 1 f 1 f   1 0 0 % ) ; 
+ 
+         - - h o v e r - b u b b l e - b g :   l i n e a r - g r a d i e n t ( 1 8 0 d e g ,   # 2 2 2   0 % ,   # 0 0 0   1 0 0 % ) ; 
+ 
+         - - e a s e - s p r i n g :   l i n e a r ( 0 ,   0 . 0 0 6 ,   0 . 0 2 5   2 . 8 % ,   0 . 1 0 1   6 . 1 % ,   0 . 5 3 9   1 8 . 9 % ,   0 . 7 2 1   2 5 . 3 % ,   0 . 8 4 9   3 1 . 5 % ,   0 . 9 3 7   3 8 . 1 % ,   0 . 9 6 8   4 1 . 8 % ,   0 . 9 9 1   4 5 . 7 % ,   1 . 0 0 6   5 0 . 1 % ,   1 . 0 1 5   5 5 % ,   1 . 0 1 7   6 3 . 9 % ,   1 . 0 0 1   8 7 . 1 % ,   1 ) ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   { 
+ 
+         d i s p l a y :   f l e x   ! i m p o r t a n t ; 
+ 
+         f l e x :   i n i t i a l   ! i m p o r t a n t ; 
+ 
+         m a r g i n :   0   a u t o   ! i m p o r t a n t ; 
+ 
+         o v e r f l o w :   v i s i b l e   ! i m p o r t a n t ; 
+ 
+         w h i t e - s p a c e :   n o r m a l   ! i m p o r t a n t ; 
+ 
+         h e i g h t :   a u t o   ! i m p o r t a n t ; 
+ 
+         b a c k g r o u n d :   v a r ( - - n a v - i n n e r - b g ) ; 
+ 
+         b o r d e r - r a d i u s :   9 9 9 p x ; 
+ 
+         p a d d i n g :   5 p x ; 
+ 
+         b o x - s h a d o w :   i n s e t   0   2 p x   6 p x   r g b a ( 0 , 0 , 0 , 0 . 6 ) ; 
+ 
+         p o s i t i o n :   r e l a t i v e ; 
+ 
+         a n c h o r - n a m e :   - - n a v - c o n t a i n e r ; 
+ 
+ } 
+ 
+ # a p p - h e a d e r . t o p - b a r - c o l l a p s e d   . t o p - n a v   { 
+         w i d t h :   a u t o ; 
+         m a x - w i d t h :   n o n e ; 
+         p a d d i n g :   6 p x   1 0 p x ; 
+         m a r g i n :   5 p x   0   5 p x   1 0 p x ; 
+         d i s p l a y :   i n l i n e - f l e x ; 
+         f l e x :   0   0   a u t o ; 
+         j u s t i f y - c o n t e n t :   c e n t e r ; 
+ } 
+ 
+ # a p p - h e a d e r . t o p - b a r - c o l l a p s e d   . t o p - n a v   u l , 
+ # a p p - h e a d e r . t o p - b a r - c o l l a p s e d   . t o p - n a v   . b u b b l e , 
+ # a p p - h e a d e r . t o p - b a r - c o l l a p s e d   . h e a d e r - r i g h t , 
+ # a p p - h e a d e r . t o p - b a r - c o l l a p s e d   . a p p - t i t l e   { 
+         d i s p l a y :   n o n e ; 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   u l   { 
+ 
+         l i s t - s t y l e :   n o n e ; 
+ 
+         m a r g i n :   0 ; 
+ 
+         p a d d i n g :   0 ; 
+ 
+         d i s p l a y :   f l e x ; 
+ 
+         g a p :   5 p x ; 
+ 
+         p o s i t i o n :   r e l a t i v e ; 
+ 
+         z - i n d e x :   1 0 ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   l i   { 
+ 
+         d i s p l a y :   b l o c k ; 
+ 
+         p o s i t i o n :   r e l a t i v e ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   l i : h o v e r   { 
+ 
+         a n c h o r - n a m e :   - - h o v e r - t a r g e t ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   . n a v - l i n k   { 
+ 
+         d i s p l a y :   b l o c k ; 
+ 
+         t e x t - d e c o r a t i o n :   n o n e ; 
+ 
+         c o l o r :   v a r ( - - t e x t - c o l o r ) ; 
+ 
+         p a d d i n g :   8 p x   1 5 p x ; 
+ 
+         b o r d e r - r a d i u s :   9 9 9 p x ; 
+ 
+         f o n t - w e i g h t :   6 0 0 ; 
+ 
+         f o n t - s i z e :   0 . 9 5 r e m ; 
+ 
+         p o s i t i o n :   r e l a t i v e ; 
+ 
+         t r a n s i t i o n :   c o l o r   0 . 3 s ; 
+ 
+         b a c k g r o u n d :   t r a n s p a r e n t   ! i m p o r t a n t ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   . n a v - l i n k : h o v e r   { 
+ 
+         c o l o r :   v a r ( - - t e x t - h o v e r ) ; 
+ 
+         b a c k g r o u n d :   t r a n s p a r e n t   ! i m p o r t a n t ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   . n a v - l i n k . a c t i v e   { 
+ 
+         c o l o r :   v a r ( - - t e x t - a c t i v e ) ; 
+ 
+         t e x t - s h a d o w :   0   1 p x   2 p x   r g b a ( 0 , 0 , 0 , 0 . 8 ) ; 
+ 
+         a n c h o r - n a m e :   - - a c t i v e - t a r g e t ; 
+ 
+         b a c k g r o u n d :   t r a n s p a r e n t   ! i m p o r t a n t ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v   . n a v - l i n k . a c t i v e : : a f t e r   { 
+ 
+         d i s p l a y :   n o n e ; 
+ 
+ } 
+ 
+ 
+ 
+ . b u b b l e   { 
+ 
+         p o s i t i o n :   a b s o l u t e ; 
+ 
+         b o r d e r - r a d i u s :   9 9 9 p x ; 
+ 
+         p o i n t e r - e v e n t s :   n o n e ; 
+ 
+         t o p :   a n c h o r ( t o p ) ; 
+ 
+         b o t t o m :   a n c h o r ( b o t t o m ) ; 
+ 
+         l e f t :   a n c h o r ( l e f t ) ; 
+ 
+         r i g h t :   a n c h o r ( r i g h t ) ; 
+ 
+         t r a n s i t i o n :   t o p   0 . 4 s   v a r ( - - e a s e - s p r i n g ) ,   b o t t o m   0 . 4 s   v a r ( - - e a s e - s p r i n g ) ,   l e f t   0 . 4 s   v a r ( - - e a s e - s p r i n g ) ,   r i g h t   0 . 4 s   v a r ( - - e a s e - s p r i n g ) ,   o p a c i t y   0 . 3 s   e a s e ,   b a c k g r o u n d   0 . 3 s   e a s e ; 
+ 
+ } 
+ 
+ 
+ 
+ . b u b b l e - a c t i v e   { 
+ 
+         b a c k g r o u n d :   v a r ( - - a c t i v e - b u b b l e - b g ) ; 
+ 
+         z - i n d e x :   5 ; 
+ 
+         b o x - s h a d o w :   i n s e t   0   1 p x   0   r g b a ( 2 5 5 , 2 5 5 , 2 5 5 , 0 . 1 5 ) ,   0   4 p x   1 2 p x   r g b a ( 0 , 0 , 0 , 0 . 4 ) ; 
+ 
+         p o s i t i o n - a n c h o r :   - - a c t i v e - t a r g e t ; 
+ 
+ } 
+ 
+ 
+ 
+ . b u b b l e - h o v e r   { 
+ 
+         b a c k g r o u n d :   v a r ( - - h o v e r - b u b b l e - b g ) ; 
+ 
+         z - i n d e x :   1 ; 
+ 
+         b o x - s h a d o w :   i n s e t   0   1 p x   0   r g b a ( 2 5 5 , 2 5 5 , 2 5 5 , 0 . 0 5 ) ; 
+ 
+         p o s i t i o n - a n c h o r :   - - n a v - c o n t a i n e r ; 
+ 
+         o p a c i t y :   1 ; 
+ 
+ } 
+ 
+ 
+ 
+ . t o p - n a v : h a s ( l i : h o v e r )   . b u b b l e - h o v e r   { 
+ 
+         p o s i t i o n - a n c h o r :   - - h o v e r - t a r g e t ; 
+ 
+         o p a c i t y :   1 ; 
+ 
+ } 
+ 
+ 
+/* Burger Button Animation Styles */
+.burger-container {
+    width: 24px;
+    height: 24px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: grab;
+    touch-action: none; /* Prevent scrolling while dragging */
+}
+
+.burger-container:active {
+    cursor: grabbing;
+}
+
+.burger-line {
+    width: 100%;
+    height: 3px;
+    background-color: white;
+    border-radius: 2px;
+    position: absolute;
+    transition: transform 0.25s ease, opacity 0.25s ease, width 0.25s ease;
+}
+
+.line-left {
+    top: 0;
+    transform-origin: center;
+}
+
+.line-center {
+    top: 10px;
+    opacity: 1;
+}
+
+.line-right {
+    top: 20px;
+    transform-origin: center;
+}
+
+/* Stage 0: Normal Burger */
+.burger-container.stage-0 .line-left { transform: translateY(0); }
+.burger-container.stage-0 .line-center { opacity: 1; }
+.burger-container.stage-0 .line-right { transform: translateY(0); }
+
+/* Stage 1: Slight Pull */
+.burger-container.stage-1 .line-left { transform: translateY(2px); }
+.burger-container.stage-1 .line-right { transform: translateY(-2px); }
+
+/* Stage 2: More Pull */
+.burger-container.stage-2 .line-left { transform: translateY(4px) rotate(15deg); }
+.burger-container.stage-2 .line-right { transform: translateY(-4px) rotate(-15deg); }
+
+/* Stage 3: Forming Triangle */
+.burger-container.stage-3 .line-left { transform: translateY(7px) rotate(30deg); width: 60%; left: 5px; }
+.burger-container.stage-3 .line-center { opacity: 0.5; }
+.burger-container.stage-3 .line-right { transform: translateY(-7px) rotate(-30deg); width: 60%; left: 5px; }
+
+/* Stage 4: Triangle (Sidebar Open) */
+/* Top line rotates down-right, Bottom line rotates up-right to meet */
+/* Center line fades out */
+.burger-container.stage-4 .line-left { 
+    top: 10px;
+    transform: rotate(45deg); 
+    width: 14px;
+    left: 0;
+}
+.burger-container.stage-4 .line-center { 
+    opacity: 0; 
+}
+.burger-container.stage-4 .line-right { 
+    top: 10px;
+    transform: rotate(-45deg); 
+    width: 14px;
+    left: 0;
+}
+
+/* Wait, the user wanted a specific triangular shape transition */
+/* Let's try to simulate a triangle pointing left or right depending on sidebar */
+/* Actually, standard 'X' or arrow is common, but user asked for 'triangular image' */
+/* Assuming they want the lines to form a triangle shape */
+
+/* Refined Triangle Stages for 'Pull Down' effect */
+/* We will move the top and bottom lines down as requested */
+
+/* Resetting for the 'pull down' logic specifically mentioned: */
+/* 'pulling the burger down it slowly transitions to the triangular shape' */
+
+.burger-container .burger-line {
+    /* Ensure they start at correct positions for the logic below */
+}
+
+/* Stage 0 */
+.burger-container.stage-0 .line-left { top: 0; transform: translateY(0); }
+.burger-container.stage-0 .line-center { top: 10px; opacity: 1; }
+.burger-container.stage-0 .line-right { top: 20px; transform: translateY(0); }
+
+/* Stage 1: Top and Bottom move down 2px */
+.burger-container.stage-1 .line-left { transform: translateY(2px); }
+.burger-container.stage-1 .line-right { transform: translateY(2px); }
+
+/* Stage 2: Top and Bottom move down 5px */
+.burger-container.stage-2 .line-left { transform: translateY(5px); }
+.burger-container.stage-2 .line-right { transform: translateY(5px); }
+
+/* Stage 3: Top and Bottom move down 9px */
+.burger-container.stage-3 .line-left { transform: translateY(9px); }
+.burger-container.stage-3 .line-right { transform: translateY(9px); }
+
+/* Stage 4: Final Triangle Shape (Abstract representation or just shifted down?) */
+/* User said 'transitions to the triangular shape... pulling it down' */
+/* Maybe the lines converge? Let's assume they converge to point down */
+
+.burger-container.stage-4 .line-left { 
+    transform: translateY(10px) rotate(30deg); 
+    width: 50%; 
+    left: 2px;
+}
+.burger-container.stage-4 .line-right { 
+    transform: translateY(10px) rotate(-30deg); 
+    width: 50%; 
+    right: 2px; 
+    left: auto;
+}
+.burger-container.stage-4 .line-center {
+    transform: translateY(12px);
+    width: 80%;
+    left: 10%;
+}
+
+
+/* Top Bar Collapse State */
+#app-header.top-bar-collapsed {
+    display: none;
 }

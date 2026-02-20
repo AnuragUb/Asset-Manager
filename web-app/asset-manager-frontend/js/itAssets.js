@@ -30,11 +30,11 @@ async function loadItAssets() {
             const assets = await response.json();
             renderItAssetsTable(assets);
         } else {
-            body.innerHTML = '<tr><td colspan="3">Failed to load IT assets.</td></tr>';
+            body.innerHTML = '<tr><td colspan="5">Failed to load IT assets.</td></tr>';
         }
     } catch (err) {
         console.error('Error loading IT assets:', err);
-        body.innerHTML = '<tr><td colspan="3">Error connecting to server.</td></tr>';
+        body.innerHTML = '<tr><td colspan="5">Error connecting to server.</td></tr>';
     }
 }
 
@@ -43,16 +43,21 @@ function renderItAssetsTable(assets) {
     if (!body) return;
 
     if (!assets || assets.length === 0) {
-        body.innerHTML = '<tr><td colspan="3">No IT assets found.</td></tr>';
+        body.innerHTML = '<tr><td colspan="5">No IT assets found.</td></tr>';
         return;
     }
 
     let html = '';
     assets.forEach(asset => {
         html += `
-            <tr>
-                <td>${asset.AssetTag || asset.ID || '-'}</td>
-                <td>${asset.Model || '-'}</td>
+            <tr onclick="showAssetDetails('${asset.ID}')" style="cursor: pointer;">
+                <td>${asset.ID || '-'}</td>
+                <td>
+                    <div style="font-weight: 600;">${asset.ItemName || '-'}</div>
+                    <button onclick="event.stopPropagation(); window.showQuantityHistoryModal('${asset.ID}')" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 5px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 3px; cursor: pointer;" title="View Quantity Events">📅 History</button>
+                </td>
+                <td>${asset.IPAddress || '-'}</td>
+                <td>${asset.MACAddress || '-'}</td>
                 <td>${asset.AssignedTo || 'Unassigned'}</td>
             </tr>
         `;

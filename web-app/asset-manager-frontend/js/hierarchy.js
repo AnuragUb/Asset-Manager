@@ -87,7 +87,8 @@ export class HierarchyManager {
      */
     findNode(id, nodes = this.tree) {
         for (const node of nodes) {
-            if (node.ID === id) return node;
+            // Use loose equality to handle string/number ID mismatches
+            if (node.ID == id) return node;
             if (node.children && node.children.length > 0) {
                 const found = this.findNode(id, node.children);
                 if (found) return found;
@@ -135,11 +136,16 @@ export class HierarchyManager {
                             ${hasChildren ? '▶' : ''}
                         </span>
                         <span class="tree-icon" style="display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;">
-                            ${(node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
-                                ? `<img src="${node.Icon}" style="width: 16px; height: 16px; object-fit: contain;">`
-                                : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
+                            ${(node.DisplayImage && (node.DisplayImage.startsWith('/') || node.DisplayImage.startsWith('http')))
+                                ? `<img src="${node.DisplayImage}" style="width: 16px; height: 16px; object-fit: contain;">`
+                                : (node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
+                                    ? `<img src="${node.Icon}" style="width: 16px; height: 16px; object-fit: contain;">`
+                                    : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
                         </span>
                         <span class="tree-link" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
+                        ${node.type === 'kind' ? `
+                            <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">✏️</span>
+                        ` : ''}
                     </div>
                     ${hasChildren ? `
                         <div class="tree-children" id="children-${node.ID}" style="display: none;">
