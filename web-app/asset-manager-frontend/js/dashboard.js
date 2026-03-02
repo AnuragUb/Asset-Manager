@@ -13,6 +13,7 @@ let selectedDCAssets = [];
 let selectedBatchAssets = [];
 let isSelectionMode = false;
 let dcItemsByAssetId = {};
+let showRateAmount = true;
 
 function toNumber(value) {
     const n = Number(String(value ?? '').replace(/,/g, '').trim());
@@ -34,7 +35,10 @@ function escapeHtml(value) {
 
 function matchesQuery(asset, query) {
     if (!query) return true;
-    const terms = query.toLowerCase().trim().split(/\s+/);
+    const lowerQuery = query.toLowerCase().trim();
+    
+    // Split terms, but be careful with empty strings
+    const terms = lowerQuery.split(/\s+/).filter(t => t.length > 0);
     if (terms.length === 0) return true;
     
     // Fields to search in
@@ -53,22 +57,105 @@ function matchesQuery(asset, query) {
         asset.IPAddress,
         asset.MACAddress,
         asset.User,
-        asset.Department
+        asset.Department,
+        asset.EstimatedPrice ? String(asset.EstimatedPrice) : null
     ];
     
-    // Check if EVERY term matches AT LEAST ONE field (AND logic across terms)
-    // Example: "laptop mumbai" -> "laptop" in Type AND "mumbai" in Location
+    // Ensure we filter out null/undefined fields BEFORE checking include.
+    // Also, converting to string and lowercase ONCE.
+    const validFields = searchFields
+        .filter(f => f !== null && f !== undefined && f !== '')
+        .map(f => String(f).toLowerCase());
+    
+    // Check if EVERY term matches AT LEAST ONE field
     const match = terms.every(term => 
-        searchFields.some(field => 
-            field && String(field).toLowerCase().includes(term)
-        )
+        validFields.some(val => val.includes(term))
     );
+    
+    // DEBUG: Log matches for "mumt" or similar to understand false positives
+    if (match && lowerQuery.includes('mumt') && !asset.ID.toLowerCase().includes('mumt')) {
+        console.warn(`[DEBUG] False Positive? Query "${lowerQuery}" matched Asset ${asset.ID} (${asset.ItemName})`);
+        console.warn(`[DEBUG] Terms:`, terms);
+        // Find exactly which fields matched
+        const matchedFields = validFields.filter(val => terms.some(t => val.includes(t)));
+        console.warn(`[DEBUG] Matching Field(s):`, matchedFields);
+        
+        // Also log all fields to see if one is suspiciously long or generic
+        // console.log('All fields:', validFields);
+    }
     
     return match;
 }
 
+// Global Search Logic Injection
+function initGlobalSearch() {
+    const btnSearchBy = document.getElementById('btnSearchBy');
+    const searchPanel = document.getElementById('searchPanel');
+    const searchInput = document.getElementById('searchInput');
+    const searchButton = document.getElementById('searchButton');
+
+    if (btnSearchBy && searchPanel && searchInput && searchButton) {
+        // Toggle Search Panel
+        btnSearchBy.onclick = () => {
+            searchVisible = !searchVisible;
+            searchPanel.style.display = searchVisible ? 'block' : 'none';
+            if (searchVisible) searchInput.focus();
+        };
+
+        // Perform Search
+        const performSearch = () => {
+            const query = searchInput.value.trim();
+            if (!query) return;
+            
+            // Use the new unified search function
+            const results = window.searchAllAssets ? window.searchAllAssets(query) : [];
+            
+            // Assuming we want to filter the current view (Dashboard)
+            window.currentSearchQuery = query;
+            
+            // Update Dashboard
+            if (window.renderDashboard) {
+                // Merge results for display
+                const combinedAssets = results;
+                renderDashboard(combinedAssets, () => combinedAssets);
+            }
+            
+            // Also show a toast or summary
+            showToast(`Found ${results.length} matches`, 'info');
+        };
+
+        searchButton.onclick = performSearch;
+        searchInput.onkeypress = (e) => {
+            if (e.key === 'Enter') performSearch();
+        };
+    }
+}
+
+// Call init logic
+initGlobalSearch();
+
 // Export for use in other modules if needed (though currently only used in dashboard.js)
 window.matchesQuery = matchesQuery;
+
+// Add this function to check temp assets as well
+window.searchAllAssets = function(query) {
+    if (!query) return window.allAssets || [];
+    
+    const permanentMatches = (window.allAssets || []).filter(a => matchesQuery(a, query));
+    
+    // We need to fetch or have temp assets loaded.
+    // If they are not loaded globally, we might miss them.
+    // Ideally, loadAssets should load both or we fetch them here.
+    // Given the constraints, let's assume we can fetch them if not present,
+    // or better yet, load them once and store in window.allTempAssets
+    
+    let tempMatches = [];
+    if (window.allTempAssets) {
+        tempMatches = window.allTempAssets.filter(a => matchesQuery(a, query));
+    }
+    
+    return [...permanentMatches, ...tempMatches];
+};
 
 function numberToWordsIndian(n) {
     const num = Math.floor(Math.abs(Number(n) || 0));
@@ -353,12 +440,121 @@ function initDCView() {
     const btnPrintDC = document.getElementById('btnPrintDC');
     const dcOpenId = document.getElementById('dcOpenId');
     const btnOpenDC = document.getElementById('btnOpenDC');
+    const btnToggleRateAmount = document.getElementById('btnToggleRateAmount');
     
     // Set default date
     const dateInput = document.getElementById('dcDate');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
+
+    if (btnToggleRateAmount) {
+        btnToggleRateAmount.onclick = () => {
+            showRateAmount = !showRateAmount;
+            
+            // Toggle Headers
+            const thRate = document.getElementById('dcThRate');
+            const thAmount = document.getElementById('dcThAmount');
+            if (thRate) thRate.style.display = showRateAmount ? '' : 'none';
+            if (thAmount) thAmount.style.display = showRateAmount ? '' : 'none';
+            
+            // Toggle Body Cells via re-render (simplest way to ensure consistency)
+            renderSelectedAssets();
+            
+            // Update button text/icon
+            const span = btnToggleRateAmount.querySelector('span');
+            if (span) span.textContent = showRateAmount ? '👁️' : '🚫';
+        };
+    }
+
+    // --- Remarks Template Logic ---
+    const dcRemarksTemplate = document.getElementById('dcRemarksTemplate');
+    const btnSaveRemarkTemplate = document.getElementById('btnSaveRemarkTemplate');
+    const btnDeleteRemarkTemplate = document.getElementById('btnDeleteRemarkTemplate');
+    const dcRemarkTitle = document.getElementById('dcRemarkTitle');
+    const dcRemarks = document.getElementById('dcRemarks');
+
+    if (dcRemarksTemplate) {
+        // Load Templates
+        const loadTemplates = () => {
+            const templates = JSON.parse(localStorage.getItem('dcRemarkTemplates') || '[]');
+            dcRemarksTemplate.innerHTML = '<option value="">-- Select a Template --</option>';
+            templates.forEach((t, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = t.title;
+                dcRemarksTemplate.appendChild(opt);
+            });
+        };
+        loadTemplates();
+
+        // On Change
+        dcRemarksTemplate.onchange = (e) => {
+            const idx = e.target.value;
+            if (idx === '') {
+                btnDeleteRemarkTemplate.style.display = 'none';
+                return;
+            }
+            const templates = JSON.parse(localStorage.getItem('dcRemarkTemplates') || '[]');
+            const t = templates[idx];
+            if (t) {
+                dcRemarks.value = t.content;
+                btnDeleteRemarkTemplate.style.display = 'inline-block';
+            }
+        };
+
+        // Save Template
+        btnSaveRemarkTemplate.onclick = () => {
+            if (dcRemarkTitle.style.display === 'none') {
+                dcRemarkTitle.style.display = 'block';
+                dcRemarkTitle.focus();
+                btnSaveRemarkTemplate.textContent = 'Confirm Save';
+                return;
+            }
+
+            const title = dcRemarkTitle.value.trim();
+            const content = dcRemarks.value.trim();
+
+            if (!title || !content) {
+                alert('Please enter both title and content for the template');
+                return;
+            }
+
+            const templates = JSON.parse(localStorage.getItem('dcRemarkTemplates') || '[]');
+            templates.push({ title, content });
+            localStorage.setItem('dcRemarkTemplates', JSON.stringify(templates));
+            
+            loadTemplates();
+            dcRemarkTitle.value = '';
+            dcRemarkTitle.style.display = 'none';
+            btnSaveRemarkTemplate.textContent = 'Save as Template';
+            alert('Template saved!');
+        };
+
+        // Delete Template
+        btnDeleteRemarkTemplate.onclick = () => {
+            const idx = dcRemarksTemplate.value;
+            if (idx === '') return;
+            
+            if (confirm('Delete this template?')) {
+                const templates = JSON.parse(localStorage.getItem('dcRemarkTemplates') || '[]');
+                templates.splice(idx, 1);
+                localStorage.setItem('dcRemarkTemplates', JSON.stringify(templates));
+                loadTemplates();
+                dcRemarks.value = '';
+                btnDeleteRemarkTemplate.style.display = 'none';
+            }
+        };
+    }
+
+    // Double Click on Headers to toggle
+    const thRate = document.getElementById('dcThRate');
+    const thAmount = document.getElementById('dcThAmount');
+    const toggleHeaderHandler = () => {
+        if (btnToggleRateAmount) btnToggleRateAmount.click();
+    };
+    if (thRate) thRate.ondblclick = toggleHeaderHandler;
+    if (thAmount) thAmount.ondblclick = toggleHeaderHandler;
 
     if (btnOpenDC) {
         btnOpenDC.onclick = () => {
@@ -367,6 +563,9 @@ function initDCView() {
             if (window.openDeliveryChallan) window.openDeliveryChallan(id);
         };
     }
+    
+    // --- Load Database Dropdowns ---
+    loadDCDropdowns();
 
     if (dcOpenId) {
         dcOpenId.onkeydown = (e) => {
@@ -387,20 +586,37 @@ function initDCView() {
             }
 
             const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-            const matches = (window.allAssets || []).filter(a => 
-                a.Category === category && 
+            
+            // Combine permanent assets and temporary assets for search
+            const allSearchableAssets = [
+                ...(window.allAssets || []),
+                ...(window.allTempAssets || [])
+            ];
+
+            const matches = allSearchableAssets.filter(a => 
+                // Strict Category Filter - only for permanent assets (Temp assets usually don't have standard categories or we ignore it)
+                // Actually, let's allow Temp assets to be searched regardless of category if they don't have one matching
+                ((category === 'ALL' || a.Category === category) || !a.Category) && 
+                // Global Search Logic (matchesQuery checks ID, Name, Serial, Location, User, etc.)
                 matchesQuery(a, query) &&
+                // Exclude already selected assets
                 !selectedDCAssets.find(s => s.ID === a.ID)
             ).slice(0, 10);
 
             if (matches.length > 0) {
                 dcSearchResults.innerHTML = matches.map(a => `
                     <div class="search-result-item" data-id="${a.ID}" style="padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <div style="font-weight: 600;">${a.ItemName}</div>
-                            <div style="font-size: 11px; color: #666;">ID: ${a.ID} | ${a.Status}</div>
+                        <div style="flex: 1; overflow: hidden;">
+                            <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${a.ItemName} ${a.IsPermanent === 0 ? '<span style="font-size: 9px; background: #fff3cd; color: #856404; padding: 1px 4px; border-radius: 2px;">TEMP</span>' : ''}</div>
+                            <div style="font-size: 11px; color: #666; display: flex; gap: 8px;">
+                                <span style="font-family: monospace; background: #eee; padding: 1px 4px; border-radius: 3px;">${a.ID}</span>
+                                <span>${a.CurrentLocation || 'No Loc'}</span>
+                                <span>${a.AssignedTo || 'Unassigned'}</span>
+                            </div>
                         </div>
-                        <button class="add-asset-small" style="padding: 2px 8px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Add</button>
+                        <div style="margin-left: 10px;">
+                            <span style="font-size: 10px; padding: 2px 6px; border-radius: 10px; background: ${a.Status === 'In-Use' ? '#e6f4ea' : '#f8f9fa'}; color: ${a.Status === 'In-Use' ? '#1e7e34' : '#666'};">${a.Status || 'Active'}</span>
+                        </div>
                     </div>
                 `).join('');
                 dcSearchResults.style.display = 'block';
@@ -409,7 +625,8 @@ function initDCView() {
                 dcSearchResults.querySelectorAll('.search-result-item').forEach(item => {
                     item.onclick = () => {
                         const assetId = item.getAttribute('data-id');
-                        const asset = window.allAssets.find(a => a.ID === assetId);
+                        // Search in both arrays
+                        const asset = window.allAssets.find(a => a.ID === assetId) || (window.allTempAssets || []).find(a => a.ID === assetId);
                         if (asset) {
                             addAssetToDC(asset);
                             dcAssetSearch.value = '';
@@ -422,6 +639,13 @@ function initDCView() {
                 dcSearchResults.style.display = 'block';
             }
         };
+        
+        // Hide results on blur / click outside
+        document.addEventListener('click', (e) => {
+            if (dcAssetSearch && dcSearchResults && !dcAssetSearch.contains(e.target) && !dcSearchResults.contains(e.target)) {
+                dcSearchResults.style.display = 'none';
+            }
+        });
     }
 
     // Generate DC Button
@@ -568,6 +792,7 @@ function renderSelectedAssets() {
     dcEmptyState.style.display = 'none';
     dcSelectedAssetsBody.innerHTML = selectedDCAssets.map(a => {
         const row = dcItemsByAssetId[a.ID] || {};
+        const displayStyle = showRateAmount ? '' : 'display: none;';
         return `
             <tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.ID}</td>
@@ -577,13 +802,16 @@ function renderSelectedAssets() {
                 <td style="padding: 10px; width: 90px;">
                     <input data-dc-field="hsn" data-asset-id="${a.ID}" value="${String(row.hsn || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
+                <td style="padding: 10px; width: 60px;">
+                    <input data-dc-field="per" data-asset-id="${a.ID}" value="${row.per || 'Pcs'}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;" />
+                </td>
                 <td style="padding: 10px; width: 70px;">
                     <input data-dc-field="qty" data-asset-id="${a.ID}" value="${row.qty ?? 1}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
                 </td>
-                <td style="padding: 10px; width: 90px;">
+                <td class="dc-rate-col" style="padding: 10px; width: 90px; ${displayStyle}">
                     <input data-dc-field="rate" data-asset-id="${a.ID}" value="${row.rate ?? ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
                 </td>
-                <td style="padding: 10px; width: 100px; text-align: right; font-variant-numeric: tabular-nums;">
+                <td class="dc-amount-col" style="padding: 10px; width: 100px; text-align: right; font-variant-numeric: tabular-nums; ${displayStyle}">
                     <span data-dc-field="amount" data-asset-id="${a.ID}">${row.amount ?? ''}</span>
                 </td>
                 <td style="padding: 10px; text-align: center; width: 60px;">
@@ -5236,5 +5464,380 @@ style.textContent = `
     .badge-secondary { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
 `;
 document.head.appendChild(style);
+
+window.showQuantityHistoryModal = showQuantityHistoryModal;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const btnFetchFromProject = document.getElementById('btnFetchFromProject');
+    if (btnFetchFromProject) {
+        btnFetchFromProject.onclick = (e) => {
+            e.preventDefault();
+            window.showProjectSelectionModal();
+        };
+    }
+});
+
+window.showProjectSelectionModal = async function() {
+    let modal = document.getElementById('dcProjectSelectModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'dcProjectSelectModal';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <span class="close-modal" onclick="document.getElementById('dcProjectSelectModal').style.display='none'">&times;</span>
+                <h3>Select Project</h3>
+                <input type="text" id="dcProjectSearchInput" placeholder="Search projects..." class="form-input" style="width: 100%; margin-bottom: 15px; padding: 10px;">
+                <div id="dcProjectList" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
+                    <div style="padding: 20px; text-align: center; color: #999;">Loading...</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Add search listener
+        document.getElementById('dcProjectSearchInput').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const items = document.querySelectorAll('.dc-project-item');
+            items.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(term) ? 'block' : 'none';
+            });
+        });
+    }
+
+    const list = document.getElementById('dcProjectList');
+    list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Loading...</div>';
+    modal.style.display = 'flex';
+
+    try {
+        const res = await fetch('/api/projects');
+        if (!res.ok) throw new Error('Failed to load projects');
+        const projects = await res.json();
+
+        if (projects.length === 0) {
+            list.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No projects found</div>';
+            return;
+        }
+
+        list.innerHTML = projects.map(p => `
+            <div class="dc-project-item" onclick="selectProjectForDC('${p.ID}')" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.2s;">
+                <div style="font-weight: 600; color: #333;">${p.Name || p.ProjectName}</div>
+                <div style="font-size: 12px; color: #666;">${p.ClientName || 'No Client'} • ${p.Location || 'No Location'}</div>
+            </div>
+        `).join('');
+        
+        // Add hover effect via JS since it's dynamic
+        list.querySelectorAll('.dc-project-item').forEach(item => {
+            item.onmouseover = () => item.style.background = '#f8f9fa';
+            item.onmouseout = () => item.style.background = 'transparent';
+        });
+
+    } catch (err) {
+        console.error(err);
+        list.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load projects</div>';
+    }
+};
+
+window.selectProjectForDC = async function(projectId) {
+    try {
+        // Fetch full details including new fields
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (!res.ok) throw new Error('Failed to load project details');
+        const project = await res.json();
+
+        // Check for orders
+        const ordersRes = await fetch(`/api/projects/${projectId}/orders`);
+        let orders = [];
+        if (ordersRes.ok) {
+            orders = await ordersRes.json();
+        }
+
+        if (orders.length > 0) {
+            // Show Order Selection Modal
+            let orderModal = document.getElementById('dcOrderSelectModal');
+            if (!orderModal) {
+                orderModal = document.createElement('div');
+                orderModal.id = 'dcOrderSelectModal';
+                orderModal.className = 'modal';
+                orderModal.style.zIndex = '10002';
+                orderModal.innerHTML = `
+                    <div class="modal-content" style="max-width: 600px;">
+                        <span class="close-modal" onclick="document.getElementById('dcOrderSelectModal').style.display='none'">&times;</span>
+                        <h3>Select Order / Consignee</h3>
+                        <div style="margin-bottom: 15px; font-size: 13px; color: #666;">
+                            This project has multiple orders. Please select one to populate the Delivery Challan.
+                        </div>
+                        <div id="dcOrderList" style="max-height: 400px; overflow-y: auto; display: grid; gap: 10px;"></div>
+                    </div>
+                `;
+                document.body.appendChild(orderModal);
+            }
+
+            const list = document.getElementById('dcOrderList');
+            
+            // Add "Default Project Details" as first option
+            let html = `
+                <div class="card-panel" onclick="window.confirmDCProjectSelection('default')" 
+                     style="cursor: pointer; border-left: 4px solid #3b82f6; padding: 10px; transition: background 0.2s;">
+                    <div style="font-weight: 600; color: #333;">Default Project Details</div>
+                    <div style="font-size: 12px; color: #666;">Use the default Consignee and Buyer configured in the project.</div>
+                </div>
+            `;
+
+            html += orders.map((o, idx) => `
+                <div class="card-panel" onclick="window.confirmDCProjectSelection(${idx})" 
+                     style="cursor: pointer; border-left: 4px solid #10b981; padding: 10px; transition: background 0.2s;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="font-weight: 600; color: #333;">Order: ${o.OrderNo || 'N/A'}</div>
+                        <div style="font-size: 12px; color: #666;">${o.OrderDate || ''}</div>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px;">
+                        <span style="font-weight: 500;">Consignee:</span> ${o.ConsigneeName || 'Same as Project'}
+                    </div>
+                    <div style="font-size: 11px; color: #666;">${o.ConsigneeAddress || ''}</div>
+                </div>
+            `).join('');
+
+            list.innerHTML = html;
+            
+            // Hover effects
+            list.querySelectorAll('.card-panel').forEach(el => {
+                el.onmouseover = () => el.style.background = '#f8fafc';
+                el.onmouseout = () => el.style.background = 'white';
+            });
+
+            // Store temp data for selection
+            window.tempDCProjectData = { project, orders };
+            
+            document.getElementById('dcProjectSelectModal').style.display = 'none'; // Hide project list
+            orderModal.style.display = 'flex'; // Show order list
+
+        } else {
+            // No orders, just use project default
+            window.tempDCProjectData = { project, orders: [] };
+            window.confirmDCProjectSelection('default');
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert('Error populating details: ' + err.message);
+    }
+};
+
+window.confirmDCProjectSelection = function(index) {
+    const { project, orders } = window.tempDCProjectData;
+    const modal = document.getElementById('dcOrderSelectModal');
+    
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val || '';
+    };
+
+    if (index === 'default') {
+        // Use project default
+        setVal('dcConsigneeName', project.ConsigneeName || project.ClientName || '');
+        setVal('dcConsigneeAddress', project.ConsigneeAddress || project.Location || ''); 
+        setVal('dcConsigneeGST', project.ConsigneeGSTIN || '');
+        setVal('dcConsigneeState', project.ConsigneeState || '');
+        setVal('dcConsigneeStateCode', project.ConsigneeStateCode || '');
+
+        setVal('dcBuyerName', project.BuyerName || project.ClientName || '');
+        setVal('dcBuyerAddress', project.BuyerAddress || '');
+        setVal('dcBuyerGST', project.BuyerGSTIN || '');
+        setVal('dcBuyerState', project.BuyerState || '');
+        setVal('dcBuyerStateCode', project.BuyerStateCode || '');
+        setVal('dcBuyerOrderNo', ''); // No order no
+        
+        if (typeof showToast === 'function') showToast('DC details populated from project default', 'success');
+
+    } else {
+        // Use selected order
+        const order = orders[index];
+
+        // Use Order Consignee if present, else Project Consignee
+        setVal('dcConsigneeName', order.ConsigneeName || project.ConsigneeName || '');
+        setVal('dcConsigneeAddress', order.ConsigneeAddress || project.ConsigneeAddress || ''); 
+        setVal('dcConsigneeGST', order.ConsigneeGSTIN || project.ConsigneeGSTIN || '');
+        setVal('dcConsigneeState', order.ConsigneeState || project.ConsigneeState || '');
+        setVal('dcConsigneeStateCode', order.ConsigneeStateCode || project.ConsigneeStateCode || '');
+
+        // Use Project Buyer (as requested, Buyer remains same)
+        setVal('dcBuyerName', project.BuyerName || '');
+        setVal('dcBuyerAddress', project.BuyerAddress || '');
+        setVal('dcBuyerGST', project.BuyerGSTIN || '');
+        setVal('dcBuyerState', project.BuyerState || '');
+        setVal('dcBuyerStateCode', project.BuyerStateCode || '');
+        
+        setVal('dcBuyerOrderNo', order.OrderNo || '');
+        
+        // Try to set date if field exists (assuming standard HTML5 date input)
+        const refDateEl = document.getElementById('dcRefDate'); 
+        if (refDateEl && order.OrderDate) refDateEl.value = order.OrderDate;
+
+        if (typeof showToast === 'function') showToast('DC details populated from order', 'success');
+    }
+    
+    // Also set customer name if empty
+    const customerEl = document.getElementById('dcCustomerName');
+    if (customerEl && !customerEl.value) {
+        customerEl.value = project.ClientName || '';
+    }
+
+    if (modal) modal.style.display = 'none';
+    document.getElementById('dcProjectSelectModal').style.display = 'none';
+};
+
+// --- Load Database Dropdowns for DC ---
+async function loadDCDropdowns() {
+    const companySearch = document.getElementById('dcCompanySearch');
+    const companyList = document.getElementById('dcCompanyList');
+    
+    const consigneeSearch = document.getElementById('dcConsigneeSearch');
+    const consigneeList = document.getElementById('dcConsigneeList');
+    
+    const buyerSearch = document.getElementById('dcBuyerSearch');
+    const buyerList = document.getElementById('dcBuyerList');
+    
+    if (!companySearch && !consigneeSearch && !buyerSearch) return;
+    
+    try {
+        const res = await fetch('/api/projects');
+        if (!res.ok) return;
+        const projects = await res.json();
+        
+        // Extract Unique Data
+        const consignees = new Map();
+        const buyers = new Map();
+        const companies = new Map();
+
+        projects.forEach(p => {
+            // Consignee Logic
+            const cName = (p.ConsigneeName || p.ClientName || '').trim();
+            if (cName && !consignees.has(cName)) {
+                consignees.set(cName, {
+                    name: cName,
+                    address: p.ConsigneeAddress || p.Location || '',
+                    gstin: p.ConsigneeGSTIN || '',
+                    state: p.ConsigneeState || '',
+                    stateCode: p.ConsigneeStateCode || ''
+                });
+            }
+
+            // Buyer Logic
+            const bName = (p.BuyerName || p.ClientName || '').trim();
+            if (bName && !buyers.has(bName)) {
+                buyers.set(bName, {
+                    name: bName,
+                    address: p.BuyerAddress || '',
+                    gstin: p.BuyerGSTIN || '',
+                    state: p.BuyerState || '',
+                    stateCode: p.BuyerStateCode || ''
+                });
+            }
+
+            // Company Logic
+            const compName = (p.ClientName || '').trim();
+            if (compName && !companies.has(compName)) {
+                companies.set(compName, {
+                    name: compName,
+                    address: p.Location || '',
+                    gstin: p.BuyerGSTIN || '', // Fallback
+                    state: p.BuyerState || '',
+                    stateCode: p.BuyerStateCode || ''
+                });
+            }
+        });
+
+        // Setup Searchable Dropdown
+        const setupDropdown = (input, list, map, type) => {
+            if (!input || !list) return;
+            
+            const allItems = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+            
+            const renderList = (items) => {
+                if (items.length === 0) {
+                    list.innerHTML = '<div style="padding: 8px; color: #999; font-size: 11px;">No matches found</div>';
+                } else {
+                    list.innerHTML = items.map(item => `
+                        <div class="dropdown-item" data-details='${JSON.stringify(item).replace(/'/g, "&apos;")}' style="padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 12px;">
+                            <div style="font-weight: 600;">${item.name}</div>
+                            <div style="font-size: 10px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.address || 'No Address'}</div>
+                        </div>
+                    `).join('');
+                    
+                    // Add click handlers
+                    list.querySelectorAll('.dropdown-item').forEach(el => {
+                        el.onmouseover = () => el.style.background = '#f0f7ff';
+                        el.onmouseout = () => el.style.background = 'white';
+                        el.onclick = () => {
+                            const data = JSON.parse(el.getAttribute('data-details'));
+                            input.value = ''; // Clear search
+                            list.style.display = 'none'; // Hide list
+                            
+                            // Populate Fields
+                            if (type === 'Company') {
+                                document.getElementById('dcCompanyName').value = data.name;
+                                document.getElementById('dcCompanyAddress').value = data.address;
+                                document.getElementById('dcCompanyGST').value = data.gstin;
+                                document.getElementById('dcCompanyState').value = data.state;
+                                document.getElementById('dcCompanyStateCode').value = data.stateCode;
+                            } else if (type === 'Consignee') {
+                                document.getElementById('dcConsigneeName').value = data.name;
+                                document.getElementById('dcConsigneeAddress').value = data.address;
+                                document.getElementById('dcConsigneeGST').value = data.gstin;
+                                document.getElementById('dcConsigneeState').value = data.state;
+                                document.getElementById('dcConsigneeStateCode').value = data.stateCode;
+                            } else if (type === 'Buyer') {
+                                document.getElementById('dcBuyerName').value = data.name;
+                                document.getElementById('dcBuyerAddress').value = data.address;
+                                document.getElementById('dcBuyerGST').value = data.gstin;
+                                document.getElementById('dcBuyerState').value = data.state;
+                                document.getElementById('dcBuyerStateCode').value = data.stateCode;
+                            }
+                        };
+                    });
+                }
+                list.style.display = 'block';
+            };
+
+            // Focus: Show top 10
+            input.onfocus = () => {
+                renderList(allItems.slice(0, 10));
+            };
+            
+            // Input: Filter
+            input.oninput = (e) => {
+                const term = e.target.value.toLowerCase();
+                if (!term) {
+                    renderList(allItems.slice(0, 10));
+                    return;
+                }
+                
+                const matches = allItems.filter(item => 
+                    item.name.toLowerCase().includes(term) || 
+                    (item.address && item.address.toLowerCase().includes(term))
+                ).slice(0, 10);
+                
+                renderList(matches);
+            };
+
+            // Click outside to close
+            document.addEventListener('click', (e) => {
+                if (!input.contains(e.target) && !list.contains(e.target)) {
+                    list.style.display = 'none';
+                }
+            });
+        };
+
+        setupDropdown(companySearch, companyList, companies, 'Company');
+        setupDropdown(consigneeSearch, consigneeList, consignees, 'Consignee');
+        setupDropdown(buyerSearch, buyerList, buyers, 'Buyer');
+
+    } catch (err) {
+        console.error('Failed to load DC dropdowns', err);
+    }
+}
 
 window.showQuantityHistoryModal = showQuantityHistoryModal;

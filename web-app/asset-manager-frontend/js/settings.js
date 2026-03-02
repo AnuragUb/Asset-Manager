@@ -4,23 +4,7 @@ console.log('SETTINGS.JS: Module loaded');
 export function initSettingsView() {
     console.log('initSettingsView() called');
     loadEmailSettings();
-    loadTallySettings();
     setupSettingsHandlers();
-}
-
-async function loadTallySettings() {
-    try {
-        const response = await fetch('/api/settings/tally');
-        if (response.ok) {
-            const settings = await response.json();
-            const hostEl = document.getElementById('tallyHost');
-            const portEl = document.getElementById('tallyPort');
-            if (hostEl) hostEl.value = settings.host || 'localhost';
-            if (portEl) portEl.value = settings.port || 9000;
-        }
-    } catch (err) {
-        console.error('Failed to load Tally settings:', err);
-    }
 }
 
 async function loadEmailSettings() {
@@ -88,33 +72,6 @@ function setupSettingsHandlers() {
             } catch (err) {
                 console.error('Save error:', err);
                 alert('Failed to save settings');
-            }
-        };
-    }
-
-    const tallyForm = document.getElementById('tallySettingsForm');
-    if (tallyForm) {
-        tallyForm.onsubmit = async (e) => {
-            e.preventDefault();
-            const host = document.getElementById('tallyHost').value;
-            const port = document.getElementById('tallyPort').value;
-            
-            try {
-                const response = await fetch('/api/settings/tally', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ host, port })
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert('Tally settings saved successfully!');
-                } else {
-                    alert('Error saving settings: ' + result.error);
-                }
-            } catch (err) {
-                console.error('Save error:', err);
-                alert('Failed to save Tally settings');
             }
         };
     }

@@ -595,7 +595,7 @@
                     </div>
 
                     <!-- Delivery Challan (DC) View -->
-                    <div id="dc-view" class="view hidden" style="flex: 1; padding: 20px;">
+                    <div id="dc-view" class="view hidden" style="display: flex; flex-direction: column; height: 100%; padding: 20px; overflow: hidden; box-sizing: border-box;">
                         <div class="dashboard-header" style="flex-shrink: 0; margin-bottom: 20px;">
                             <div>
                                 <h2 style="margin: 0;">Create Delivery Challan (DC)</h2>
@@ -610,10 +610,19 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 30%, 450px), 1fr)); gap: 15px; flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 1400px; margin: 0 auto;">
                             <!-- Left: Form -->
                             <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
-                                <h3 style="margin-top: 0;">Challan Details</h3>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0; margin-bottom: 10px;">
+                                    <h3 style="margin: 0;">Challan Details</h3>
+                                    <button id="btnFetchFromProject" class="action-button small blue" style="font-size: 12px; padding: 4px 10px;">Fetch from Project</button>
+                                </div>
                                 <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
                                     <div class="form-group" style="margin-bottom: 15px;">
-                                        <div style="font-weight: 700; margin-bottom: 8px;">Company</div>
+                                        <div style="font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>Company</span>
+                                            <div style="position: relative; width: 250px;">
+                                                <input type="text" id="dcCompanySearch" class="form-input" style="width: 100%; padding: 4px 8px; font-size: 11px;" placeholder="Search Company..." autocomplete="off">
+                                                <div id="dcCompanyList" class="dropdown-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; z-index: 1000; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+                                            </div>
+                                        </div>
                                         <input type="text" id="dcCompanyName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;" placeholder="Company name">
                                         <textarea id="dcCompanyAddress" class="form-input" style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-bottom: 8px;" placeholder="Company address (multi-line)"></textarea>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -631,7 +640,13 @@
                                         <input type="text" id="dcCustomerName" name="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="e.g. John Doe / ABC Corp">
                                     </div>
                                     <div class="form-group" style="margin-bottom: 15px;">
-                                        <div style="font-weight: 700; margin-bottom: 8px;">Consignee (Ship To)</div>
+                                        <div style="font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>Consignee (Ship To)</span>
+                                            <div style="position: relative; width: 250px;">
+                                                <input type="text" id="dcConsigneeSearch" class="form-input" style="width: 100%; padding: 4px 8px; font-size: 11px;" placeholder="Search Consignee..." autocomplete="off">
+                                                <div id="dcConsigneeList" class="dropdown-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; z-index: 1000; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+                                            </div>
+                                        </div>
                                         <input type="text" id="dcConsigneeName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;" placeholder="Consignee name">
                                         <textarea id="dcConsigneeAddress" class="form-input" style="width: 100%; min-height: 70px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-bottom: 8px;" placeholder="Consignee address (multi-line)"></textarea>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -642,7 +657,13 @@
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 15px;">
-                                        <div style="font-weight: 700; margin-bottom: 8px;">Buyer (Bill To)</div>
+                                        <div style="font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>Buyer (Bill To)</span>
+                                            <div style="position: relative; width: 250px;">
+                                                <input type="text" id="dcBuyerSearch" class="form-input" style="width: 100%; padding: 4px 8px; font-size: 11px;" placeholder="Search Buyer..." autocomplete="off">
+                                                <div id="dcBuyerList" class="dropdown-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; z-index: 1000; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+                                            </div>
+                                        </div>
                                         <input type="text" id="dcBuyerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;" placeholder="Buyer name">
                                         <textarea id="dcBuyerAddress" class="form-input" style="width: 100%; min-height: 70px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-bottom: 8px;" placeholder="Buyer address (multi-line)"></textarea>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -670,12 +691,23 @@
                                             <input type="text" id="dcDispatchedThrough" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatched through">
                                             <input type="text" id="dcDestination" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Destination">
                                         </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                                            <input type="text" id="dcPlaceOfSupply" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Place of Supply">
+                                            <div style="flex: 1;"></div>
+                                        </div>
                                         <textarea id="dcTermsOfDelivery" class="form-input" style="width: 100%; min-height: 50px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-top: 8px;" placeholder="Terms of Delivery"></textarea>
                                     </div>
-                                    <div class="form-group" style="margin-bottom: 15px; position: relative;">
-                                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Search & Add Assets</label>
-                                        <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search by Name or ID...">
-                                        <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                    <div class="form-group" style="margin-bottom: 15px;">
+                                        <div style="font-weight: 700; margin-bottom: 8px;">Remarks</div>
+                                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                                            <select id="dcRemarksTemplate" class="form-input" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                                <option value="">-- Select a Template --</option>
+                                            </select>
+                                            <button id="btnSaveRemarkTemplate" class="action-button green" style="padding: 0 15px; white-space: nowrap;">Save as Template</button>
+                                            <button id="btnDeleteRemarkTemplate" class="action-button red" style="padding: 0 15px; white-space: nowrap; display: none;">Delete</button>
+                                        </div>
+                                        <input type="text" id="dcRemarkTitle" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; display: none;" placeholder="Template Title">
+                                        <textarea id="dcRemarks" class="form-input" style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;" placeholder="Enter remarks here..."></textarea>
                                     </div>
                                 </div>
                                 <button id="btnGenerateDC" class="action-button blue" style="width: 100%; margin-top: 10px; justify-content: center; flex-shrink: 0;">Generate DC & QR Code</button>
@@ -684,6 +716,18 @@
                             <!-- Right: Selected Assets -->
                             <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
                                 <h3 style="margin-top: 0;">Selected Assets</h3>
+                                <!-- Toggle buttons removed in favor of clickable headers -->
+                                <div style="margin-bottom: 15px; position: relative;">
+                                    <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search & Add Assets by Name or ID...">
+                                    <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                </div>
+
+                                <div style="margin-bottom: 10px;">
+                                    <button id="btnToggleRateAmount" type="button" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-size: 14px;">👁️</span> Toggle Rate & Amount
+                                    </button>
+                                </div>
+
                                 <div style="flex: 1; overflow-y: auto;">
                                     <table style="width: 100%; border-collapse: collapse;" id="dcSelectedAssetsTable">
                                         <thead>
@@ -691,9 +735,10 @@
                                                 <th style="padding: 10px; width: 140px;">Asset ID</th>
                                                 <th style="padding: 10px;">Description</th>
                                                 <th style="padding: 10px; width: 90px;">HSN/SAC</th>
+                                                <th style="padding: 10px; width: 60px; text-align: center;">Unit</th>
                                                 <th style="padding: 10px; width: 70px; text-align: right;">Qty</th>
-                                                <th style="padding: 10px; width: 90px; text-align: right;">Rate</th>
-                                                <th style="padding: 10px; width: 100px; text-align: right;">Amount</th>
+                                                <th id="dcThRate" style="padding: 10px; width: 90px; text-align: right; cursor: pointer; user-select: none;" title="Double Click to Toggle Rate Column">Rate <span style="font-size: 10px;">▼</span></th>
+                                                <th id="dcThAmount" style="padding: 10px; width: 100px; text-align: right; cursor: pointer; user-select: none;" title="Double Click to Toggle Amount Column">Amount <span style="font-size: 10px;">▼</span></th>
                                                 <th style="padding: 10px; width: 60px; text-align: center;">Action</th>
                                             </tr>
                                         </thead>
@@ -1822,6 +1867,35 @@
                             <input type="date" id="sideProjectEndDate" name="sideProjectEndDate" class="form-input">
                         </div>
                     </div>
+                    
+                    <div style="margin: 15px 0; border-top: 1px solid #eee; padding-top: 10px;">
+                        <button type="button" class="action-button small" style="background: #f1f5f9; color: #475569;" onclick="document.getElementById('projectBillingSection').style.display = document.getElementById('projectBillingSection').style.display === 'none' ? 'block' : 'none'">
+                            Show/Hide Billing & Shipping Details
+                        </button>
+                    </div>
+
+                    <div id="projectBillingSection" style="display: none; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0; margin-bottom: 10px;">Consignee (Ship To)</h4>
+                        <div class="form-group">
+                            <input type="text" id="sideProjectConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
+                            <textarea id="sideProjectConsigneeAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                <input type="text" id="sideProjectConsigneeGSTIN" placeholder="GSTIN" class="form-input">
+                                <input type="text" id="sideProjectConsigneeState" placeholder="State" class="form-input">
+                            </div>
+                        </div>
+
+                        <h4 style="margin-top: 15px; margin-bottom: 10px;">Buyer (Bill To)</h4>
+                        <div class="form-group">
+                            <input type="text" id="sideProjectBuyerName" placeholder="Buyer Name" class="form-input" style="margin-bottom: 5px;">
+                            <textarea id="sideProjectBuyerAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                <input type="text" id="sideProjectBuyerGSTIN" placeholder="GSTIN" class="form-input">
+                                <input type="text" id="sideProjectBuyerState" placeholder="State" class="form-input">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="modal-actions">
                         <button id="btnSideSubmitProject" class="action-button blue">Initialize Project</button>
                     </div>
@@ -1838,6 +1912,17 @@
                         <div id="projectStats" class="card-panel" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;"></div>
                     </div>
 
+                    <div id="projectBillingDisplay" class="card-panel" style="margin-bottom: 20px; display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin: 0; font-size: 16px;">Billing & Shipping Details</h3>
+                            <button id="btnEditProjectBilling" class="action-button small">Edit</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <div id="projectConsigneeDisplay"></div>
+                            <div id="projectBuyerDisplay"></div>
+                        </div>
+                    </div>
+
                     <div id="clientUserAction" style="margin-bottom: 20px; display: none;">
                         <button class="action-button blue" onclick="showCreateClientUserModal()">Create Client User Account</button>
                     </div>
@@ -1846,6 +1931,26 @@
                         <button class="tab-btn active" onclick="switchProjectTab('assets')">Project Assets</button>
                         <button class="tab-btn" onclick="switchProjectTab('temp')">Temporary Assets</button>
                         <button class="tab-btn" onclick="switchProjectTab('bom')">BOM / Export</button>
+                        <button class="tab-btn" onclick="switchProjectTab('orders')">Orders</button>
+                    </div>
+
+                    <div id="projectOrdersTab" class="project-tab-content" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0;">Project Orders</h3>
+                            <button class="action-button blue" id="btnAddProjectOrder">+ Add Order</button>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Order No</th>
+                                    <th>Date</th>
+                                    <th>Consignee</th>
+                                    <th>Location</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="projectOrdersTableBody"></tbody>
+                        </table>
                     </div>
 
                     <div id="projectAssetsTab" class="project-tab-content active">
@@ -2028,6 +2133,8 @@
                 </div>
             </div>
                     </div>
+
+
                 </div>
             </div>
         </div>
@@ -2102,7 +2209,7 @@
         </div>
     </div>
 
-    <script type="module" src="/js/main.js?v=5.0"></script>
+    <script type="module" src="/js/main.js?v=5.12"></script>
     <!-- QR Code Modal -->
     <div id="qrModal" class="modal">
         <div class="modal-content" style="max-width: 400px; text-align: center;">

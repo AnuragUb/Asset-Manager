@@ -1,87 +1,19 @@
-console.log('MAIN.JS: Entry point (v5.0)');
-import { showView } from './utils.js?v=5.1';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.4';
-import { initScannerView } from './networkScanner.js?v=5.1';
-import { initQrScannerView } from './qrScanner.js';
-import { renderItAssets } from './itAssets.js?v=5.1';
-import { setupAuth } from './auth.js?v=5.1';
-import { HierarchyManager } from './hierarchy.js?v=5.1';
-import { initEmployeeView, loadEmployees } from './employees.js?v=5.1';
-import { setupOcr } from './ocr.js?v=5.1';
-import { initWarrantyView } from './warranty.js?v=5.1';
-import { initProjectsView } from './projects.js?v=5.3';
-import { initSettingsView } from './settings.js?v=5.1';
-import { renderAdmin } from './admin.js?v=5.1';
+console.log('MAIN.JS: Entry point (v5.8)');
+import { showView } from './utils.js?v=5.7';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.12';
+import { initScannerView } from './networkScanner.js?v=5.7';
+import { renderItAssets } from './itAssets.js?v=5.7';
+import { setupAuth } from './auth.js?v=5.7';
+import { HierarchyManager } from './hierarchy.js?v=5.7';
+import { initEmployeeView, loadEmployees } from './employees.js?v=5.7';
+import { setupOcr } from './ocr.js?v=5.7';
+import { initWarrantyView } from './warranty.js?v=5.7';
+import { initProjectsView } from './projects.js?v=5.8';
+import { initSettingsView } from './settings.js?v=5.7';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
-
-function updateNavigationVisibility(user) {
-    if (!user || !user.role) return;
-    
-    const role = user.role;
-    const isSuperUser = role === 'superuser';
-    const isAdmin = role === 'admin';
-    const isManager = role === 'manager';
-    const isClient = role === 'client';
-    
-    // Helper to show/hide by ID
-    const setVisible = (id, visible) => {
-        const el = document.getElementById(id);
-        if (el) {
-            // Hide the parent li element to remove it from the list layout completely
-            const li = el.closest('li');
-            if (li) {
-                li.style.display = visible ? 'block' : 'none';
-            } else {
-                el.style.display = visible ? 'block' : 'none';
-            }
-        }
-    };
-
-    // Define visibility rules
-    // Settings: Superuser, Admin
-    setVisible('nav-settings', isSuperUser || isAdmin);
-    
-    // Employees: Superuser, Admin
-    setVisible('nav-employees', isSuperUser || isAdmin);
-    
-    // Network: Superuser, Admin, IT User, IT Manager
-    const isItUser = role === 'it_user';
-    const isItManager = role === 'it_manager';
-    setVisible('nav-scanner', isSuperUser || isAdmin || isItUser || isItManager);
-
-    // QR Scanner: Superuser, Admin, Manager, User, IT User, IT Manager
-    setVisible('nav-qr-scanner', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
-    
-    // Warranty: Superuser, Admin, Manager, User, IT User, IT Manager
-    setVisible('nav-warranty', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
-    
-    // Delivery Challan (DC): Superuser, Admin, Manager, User, IT User, IT Manager
-    setVisible('nav-dc', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
-    
-    // OCR: Superuser, Admin, Manager, User, IT User, IT Manager
-    setVisible('nav-ocr', isSuperUser || isAdmin || isManager || isItUser || isItManager || !isClient);
-    
-    // Releases: Superuser, Admin
-    setVisible('nav-releases', isSuperUser || isAdmin);
-    
-    // Admin: Superuser, Admin
-    setVisible('nav-admin', isSuperUser || isAdmin);
-
-    // Client restrictions
-    if (isClient) {
-        setVisible('nav-sheet', false);
-        setVisible('nav-scanner', false);
-        setVisible('nav-ocr', false);
-        setVisible('nav-warranty', false);
-        setVisible('nav-settings', false);
-        setVisible('nav-releases', false);
-        // Clients might only see Dashboard and Projects
-    }
-}
-window.updateNavigationVisibility = updateNavigationVisibility;
 
 // Global diagnostic for Warranty
 window.checkWarranty = () => {
@@ -437,10 +369,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAuth(async (user) => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
-        
-        // Update Navigation Visibility based on Role
-        updateNavigationVisibility(user);
-
         if (window.location.hash) {
             window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
         }
@@ -458,6 +386,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         await loadAssets();
+        
+        // Load temporary assets globally for search
+        try {
+            const tempRes = await fetch('/api/temporary-assets');
+            if (tempRes.ok) {
+                window.allTempAssets = await tempRes.json();
+                console.log('Loaded global temp assets:', window.allTempAssets.length);
+            }
+        } catch (err) {
+            console.error('Failed to load global temp assets:', err);
+        }
         
         // Load employees globally so dropdowns are populated even if Employees tab isn't visited
         if (typeof loadEmployees === 'function') {
@@ -527,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function switchDashboardSubView(subViewName) {
-    const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'qr-scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view', 'admin-view'];
+    const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view', 'admin-view'];
     console.log(`Switching dashboard subview to: ${subViewName}`);
     
     // Show/Hide Sidebar based on subview
@@ -616,11 +555,6 @@ function setupNavigation() {
             subView: 'scanner-view', 
             init: () => typeof initScannerView === 'function' && initScannerView() 
         },
-        'nav-qr-scanner': { 
-            view: 'dashboardView', 
-            subView: 'qr-scanner-view', 
-            init: () => typeof initQrScannerView === 'function' && initQrScannerView() 
-        },
         'nav-ocr': { 
             view: 'dashboardView', 
             subView: 'ocr-view', 
@@ -650,9 +584,154 @@ function setupNavigation() {
             view: 'dashboardView',
             subView: 'admin-view',
             init: () => {
-                if (typeof renderAdmin === 'function') {
-                    renderAdmin();
+                const container = document.getElementById('admin-users-container');
+                if (!container) return;
+
+                const form = document.getElementById('admin-create-user-form');
+                if (form && !form.dataset.bound) {
+                    form.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const usernameEl = document.getElementById('adminNewUsername');
+                        const fullnameEl = document.getElementById('adminNewFullname');
+                        const passwordEl = document.getElementById('adminNewPassword');
+                        const roleEl = document.getElementById('adminNewRole');
+                        const employeeEl = document.getElementById('adminNewEmployeeId');
+
+                        const username = usernameEl ? usernameEl.value.trim() : '';
+                        const fullname = fullnameEl ? fullnameEl.value.trim() : '';
+                        const password = passwordEl ? passwordEl.value : '';
+                        const role = roleEl ? roleEl.value : 'user';
+                        const employeeId = employeeEl ? employeeEl.value.trim() : '';
+
+                        if (!username || !password) {
+                            alert('Username and password are required');
+                            return;
+                        }
+
+                        try {
+                            const res = await fetch('/api/tenant/users', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ username, fullname, password, role, employeeId })
+                            });
+                            const body = await res.json().catch(() => ({}));
+                            if (!res.ok || !body.ok) {
+                                const msg = (body && (body.message || body.error)) || 'Failed to create user';
+                                alert(msg);
+                                return;
+                            }
+                            if (usernameEl) usernameEl.value = '';
+                            if (fullnameEl) fullnameEl.value = '';
+                            if (passwordEl) passwordEl.value = '';
+                            if (employeeEl) employeeEl.value = '';
+                            loadUsers();
+                        } catch (err) {
+                            console.error('Error creating tenant user:', err);
+                            alert('Error connecting to server while creating user');
+                        }
+                    });
+                    form.dataset.bound = 'true';
                 }
+
+                if (!container.dataset.bound) {
+                    container.addEventListener('change', async (e) => {
+                        const select = e.target.closest('.admin-role-select');
+                        if (!select) return;
+                        const username = select.dataset.username;
+                        const role = select.value;
+                        if (!username || !role) return;
+                        try {
+                            const res = await fetch('/api/tenant/users/' + encodeURIComponent(username) + '/role', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ role })
+                            });
+                            const body = await res.json().catch(() => ({}));
+                            if (!res.ok || !body.ok) {
+                                const msg = (body && (body.message || body.error)) || 'Failed to update role';
+                                alert(msg);
+                                loadUsers();
+                            }
+                        } catch (err) {
+                            console.error('Error updating tenant user role:', err);
+                            alert('Error connecting to server while updating role');
+                            loadUsers();
+                        }
+                    });
+
+                    container.addEventListener('click', async (e) => {
+                        const btn = e.target.closest('.admin-delete-user-btn');
+                        if (!btn) return;
+                        const username = btn.dataset.username;
+                        if (!username) return;
+                        if (!window.confirm('Delete user "' + username + '"?')) {
+                            return;
+                        }
+                        try {
+                            const res = await fetch('/api/tenant/users/' + encodeURIComponent(username), {
+                                method: 'DELETE'
+                            });
+                            const body = await res.json().catch(() => ({}));
+                            if (!res.ok || !body.ok) {
+                                const msg = (body && (body.message || body.error)) || 'Failed to delete user';
+                                alert(msg);
+                            }
+                            loadUsers();
+                        } catch (err) {
+                            console.error('Error deleting tenant user:', err);
+                            alert('Error connecting to server while deleting user');
+                            loadUsers();
+                        }
+                    });
+
+                    container.dataset.bound = 'true';
+                }
+
+                function loadUsers() {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Loading users...</div>';
+                    fetch('/api/tenant/users')
+                        .then(res => res.json().then(body => ({ ok: res.ok, body })))
+                        .then(({ ok, body }) => {
+                            if (!ok || !body || !body.ok) {
+                                const msg = (body && (body.message || body.error)) || 'Failed to load users';
+                                container.innerHTML = '<p style="padding: 20px; color: #c00;">' + msg + '</p>';
+                                return;
+                            }
+                            const users = body.users || [];
+                            if (!users.length) {
+                                container.innerHTML = '<p style="padding: 20px; color: #999;">No users found for this company.</p>';
+                                return;
+                            }
+                            let html = '<div class="admin-table-wrapper"><table class="admin-table"><thead><tr>';
+                            html += '<th>Username</th><th>Full Name</th><th>Role</th><th>Actions</th>';
+                            html += '</tr></thead><tbody>';
+                            users.forEach(u => {
+                                const username = u.username || '';
+                                const fullname = u.fullname || '';
+                                const role = u.role || 'user';
+                                html += '<tr>';
+                                html += '<td>' + username + '</td>';
+                                html += '<td>' + fullname + '</td>';
+                                html += '<td>';
+                                html += '<select class="admin-role-select raul-role-select" data-username="' + username + '">';
+                                ['user', 'manager', 'admin', 'superuser'].forEach(r => {
+                                    html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + r + '</option>';
+                                });
+                                html += '</select>';
+                                html += '</td>';
+                                html += '<td><button type="button" class="admin-delete-user-btn" data-username="' + username + '">Delete</button></td>';
+                                html += '</tr>';
+                            });
+                            html += '</tbody></table></div>';
+                            container.innerHTML = html;
+                        })
+                        .catch(err => {
+                            console.error('Error loading tenant users:', err);
+                            container.innerHTML = '<p style="padding: 20px; color: #c00;">Error connecting to server.</p>';
+                        });
+                }
+
+                loadUsers();
             }
         },
         'nav-settings': {

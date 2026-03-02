@@ -284,19 +284,12 @@ const TALLY_CONFIG = {
     port: 9000
 };
 
-function getTallyConfig() {
-    const dynamic = readJson(dynamicFile);
-    return dynamic.tally_settings || TALLY_CONFIG;
-}
-
 async function sendTallyRequest(xml) {
     const http = require('http');
-    const config = getTallyConfig();
-    
     return new Promise((resolve, reject) => {
         const req = http.request({
-            hostname: config.host,
-            port: config.port,
+            hostname: TALLY_CONFIG.host,
+            port: TALLY_CONFIG.port,
             method: 'POST',
             headers: {
                 'Content-Type': 'text/xml',
@@ -357,6 +350,5 @@ module.exports = {
     dynamicFile,
     sendTallyRequest,
     parseTallyXml,
-    TALLY_CONFIG,
-    getTallyConfig
+    TALLY_CONFIG
 };

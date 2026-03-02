@@ -1531,6 +1531,42 @@ app.post('/api/tally/sync', async (req, res) => {
   }
 });
 
+// HSN Endpoints
+app.get('/api/hsn', (req, res) => {
+    try {
+        const query = req.query.q || '';
+        let sql = 'SELECT * FROM hsn_codes';
+        const params = [];
+        
+        if (query) {
+            sql += ' WHERE code LIKE ? OR description LIKE ?';
+            params.push(`%${query}%`, `%${query}%`);
+        }
+        
+        sql += ' ORDER BY code ASC LIMIT 50';
+        const rows = db.prepare(sql).all(...params);
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('HSN Fetch Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/hsn', (req, res) => {
+    try {
+        const { code, description, gst_rate } = req.body;
+        if (!code) return res.status(400).json({ success: false, error: 'HSN Code is required' });
+
+        const stmt = db.prepare('INSERT OR REPLACE INTO hsn_codes (code, description, gst_rate) VALUES (?, ?, ?)');
+        stmt.run(code, description, gst_rate || 0);
+        
+        res.json({ success: true, message: 'HSN Code saved successfully' });
+    } catch (err) {
+        console.error('HSN Save Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Delivery Challan Endpoints
 app.get('/api/dc', (req, res) => {
   const dcs = db.prepare('SELECT * FROM delivery_challans ORDER BY Timestamp DESC').all();
@@ -1540,7 +1576,8 @@ app.get('/api/dc', (req, res) => {
 app.get('/api/dc/:id', (req, res) => {
   try {
     const id = req.params.id;
-    const row = db.prepare('SELECT * FROM delivery_challans WHERE ID = ?').get(id);
+    // Search by either internal ID or user-facing ChallanNo
+    const row = db.prepare('SELECT * FROM delivery_challans WHERE ID = ? OR ChallanNo = ?').get(id, id);
     if (!row) return res.status(404).json({ success: false, error: 'DC not found' });
 
     let payload = null;
@@ -1572,9 +1609,7 @@ app.get('/api/dc/:id', (req, res) => {
 app.post('/api/dc', async (req, res) => {
   try {
     const { CustomerName, DeliveryDate, AssetIds, CreatedBy, payload } = req.body || {};
-    const id = `DC${Date.now()}`;
-    const challanNo = `DC/${new Date().getFullYear()}/${Math.floor(1000 + Math.random() * 9000)}`;
-    
+    // 1. Prepare Data (Sync)
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = normalizedAssetIds.map((assetId) => {
       const row = db.prepare(`
@@ -1583,36 +1618,81 @@ app.post('/api/dc', async (req, res) => {
         WHERE ID = ?
       `).get(assetId)
       return row || { ID: assetId }
-    })
+    });
 
-    const dcPayload = payload && typeof payload === 'object' ? payload : {
-      company: {},
-      consignee: { name: CustomerName || '' },
-      buyer: { name: CustomerName || '' },
-      meta: {
-        deliveryNoteNo: challanNo,
-        dated: DeliveryDate || ''
-      },
-      items: assetsForDc.map((a) => ({
-        assetId: a.ID,
-        description: a.ItemName || a.ID,
-        hsn: '',
-        qty: 1,
-        per: 'NO',
-        rate: '',
-        amount: '',
-        quantity: a.quantity_root_id ? {
-          rootId: a.quantity_root_id,
-          parentId: a.quantity_parent_id || null,
-          unit: a.quantity_unit || null,
-          available: a.quantity_available ?? null,
-          total: a.quantity_total ?? null,
-          precision: a.quantity_precision ?? null
-        } : null
-      }))
-    };
+    // 2. Atomic Transaction: Get Next ID -> Insert Placeholder
+    const createResult = db.transaction(() => {
+        const year = new Date().getFullYear();
+        let nextSeq = 1;
+        try {
+            const lastDc = db.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE 'DC/${year}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
+            if (lastDc && lastDc.ChallanNo) {
+                const parts = lastDc.ChallanNo.split('/');
+                if (parts.length === 3) {
+                    const lastSeq = parseInt(parts[2], 10);
+                    if (!isNaN(lastSeq)) {
+                        nextSeq = lastSeq + 1;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching last DC number:', err);
+            nextSeq = Math.floor(1000 + Math.random() * 9000); 
+        }
+        
+        const challanNo = `DC/${year}/${String(nextSeq).padStart(4, '0')}`;
+        const id = `DC${Date.now()}`;
+        
+        // Initial Payload (without QR)
+        const initialPayload = payload && typeof payload === 'object' ? payload : {
+          company: {},
+          consignee: { name: CustomerName || '' },
+          buyer: { name: CustomerName || '' },
+          meta: {
+            deliveryNoteNo: challanNo,
+            dated: DeliveryDate || ''
+          },
+          items: assetsForDc.map((a) => ({
+            assetId: a.ID,
+            description: a.ItemName || a.ID,
+            hsn: '',
+            qty: 1,
+            per: 'NO',
+            rate: '',
+            amount: '',
+            quantity: a.quantity_root_id ? {
+              rootId: a.quantity_root_id,
+              parentId: a.quantity_parent_id || null,
+              unit: a.quantity_unit || null,
+              available: a.quantity_available ?? null,
+              total: a.quantity_total ?? null,
+              precision: a.quantity_precision ?? null
+            } : null
+          }))
+        };
 
-    // Generate QR Code containing DC info
+        db.prepare(`
+          INSERT INTO delivery_challans (ID, ChallanNo, CustomerName, DeliveryDate, AssetIds, Status, QRCode, CreatedBy, Timestamp, PayloadJSON)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id,
+          challanNo,
+          CustomerName || '',
+          DeliveryDate || '',
+          JSON.stringify(normalizedAssetIds),
+          'Initializing', // Temporary status
+          '', // Empty QR initially
+          CreatedBy || 'System',
+          new Date().toISOString(),
+          JSON.stringify(initialPayload)
+        );
+
+        return { id, challanNo, payload: initialPayload };
+    })();
+
+    const { id, challanNo, payload: dcPayload } = createResult;
+
+    // 3. Generate QR Code (Async)
     const qrData = JSON.stringify({
       id: id,
       no: challanNo,
@@ -1625,25 +1705,11 @@ app.post('/api/dc', async (req, res) => {
       Type: "DC",
       ID: id
     });
+    
     const qrCode = await qrcode.toDataURL(qrData);
 
-    const stmt = db.prepare(`
-      INSERT INTO delivery_challans (ID, ChallanNo, CustomerName, DeliveryDate, AssetIds, Status, QRCode, CreatedBy, Timestamp, PayloadJSON)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      id,
-      challanNo,
-      CustomerName || '',
-      DeliveryDate || '',
-      JSON.stringify(normalizedAssetIds),
-      'Pending',
-      qrCode,
-      CreatedBy || 'System',
-      new Date().toISOString(),
-      JSON.stringify(dcPayload)
-    );
+    // 4. Update Record with QR Code & Final Status
+    db.prepare(`UPDATE delivery_challans SET QRCode = ?, Status = 'Pending' WHERE ID = ?`).run(qrCode, id);
 
     appendAudit({ 
       Action: 'DC_CREATED', 
@@ -1658,6 +1724,82 @@ app.post('/api/dc', async (req, res) => {
     console.error('DC Creation Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// DC Remark Templates Endpoints
+app.get('/api/dc-remarks', (req, res) => {
+    try {
+        const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='dc_remark_templates'").get();
+        if (!table) {
+            db.prepare(`
+                CREATE TABLE dc_remark_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            `).run();
+        }
+        const templates = db.prepare('SELECT * FROM dc_remark_templates ORDER BY title ASC').all();
+        res.json({ success: true, templates });
+    } catch (err) {
+        console.error('Error fetching remark templates:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/dc-remarks', (req, res) => {
+    try {
+        const { title, content } = req.body;
+        if (!title || !content) {
+            return res.status(400).json({ success: false, error: 'Title and content are required' });
+        }
+        const stmt = db.prepare('INSERT INTO dc_remark_templates (title, content, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        const now = new Date().toISOString();
+        const info = stmt.run(title, content, now, now);
+        res.json({ success: true, id: info.lastInsertRowid });
+    } catch (err) {
+        console.error('Error creating remark template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/api/dc-remarks/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, content } = req.body;
+        if (!title || !content) {
+            return res.status(400).json({ success: false, error: 'Title and content are required' });
+        }
+        const stmt = db.prepare('UPDATE dc_remark_templates SET title = ?, content = ?, updated_at = ? WHERE id = ?');
+        const now = new Date().toISOString();
+        const info = stmt.run(title, content, now, id);
+        if (info.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ success: false, error: 'Template not found' });
+        }
+    } catch (err) {
+        console.error('Error updating remark template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/dc-remarks/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const stmt = db.prepare('DELETE FROM dc_remark_templates WHERE id = ?');
+        const info = stmt.run(id);
+        if (info.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ success: false, error: 'Template not found' });
+        }
+    } catch (err) {
+        console.error('Error deleting remark template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Employee API Endpoints
@@ -3632,7 +3774,13 @@ app.get('/api/external/stats', checkApiKey, (req, res) => {
 app.get('/api/projects', (req, res) => {
     try {
         const { projectId } = req.query;
-        let query = 'SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, OwnerEmail, CoordinatorEmail, Timestamp, QRCode FROM projects';
+        let query = `
+            SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
+                   OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
+                   ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+                   BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+            FROM projects
+        `;
         let params = [];
 
         if (projectId) {
@@ -3650,7 +3798,12 @@ app.get('/api/projects', (req, res) => {
 
 app.post('/api/projects', async (req, res) => {
     try {
-        const { name, client, location, currency, description, status, startDate, endDate, createdBy, ownerEmail, coordinatorEmail } = req.body;
+        const { 
+            name, client, location, currency, description, status, startDate, endDate, 
+            createdBy, ownerEmail, coordinatorEmail,
+            consigneeName, consigneeAddress, consigneeGSTIN, consigneeState, consigneeStateCode,
+            buyerName, buyerAddress, buyerGSTIN, buyerState, buyerStateCode
+        } = req.body;
         
         // Use the new standardized Project ID generator
         const id = generateProjectId(location || 'MUMBAI');
@@ -3675,11 +3828,21 @@ app.post('/api/projects', async (req, res) => {
         const qrCode = await qrcode.toDataURL(qrPayload, { width: 512 });
 
         const stmt = db.prepare(`
-            INSERT INTO projects (ID, ProjectName, ClientName, Location, Currency, Description, Status, StartDate, EndDate, CreatedBy, OwnerEmail, CoordinatorEmail, Timestamp, QRCode)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (
+                ID, ProjectName, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
+                CreatedBy, OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
+                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const ts = new Date().toISOString();
-        stmt.run(id, name || '', client || '', location || 'MUMBAI', currency || 'INR', description || '', status || 'Planning', startDate || '', endDate || '', createdBy || 'System', ownerEmail || '', coordinatorEmail || '', ts, qrCode);
+        stmt.run(
+            id, name || '', client || '', location || 'MUMBAI', currency || 'INR', description || '', status || 'Planning', startDate || '', endDate || '', 
+            createdBy || 'System', ownerEmail || '', coordinatorEmail || '', ts, qrCode,
+            consigneeName || '', consigneeAddress || '', consigneeGSTIN || '', consigneeState || '', consigneeStateCode || '',
+            buyerName || '', buyerAddress || '', buyerGSTIN || '', buyerState || '', buyerStateCode || ''
+        );
 
         // Record initial project history
         db.prepare(`
@@ -3697,7 +3860,13 @@ app.post('/api/projects', async (req, res) => {
 app.get('/api/projects/:id', (req, res) => {
     try {
         const { id } = req.params;
-        const project = db.prepare('SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, OwnerEmail, CoordinatorEmail, Timestamp, QRCode FROM projects WHERE ID = ?').get(id);
+        const project = db.prepare(`
+            SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
+                   OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
+                   ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+                   BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+            FROM projects WHERE ID = ?
+        `).get(id);
         if (!project) return res.status(404).send('Project not found');
         res.json(project);
     } catch (err) {
@@ -3715,6 +3884,61 @@ app.get('/api/projects/:id/history', (req, res) => {
     }
 });
 
+app.get('/api/projects/:id/orders', (req, res) => {
+    try {
+        const { id } = req.params;
+        const rows = db.prepare('SELECT * FROM project_orders WHERE ProjectID = ? ORDER BY Timestamp DESC').all(id);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/projects/:id/orders', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            OrderNo, OrderDate, 
+            ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+        } = req.body;
+
+        const orderId = `ORD-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+        const ts = new Date().toISOString();
+
+        const stmt = db.prepare(`
+            INSERT INTO project_orders (
+                ID, ProjectID, OrderNo, OrderDate,
+                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode,
+                CreatedBy, Timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run(
+            orderId, id, OrderNo, OrderDate,
+            ConsigneeName || '', ConsigneeAddress || '', ConsigneeGSTIN || '', ConsigneeState || '', ConsigneeStateCode || '',
+            BuyerName || '', BuyerAddress || '', BuyerGSTIN || '', BuyerState || '', BuyerStateCode || '',
+            'System', ts
+        );
+
+        res.json({ success: true, id: orderId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/projects/:projectId/orders/:orderId', (req, res) => {
+    try {
+        const { projectId, orderId } = req.params;
+        const result = db.prepare('DELETE FROM project_orders WHERE ID = ? AND ProjectID = ?').run(orderId, projectId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Order not found' });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.patch('/api/projects/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -3725,7 +3949,12 @@ app.patch('/api/projects/:id', async (req, res) => {
         }
 
         // Allow dynamic updates for projects
-        const allowedFields = ['ProjectName', 'ClientName', 'Status', 'Description', 'StartDate', 'EndDate', 'Location', 'Currency', 'OwnerEmail', 'CoordinatorEmail'];
+        const allowedFields = [
+            'ProjectName', 'ClientName', 'Status', 'Description', 'StartDate', 'EndDate', 'Location', 'Currency', 
+            'OwnerEmail', 'CoordinatorEmail',
+            'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 'ConsigneeState', 'ConsigneeStateCode',
+            'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+        ];
         const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
         
         if (fields.length === 0 && !updates.status) {

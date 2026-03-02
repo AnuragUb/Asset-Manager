@@ -350,6 +350,18 @@ async function showProjectDetails(id) {
         }
     }
 
+    // Set current project for orders
+    window.currentProjectForOrders = project.ID;
+    window.currentProjectData = project;
+
+    const btnAddOrder = document.getElementById('btnAddProjectOrder');
+    if (btnAddOrder) {
+        btnAddOrder.onclick = () => showAddOrderModal(project.ID, project);
+    }
+    
+    // Reset tabs - always start with assets tab unless specified otherwise
+    if (typeof switchProjectTab === 'function') switchProjectTab('assets');
+
     modal.style.display = 'flex';
     loadProjectAssets(id);
 }
@@ -474,20 +486,261 @@ function switchProjectTab(tabName) {
     if (tabName === 'assets') {
         const el = document.getElementById('projectAssetsTab');
         if (el) el.style.display = 'block';
-        const btn = document.querySelector('button[onclick="switchProjectTab(\'assets\')"]');
-        if (btn) btn.classList.add('active');
     } else if (tabName === 'temp') {
-        const el = document.getElementById('projectTempAssetsTab');
+        const el = document.getElementById('projectTempTab') || document.getElementById('projectTempAssetsTab'); // Handle ID variation
         if (el) el.style.display = 'block';
-        const btn = document.querySelector('button[onclick="switchProjectTab(\'temp\')"]');
-        if (btn) btn.classList.add('active');
     } else if (tabName === 'bom') {
         const el = document.getElementById('projectBomTab');
         if (el) el.style.display = 'block';
-        const btn = document.querySelector('button[onclick="switchProjectTab(\'bom\')"]');
-        if (btn) btn.classList.add('active');
+    } else if (tabName === 'orders') {
+        const el = document.getElementById('projectOrdersTab');
+        if (el) {
+            el.style.display = 'block';
+            if (window.currentProjectForOrders) {
+                loadProjectOrders(window.currentProjectForOrders);
+            }
+        }
+    }
+
+    // Activate button (robust way)
+    const btn = document.querySelector(`button[onclick="switchProjectTab('${tabName}')"]`);
+    if (btn) btn.classList.add('active');
+}
+
+async function loadProjectOrders(projectId) {
+    const tbody = document.getElementById('projectOrdersTableBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;">Loading orders...</td></tr>';
+    
+    try {
+        const res = await fetch(`/api/projects/${projectId}/orders`);
+        if (!res.ok) throw new Error('Failed to fetch orders');
+        const orders = await res.json();
+        
+        if (orders.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;">No orders found. Add one to get started.</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = orders.map(order => `
+            <tr>
+                <td><strong>${order.OrderNo || '-'}</strong></td>
+                <td>${order.OrderDate || '-'}</td>
+                <td>${order.ConsigneeName || 'Not Specified'}</td>
+                <td style="font-size: 12px; color: #666;">${order.ConsigneeAddress ? order.ConsigneeAddress.substring(0, 30) + (order.ConsigneeAddress.length>30?'...':'') : '-'}</td>
+                <td>
+                    <button class="action-button small danger" onclick="deleteProjectOrder('${projectId}', '${order.ID}')">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+        
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Error loading orders: ${err.message}</td></tr>`;
     }
 }
+
+window.deleteProjectOrder = async function(projectId, orderId) {
+    if (!confirm('Are you sure you want to delete this order?')) return;
+    try {
+        const res = await fetch(`/api/projects/${projectId}/orders/${orderId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete');
+        showToast('Order deleted', 'success');
+        loadProjectOrders(projectId);
+    } catch (err) {
+        alert('Error deleting order: ' + err.message);
+    }
+};
+
+window.showAddOrderModal = function(projectId, projectData) {
+    let modal = document.getElementById('addOrderModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'addOrderModal';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.style.zIndex = '10002'; // Above project modal
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <span class="close-modal" onclick="document.getElementById('addOrderModal').style.display='none'">&times;</span>
+                <h3>Add New Order</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label>Order No</label>
+                        <input type="text" id="newOrderNo" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Order Date</label>
+                        <input type="date" id="newOrderDate" class="form-input">
+                    </div>
+                </div>
+
+                <h4 style="margin-top: 15px; margin-bottom: 10px;">Consignee Details</h4>
+                <div class="form-group">
+                    <button type="button" id="btnCopyConsignee" class="action-button small" style="margin-bottom: 10px;">Copy from Project Default</button>
+                    <input type="text" id="newOrderConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
+                    <textarea id="newOrderConsigneeAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                        <input type="text" id="newOrderConsigneeGSTIN" placeholder="GSTIN" class="form-input">
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="newOrderConsigneeState" placeholder="State" class="form-input" style="flex:2;">
+                            <input type="text" id="newOrderConsigneeStateCode" placeholder="Code" class="form-input" style="flex:1;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button id="btnSaveNewOrder" class="action-button blue">Add Order</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Clear fields
+    ['newOrderNo', 'newOrderDate', 'newOrderConsigneeName', 'newOrderConsigneeAddress', 'newOrderConsigneeGSTIN', 'newOrderConsigneeState', 'newOrderConsigneeStateCode'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = '';
+    });
+
+    // Copy Handler
+    document.getElementById('btnCopyConsignee').onclick = () => {
+        if (projectData) {
+            document.getElementById('newOrderConsigneeName').value = projectData.ConsigneeName || '';
+            document.getElementById('newOrderConsigneeAddress').value = projectData.ConsigneeAddress || '';
+            document.getElementById('newOrderConsigneeGSTIN').value = projectData.ConsigneeGSTIN || '';
+            document.getElementById('newOrderConsigneeState').value = projectData.ConsigneeState || '';
+            document.getElementById('newOrderConsigneeStateCode').value = projectData.ConsigneeStateCode || '';
+        }
+    };
+
+    // Save Handler
+    const btnSave = document.getElementById('btnSaveNewOrder');
+    btnSave.onclick = async () => {
+        const payload = {
+            OrderNo: document.getElementById('newOrderNo').value,
+            OrderDate: document.getElementById('newOrderDate').value,
+            ConsigneeName: document.getElementById('newOrderConsigneeName').value,
+            ConsigneeAddress: document.getElementById('newOrderConsigneeAddress').value,
+            ConsigneeGSTIN: document.getElementById('newOrderConsigneeGSTIN').value,
+            ConsigneeState: document.getElementById('newOrderConsigneeState').value,
+            ConsigneeStateCode: document.getElementById('newOrderConsigneeStateCode').value,
+            // Copy buyer details from project as they remain same
+            BuyerName: projectData.BuyerName,
+            BuyerAddress: projectData.BuyerAddress,
+            BuyerGSTIN: projectData.BuyerGSTIN,
+            BuyerState: projectData.BuyerState,
+            BuyerStateCode: projectData.BuyerStateCode
+        };
+
+        try {
+            btnSave.textContent = 'Saving...';
+            btnSave.disabled = true;
+
+            const res = await fetch(`/api/projects/${projectId}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to create order');
+            
+            showToast('Order created', 'success');
+            modal.style.display = 'none';
+            loadProjectOrders(projectId);
+            
+            btnSave.textContent = 'Add Order';
+            btnSave.disabled = false;
+        } catch (err) {
+            console.error(err);
+            alert('Error creating order: ' + err.message);
+            btnSave.textContent = 'Add Order';
+            btnSave.disabled = false;
+        }
+    };
+
+    modal.style.display = 'flex';
+}
+
+async function loadProjectTempAssets(projectId) {
+    const tbody = document.getElementById('projectTempAssetsTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading temporary assets...</td></tr>';
+
+    try {
+        const res = await fetch(`/api/temporary-assets`); // This returns ALL temp assets. We need to filter.
+        // Ideally backend should support /api/projects/:id/temporary-assets
+        // But for now let's use the existing endpoint and filter client side if needed, 
+        // OR better: check if there is a query param support.
+        // Looking at server.js: app.get('/api/temporary-assets', ...) returns all where IsPermanent = 0.
+        // It doesn't filter by project.
+        
+        if (!res.ok) throw new Error('Failed to load temporary assets');
+        const allTempAssets = await res.json();
+        
+        const projectTempAssets = allTempAssets.filter(a => a.ProjectId === projectId);
+
+        if (projectTempAssets.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #94a3b8;">No temporary assets added</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = projectTempAssets.map(a => `
+            <tr>
+                <td>${a.ID}</td>
+                <td>${a.ItemName}</td>
+                <td>${a.Make} ${a.Model}</td>
+                <td>${a.Quantity}</td>
+                <td>${a.Currency} ${a.EstimatedPrice}</td>
+                <td>
+                    <button class="action-button small" onclick="convertTempAsset('${a.ID}')" title="Convert to Permanent">Convert</button>
+                    <button class="action-button small danger" onclick="deleteTempAsset('${a.ID}')" title="Delete">Del</button>
+                </td>
+            </tr>
+        `).join('');
+
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: red;">Error: ${err.message}</td></tr>`;
+    }
+}
+
+// Expose these for onclick handlers
+window.convertTempAsset = async function(id) {
+    if (!confirm('Convert this temporary asset to a permanent asset?')) return;
+    try {
+        const res = await fetch(`/api/temporary-assets/${id}/make-permanent`, { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to convert');
+        showToast('Asset converted to permanent', 'success');
+        loadProjectTempAssets(currentProjectId);
+        // Also refresh assets tab if needed
+        loadProjectAssets(currentProjectId);
+    } catch (err) {
+        alert('Error converting asset: ' + err.message);
+    }
+};
+
+window.deleteTempAsset = async function(id) {
+    if (!confirm('Delete this temporary asset?')) return;
+    try {
+        // We need a DELETE endpoint. 
+        // Checking server.js... it might not have one explicit for temp assets?
+        // Let's assume /api/temporary-assets/:id based on convention, if not we might need to add it.
+        // Wait, server.js snippet didn't show DELETE /api/temporary-assets/:id.
+        // It showed GET and POST. 
+        // If it's missing, we need to add it to backend.
+        
+        const res = await fetch(`/api/temporary-assets/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete');
+        showToast('Temporary asset deleted', 'success');
+        loadProjectTempAssets(currentProjectId);
+    } catch (err) {
+        alert('Error deleting asset: ' + err.message);
+    }
+};;
 
 async function showAssignAssetModal() {
     if (!currentProjectId) {
@@ -552,4 +805,183 @@ function showAddTempAssetModal() {
     }
     const modal = document.getElementById('addTempAssetModal');
     if (modal) modal.style.display = 'flex';
+    
+    // Add event listener for the submit button inside the modal
+    const btnSubmit = document.getElementById('btnSubmitTempAsset');
+    if (btnSubmit) {
+        // Remove old listeners to prevent duplicates (cloning is a quick hack)
+        const newBtn = btnSubmit.cloneNode(true);
+        btnSubmit.parentNode.replaceChild(newBtn, btnSubmit);
+        
+        newBtn.onclick = async () => {
+            const itemName = document.getElementById('tempItemName')?.value;
+            const quantity = document.getElementById('tempQuantity')?.value;
+            const price = document.getElementById('tempPrice')?.value;
+            const currency = document.getElementById('tempCurrency')?.value;
+            const make = document.getElementById('tempMake')?.value;
+            const model = document.getElementById('tempModel')?.value;
+
+            if (!itemName) {
+                alert('Item Name is required');
+                return;
+            }
+
+            try {
+                newBtn.textContent = 'Adding...';
+                newBtn.disabled = true;
+
+                const payload = {
+                    ItemName: itemName,
+                    Quantity: parseInt(quantity) || 1,
+                    EstimatedPrice: parseFloat(price) || 0,
+                    Currency: currency || 'INR',
+                    Make: make || '',
+                    Model: model || '',
+                    ProjectId: currentProjectId,
+                    Type: 'AST',
+                    Category: 'General'
+                };
+
+                const res = await fetch('/api/temporary-assets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const errorData = await res.json();
+                    throw new Error(errorData.error || 'Failed to add temporary asset');
+                }
+
+                showToast('Temporary asset added', 'success');
+                document.getElementById('addTempAssetModal').style.display = 'none';
+                
+                // Clear fields
+                document.getElementById('tempItemName').value = '';
+                document.getElementById('tempMake').value = '';
+                document.getElementById('tempModel').value = '';
+                document.getElementById('tempQuantity').value = '1';
+                document.getElementById('tempPrice').value = '0';
+
+                loadProjectTempAssets(currentProjectId);
+                
+            } catch (err) {
+                console.error(err);
+                alert('Error adding asset: ' + err.message);
+            } finally {
+                newBtn.textContent = 'Add to Project';
+                newBtn.disabled = false;
+            }
+        };
+    }
+}
+
+function showEditBillingModal(project) {
+    let modal = document.getElementById('projectBillingEditModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'projectBillingEditModal';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <span class="close-modal" onclick="document.getElementById('projectBillingEditModal').style.display='none'">&times;</span>
+                <h3>Edit Billing & Shipping Details</h3>
+                
+                <h4 style="margin-top: 0; margin-bottom: 10px;">Consignee (Ship To)</h4>
+                <div class="form-group">
+                    <input type="text" id="editProjectConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
+                    <textarea id="editProjectConsigneeAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                        <input type="text" id="editProjectConsigneeGSTIN" placeholder="GSTIN" class="form-input">
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="editProjectConsigneeState" placeholder="State" class="form-input" style="flex:2;">
+                            <input type="text" id="editProjectConsigneeStateCode" placeholder="Code" class="form-input" style="flex:1;">
+                        </div>
+                    </div>
+                </div>
+
+                <h4 style="margin-top: 15px; margin-bottom: 10px;">Buyer (Bill To)</h4>
+                <div class="form-group">
+                    <input type="text" id="editProjectBuyerName" placeholder="Buyer Name" class="form-input" style="margin-bottom: 5px;">
+                    <textarea id="editProjectBuyerAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                        <input type="text" id="editProjectBuyerGSTIN" placeholder="GSTIN" class="form-input">
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="editProjectBuyerState" placeholder="State" class="form-input" style="flex:2;">
+                            <input type="text" id="editProjectBuyerStateCode" placeholder="Code" class="form-input" style="flex:1;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button id="btnSaveProjectBilling" class="action-button blue">Save Changes</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Pre-fill
+    document.getElementById('editProjectConsigneeName').value = project.ConsigneeName || '';
+    document.getElementById('editProjectConsigneeAddress').value = project.ConsigneeAddress || '';
+    document.getElementById('editProjectConsigneeGSTIN').value = project.ConsigneeGSTIN || '';
+    document.getElementById('editProjectConsigneeState').value = project.ConsigneeState || '';
+    document.getElementById('editProjectConsigneeStateCode').value = project.ConsigneeStateCode || '';
+
+    document.getElementById('editProjectBuyerName').value = project.BuyerName || '';
+    document.getElementById('editProjectBuyerAddress').value = project.BuyerAddress || '';
+    document.getElementById('editProjectBuyerGSTIN').value = project.BuyerGSTIN || '';
+    document.getElementById('editProjectBuyerState').value = project.BuyerState || '';
+    document.getElementById('editProjectBuyerStateCode').value = project.BuyerStateCode || '';
+
+    // Save Handler
+    const btnSave = document.getElementById('btnSaveProjectBilling');
+    btnSave.onclick = async () => {
+        const payload = {
+            ConsigneeName: document.getElementById('editProjectConsigneeName').value,
+            ConsigneeAddress: document.getElementById('editProjectConsigneeAddress').value,
+            ConsigneeGSTIN: document.getElementById('editProjectConsigneeGSTIN').value,
+            ConsigneeState: document.getElementById('editProjectConsigneeState').value,
+            ConsigneeStateCode: document.getElementById('editProjectConsigneeStateCode').value,
+            BuyerName: document.getElementById('editProjectBuyerName').value,
+            BuyerAddress: document.getElementById('editProjectBuyerAddress').value,
+            BuyerGSTIN: document.getElementById('editProjectBuyerGSTIN').value,
+            BuyerState: document.getElementById('editProjectBuyerState').value,
+            BuyerStateCode: document.getElementById('editProjectBuyerStateCode').value
+        };
+
+        try {
+            const originalText = btnSave.textContent;
+            btnSave.textContent = 'Saving...';
+            btnSave.disabled = true;
+
+            const res = await fetch(`/api/projects/${project.ID}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to update details');
+            
+            // Update local object (assuming reference)
+            Object.assign(project, payload);
+            
+            showToast('Billing details updated', 'success');
+            modal.style.display = 'none';
+            
+            // Refresh main modal details
+            showProjectDetails(project.ID);
+            
+            btnSave.textContent = originalText;
+            btnSave.disabled = false;
+        } catch (err) {
+            console.error(err);
+            alert('Error updating details: ' + err.message);
+            btnSave.textContent = 'Save Changes';
+            btnSave.disabled = false;
+        }
+    };
+
+    modal.style.display = 'flex';
 }
