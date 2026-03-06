@@ -1,15 +1,17 @@
-console.log('MAIN.JS: Entry point (v5.8)');
+console.log('MAIN.JS: Entry point (v5.11)');
 import { showView } from './utils.js?v=5.7';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.12';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.20';
 import { initScannerView } from './networkScanner.js?v=5.7';
 import { renderItAssets } from './itAssets.js?v=5.7';
-import { setupAuth } from './auth.js?v=5.7';
+import { setupAuth, checkSession } from './auth.js?v=5.8';
 import { HierarchyManager } from './hierarchy.js?v=5.7';
 import { initEmployeeView, loadEmployees } from './employees.js?v=5.7';
 import { setupOcr } from './ocr.js?v=5.7';
 import { initWarrantyView } from './warranty.js?v=5.7';
 import { initProjectsView } from './projects.js?v=5.8';
 import { initSettingsView } from './settings.js?v=5.7';
+import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
+import { initDCProjectFetcher } from './dcProjectFetcher.js?v=1.1';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
 
 // Expose showView to global scope for other modules
@@ -31,11 +33,17 @@ window.checkWarranty = () => {
     console.log('Init function exists:', initFn);
     console.log('--- End Diagnostic ---');
     
-    if (nav) {
+    if (initFn) {
         console.log('Manually triggering click on Warranty nav...');
         nav.click();
     }
 };
+
+// Initialize Company Templates
+initCompanyTemplates();
+
+// Initialize DC Project Fetcher
+initDCProjectFetcher();
 
 // --- RELEASES VIEW RENDERING ---
 export function renderReleases() {
@@ -366,7 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupOcr();
     
-    setupAuth(async (user) => {
+    // --- AUTHENTICATION & SESSION HANDLING ---
+    const handleLoginSuccess = async (user) => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
         if (window.location.hash) {
@@ -457,23 +466,83 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Handle hash-based routing and details (e.g. from QR scan)
-        handleInitialUrl();
-    } else {
+            handleInitialUrl();
+            
+            // Ensure default view has a hash if none exists
+            if (!window.location.hash) {
+                window.history.replaceState({ subView: 'home-view' }, '', '#home-view');
+            }
+        } else {
             console.error('Could NOT find dashboardView element!');
             alert('Error: Dashboard view not found in the page.');
         }
-    });
+    };
+
+    setupAuth(handleLoginSuccess);
+
+    // Check for existing session on load
+    (async () => {
+        console.log('Checking for existing session...');
+        const user = await checkSession();
+        if (user) {
+            console.log('Session restored for:', user.username);
+            // Restore category if missing
+            if (!user.category) {
+                user.category = localStorage.getItem('selectedAssetCategory') || 'IT';
+            }
+            handleLoginSuccess(user);
+        } else {
+            console.log('No active session found.');
+            // Capture return URL if not at root
+            if (window.location.pathname !== '/' || window.location.hash || window.location.search) {
+                sessionStorage.setItem('returnTo', window.location.href);
+            }
+        }
+    })();
 });
 
+// --- VIEW CONFIGURATION MODULE ---
+const APP_VIEWS = {
+    'home-view': { id: 'home-view', navId: 'nav-dashboard', sidebar: true, default: true },
+    'sheet-view': { id: 'sheet-view', navId: 'nav-sheet', sidebar: true },
+    'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: false },
+    'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: true },
+    'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: false },
+    'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
+    'projects-view': { id: 'projects-view', navId: 'nav-projects', sidebar: true },
+    'ocr-view': { id: 'ocr-view', navId: 'nav-ocr', sidebar: false },
+    'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: true },
+    'settings-view': { id: 'settings-view', navId: 'nav-settings', sidebar: true },
+    'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: false }
+};
+
+// Expose for external access if needed
+window.APP_VIEWS = APP_VIEWS;
+
+// Helper to get all view IDs
+const ALL_VIEW_IDS = Object.values(APP_VIEWS).map(v => v.id);
+const SIDEBAR_VIEW_IDS = Object.values(APP_VIEWS).filter(v => v.sidebar).map(v => v.id);
+
 function switchDashboardSubView(subViewName) {
-    const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view', 'admin-view'];
     console.log(`Switching dashboard subview to: ${subViewName}`);
     
-    // Show/Hide Sidebar based on subview
+    // Validate view name
+    if (!APP_VIEWS[subViewName]) {
+        console.warn(`Unknown view: ${subViewName}, defaulting to home-view`);
+        subViewName = 'home-view';
+    }
+
+    // Update browser history
+    // Only push state if it's different from current hash
+    const targetHash = '#' + subViewName;
+    if (window.location.hash !== targetHash) {
+        window.history.pushState({ subView: subViewName }, '', targetHash);
+    }
+
+    // Show/Hide Sidebar based on configuration
     const sidebar = document.getElementById('app-sidebar');
     if (sidebar) {
-        const showSidebarViews = ['home-view', 'sheet-view', 'dc-view', 'projects-view', 'warranty-view', 'settings-view'];
-        if (showSidebarViews.includes(subViewName)) {
+        if (APP_VIEWS[subViewName].sidebar) {
             sidebar.classList.remove('hidden');
             sidebar.style.display = 'block';
         } else {
@@ -482,7 +551,7 @@ function switchDashboardSubView(subViewName) {
         }
     }
 
-    subViews.forEach(sv => {
+    ALL_VIEW_IDS.forEach(sv => {
         const subEl = document.getElementById(sv);
         if (subEl) {
             if (sv === subViewName) {
@@ -500,6 +569,61 @@ function switchDashboardSubView(subViewName) {
     });
 }
 window.switchDashboardSubView = switchDashboardSubView;
+
+// Handle Browser Back/Forward Navigation
+window.addEventListener('popstate', (event) => {
+    console.log('Popstate event triggered:', event.state);
+    if (event.state && event.state.subView) {
+        const subViewName = event.state.subView;
+        
+        // Validate view name
+        if (!APP_VIEWS[subViewName]) return;
+
+        // Show/Hide Sidebar based on configuration
+        const sidebar = document.getElementById('app-sidebar');
+        if (sidebar) {
+            if (APP_VIEWS[subViewName].sidebar) {
+                sidebar.classList.remove('hidden');
+                sidebar.style.display = 'block';
+            } else {
+                sidebar.classList.add('hidden');
+                sidebar.style.display = 'none';
+            }
+        }
+
+        ALL_VIEW_IDS.forEach(sv => {
+            const subEl = document.getElementById(sv);
+            if (subEl) {
+                if (sv === subViewName) {
+                    subEl.classList.remove('hidden');
+                    subEl.classList.add('active');
+                    subEl.style.display = 'flex';
+                    subEl.style.flexDirection = 'column';
+                    subEl.style.flex = '1';
+                } else {
+                    subEl.classList.add('hidden');
+                    subEl.classList.remove('active');
+                    subEl.style.display = 'none';
+                }
+            }
+        });
+        
+        // Update active nav link using configuration map
+        document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+        const navId = APP_VIEWS[subViewName].navId;
+        if (navId) {
+            document.getElementById(navId)?.classList.add('active');
+        }
+
+    } else {
+        // Fallback if no state (e.g. initial load or empty hash)
+        // Check hash
+        const hash = window.location.hash.substring(1);
+        if (hash && APP_VIEWS[hash]) {
+             // Let handleInitialUrl take care or switch manually if needed
+        }
+    }
+});
 
 function setupNavigation() {
     console.log('setupNavigation() called - Diagnostic Check');

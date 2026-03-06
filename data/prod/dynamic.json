@@ -1,0 +1,16 @@
+{
+  "email_settings": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "itsupport@cineom.in",
+    "smtp_pass": "pcdt lfsv gwjz jybs",
+    "notification_email": "itsupport@cineom.in",
+    "threshold_days": 30
+  },
+  "notified_assets": {
+    "LAP2601035116_1771113600000": "2026-01-21T03:30:03.094Z",
+    "MUM-0126-AJW99D-Q_1771027200000": "2026-01-21T03:30:06.052Z",
+    "MUM-0126-XNKJGA-H_1768348800000": "2026-01-28T08:56:19.004Z"
+  }
+}

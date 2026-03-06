@@ -122,16 +122,19 @@ export class HierarchyManager {
     /**
      * Generates HTML for the sidebar tree
      */
-    generateSidebarHTML(tree, level = 0) {
+    generateSidebarHTML(tree, level = 0, activeId = null) {
         if (!tree || tree.length === 0) return '';
 
         return tree.map(node => {
             const hasChildren = node.children && node.children.length > 0;
             const paddingLeft = 40 + (level * 15);
+            // Check if this node is active (loose equality for string/number match)
+            const isActive = activeId && (node.ID == activeId);
+            const activeClass = isActive ? 'active' : '';
             
             return `
                 <div class="tree-node" data-id="${node.ID}" style="user-select: none;">
-                    <div class="tree-item-wrapper" style="padding: 6px 20px 6px ${paddingLeft}px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s;">
+                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" style="padding: 6px 20px 6px ${paddingLeft}px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s;">
                         <span class="tree-toggle" style="width: 14px; text-align: center; color: #999; font-size: 10px; visibility: ${hasChildren ? 'visible' : 'hidden'}">
                             ${hasChildren ? '▶' : ''}
                         </span>
@@ -142,14 +145,14 @@ export class HierarchyManager {
                                     ? `<img src="${node.Icon}" style="width: 16px; height: 16px; object-fit: contain;">`
                                     : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
                         </span>
-                        <span class="tree-link" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
+                        <span class="tree-link ${activeClass}" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
                         ${node.type === 'kind' ? `
                             <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">✏️</span>
                         ` : ''}
                     </div>
                     ${hasChildren ? `
                         <div class="tree-children" id="children-${node.ID}" style="display: none;">
-                            ${this.generateSidebarHTML(node.children, level + 1)}
+                            ${this.generateSidebarHTML(node.children, level + 1, activeId)}
                         </div>
                     ` : ''}
                 </div>

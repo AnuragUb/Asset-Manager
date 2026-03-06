@@ -514,11 +514,19 @@ async function loadProjectOrders(projectId) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;">Loading orders...</td></tr>';
     
     try {
-        const res = await fetch(`/api/projects/${projectId}/orders`);
-        if (!res.ok) throw new Error('Failed to fetch orders');
-        const orders = await res.json();
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token && token !== 'null' && token !== 'undefined') {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
         
-        if (orders.length === 0) {
+        const res = await fetch(`/api/projects/${projectId}/orders`, { headers });
+        if (!res.ok) throw new Error('Failed to fetch orders');
+        const data = await res.json();
+        
+        const orders = data.success ? data.orders : [];
+        
+        if (!Array.isArray(orders) || orders.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;">No orders found. Add one to get started.</td></tr>';
             return;
         }
@@ -762,20 +770,33 @@ async function showAssignAssetModal() {
             if (!assetId) return;
             
             try {
-                // Assuming backend has endpoint to link asset to project
-                // For now, we simulate or assume /api/projects/:id/assets exists for POST
-                // Or /api/assets/:id/assign
-                
-                // Let's assume we update asset status to 'Active' and Location to Project Location
-                // But better if there is a dedicated endpoint.
-                // Since I don't know the backend logic for assignment fully, I'll alert for now
-                // or try a generic update.
-                
-                alert('Asset assignment logic needs backend endpoint verification. (Pending Implementation)');
+                // Call backend endpoint to assign asset
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch(`/api/projects/${currentProjectId}/assign-asset`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ AssetID: assetId, Type: 'Permanent' })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to assign asset');
+                }
+
+                showToast('Asset assigned successfully', 'success');
                 modal.style.display = 'none';
+                
+                // Refresh assets list if currently viewing assets tab
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (activeTab && activeTab.textContent.toLowerCase().includes('asset')) {
+                    loadProjectAssets(currentProjectId);
+                }
             } catch (err) {
                 console.error(err);
-                alert('Error assigning asset');
+                alert('Error assigning asset: ' + err.message);
             }
         };
     }

@@ -566,6 +566,11 @@ function initDCView() {
     
     // --- Load Database Dropdowns ---
     loadDCDropdowns();
+    
+    // --- Load Logo Dropdown ---
+    if (typeof window.loadLogoDropdown === 'function') {
+        window.loadLogoDropdown();
+    }
 
     if (dcOpenId) {
         dcOpenId.onkeydown = (e) => {
@@ -690,7 +695,9 @@ function initDCView() {
                     otherReferences: document.getElementById('dcOtherReferences')?.value || '',
                     dispatchedThrough: document.getElementById('dcDispatchedThrough')?.value || '',
                     destination: document.getElementById('dcDestination')?.value || '',
-                    termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || ''
+                    termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || '',
+                    orderDate: window.tempDCOrderDate || '', // Pass order date
+                    logoUrl: document.getElementById('dcLogoSelect')?.value || '' // Pass selected logo
                 },
                 items: assetIds.map((assetId, index) => {
                     const row = dcItemsByAssetId[assetId] || {};
@@ -887,13 +894,23 @@ function showDCPreview(result) {
         }, 0);
         const totalWords = formatAmountWords(round2(totalAmount));
         const challanNo = result.challanNo || result.ChallanNo || '';
-        const dcId = result.id || result.ID || '';
+        // const dcId = result.id || result.ID || ''; // Hidden as requested
         const dated = meta.deliveryDate || meta.dated || result.deliveryDate || result.DeliveryDate || '';
+        
+        // Order Date Logic: fetched from meta or fallback to empty
+        const orderDate = meta.orderDate || '';
 
         printable.innerHTML = `
-            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif;">
-                <div style="display: grid; grid-template-columns: 1fr 260px; gap: 12px; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 10px;">
+            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif; position: relative;">
+                
+                <!-- Watermark Header -->
+                <div style="position: absolute; top: 10px; right: 14px; font-size: 12px; font-style: italic; font-weight: bold;">(ORIGINAL FOR CONSIGNEE)</div>
+
+                <!-- Header Section -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 10px; padding-top: 25px;">
+                    <!-- Company Details (Left) -->
                     <div>
+                        ${meta.logoUrl ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${meta.logoUrl}" style="height: 75px; max-width: 200px; object-fit: contain;"></div>` : ''}
                         <div style="font-size: 16px; font-weight: 800; letter-spacing: 0.3px;">${escapeHtml(company.name || '')}</div>
                         <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(company.address || '')}</div>
                         <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
@@ -902,12 +919,21 @@ function showDCPreview(result) {
                             ${(company.stateName || company.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(company.stateName || '')}${company.stateCode ? ' (' + escapeHtml(company.stateCode) + ')' : ''}</div>` : ''}
                         </div>
                     </div>
-                    <div style="border-left: 1px solid #222; padding-left: 12px;">
-                        <div style="text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 1px;">DELIVERY CHALLAN</div>
-                        <div style="display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px; margin-top: 10px; font-size: 12px;">
-                            <div style="color:#555;">DC No</div><div style="font-weight:800;">${escapeHtml(challanNo)}</div>
+
+                    <!-- Title & Tracking Info (Right) -->
+                    <div style="border-left: 1px solid #222; padding-left: 12px; display: flex; flex-direction: column;">
+                        <!-- Centered Title -->
+                        <div style="text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 1px; margin-bottom: 15px; text-transform: uppercase;">DELIVERY NOTE</div>
+                        
+                        <div style="display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 12px;">
+                            <div style="color:#555;">Delivery Note No.</div><div style="font-weight:800;">${escapeHtml(challanNo)}</div>
                             <div style="color:#555;">Dated</div><div style="font-weight:800;">${escapeHtml(dated)}</div>
-                            ${dcId ? `<div style="color:#555;">DC ID</div><div style="font-weight:700; font-family: monospace;">${escapeHtml(dcId)}</div>` : ''}
+                            
+                            <div style="color:#555;">Reference No.</div><div>${escapeHtml(meta.referenceNo || '')}</div>
+                            <div style="color:#555;">Other References</div><div>${escapeHtml(meta.otherReferences || '')}</div>
+                            
+                            <div style="color:#555;">Buyer's Order No.</div><div>${escapeHtml(meta.buyerOrderNo || '')}</div>
+                            <div style="color:#555;">Dated</div><div>${escapeHtml(orderDate)}</div>
                         </div>
                     </div>
                 </div>
@@ -937,10 +963,10 @@ function showDCPreview(result) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
                         <div><span style="color:#555;">Reference No</span>: ${escapeHtml(meta.referenceNo || '')}</div>
                         <div><span style="color:#555;">Buyer’s Order No</span>: ${escapeHtml(meta.buyerOrderNo || '')}</div>
-                        <div><span style="color:#555;">Dispatch Doc No</span>: ${escapeHtml(meta.dispatchDocNo || '')}</div>
+                        
                         <div><span style="color:#555;">Other References</span>: ${escapeHtml(meta.otherReferences || '')}</div>
                         <div><span style="color:#555;">Dispatched Through</span>: ${escapeHtml(meta.dispatchedThrough || '')}</div>
-                        <div><span style="color:#555;">Destination</span>: ${escapeHtml(meta.destination || '')}</div>
+                        
                     </div>
                     ${(meta.termsOfDelivery || '').trim() ? `<div style="margin-top: 8px; font-size: 12px;"><span style="color:#555;">Terms of Delivery</span>: ${escapeHtml(meta.termsOfDelivery)}</div>` : ''}
                 </div>
@@ -2309,6 +2335,7 @@ window.showAssetDetails = async function(assetId) {
             <div>
                 <p><strong>Location:</strong> ${asset.CurrentLocation || '-'}</p>
                 <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
+                <p><strong>Project Assigned To:</strong> ${asset.AssignedProjectName || '-'}</p>
                 <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
                 <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
                 <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
@@ -2908,7 +2935,9 @@ export function renderSidebarTree() {
         const moduleTree = manager.getModuleTree(category);
         console.log('[Sidebar] Category:', category, 'Module Tree Size:', moduleTree.length);
         
-        const treeHTML = manager.generateSidebarHTML(moduleTree);
+        // Pass current active parent ID to generate function
+        const activeId = window.currentDashboardParent ? window.currentDashboardParent.ID : null;
+        const treeHTML = manager.generateSidebarHTML(moduleTree, 0, activeId);
         console.log('[Sidebar] Generated Tree HTML length:', treeHTML.length);
 
         sidebarMenu.innerHTML = `
@@ -3040,14 +3069,15 @@ export function renderSidebarTree() {
                 };
             });
 
-            container.querySelectorAll('.tree-link').forEach(link => {
-                // Skip virtual links handled separately
-                if (link.id === 'tempAssetsLink' || link.id === 'allAssetsLink') return;
+            container.querySelectorAll('.tree-item-wrapper').forEach(wrapper => {
+                // Skip virtual links handled separately (though they usually aren't in this loop)
+                const id = wrapper.getAttribute('data-id');
+                if (!id) return; // Should not happen with new HTML structure
                 
-                link.onclick = (e) => {
+                wrapper.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const id = link.getAttribute('data-id');
+                    
                     const node = manager.findNode(id);
                     
                     if (node) {
@@ -3061,9 +3091,10 @@ export function renderSidebarTree() {
                             l.style.fontWeight = '';
                         });
                         
-                        const wrapper = link.closest('.tree-item-wrapper');
-                        if (wrapper) wrapper.classList.add('active');
-                        link.classList.add('active');
+                        wrapper.classList.add('active');
+                        // Also activate inner link for visual consistency if needed
+                        const link = wrapper.querySelector('.tree-link');
+                        if (link) link.classList.add('active');
 
                         // Navigate dashboard to this parent
                         window.currentDashboardParent = node;
@@ -4198,6 +4229,7 @@ export async function editAsset(asset) {
     document.getElementById('itemPurchase').value = asset.PurchaseDetails || '';
     document.getElementById('itemRemarks').value = asset.Remarks || '';
     document.getElementById('itemAssignedTo').value = asset.AssignedTo || '';
+    document.getElementById('itemProjectAssignedTo').value = asset.AssignedProjectName || ''; // New field
     document.getElementById('itemParentId').value = asset.ParentId || '';
 
     const qtyUnit = document.getElementById('itemQtyUnit');
@@ -4212,6 +4244,22 @@ export async function editAsset(asset) {
     if (qtyTotal) qtyTotal.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
     if (qtyPrecision) qtyPrecision.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
     if (qtyNote) qtyNote.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+
+    // Force fetch latest details to ensure project assignment is up to date
+    try {
+        const response = await fetch(`/api/assets/${encodeURIComponent(asset.ID)}`);
+        if (response.ok) {
+            const freshAsset = await response.json();
+            if (freshAsset) {
+                document.getElementById('itemProjectAssignedTo').value = freshAsset.AssignedProjectName || '';
+                // Also update other fields that might be stale
+                document.getElementById('itemAssignedTo').value = freshAsset.AssignedTo || '';
+                document.getElementById('itemStatus').value = freshAsset.Status || 'Owned';
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to fetch fresh asset details for edit modal:', e);
+    }
 
     const convUnit = document.getElementById('itemConvUnit');
     const convFactor = document.getElementById('itemConvFactor');
@@ -5626,6 +5674,70 @@ window.selectProjectForDC = async function(projectId) {
     }
 };
 
+// --- Logo Upload Logic ---
+window.uploadDCLogo = async function() {
+    const input = document.getElementById('dcLogoInput');
+    if (!input || !input.files || !input.files[0]) return;
+
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    try {
+        const btn = document.getElementById('btnUploadLogo');
+        const originalText = btn.textContent;
+        btn.textContent = 'Uploading...';
+        btn.disabled = true;
+
+        const res = await fetch('/api/upload-logo', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Store logo URL in local storage for persistence across reloads
+            const logos = JSON.parse(localStorage.getItem('companyLogos') || '[]');
+            logos.push(data.url);
+            localStorage.setItem('companyLogos', JSON.stringify(logos));
+            
+            // Refresh logo selection dropdown
+            window.loadLogoDropdown();
+            
+            // Auto-select the new logo
+            const select = document.getElementById('dcLogoSelect');
+            if (select) select.value = data.url;
+            
+            alert('Logo uploaded successfully!');
+        } else {
+            alert('Upload failed: ' + data.error);
+        }
+
+        btn.textContent = originalText;
+        btn.disabled = false;
+        input.value = ''; // Reset input
+    } catch (err) {
+        console.error('Logo upload error:', err);
+        alert('Error uploading logo');
+    }
+};
+
+window.loadLogoDropdown = function() {
+    const select = document.getElementById('dcLogoSelect');
+    if (!select) return;
+
+    const logos = JSON.parse(localStorage.getItem('companyLogos') || '[]');
+    // Keep default option
+    select.innerHTML = '<option value="">-- Select Logo --</option>';
+    
+    logos.forEach((url, idx) => {
+        const opt = document.createElement('option');
+        opt.value = url;
+        opt.textContent = `Logo ${idx + 1}`;
+        select.appendChild(opt);
+    });
+};
+
 window.confirmDCProjectSelection = function(index) {
     const { project, orders } = window.tempDCProjectData;
     const modal = document.getElementById('dcOrderSelectModal');
@@ -5650,6 +5762,9 @@ window.confirmDCProjectSelection = function(index) {
         setVal('dcBuyerStateCode', project.BuyerStateCode || '');
         setVal('dcBuyerOrderNo', ''); // No order no
         
+        // Clear order date if any
+        window.tempDCOrderDate = '';
+        
         if (typeof showToast === 'function') showToast('DC details populated from project default', 'success');
 
     } else {
@@ -5671,6 +5786,9 @@ window.confirmDCProjectSelection = function(index) {
         setVal('dcBuyerStateCode', project.BuyerStateCode || '');
         
         setVal('dcBuyerOrderNo', order.OrderNo || '');
+        
+        // Store Order Date for DC generation
+        window.tempDCOrderDate = order.OrderDate || '';
         
         // Try to set date if field exists (assuming standard HTML5 date input)
         const refDateEl = document.getElementById('dcRefDate'); 
@@ -5703,9 +5821,13 @@ async function loadDCDropdowns() {
     if (!companySearch && !consigneeSearch && !buyerSearch) return;
     
     try {
-        const res = await fetch('/api/projects');
-        if (!res.ok) return;
-        const projects = await res.json();
+        const [projectsRes, ordersRes] = await Promise.all([
+            fetch('/api/projects'),
+            fetch('/api/all-orders')
+        ]);
+        
+        const projects = projectsRes.ok ? await projectsRes.json() : [];
+        const orders = ordersRes.ok ? await ordersRes.json() : [];
         
         // Extract Unique Data
         const consignees = new Map();
@@ -5727,14 +5849,26 @@ async function loadDCDropdowns() {
 
             // Buyer Logic
             const bName = (p.BuyerName || p.ClientName || '').trim();
-            if (bName && !buyers.has(bName)) {
-                buyers.set(bName, {
-                    name: bName,
-                    address: p.BuyerAddress || '',
-                    gstin: p.BuyerGSTIN || '',
-                    state: p.BuyerState || '',
-                    stateCode: p.BuyerStateCode || ''
-                });
+            if (bName) {
+                // If buyer exists, update or add. Prioritize entry with OrderNo if duplicate names
+                const existing = buyers.get(bName);
+                // Prefer entry that has OrderNo/BuyerOrderNo
+                const currentHasOrder = !!(p.OrderNo || p.BuyerOrderNo);
+                
+                if (!existing || (!existing.orderNo && currentHasOrder)) {
+                    buyers.set(bName, {
+                        name: bName,
+                        address: p.BuyerAddress || '',
+                        gstin: p.BuyerGSTIN || '',
+                        state: p.BuyerState || '',
+                        stateCode: p.BuyerStateCode || '',
+                        orderNo: p.OrderNo || p.BuyerOrderNo || '', // Try both OrderNo and BuyerOrderNo
+                        orderDate: p.OrderDate || p.BuyerOrderDate || ''
+                    });
+                }
+            } else if (!buyers.has(bName)) {
+                // If the logic above fails or we have a case with no name but valid data (unlikely but safe)
+                // Actually the above logic covers it, but let's be explicit about storing OrderNo
             }
 
             // Company Logic
@@ -5746,6 +5880,44 @@ async function loadDCDropdowns() {
                     gstin: p.BuyerGSTIN || '', // Fallback
                     state: p.BuyerState || '',
                     stateCode: p.BuyerStateCode || ''
+                });
+            }
+        });
+
+        // Process Orders to fill in gaps (especially OrderNo for Buyers)
+        orders.forEach(o => {
+            // Buyer Logic
+            const bName = (o.BuyerName || '').trim();
+            if (bName) {
+                const existing = buyers.get(bName);
+                
+                // Debug log
+                console.log('Processing Order for Buyer:', bName, 'OrderNo:', o.OrderNo);
+
+                // If existing buyer doesn't have an OrderNo, or if this order has one and we want to capture it
+                // We'll prioritize the order's details if we don't have an OrderNo yet
+                if (!existing || (!existing.orderNo && o.OrderNo)) {
+                    buyers.set(bName, {
+                        name: bName,
+                        address: o.BuyerAddress || '',
+                        gstin: o.BuyerGSTIN || '',
+                        state: o.BuyerState || '',
+                        stateCode: o.BuyerStateCode || '',
+                        orderNo: o.OrderNo || '',
+                        orderDate: o.OrderDate || ''
+                    });
+                }
+            }
+
+            // Consignee Logic
+            const cName = (o.ConsigneeName || '').trim();
+            if (cName && !consignees.has(cName)) {
+                consignees.set(cName, {
+                    name: cName,
+                    address: o.ConsigneeAddress || '',
+                    gstin: o.ConsigneeGSTIN || '',
+                    state: o.ConsigneeState || '',
+                    stateCode: o.ConsigneeStateCode || ''
                 });
             }
         });
@@ -5764,6 +5936,7 @@ async function loadDCDropdowns() {
                         <div class="dropdown-item" data-details='${JSON.stringify(item).replace(/'/g, "&apos;")}' style="padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 12px;">
                             <div style="font-weight: 600;">${item.name}</div>
                             <div style="font-size: 10px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.address || 'No Address'}</div>
+                            ${item.orderNo ? `<div style="font-size: 9px; color: #007bff;">Order No: ${item.orderNo}</div>` : ''}
                         </div>
                     `).join('');
                     
@@ -5795,6 +5968,28 @@ async function loadDCDropdowns() {
                                 document.getElementById('dcBuyerGST').value = data.gstin;
                                 document.getElementById('dcBuyerState').value = data.state;
                                 document.getElementById('dcBuyerStateCode').value = data.stateCode;
+                                
+                                console.log('Selected Buyer Data:', data);
+
+                                // Also try to populate Order No if available in data
+                                if (data.orderNo) {
+                                    const orderNoEl = document.getElementById('dcBuyerOrderNo');
+                                    if (orderNoEl) {
+                                        orderNoEl.value = data.orderNo;
+                                        console.log('Set Buyer Order No to:', data.orderNo);
+                                    } else {
+                                        console.error('Element dcBuyerOrderNo not found');
+                                    }
+                                } else {
+                                    console.warn('No orderNo in buyer data');
+                                }
+                                
+                                if (data.orderDate) {
+                                    window.tempDCOrderDate = data.orderDate;
+                                    // Also try to set date input if exists
+                                    const refDateEl = document.getElementById('dcRefDate');
+                                    if (refDateEl) refDateEl.value = data.orderDate;
+                                }
                             }
                         };
                     });

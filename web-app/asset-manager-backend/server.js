@@ -63,12 +63,39 @@ const {
   getTallyConfig
 } = require('./utils')
 const crypto = require('crypto');
+const tokenService = require('./services/tokenService');
+const passwordService = require('./services/passwordService');
+const emailService = require('./services/emailService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
 const JWT_EXPIRES_IN_SECONDS = parseInt(process.env.JWT_EXPIRES_IN_SECONDS || '3600', 10);
 const JWT_COOKIE_NAME = 'auth_token';
+const REMEMBER_COOKIE_NAME = 'remember_token';
 const DEFAULT_COMPANY_NAME = 'CINEOM';
 let DEFAULT_COMPANY_ID = null;
+
+const app = express();
+const port = process.env.PORT || 9090;
+
+// Increase payload limit for OCR uploads
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// DEBUG: Log all requests
+app.use((req, res, next) => {
+    console.log(`[Request] ${req.method} ${req.url}`);
+    // console.log(`[Cookies]`, req.headers.cookie);
+    next();
+});
+
+// DEBUG Endpoint
+app.get('/api/debug/cookies', (req, res) => {
+    res.json({
+        cookies: req.headers.cookie || '',
+        parsed: parseCookies(req.headers.cookie || ''),
+        ip: req.ip
+    });
+});
 
 function parseCookies(header) {
   const list = {};
@@ -82,6 +109,302 @@ function parseCookies(header) {
   });
   return list;
 }
+
+// ... (existing helper functions) ...
+
+// --- DB Migrations for Auth ---
+try {
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_hash ON auth_tokens(token_hash);
+
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash);
+    `);
+    console.log('Auth tables checked/created');
+} catch (err) {
+    console.error('Auth migration error:', err);
+}
+
+// --- Auth Endpoints ---
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password, category, rememberMe } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Generate JWT
+    const { token, claims } = signJwtForUser(user, category);
+    
+    // Set JWT Cookie
+    res.cookie(JWT_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: false, // Force false for local/HTTP usage
+      sameSite: 'lax',
+      maxAge: JWT_EXPIRES_IN_SECONDS * 1000
+    });
+
+    // Handle Remember Me
+    if (rememberMe) {
+        const rememberToken = tokenService.generateToken();
+        // Use user.username as ID since that's how we key users
+        tokenService.storeRememberToken(user.username, rememberToken, 30);
+        
+        res.cookie(REMEMBER_COOKIE_NAME, rememberToken, {
+            httpOnly: true,
+            secure: false, // Force false for local/HTTP usage
+            sameSite: 'lax',
+            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+        });
+    }
+
+    // Response
+    res.json({
+      ok: true,
+      user: {
+        id: claims.user_id,
+        username: user.username,
+        fullname: user.fullname,
+        role: claims.role,
+        projectId: user.project_id,
+        clientId: user.client_id,
+        category: category
+      }
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  // Invalidate Remember Token if present
+  const cookies = parseCookies(req.headers.cookie || '');
+  if (cookies[REMEMBER_COOKIE_NAME]) {
+      tokenService.invalidateRememberToken(cookies[REMEMBER_COOKIE_NAME]);
+  }
+
+  // Clear Cookies
+  res.cookie(JWT_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0
+  });
+  
+  res.cookie(REMEMBER_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0
+  });
+
+  res.json({ ok: true, message: 'Logged out' });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+    try {
+        const cookies = parseCookies(req.headers.cookie || '');
+        // console.log('[Auth] Check Session. Cookies:', Object.keys(cookies));
+
+        // 1. Try standard JWT check first
+        let token = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+            token = authHeader.slice(7).trim();
+        } else {
+            token = cookies[JWT_COOKIE_NAME];
+        }
+
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, JWT_SECRET);
+                const user = db.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(decoded.user_id, decoded.user_id);
+                if (user) {
+                    return res.json({
+                        ok: true,
+                        user: {
+                            id: decoded.user_id,
+                            username: user.username,
+                            fullname: user.fullname,
+                            role: decoded.role,
+                            projectId: user.project_id,
+                            clientId: user.client_id,
+                            category: decoded.company_id
+                        }
+                    });
+                }
+            } catch (e) {
+                // console.log('[Auth] JWT invalid/expired:', e.message);
+            }
+        }
+
+        // 2. Try Remember Me
+        const rememberToken = cookies[REMEMBER_COOKIE_NAME];
+        
+        if (rememberToken) {
+            console.log('[Auth] Found Remember Token, attempting verification...');
+            const userId = tokenService.verifyRememberToken(rememberToken);
+            if (userId) {
+                console.log('[Auth] Remember Token Valid for user:', userId);
+                const user = db.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(userId, userId);
+                if (user) {
+                    // Valid Remember Me -> Issue new JWT
+                    const category = 'IT'; // Default or retrieve from last session if possible?
+                    const { token: newToken, claims } = signJwtForUser(user, category);
+                    
+                    res.cookie(JWT_COOKIE_NAME, newToken, {
+                        httpOnly: true,
+                        secure: false, // Force false for local/HTTP usage
+                        sameSite: 'lax',
+                        maxAge: JWT_EXPIRES_IN_SECONDS * 1000
+                    });
+
+                    return res.json({
+                        ok: true,
+                        user: {
+                            id: claims.user_id,
+                            username: user.username,
+                            fullname: user.fullname,
+                            role: claims.role,
+                            projectId: user.project_id,
+                            clientId: user.client_id,
+                            category: category
+                        }
+                    });
+                }
+            } else {
+                console.log('[Auth] Remember Token Invalid or Expired');
+            }
+        }
+
+        return res.status(401).json({ error: 'Not authenticated' });
+
+    } catch (err) {
+        console.error('Session check error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        console.log(`[Auth] Forgot Password requested for: ${email}`);
+
+        // Search by username OR fullname (since some users store email in fullname)
+        let user = db.prepare('SELECT * FROM users WHERE username = ? OR fullname = ?').get(email, email);
+        
+        // If not found exact match, try case-insensitive
+        if (!user) {
+             user = db.prepare('SELECT * FROM users WHERE lower(username) = lower(?) OR lower(fullname) = lower(?)').get(email, email);
+        }
+
+        if (!user) {
+            console.log(`[Auth] User not found for input: ${email}`);
+            // Fake success to prevent enumeration
+            return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+        }
+
+        console.log(`[Auth] Found user: ${user.username} (Fullname: ${user.fullname})`);
+
+        // Determine the email address to send to
+        let targetEmail = null;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (emailRegex.test(user.fullname)) {
+            targetEmail = user.fullname;
+        } else if (emailRegex.test(user.username)) {
+            targetEmail = user.username;
+        } else if (emailRegex.test(email)) {
+            // If the user entered an email, and we matched it (e.g. against fullname), use that.
+            // But we already checked fullname.
+            // If the user matched by username (e.g. input 'admin'), we still don't have an email unless we assume input is email (which it isn't if it matched 'admin').
+            // If the input was an email and matched fullname, targetEmail is set.
+        }
+
+        if (!targetEmail) {
+            console.warn(`[Auth] Cannot determine email address for user ${user.username}. Fullname is '${user.fullname}'`);
+            // We can't send an email. 
+            return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+        }
+
+        const resetToken = tokenService.generateToken();
+        // Store token against the *username* so we can look it up later, OR store against the *email*?
+        // The verify endpoint uses `tokenService.verifyResetToken(token)` which returns the stored key.
+        // Then it runs `UPDATE users ... WHERE username = ?`.
+        // So we MUST store the USERNAME as the key in the token service, NOT the email (unless username=email).
+        tokenService.storeResetToken(user.username, resetToken);
+
+        const ip = getLocalIP();
+        const port = process.env.PORT || 9090;
+        const protocol = req.protocol;
+        const host = req.get('host'); // Should include port
+        const resetLink = `${protocol}://${host}/#reset-password?token=${resetToken}`;
+
+        const sent = await emailService.sendPasswordResetEmail(targetEmail, resetLink);
+        
+        if (!sent) {
+             console.log(`[DEV] Password Reset Link for ${targetEmail}: ${resetLink}`);
+        }
+
+        res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+        
+        const email = tokenService.verifyResetToken(token);
+        if (!email) {
+            return res.status(400).json({ error: 'Invalid or expired reset token' });
+        }
+
+        const passwordHash = await passwordService.hashPassword(newPassword);
+        
+        // Update user password
+        db.prepare('UPDATE users SET password = ? WHERE username = ?').run(passwordHash, email);
+        
+        // Invalidate all sessions
+        tokenService.invalidateAllUserTokens(email);
+        tokenService.consumeResetToken(token);
+
+        res.json({ ok: true, message: 'Password has been reset successfully' });
+
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Helper for existing authenticateJWT to use
+// ...
 
 function buildUserClaims(user, category) {
   const companyId = user.company_id || user.client_id || DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
@@ -518,9 +841,10 @@ try {
 }
 // ---------------------------
 
-const app = express()
-app.use(express.json({ limit: '100mb' }))
-app.use(express.urlencoded({ limit: '100mb', extended: true }))
+// App and middleware initialized at top of file
+// const app = express()
+// app.use(express.json({ limit: '100mb' }))
+// app.use(express.urlencoded({ limit: '100mb', extended: true }))
 
 function parseQtyNumber(v) {
   const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
@@ -1171,14 +1495,22 @@ app.get('/api/assets', (req, res) => {
         let baseQuery = `
           SELECT a.*, 
                  it.MACAddress, it.IPAddress, it.NetworkType, 
-                 it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
+                 it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
+                 p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
           FROM assets a
           LEFT JOIN asset_it_details it ON a.ID = it.AssetID
+          LEFT JOIN project_assets pa ON a.ID = pa.AssetID
+          LEFT JOIN projects p ON pa.ProjectID = p.ID
         `;
         let params = [];
         
         if (projectId) {
-            baseQuery += ` INNER JOIN project_assets pa ON a.ID = pa.AssetID WHERE pa.ProjectID = ?`;
+            // Note: If projectId is filtered, we might already have the join above, but let's keep it safe.
+            // Since we added LEFT JOIN project_assets pa above, we should adjust the filter logic below.
+            // However, the original code added INNER JOIN if projectId was present.
+            // Let's refine:
+            // If projectId is requested, we filter by it.
+            baseQuery += ` WHERE pa.ProjectID = ?`;
             params.push(projectId);
         }
         
@@ -1205,17 +1537,23 @@ app.get('/api/assets', (req, res) => {
     let filters = req.query.filters || [];
 
     // Base query
+    // Use subquery to ensure only ONE project (the latest) is linked per asset
     let baseQuery = `
       FROM assets a
       LEFT JOIN asset_it_details it ON a.ID = it.AssetID
+      LEFT JOIN (
+          SELECT AssetID, ProjectID
+          FROM project_assets
+          GROUP BY AssetID
+      ) pa_raw ON a.ID = pa_raw.AssetID
+      LEFT JOIN projects p ON pa_raw.ProjectID = p.ID
     `;
     let whereClauses = ["1=1"];
     let params = [];
 
     // 1. Apply Project Filter
     if (projectId) {
-      baseQuery += ` INNER JOIN project_assets pa ON a.ID = pa.AssetID `;
-      whereClauses.push(`pa.ProjectID = ?`);
+      whereClauses.push(`pa_raw.ProjectID = ?`);
       params.push(projectId);
     }
 
@@ -1280,7 +1618,8 @@ app.get('/api/assets', (req, res) => {
     let dataQuery = `
       SELECT a.*, 
              it.MACAddress, it.IPAddress, it.NetworkType, 
-             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
+             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
+             p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
       ${baseQuery}
       ${whereSql}
     `;
@@ -1622,14 +1961,19 @@ app.post('/api/dc', async (req, res) => {
 
     // 2. Atomic Transaction: Get Next ID -> Insert Placeholder
     const createResult = db.transaction(() => {
-        const year = new Date().getFullYear();
+        const now = new Date();
+        const fullYear = now.getFullYear();
+        const shortYear = String(fullYear).slice(-2); // e.g. "25" for 2025
         let nextSeq = 1;
+
         try {
-            const lastDc = db.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE 'DC/${year}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
+            // New Format: YY/NNNN (e.g. 25/0001)
+            // Query for ChallanNo matching 'YY/%'
+            const lastDc = db.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE '${shortYear}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
             if (lastDc && lastDc.ChallanNo) {
                 const parts = lastDc.ChallanNo.split('/');
-                if (parts.length === 3) {
-                    const lastSeq = parseInt(parts[2], 10);
+                if (parts.length === 2) {
+                    const lastSeq = parseInt(parts[1], 10);
                     if (!isNaN(lastSeq)) {
                         nextSeq = lastSeq + 1;
                     }
@@ -1640,7 +1984,7 @@ app.post('/api/dc', async (req, res) => {
             nextSeq = Math.floor(1000 + Math.random() * 9000); 
         }
         
-        const challanNo = `DC/${year}/${String(nextSeq).padStart(4, '0')}`;
+        const challanNo = `${shortYear}/${String(nextSeq).padStart(4, '0')}`;
         const id = `DC${Date.now()}`;
         
         // Initial Payload (without QR)
@@ -1690,10 +2034,51 @@ app.post('/api/dc', async (req, res) => {
         return { id, challanNo, payload: initialPayload };
     })();
 
-    const { id, challanNo, payload: dcPayload } = createResult;
+        const { id, challanNo, payload: dcPayload } = createResult;
 
-    // 3. Generate QR Code (Async)
-    const qrData = JSON.stringify({
+        // 3. Check for Project Association (via Reference No or explicit field)
+        // If "Reference No" matches a Project Name, link these assets to that project
+        try {
+            const refNo = dcPayload.meta?.referenceNo;
+            if (refNo) {
+                const project = db.prepare('SELECT ID FROM projects WHERE ProjectName = ?').get(refNo);
+                if (project) {
+                    console.log(`Linking DC assets to Project: ${project.ID} (${refNo})`);
+                    
+                    const assignStmt = db.prepare(`
+                        INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
+                        VALUES (?, ?, ?, ?)
+                    `);
+                    
+                    const updateAssetStmt = db.prepare(`
+                        UPDATE assets SET AssignedTo = ?, CurrentLocation = 'On Site' WHERE ID = ?
+                    `);
+
+                    db.transaction(() => {
+                        normalizedAssetIds.forEach(assetId => {
+                            // Check if already assigned to a DIFFERENT project
+                            const existing = db.prepare('SELECT ProjectID FROM project_assets WHERE AssetID = ?').get(assetId);
+                            if (existing && existing.ProjectID !== project.ID) {
+                                console.warn(`Skipping auto-assignment for ${assetId}: Already assigned to ${existing.ProjectID}`);
+                                return; 
+                            }
+
+                            // 1. Add to project_assets table
+                            assignStmt.run(project.ID, assetId, new Date().toISOString(), 'DC');
+                            
+                            // 2. Update main assets table to reflect assignment
+                            updateAssetStmt.run(`Project: ${refNo}`, assetId);
+                        });
+                    })();
+                }
+            }
+        } catch (linkErr) {
+            console.error('Error linking DC assets to project:', linkErr);
+            // Non-blocking error, continue with DC generation
+        }
+
+        // 4. Generate QR Code (Async)
+        const qrData = JSON.stringify({
       id: id,
       no: challanNo,
       customer: CustomerName,
@@ -1724,6 +2109,15 @@ app.post('/api/dc', async (req, res) => {
     console.error('DC Creation Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// --- Logo Upload Endpoint ---
+app.post('/api/upload-logo', upload.single('logo'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: 'No logo file uploaded' });
+    }
+    const logoUrl = `/uploads/${req.file.filename}`;
+    res.json({ success: true, url: logoUrl });
 });
 
 // DC Remark Templates Endpoints
@@ -2583,6 +2977,128 @@ app.delete('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superus
     console.error('Error deleting contact:', err);
     res.status(500).json({ ok: false, message: 'Internal server error' });
   }
+});
+
+// --- Company Template API ---
+
+app.get('/api/company-templates', authenticateJWT, (req, res) => {
+    try {
+        const templates = db.prepare('SELECT * FROM company_templates ORDER BY name').all();
+        res.json({ success: true, templates });
+    } catch (err) {
+        console.error('Error fetching company templates:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/company-templates', authenticateJWT, (req, res) => {
+    try {
+        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
+        
+        if (!name || !company_name) {
+            return res.status(400).json({ success: false, error: 'Template name and Company Name are required' });
+        }
+
+        if (is_default) {
+            db.prepare('UPDATE company_templates SET is_default = 0').run();
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO company_templates (name, company_name, address, gst, cin, state_name, state_code, is_default)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const info = stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0);
+        
+        res.json({ success: true, id: info.lastInsertRowid });
+    } catch (err) {
+        console.error('Error creating company template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// --- Project Search API for DC ---
+
+app.get('/api/projects/search', authenticateJWT, (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) {
+            return res.json({ success: true, projects: [] });
+        }
+
+        const searchTerm = `%${q}%`;
+        // Search by ProjectName or ID (Project ID is usually stored in ID column, but sometimes users refer to 'ProjectName' as ID if it's a code)
+        // We will select relevant columns for DC population
+        const projects = db.prepare(`
+            SELECT 
+                ID, ProjectName, 
+                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode,
+                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode
+            FROM projects 
+            WHERE ProjectName LIKE ? OR ID LIKE ?
+            LIMIT 10
+        `).all(searchTerm, searchTerm);
+
+        res.json({ success: true, projects });
+    } catch (err) {
+        console.error('Error searching projects:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/projects/:id/orders', authenticateJWT, (req, res) => {
+    try {
+        const { id } = req.params;
+        // Fetch all orders for this project to get potential consignees
+        // We include Consignee details and the OrderNo itself
+        const orders = db.prepare(`
+            SELECT 
+                ID, OrderNo, OrderDate,
+                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode
+            FROM project_orders 
+            WHERE ProjectID = ?
+        `).all(id);
+
+        res.json({ success: true, orders });
+    } catch (err) {
+        console.error('Error fetching project orders:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/api/company-templates/:id', authenticateJWT, (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
+
+        if (is_default) {
+            db.prepare('UPDATE company_templates SET is_default = 0').run();
+        }
+
+        const stmt = db.prepare(`
+            UPDATE company_templates 
+            SET name = ?, company_name = ?, address = ?, gst = ?, cin = ?, state_name = ?, state_code = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+
+        stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0, id);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error updating company template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/company-templates/:id', authenticateJWT, (req, res) => {
+    try {
+        const { id } = req.params;
+        db.prepare('DELETE FROM company_templates WHERE id = ?').run(id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error deleting company template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
@@ -3894,6 +4410,15 @@ app.get('/api/projects/:id/orders', (req, res) => {
     }
 });
 
+app.get('/api/all-orders', (req, res) => {
+    try {
+        const rows = db.prepare('SELECT * FROM project_orders ORDER BY Timestamp DESC').all();
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/projects/:id/orders', (req, res) => {
     try {
         const { id } = req.params;
@@ -4085,6 +4610,17 @@ app.post('/api/projects/:id/assign-asset', (req, res) => {
             INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
             VALUES (?, ?, ?, ?)
         `);
+        
+        // Also update the asset's main status and AssignedTo field for visibility
+        const project = db.prepare('SELECT ProjectName FROM projects WHERE ID = ?').get(id);
+        const projectName = project ? project.ProjectName : id;
+        
+        db.prepare(`
+            UPDATE assets 
+            SET AssignedTo = ?, Status = 'In-Use', CurrentLocation = 'On Site'
+            WHERE ID = ?
+        `).run(`Project: ${projectName}`, AssetID);
+
         stmt.run(id, AssetID, new Date().toISOString(), Type || 'Permanent');
         res.json({ success: true });
     } catch (err) {
@@ -4271,9 +4807,13 @@ app.put('/api/assets/:id', (req, res) => {
     
     // Check if asset exists in assets table
     let existing = db.prepare(`
-      SELECT a.*, it.MACAddress, it.IPAddress, it.NetworkType, it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
+      SELECT a.*, 
+             it.MACAddress, it.IPAddress, it.NetworkType, it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
+             p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
       FROM assets a
       LEFT JOIN asset_it_details it ON a.ID = it.AssetID
+      LEFT JOIN project_assets pa ON a.ID = pa.AssetID
+      LEFT JOIN projects p ON pa.ProjectID = p.ID
       WHERE LOWER(a.ID) = LOWER(?)
     `).get(id);
 
@@ -4910,6 +5450,8 @@ app.get('/api/assets/search', (req, res) => {
     let baseSql = `
       FROM assets a
       LEFT JOIN asset_it_details it ON a.ID = it.AssetID
+      LEFT JOIN project_assets pa ON a.ID = pa.AssetID
+      LEFT JOIN projects p ON pa.ProjectID = p.ID
       WHERE `;
     
     const params = [];
@@ -4933,7 +5475,8 @@ app.get('/api/assets/search', (req, res) => {
     const sql = `
       SELECT a.*, 
              it.MACAddress, it.IPAddress, it.NetworkType, 
-             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
+             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
+             p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
       ${baseSql}
       LIMIT ? OFFSET ?
     `;
@@ -5686,6 +6229,79 @@ app.get('/api/ocr/history/:filename/blocks', (req, res) => {
         res.json(blocks);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Company Template API (Moved to prevent catch-all interception) ---
+
+app.get('/api/company-templates', authenticateJWT, (req, res) => {
+    try {
+        const templates = db.prepare('SELECT * FROM company_templates ORDER BY name').all();
+        res.json({ success: true, templates });
+    } catch (err) {
+        console.error('Error fetching company templates:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/company-templates', authenticateJWT, (req, res) => {
+    try {
+        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
+        
+        if (!name || !company_name) {
+            return res.status(400).json({ success: false, error: 'Template name and Company Name are required' });
+        }
+
+        if (is_default) {
+            db.prepare('UPDATE company_templates SET is_default = 0').run();
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO company_templates (name, company_name, address, gst, cin, state_name, state_code, is_default)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        
+        const info = stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0);
+        
+        res.json({ success: true, id: info.lastInsertRowid });
+    } catch (err) {
+        console.error('Error creating company template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/api/company-templates/:id', authenticateJWT, (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
+
+        if (is_default) {
+            db.prepare('UPDATE company_templates SET is_default = 0').run();
+        }
+
+        const stmt = db.prepare(`
+            UPDATE company_templates 
+            SET name = ?, company_name = ?, address = ?, gst = ?, cin = ?, state_name = ?, state_code = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+
+        stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0, id);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error updating company template:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/company-templates/:id', authenticateJWT, (req, res) => {
+    try {
+        const { id } = req.params;
+        db.prepare('DELETE FROM company_templates WHERE id = ?').run(id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error deleting company template:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

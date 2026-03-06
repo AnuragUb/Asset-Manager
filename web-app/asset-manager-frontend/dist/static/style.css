@@ -29,6 +29,7 @@ body {
     align-items: center;
     justify-content: center;
     box-shadow: none;
+    flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .header-left {
@@ -79,6 +80,8 @@ body {
 .main-layout {
     display: flex;
     flex: 1;
+    min-height: 0; /* Important for nested flex scrolling */
+    overflow: hidden; /* Ensure content stays within container */
 }
 
 #app-sidebar {

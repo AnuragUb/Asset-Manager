@@ -3,15 +3,51 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Helper to get Data Directory from Environment or Default
+const getDataDir = () => {
+    return process.env.DATA_DIR || path.join(__dirname, '../../');
+};
+
+const getDbPath = () => {
+    return process.env.DB_PATH || path.join(__dirname, 'database_v2.db');
+};
+
+// Ensure Data Directory exists if it's a custom one
+const dataDir = getDataDir();
+if (!fs.existsSync(dataDir)) {
+    try {
+        fs.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {
+        console.warn('Could not create data directory:', dataDir, e);
+    }
+}
+
 // Database connection
-const dbPath = path.join(__dirname, 'database_v2.db');
+const dbPath = getDbPath();
+// Ensure directory for DB exists
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+    try {
+        fs.mkdirSync(dbDir, { recursive: true });
+    } catch (e) {
+        console.warn('Could not create DB directory:', dbDir, e);
+    }
+}
+
+console.log('Database Path:', dbPath);
+console.log('Data Directory:', dataDir);
+
 const db = new Database(dbPath);
 
 // File paths (for legacy support or specific data)
-const assetsFile = path.join(__dirname, '../../assets.json');
-const usersFile = path.join(__dirname, '../../users.json');
-const auditFile = path.join(__dirname, '../../audit_log.json');
-const dynamicFile = path.join(__dirname, 'dynamic.json');
+// Use DATA_DIR for these JSON files if possible, or fall back to relative
+const assetsFile = path.join(dataDir, 'assets.json');
+const usersFile = path.join(dataDir, 'users.json');
+const auditFile = path.join(dataDir, 'audit_log.json');
+// dynamic.json is historically in the backend folder, but let's allow it to be in DATA_DIR too if we want
+// For now, let's keep it relative to __dirname unless DATA_DIR is explicitly set distinct from default
+// Actually, for containerization, we want ALL state in /app/data.
+const dynamicFile = path.join(process.env.DATA_DIR ? dataDir : __dirname, 'dynamic.json');
 
 // Ensure dynamicFile exists
 if (!fs.existsSync(dynamicFile)) {
@@ -50,305 +86,485 @@ function getLocalIP() {
     return '127.0.0.1';
 }
 
-// Audit Logging
-function appendAudit({ Action, User, AssetId, Severity, Details }) {
-    try {
-        const stmt = db.prepare(`
-            INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(Action, User, AssetId, Severity, Details, new Date().toISOString());
-        
-        // Also append to file for redundancy if needed
-        const log = readJson(auditFile);
-        log.push({ Action, User, AssetId, Severity, Details, Timestamp: new Date().toISOString() });
-        writeJson(auditFile, log.slice(-1000)); // Keep last 1000
-    } catch (err) {
-        console.error('Audit log error:', err);
-    }
+function appendAudit(entry) {
+    const log = readJson(auditFile);
+    log.push({
+        ...entry,
+        Timestamp: new Date().toISOString()
+    });
+    writeJson(auditFile, log);
 }
 
-// Dynamic QR Helpers
 function readDynamic() {
-    return readJson(dynamicFile);
+    try {
+        if (!fs.existsSync(dynamicFile)) return {};
+        return JSON.parse(fs.readFileSync(dynamicFile, 'utf8'));
+    } catch (err) {
+        console.error('Error reading dynamic.json:', err);
+        return {};
+    }
 }
 
 function writeDynamic(data) {
-    writeJson(dynamicFile, data);
-}
-
-// Asset ID Generation Helpers
-function genCode(length = 6) {
-    return Math.random().toString(36).substring(2, 2 + length).toUpperCase();
-}
-
-function typeCode(type) {
-    const s = (type || '').toUpperCase().trim();
-    return s.length > 0 ? s.substring(0, 1) : 'X';
-}
-
-function locCode(location) {
-    const m = { 
-        "MUMBAI": "MUM", "DELHI": "DEL", "BANGALORE": "BLR", 
-        "HYDERABAD": "HYD", "CHENNAI": "CHN", "KOLKATA": "CCU", 
-        "PUNE": "PUN", "JAIPUR": "JAI" 
-    };
-    const s = (location || '').toUpperCase().replace(/[^A-Z]/g, "").trim();
-    if (m[s]) return m[s];
-    return s.length >= 3 ? s.substring(0, 3) : "LOC";
-}
-
-function purposeCode(purpose) {
-    const m = { 
-        "OFFICE": "OF", "RENTAL": "RE", "STUDIO": "ST", 
-        "FIELD": "FD", "MAINTENANCE": "MT", "PRODUCTION": "PR" 
-    };
-    const s = (purpose || '').toUpperCase().trim();
-    if (m[s]) return m[s];
-    return s.length >= 2 ? s.substring(0, 2) : "PU";
-}
-
-function dateCode(date) {
-    const d = date ? new Date(date) : new Date();
-    const yy = d.getFullYear().toString().slice(-2);
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
-    const dd = d.getDate().toString().padStart(2, '0');
-    return `${yy}${mm}${dd}`;
-}
-
-/**
- * Generates a modern Asset ID in the format: [KIND-] (City) - (MMYY) - (Unique Base 32) - (Checksum)
- * Example: SSD-MUM-0126-9K7XQ2-Z or MUM-0126-9K7XQ2-Z
- * @param {string} location - The location name to derive city code from
- * @param {string} kindName - The name of the asset kind to look up identifier
- * @returns {string} The generated Asset ID
- */
-function generateModernAssetId(location, kindName) {
-    const city = locCode(location); // MUM, DEL, etc.
-    const now = new Date();
-    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-    const yy = now.getFullYear().toString().slice(-2);
-    const mmyy = `${mm}${yy}`;
-    
-    // Unique 6-char Base32 (excluding confusing chars: I, O, 0, 1)
-    const b32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let unique = '';
-    for (let i = 0; i < 6; i++) {
-        unique += b32[Math.floor(Math.random() * b32.length)];
+    try {
+        fs.writeFileSync(dynamicFile, JSON.stringify(data, null, 2));
+    } catch (err) {
+        console.error('Error writing dynamic.json:', err);
     }
-    
-    let base = `${city}-${mmyy}-${unique}`;
-
-    // Try to get Kind Identifier
-    if (kindName) {
-        try {
-            const kind = db.prepare('SELECT Identifier FROM asset_kinds WHERE Name = ?').get(kindName);
-            if (kind && kind.Identifier && kind.Identifier.trim() !== '') {
-                base = `${kind.Identifier.trim().toUpperCase()}-${base}`;
-            }
-        } catch (err) {
-            console.error('Error fetching kind identifier for ID generation:', err);
-        }
-    }
-    
-    // Simple Checksum (A-Z) calculated from all non-hyphen characters
-    let sum = 0;
-    const cleanBase = base.replace(/-/g, '');
-    for (let i = 0; i < cleanBase.length; i++) {
-        sum += cleanBase.charCodeAt(i);
-    }
-    const checksum = String.fromCharCode(65 + (sum % 26));
-    
-    return `${base}-${checksum}`;
 }
 
-/**
- * Generates a Split Asset ID based on parent ID.
- * Format: (ParentBase) - (Unique 3 chars) - (Checksum)
- * @param {string} parentId - The parent asset ID
- * @returns {string} The generated Split Asset ID
- */
-function generateSplitAssetId(parentId) {
-    // Parent format: CITY-MMYY-UNIQUE6-CHECKSUM
-    // We want to keep CITY-MMYY-UNIQUE6 and add a 3-char suffix
-    const parts = parentId.split('-');
-    let base = '';
-    
-    if (parts.length >= 3) {
-        // Standard format: CITY-MMYY-UNIQUE6-CHECKSUM
-        // Keep everything except the last part (checksum)
-        base = parts.slice(0, 3).join('-');
-    } else {
-        // Fallback for non-standard IDs
-        base = parentId;
-    }
-
-    const b32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let suffix = '';
-    for (let i = 0; i < 3; i++) {
-        suffix += b32[Math.floor(Math.random() * b32.length)];
-    }
-
-    const newBase = `${base}-${suffix}`;
-
-    // Calculate new checksum
-    let sum = 0;
-    const cleanBase = newBase.replace(/-/g, '');
-    for (let i = 0; i < cleanBase.length; i++) {
-        sum += cleanBase.charCodeAt(i);
-    }
-    const checksum = String.fromCharCode(65 + (sum % 26));
-
-    return `${newBase}-${checksum}`;
+// ID Generators
+function genCode(prefix) {
+    return prefix + '-' + Math.floor(Math.random() * 10000);
 }
 
-/**
- * Generates a Project ID in the format: Location-MMYY-6digituniquecde-identifierbit
- * Example: MUM-0126-000001-P
- * @param {string} location - The location name
- * @returns {string} The generated Project ID
- */
-function generateProjectId(location) {
-    const city = locCode(location);
-    const now = new Date();
-    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-    const yy = now.getFullYear().toString().slice(-2);
-    const mmyy = `${mm}${yy}`;
-    
-    // 6-digit unique code (random for now, could be incremental if needed)
-    // Using random for consistency with Asset ID generation style
-    const unique = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-    
-    // Identifier bit 'P' for Project
-    return `${city}-${mmyy}-${unique}-P`;
-}
-
-/**
- * Standardized QR Payload Generator for Projects
- * @param {object} project - Project data
- * @param {string} ip - Server IP
- * @param {number|string} port - Server Port
- * @returns {string} JSON string for QR code
- */
-function generateProjectQRPayload(project, ip, port) {
-    const id = project.ID || project.id;
-    return `http://${ip}:${port}/project/${encodeURIComponent(id)}`;
-}
-
-function generateTempAssetId(location) {
-    const city = locCode(location);
-    const prefix = `${city}T`;
-    const now = new Date();
-    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-    const yy = now.getFullYear().toString().slice(-2);
-    const mmyy = `${mm}${yy}`;
-    
-    const b32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let unique = '';
-    for (let i = 0; i < 6; i++) {
-        unique += b32[Math.floor(Math.random() * b32.length)];
-    }
-    
-    const base = `${prefix}-${mmyy}-${unique}`;
-    
-    // Simple Checksum (A-Z) calculated from all non-hyphen characters
-    let sum = 0;
-    const cleanBase = base.replace(/-/g, '');
-    for (let i = 0; i < cleanBase.length; i++) {
-        sum += cleanBase.charCodeAt(i);
-    }
-    const checksum = String.fromCharCode(65 + (sum % 26));
-    
-    return `${base}-${checksum}`;
-}
-
-function makeIdForAsset(asset, existingIds = []) {
-    const tc = typeCode(asset.Type);
-    const dc = dateCode(asset.PurchaseDate || new Date());
-    const lc = locCode(asset.Location);
-    const pc = purposeCode(asset.Purpose);
-    const base = `${tc}${dc}${lc}${pc}`;
-    
-    let id = base;
-    let counter = 1;
-    while (existingIds.includes(id)) {
-        id = `${base}-${counter.toString().padStart(2, '0')}`;
-        counter++;
-    }
-    return id;
-}
-
-// Tally Integration
-const TALLY_CONFIG = {
-    host: 'localhost',
-    port: 9000
+const typeCode = {
+    'Laptop': 'LPT',
+    'Desktop': 'DSK',
+    'Monitor': 'MON',
+    'Printer': 'PRT',
+    'Server': 'SRV',
+    'Switch': 'SWT',
+    'Router': 'RTR',
+    'Firewall': 'FWL',
+    'Access Point': 'AP',
+    'Camera': 'CAM',
+    'NVR': 'NVR',
+    'Phone': 'PHN',
+    'Tablet': 'TBL',
+    'Projector': 'PRJ',
+    'Scanner': 'SCN',
+    'UPS': 'UPS',
+    'Rack': 'RCK',
+    'Cable': 'CBL',
+    'Software': 'SFT',
+    'License': 'LIC',
+    'Accessory': 'ACC',
+    'Other': 'OTH'
 };
 
-async function sendTallyRequest(xml) {
-    const http = require('http');
-    return new Promise((resolve, reject) => {
-        const req = http.request({
-            hostname: TALLY_CONFIG.host,
-            port: TALLY_CONFIG.port,
+const locCode = {
+    'Mumbai': 'MUM',
+    'Delhi': 'DEL',
+    'Bangalore': 'BLR',
+    'Chennai': 'CHN',
+    'Hyderabad': 'HYD',
+    'Pune': 'PUN',
+    'Kolkata': 'KOL',
+    'Ahmedabad': 'AMD',
+    'Jaipur': 'JAI',
+    'Lucknow': 'LKO',
+    'Kanpur': 'KNP',
+    'Nagpur': 'NGP',
+    'Indore': 'IND',
+    'Thane': 'THA',
+    'Bhopal': 'BHO',
+    'Visakhapatnam': 'VIS',
+    'Pimpri-Chinchwad': 'PIM',
+    'Patna': 'PAT',
+    'Vadodara': 'VAD',
+    'Ghaziabad': 'GHA',
+    'Ludhiana': 'LUD',
+    'Agra': 'AGR',
+    'Nashik': 'NAS',
+    'Faridabad': 'FAR',
+    'Meerut': 'MEE',
+    'Rajkot': 'RAJ',
+    'Kalyan-Dombivli': 'KAL',
+    'Vasai-Virar': 'VAS',
+    'Varanasi': 'VAR',
+    'Srinagar': 'SRI',
+    'Aurangabad': 'AUR',
+    'Dhanbad': 'DHA',
+    'Amritsar': 'AMR',
+    'Navi Mumbai': 'NAV',
+    'Allahabad': 'ALL',
+    'Ranchi': 'RAN',
+    'Howrah': 'HOW',
+    'Coimbatore': 'COI',
+    'Jabalpur': 'JAB',
+    'Gwalior': 'GWA',
+    'Vijayawada': 'VIJ',
+    'Jodhpur': 'JOD',
+    'Madurai': 'MAD',
+    'Raipur': 'RAI',
+    'Kota': 'KOT',
+    'Guwahati': 'GUW',
+    'Chandigarh': 'CHA',
+    'Solapur': 'SOL',
+    'Hubli-Dharwad': 'HUB',
+    'Bareilly': 'BAR',
+    'Moradabad': 'MOR',
+    'Mysore': 'MYS',
+    'Gurgaon': 'GUR',
+    'Aligarh': 'ALI',
+    'Jalandhar': 'JAL',
+    'Tiruchirappalli': 'TIR',
+    'Bhubaneswar': 'BHU',
+    'Salem': 'SAL',
+    'Mira-Bhayandar': 'MIR',
+    'Warangal': 'WAR',
+    'Thiruvananthapuram': 'THI',
+    'Bhiwandi': 'BHI',
+    'Saharanpur': 'SAH',
+    'Guntur': 'GUN',
+    'Amravati': 'AMR',
+    'Bikaner': 'BIK',
+    'Noida': 'NOI',
+    'Jamshedpur': 'JAM',
+    'Bhilai': 'BHL',
+    'Cuttack': 'CUT',
+    'Firozabad': 'FIR',
+    'Kochi': 'KOC',
+    'Nellore': 'NEL',
+    'Bhavnagar': 'BHA',
+    'Dehradun': 'DEH',
+    'Durgapur': 'DUR',
+    'Asansol': 'ASA',
+    'Rourkela': 'ROU',
+    'Nanded': 'NAN',
+    'Kolhapur': 'KOL',
+    'Ajmer': 'AJM',
+    'Akola': 'AKO',
+    'Gulbarga': 'GUL',
+    'Jamnagar': 'JAM',
+    'Ujjain': 'UJJ',
+    'Loni': 'LON',
+    'Siliguri': 'SIL',
+    'Jhansi': 'JHA',
+    'Ulhasnagar': 'ULH',
+    'Jammu': 'JMU',
+    'Sangli-Miraj & Kupwad': 'SAN',
+    'Mangalore': 'MAN',
+    'Erode': 'ERO',
+    'Belgaum': 'BEL',
+    'Ambattur': 'AMB',
+    'Tirunelveli': 'TIR',
+    'Malegaon': 'MAL',
+    'Gaya': 'GAY',
+    'Jalgaon': 'JAL',
+    'Udaipur': 'UDA',
+    'Maheshtala': 'MAH',
+    'Davanagere': 'DAV',
+    'Kozhikode': 'KOZ',
+    'Kurnool': 'KUR',
+    'Rajpur Sonarpur': 'RAJ',
+    'Rajahmundry': 'RAJ',
+    'Bokaro': 'BOK',
+    'South Dumdum': 'SOU',
+    'Bellary': 'BEL',
+    'Patiala': 'PAT',
+    'Gopalpur': 'GOP',
+    'Agartala': 'AGA',
+    'Bhagalpur': 'BHA',
+    'Muzaffarnagar': 'MUZ',
+    'Bhatpara': 'BHA',
+    'Panihati': 'PAN',
+    'Latur': 'LAT',
+    'Dhule': 'DHU',
+    'Tirupati': 'TIR',
+    'Rohtak': 'ROH',
+    'Korba': 'KOR',
+    'Bhilwara': 'BHI',
+    'Berhampur': 'BER',
+    'Muzaffarpur': 'MUZ',
+    'Ahmednagar': 'AHM',
+    'Mathura': 'MAT',
+    'Kollam': 'KOL',
+    'Avadi': 'AVA',
+    'Kadapa': 'KAD',
+    'Kamarhati': 'KAM',
+    'Sambalpur': 'SAM',
+    'Bilaspur': 'BIL',
+    'Shahjahanpur': 'SHA',
+    'Satara': 'SAT',
+    'Bijapur': 'BIJ',
+    'Kakinada': 'KAK',
+    'Rampur': 'RAM',
+    'Shimoga': 'SHI',
+    'Chandrapur': 'CHA',
+    'Junagadh': 'JUN',
+    'Thrissur': 'THR',
+    'Alwar': 'ALW',
+    'Bardhaman': 'BAR',
+    'Kulti': 'KUL',
+    'Kakinada': 'KAK',
+    'Nizamabad': 'NIZ',
+    'Parbhani': 'PAR',
+    'Tumkur': 'TUM',
+    'Khammam': 'KHA',
+    'Ozhukarai': 'OZH',
+    'Bihar Sharif': 'BIH',
+    'Panipat': 'PAN',
+    'Darbhanga': 'DAR',
+    'Bally': 'BAL',
+    'Aizawl': 'AIZ',
+    'Dewas': 'DEW',
+    'Ichalkaranji': 'ICH',
+    'Karnal': 'KAR',
+    'Bathinda': 'BAT',
+    'Jalna': 'JAL',
+    'Eluru': 'ELU',
+    'Kirari Suleman Nagar': 'KIR',
+    'Barasat': 'BAR',
+    'Purnia': 'PUR',
+    'Satna': 'SAT',
+    'Mau': 'MAU',
+    'Sonipat': 'SON',
+    'Farrukhabad': 'FAR',
+    'Sagar': 'SAG',
+    'Rourkela': 'ROU',
+    'Durg': 'DUR',
+    'Imphal': 'IMP',
+    'Ratlam': 'RAT',
+    'Hapur': 'HAP',
+    'Arrah': 'ARR',
+    'Karimnagar': 'KAR',
+    'Anantapur': 'ANA',
+    'Etawah': 'ETA',
+    'Ambernath': 'AMB',
+    'North Dumdum': 'NOR',
+    'Bharatpur': 'BHA',
+    'Begusarai': 'BEG',
+    'New Delhi': 'NEW',
+    'Gandhidham': 'GAN',
+    'Baranagar': 'BAR',
+    'Tiruvottiyur': 'TIR',
+    'Pondicherry': 'PON',
+    'Sikar': 'SIK',
+    'Thoothukudi': 'THO',
+    'Rewa': 'REW',
+    'Mirzapur': 'MIR',
+    'Raichur': 'RAI',
+    'Pali': 'PAL',
+    'Ramagundam': 'RAM',
+    'Haridwar': 'HAR',
+    'Vijayanagaram': 'VIJ',
+    'Katihar': 'KAT',
+    'Nagercoil': 'NAG',
+    'Sri Ganganagar': 'SRI',
+    'Karawal Nagar': 'KAR',
+    'Mango': 'MAN',
+    'Thanjavur': 'THA',
+    'Bulandshahr': 'BUL',
+    'Uluberia': 'ULU',
+    'Murwara': 'MUR',
+    'Sambhal': 'SAM',
+    'Singrauli': 'SIN',
+    'Nadiad': 'NAD',
+    'Secunderabad': 'SEC',
+    'Naihati': 'NAI',
+    'Yamunanagar': 'YAM',
+    'Bidhan Nagar': 'BID',
+    'Pallavaram': 'PAL',
+    'Bidar': 'BID',
+    'Munger': 'MUN',
+    'Panchkula': 'PAN',
+    'Burhanpur': 'BUR',
+    'Raurkela Industrial Township': 'RAU',
+    'Kharagpur': 'KHA',
+    'Dindigul': 'DIN',
+    'Gandhinagar': 'GAN',
+    'Hospet': 'HOS',
+    'Nangloi Jat': 'NAN',
+    'English Bazar': 'ENG',
+    'Ongole': 'ONG',
+    'Deoghar': 'DEO',
+    'Chapra': 'CHA',
+    'Haldia': 'HAL',
+    'Khandwa': 'KHA',
+    'Nandyal': 'NAN',
+    'Chittoor': 'CHI',
+    'Morena': 'MOR',
+    'Amroha': 'AMR',
+    'Anand': 'ANA',
+    'Bhind': 'BHI',
+    'Bhalswa Jahangir Pur': 'BHA',
+    'Madhyamgram': 'MAD',
+    'Bhiwani': 'BHI',
+    'Navi Mumbai Panvel Raigad': 'NAV',
+    'Baharampur': 'BAH',
+    'Ambala': 'AMB',
+    'Morvi': 'MOR',
+    'Fatehpur': 'FAT',
+    'Rae Bareli': 'RAE',
+    'Khora': 'KHO',
+    'Bhusawal': 'BHU',
+    'Orai': 'ORA',
+    'Bahraich': 'BAH',
+    'Vellore': 'VEL',
+    'Mahesana': 'MAH',
+    'Sambalpur': 'SAM',
+    'Raiganj': 'RAI',
+    'Sirsa': 'SIR',
+    'Danapur': 'DAN',
+    'Serampore': 'SER',
+    'Sultan Pur Majra': 'SUL',
+    'Guna': 'GUN',
+    'Jaunpur': 'JAU',
+    'Panvel': 'PAN',
+    'Shivpuri': 'SHI',
+    'Surendranagar Dudhrej': 'SUR',
+    'Unnao': 'UNN',
+    'Hugli and Chinsurah': 'HUG',
+    'Alappuzha': 'ALA',
+    'Kottayam': 'KOT',
+    'Machilipatnam': 'MAC',
+    'Shimla': 'SHI',
+    'Adoni': 'ADO',
+    'Udupi': 'UDU',
+    'Tenali': 'TEN',
+    'Proddatur': 'PRO',
+    'Saharsa': 'SAH',
+    'Hindupur': 'HIN',
+    'Sasaram': 'SAS',
+    'Hajipur': 'HAJ',
+    'Bhimavaram': 'BHI',
+    'Dehri': 'DEH',
+    'Madanapalle': 'MAD',
+    'Siwan': 'SIW',
+    'Bettiah': 'BET',
+    'Guntakal': 'GUN',
+    'Srikakulam': 'SRI',
+    'Motihari': 'MOT',
+    'Dharmavaram': 'DHA',
+    'Gudivada': 'GUD',
+    'Phagwara': 'PHA',
+    'Narasaraopet': 'NAR',
+    'Suryapet': 'SUR',
+    'Miryalaguda': 'MIR',
+    'Tadipatri': 'TAD',
+    'Karaikudi': 'KAR',
+    'Kishanganj': 'KIS',
+    'Jamalpur': 'JAM',
+    'Ballia': 'BAL',
+    'Kavali': 'KAV',
+    'Tadepalligudem': 'TAD',
+    'Amaravati': 'AMA',
+    'Buxar': 'BUX',
+    'Tezpur': 'TEZ',
+    'Jehanabad': 'JEH',
+    'Aurangabad': 'AUR',
+    'Gangtok': 'GAN',
+    'Vasco Da Gama': 'VAS'
+};
+
+const purposeCode = {
+    'Office': 'OFF',
+    'Production': 'PRD',
+    'Testing': 'TST',
+    'Development': 'DEV',
+    'Client': 'CLI',
+    'Rental': 'RNT',
+    'Spare': 'SPR',
+    'Scrap': 'SCR'
+};
+
+function dateCode() {
+    const d = new Date();
+    return d.getFullYear().toString().substr(-2) + (d.getMonth() + 1).toString().padStart(2, '0');
+}
+
+function generateModernAssetId(location, type) {
+    const loc = locCode[location] || 'GEN';
+    const typ = typeCode[type] || 'GEN';
+    const date = dateCode();
+    const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `CINEOM/${loc}/${typ}/${date}/${rand}`;
+}
+
+// Temporary ID generator for assets not yet synced
+function generateTempAssetId() {
+    return 'TEMP-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+}
+
+// Split Asset ID Generator
+function generateSplitAssetId(parentId, index) {
+    return `${parentId}-${index + 1}`;
+}
+
+// Project ID Generator
+function generateProjectId(clientName, location) {
+    const clientCode = (clientName || 'CLI').substring(0, 3).toUpperCase();
+    const loc = (location || 'LOC').substring(0, 3).toUpperCase();
+    const date = dateCode();
+    const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `PRJ/${clientCode}/${loc}/${date}/${rand}`;
+}
+
+// Project QR Payload Generator
+function generateProjectQRPayload(project, ip, port) {
+    // Return a direct URL to the project view
+    return `http://${ip}:${port}/project/${encodeURIComponent(project.ID)}`;
+}
+
+// Legacy ID Generator (keeping for compatibility)
+function makeIdForAsset(asset) {
+    return generateModernAssetId(asset.CurrentLocation, asset.Type);
+}
+
+// Tally Integration Helpers
+const TALLY_CONFIG = {
+    host: 'localhost',
+    port: 9000,
+    company: 'CINEOM'
+};
+
+function getTallyConfig() {
+    const dynamic = readDynamic();
+    return dynamic.tally_config || TALLY_CONFIG;
+}
+
+async function sendTallyRequest(xmlData) {
+    const config = getTallyConfig();
+    const url = `http://${config.host}:${config.port}`;
+    
+    try {
+        const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'text/xml',
-                'Content-Length': Buffer.byteLength(xml)
-            }
-        }, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => resolve(data));
+            headers: { 'Content-Type': 'text/xml' },
+            body: xmlData
         });
-        req.on('error', reject);
-        req.write(xml);
-        req.end();
-    });
-}
-
-function parseTallyXml(xml, tagName) {
-    // Simple regex-based XML parser for specific tags
-    const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'g');
-    const results = [];
-    let match;
-    while ((match = regex.exec(xml)) !== null) {
-        const content = match[1];
-        const item = {};
-        // Extract nested tags
-        const tagRegex = /<([^>]+)>([^<]*)<\/\1>/g;
-        let tagMatch;
-        while ((tagMatch = tagRegex.exec(content)) !== null) {
-            item[tagMatch[1]] = tagMatch[2].trim();
-        }
-        if (Object.keys(item).length > 0) results.push(item);
+        return await response.text();
+    } catch (error) {
+        console.error('Tally Connection Error:', error);
+        throw error;
     }
-    return results;
 }
 
-module.exports = {
-    db,
-    readJson,
-    writeJson,
-    getLocalIP,
-    appendAudit,
-    readDynamic,
-    writeDynamic,
-    genCode,
-    typeCode,
-    locCode,
-    purposeCode,
-    dateCode,
-    generateModernAssetId,
-    generateSplitAssetId,
-    generateProjectId,
-    generateProjectQRPayload,
-    generateTempAssetId,
-    makeIdForAsset,
-    assetsFile,
-    usersFile,
-    auditFile,
-    dynamicFile,
-    sendTallyRequest,
-    parseTallyXml,
-    TALLY_CONFIG
+function parseTallyXml(xml) {
+    // Basic XML parser for Tally response
+    // In production, use a proper XML parser library
+    const status = xml.match(/<STATUS>(.*?)<\/STATUS>/)?.[1];
+    const data = xml.match(/<DATA>(.*?)<\/DATA>/)?.[1];
+    return { status, data };
+}
+
+module.exports = { 
+  db, 
+  readJson, 
+  writeJson, 
+  getLocalIP, 
+  appendAudit, 
+  readDynamic, 
+  writeDynamic, 
+  genCode, 
+  typeCode, 
+  locCode, 
+  purposeCode, 
+  dateCode, 
+  generateModernAssetId,
+  generateSplitAssetId,
+  generateProjectId,
+  generateProjectQRPayload,
+  generateTempAssetId,
+  makeIdForAsset,
+  assetsFile, 
+  usersFile, 
+  auditFile, 
+  dynamicFile,
+  sendTallyRequest,
+  parseTallyXml,
+  TALLY_CONFIG,
+  getTallyConfig
 };

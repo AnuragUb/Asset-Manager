@@ -450,9 +450,15 @@ export function renderEmployeeCards() {
     const deptTerm = document.getElementById('deptFilter')?.value || 'all';
 
     const filtered = window.allEmployees.filter(emp => {
-        const matchesSearch = emp.Name.toLowerCase().includes(searchTerm) || 
-                             emp.EmployeeID.toLowerCase().includes(searchTerm) ||
+        const nameParts = emp.Name.toLowerCase().split(' ');
+        // Check if any part of the name STARTS with the search term
+        const matchesName = nameParts.some(part => part.startsWith(searchTerm));
+        
+        // OR matches ID (contains is fine for ID) OR matches Department (contains is fine)
+        const matchesOther = emp.EmployeeID.toLowerCase().includes(searchTerm) ||
                              (emp.Department || '').toLowerCase().includes(searchTerm);
+        
+        const matchesSearch = matchesName || matchesOther;
         const matchesDept = deptTerm === 'all' || emp.Department === deptTerm;
         return matchesSearch && matchesDept;
     });

@@ -567,6 +567,41 @@ window.viewWarrantyAssetsByLabel = (label) => {
     }
 };
 
+// Helper for currency conversion (reads from dashboard cache)
+function getExchangeRates() {
+    try {
+        const cached = localStorage.getItem('exchangeRates');
+        if (cached) {
+            return JSON.parse(cached);
+        }
+    } catch (e) {
+        console.warn('Failed to load exchange rates', e);
+    }
+    // Fallback rates if cache is missing
+    return { 'USD': 1.0, 'INR': 84.0, 'EUR': 0.92, 'GBP': 0.79 };
+}
+
+function convertToINR(amount, currency) {
+    if (!amount) return 0;
+    const curr = currency || 'INR';
+    if (curr === 'INR') return parseFloat(amount);
+    
+    const rates = getExchangeRates();
+    // Logic: Convert to USD first (Base), then to INR
+    // Rate is "How much of CURRENCY for 1 USD"
+    // e.g. INR=84, EUR=0.92. 
+    // 100 EUR -> USD = 100 / 0.92 = 108.69 USD
+    // 108.69 USD -> INR = 108.69 * 84 = 9130 INR
+    
+    const rateFrom = rates[curr];
+    const rateTo = rates['INR'];
+    
+    if (!rateFrom || !rateTo) return parseFloat(amount);
+    
+    const amountInUSD = parseFloat(amount) / rateFrom;
+    return amountInUSD * rateTo;
+}
+
 export function downloadWarrantyReport() {
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
     let assets = (window.allAssets || []).filter(a => 
@@ -601,12 +636,29 @@ export function downloadWarrantyReport() {
         return;
     }
 
+    let totalValueINR = 0;
+
     const reportData = assets.map(a => {
         // Find components
         const components = (window.allAssets || [])
             .filter(c => c.ParentId === a.ID)
             .map(c => c.ItemName)
             .join(', ');
+
+        // Calculate warranty details
+        let remainingMonths = 0;
+        let warrantyStatus = 'N/A';
+        if (a.PurchaseDate && a.warranty_months) {
+            const months = calculateMonthsRemaining(a.PurchaseDate, a.warranty_months);
+            remainingMonths = months > 0 ? parseFloat(months.toFixed(1)) : 0;
+            warrantyStatus = months > 0 ? `${Math.round(months)} months` : 'Expired';
+        }
+
+        // Currency Conversion
+        const val = parseFloat(a.asset_value) || 0;
+        const curr = a.Currency || 'INR';
+        const valInINR = convertToINR(val, curr);
+        totalValueINR += valInINR;
 
         return {
             'Asset ID': a.ID,
@@ -615,17 +667,32 @@ export function downloadWarrantyReport() {
             'Model': a.Model || '',
             'Serial No': a.SrNo || '',
             'Current Location': a.CurrentLocation || '',
-            'Purchase Details': a.PurchaseDetails || '',
-            'Warranty (Months)': a.warranty_months || 0,
-            'AMC (Months)': a.amc_months || 0,
-            'Asset Value': a.asset_value || 0,
+            'Assigned To': a.AssignedTo || '',
             'Purchase Date': a.PurchaseDate || '',
+            'Warranty (Months)': a.warranty_months || 0,
+            'Remaining (Months)': remainingMonths,
+            'Status': warrantyStatus,
+            'Asset Value': val,
+            'Currency': curr,
+            'Value (INR)': Math.round(valInINR * 100) / 100,
             'Components': components || '-'
         };
     });
 
+    // Add Summary Rows
+    reportData.push({}); // Spacer
+    reportData.push({
+        'Item Name': 'TOTAL ASSET VALUE (INR)',
+        'Value (INR)': Math.round(totalValueINR * 100) / 100
+    });
+
     // Generate Excel using XLSX library
     const ws = XLSX.utils.json_to_sheet(reportData);
+    
+    // Auto-width for columns
+    const colWidths = Object.keys(reportData[0]).map(key => ({ wch: key.length + 5 }));
+    ws['!cols'] = colWidths;
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Warranty Report");
     

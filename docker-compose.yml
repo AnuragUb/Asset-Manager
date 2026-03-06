@@ -1,57 +1,43 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  # In Dev: Maps to localhost:5432
-  # In Prod: Internal network only, or managed service
-  db:
-    image: postgres:15-alpine
-    container_name: asset_manager_db
+  # Production Environment
+  app-prod:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager-prod
     restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      # Map host data directory to container data directory
+      # Ensure you create these folders on your host machine: ./data/prod
+      - ./data/prod:/app/data
+      # Optionally mount uploads if they are stored in backend folder
+      - ./data/prod/uploads:/app/web-app/asset-manager-backend/uploads
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-securepassword}
-      POSTGRES_DB: ${DB_NAME:-asset_manager}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - PORT=8080
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - DB_PATH=/app/data/database_v2.db
+
+  # Testing Environment
+  app-test:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager-test
+    restart: unless-stopped
     ports:
-      - "${DB_PORT:-5432}:5432"
-    networks:
-      - asset_network
-
-  # Redis Cache
-  # In Dev: Maps to localhost:6379
-  redis:
-    image: redis:7-alpine
-    container_name: asset_manager_redis
-    restart: always
+      - "9090:9090"
     volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - asset_network
-
-  # Application (Node.js)
-  # In Dev: We use the local terminal to run 'npm start' to keep hot-reloading simple
-  # In Prod: We would uncomment this to run the app in a container
-  # app:
-  #   build: ./web-app/asset-manager-backend
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-  #     - REDIS_URL=redis://redis:6379
-  #   depends_on:
-  #     - db
-  #     - redis
-  #   networks:
-  #     - asset_network
-
-volumes:
-  postgres_data:
-  redis_data:
-
-networks:
-  asset_network:
-    driver: bridge
+      # Map host data directory to container data directory
+      # Ensure you create these folders on your host machine: ./data/test
+      - ./data/test:/app/data
+      - ./data/test/uploads:/app/web-app/asset-manager-backend/uploads
+    environment:
+      - PORT=9090
+      - NODE_ENV=development
+      - DATA_DIR=/app/data
+      - DB_PATH=/app/data/database_v2.db
