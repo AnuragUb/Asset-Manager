@@ -2317,6 +2317,13 @@ window.showAssetDetails = async function(assetId) {
     console.log('[AssetDetails] Rendering asset details...');
     title.textContent = `Asset Details: ${asset.ID}`;
     
+    // Ensure QRCode is a full URL or base64
+    let qrSrc = asset.QRCode;
+    if (!qrSrc || qrSrc.length < 50) { // Assuming if short it might be missing or invalid
+        // Fallback to dynamic generation endpoint
+        qrSrc = `/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}`;
+    }
+
     let html = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <div>
@@ -2327,7 +2334,8 @@ window.showAssetDetails = async function(assetId) {
                 </div>
                 <p><strong>Item Name:</strong> ${asset.ItemName}</p>
                 <p><strong>Status:</strong> <span class="status-pill status-${(asset.Status || 'In Store').toLowerCase().replace(/\s+/g, '-')}">${asset.Status || 'In Store'}</span></p>
-                <p><strong>Category:</strong> ${asset.Type || '-'}</p>
+                <p><strong>Category:</strong> ${asset.Category || asset.Type || '-'}</p>
+                <p><strong>Type:</strong> ${asset.Type || '-'}</p>
                 <p><strong>Make:</strong> ${asset.Make || '-'}</p>
                 <p><strong>Model:</strong> ${asset.Model || '-'}</p>
                 <p><strong>Serial No:</strong> ${asset.SrNo || '-'}</p>
@@ -2341,13 +2349,13 @@ window.showAssetDetails = async function(assetId) {
                 <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
                 <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
                 <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
-                    <img src="/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}" style="width: 120px; height: 120px;" onerror="this.style.display='none'">
-                    <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code (Dynamic)</div>
+                    <img src="${qrSrc}" style="width: 120px; height: 120px;" onerror="this.src='/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}'">
+                    <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code</div>
                 </div>
             </div>
         </div>
         <div style="margin-top: 20px; text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
-             <button onclick="navigateToAssetPage('${asset.ID}')" class="btn-action" style="background: #36b37e; margin-right: 10px;">🌐 Full View Page</button>
+             <button onclick="window.open('/asset/${asset.ID}', '_blank')" class="btn-action" style="background: #36b37e; margin-right: 10px;">🌐 Full View Page</button>
         </div>
     `;
 

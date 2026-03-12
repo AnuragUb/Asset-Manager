@@ -1,4 +1,6 @@
 
+import { fetchWithAuth } from './auth.js?v=5.8';
+
 // Company Template Management Module
 
 // Constants
@@ -37,6 +39,7 @@ export function initCompanyTemplates() {
  * Load all company templates from the backend
  */
 async function loadCompanyTemplates() {
+    console.log('[CompanyTemplates] Loading templates...');
     try {
         // NOTE: The 'token' item in localStorage is NOT set by auth.js (it sets 'currentUser').
         // We should rely on the browser sending the cookie automatically.
@@ -51,15 +54,20 @@ async function loadCompanyTemplates() {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(API_BASE, {
+        const response = await fetchWithAuth(API_BASE, {
             headers: headers
         });
+        
+        console.log('[CompanyTemplates] Response status:', response.status);
         
         if (!response.ok) throw new Error('Failed to fetch templates');
         
         const data = await response.json();
+        console.log('[CompanyTemplates] Data received:', data);
+        
         if (data.success) {
             companyTemplates = data.templates;
+            console.log('[CompanyTemplates] Templates count:', companyTemplates.length);
             renderTemplateOptions();
         }
     } catch (err) {

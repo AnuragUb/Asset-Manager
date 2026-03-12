@@ -17,6 +17,37 @@ export async function checkSession() {
     return null;
 }
 
+/**
+ * Wrapper for fetch that handles 401 Unauthorized by attempting session refresh.
+ * Use this instead of native fetch for authenticated endpoints.
+ * @param {string} url 
+ * @param {object} options 
+ */
+export async function fetchWithAuth(url, options = {}) {
+    let response = await fetch(url, options);
+
+    if (response.status === 401) {
+        console.warn('[FetchWithAuth] 401 Unauthorized detected. Attempting session refresh...');
+        
+        // Attempt to refresh session (via Remember Me cookie)
+        const user = await checkSession();
+        
+        if (user) {
+            console.log('[FetchWithAuth] Session refreshed successfully. Retrying request...');
+            // Retry the original request
+            response = await fetch(url, options);
+        } else {
+            console.error('[FetchWithAuth] Session refresh failed.');
+            // We don't force reload here to avoid infinite loops, but the UI will likely stay broken/empty
+            // until the user manually logs in. 
+            // Ideally we should trigger the login view.
+            if (window.showView) window.showView('loginView');
+        }
+    }
+
+    return response;
+}
+
 export function setupAuth(onLoginSuccess) {
     const loginForm = document.getElementById('loginForm');
     const loginView = document.getElementById('loginView');

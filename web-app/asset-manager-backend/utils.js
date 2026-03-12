@@ -87,12 +87,35 @@ function getLocalIP() {
 }
 
 function appendAudit(entry) {
-    const log = readJson(auditFile);
-    log.push({
-        ...entry,
-        Timestamp: new Date().toISOString()
-    });
-    writeJson(auditFile, log);
+    // Write to SQLite database
+    try {
+        const stmt = db.prepare(`
+            INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+            entry.Action || 'UNKNOWN',
+            entry.User || 'System',
+            entry.AssetId || '',
+            entry.Severity || 'INFO',
+            entry.Details || '',
+            entry.Timestamp || new Date().toISOString()
+        );
+    } catch (err) {
+        console.error('Failed to append audit log to DB:', err);
+    }
+
+    // Also keep JSON for backup/legacy if needed (optional, but good for safety)
+    try {
+        // const log = readJson(auditFile); // Skipping JSON for now to prevent I/O load
+        // log.push({
+        //     ...entry,
+        //     Timestamp: new Date().toISOString()
+        // });
+        // writeJson(auditFile, log);
+    } catch (err) {
+        console.error('Failed to append audit log to JSON:', err);
+    }
 }
 
 function readDynamic() {
@@ -466,11 +489,43 @@ function dateCode() {
 }
 
 function generateModernAssetId(location, type) {
-    const loc = locCode[location] || 'GEN';
-    const typ = typeCode[type] || 'GEN';
-    const date = dateCode();
-    const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `CINEOM/${loc}/${typ}/${date}/${rand}`;
+    // Lookup location code, default to 'LOC' if not found (or first 3 chars)
+    let loc = locCode[location];
+    if (!loc) {
+        if (location && location.length >= 3) {
+            loc = location.substring(0, 3).toUpperCase();
+        } else {
+            loc = 'LOC'; // Default fallback
+        }
+    }
+
+    let typ = typeCode[type];
+    if (!typ) {
+        if (type && type.length >= 3) {
+            typ = type.substring(0, 3).toUpperCase();
+        } else {
+            typ = 'GEN'; // Default fallback
+        }
+    }
+
+    // Date format MMYY as per user request
+    const d = new Date();
+    // MonthYear: MMyy (e.g. 0326)
+    const date = (d.getMonth() + 1).toString().padStart(2, '0') + d.getFullYear().toString().substr(-2);
+    
+    // 6 Character Random Alphanumeric String
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let rand6 = '';
+    for (let i = 0; i < 6; i++) {
+        rand6 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // "Extra random" - 1 char
+    const extra = chars.charAt(Math.floor(Math.random() * chars.length));
+
+    // Result: TYPE-LOC-MMYY-RAND6-EXTRA
+    // Example: LPT-MUM-0126-VV7BWM-A
+    return `${typ}-${loc}-${date}-${rand6}-${extra}`;
 }
 
 // Temporary ID generator for assets not yet synced

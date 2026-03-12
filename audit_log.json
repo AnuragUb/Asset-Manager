@@ -6553,5 +6553,125 @@
     "Severity": "INFO",
     "Details": "Asset created: abc",
     "Timestamp": "2026-03-05T11:47:13.214Z"
+  },
+  {
+    "Action": "DC_CREATED",
+    "User": "System",
+    "AssetId": "DC1773038429518",
+    "Severity": "INFO",
+    "Details": "Created Delivery Challan 26/0009 for Sudhir Lodhi",
+    "Timestamp": "2026-03-09T06:40:29.767Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "web",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 3 assets",
+    "Timestamp": "2026-03-09T11:23:16.948Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "web",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 3 assets",
+    "Timestamp": "2026-03-09T11:25:10.509Z"
+  },
+  {
+    "Action": "BULK_CREATE",
+    "User": "test-script",
+    "AssetId": "MULTIPLE",
+    "Severity": "INFO",
+    "Details": "Bulk created 1 assets",
+    "Timestamp": "2026-03-09T11:27:11.137Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "CINEOM/MUM/GEN/2603/4699",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to itsupport@cineom.in",
+    "Timestamp": "2026-03-10T03:30:27.260Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "CINEOM/MUM/GEN/2603/7753",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to itsupport@cineom.in",
+    "Timestamp": "2026-03-10T03:30:30.377Z"
+  },
+  {
+    "Action": "WARRANTY_ALERT_SENT",
+    "User": "SYSTEM",
+    "AssetId": "CINEOM/MUM/GEN/2603/4618",
+    "Severity": "INFO",
+    "Details": "Sent EXPIRED email notification to itsupport@cineom.in",
+    "Timestamp": "2026-03-10T03:30:33.249Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "CINEOM/MUM/DSK/2603/7644",
+    "Severity": "INFO",
+    "Details": "Asset created: Sample",
+    "Timestamp": "2026-03-10T04:43:56.254Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MUM-2603-MON-IZS0LP",
+    "Severity": "INFO",
+    "Details": "Asset created: asda",
+    "Timestamp": "2026-03-10T05:15:28.734Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "DSK-MUM-0326-TEST01-A",
+    "Severity": "INFO",
+    "Details": "Asset created: Test Asset for QA",
+    "Timestamp": "2026-03-10T12:07:07.486Z"
+  },
+  {
+    "Action": "DELETE_DENIED",
+    "User": "web",
+    "AssetId": "DSK-MUM-0326-TEST01-A",
+    "Severity": "WARN",
+    "Details": "Unauthorized delete attempt",
+    "Timestamp": "2026-03-10T12:08:26.035Z"
+  },
+  {
+    "Action": "DELETE",
+    "User": "admin",
+    "AssetId": "DSK-MUM-0326-TEST01-A",
+    "Severity": "INFO",
+    "Details": "Asset deleted",
+    "Timestamp": "2026-03-10T12:08:57.107Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "DSK-MUM-0326-AJOJ8I-3",
+    "Severity": "INFO",
+    "Details": "Asset created: Dell Desk",
+    "Timestamp": "2026-03-11T11:33:26.081Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "web",
+    "AssetId": "LPT-LOC-0326-2M3CVS-D",
+    "Severity": "INFO",
+    "Details": "Asset created: Test QR 9090",
+    "Timestamp": "2026-03-11T11:40:40.729Z"
+  },
+  {
+    "Action": "CREATE",
+    "User": "admin",
+    "AssetId": "MOU-MUM-0326-3N4XE8-E",
+    "Severity": "INFO",
+    "Details": "Asset created: Superlight",
+    "Timestamp": "2026-03-11T12:21:45.258Z"
   }
 ]

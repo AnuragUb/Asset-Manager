@@ -33,6 +33,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
 const ocrUpload = multer({ storage: multer.memoryStorage() });
 const { 
   db, 
@@ -77,13 +78,45 @@ let DEFAULT_COMPANY_ID = null;
 const app = express();
 const port = process.env.PORT || 9090;
 
+// Debug Endpoint
+app.get('/api/debug/diagnose/:id', (req, res) => {
+  const id = req.params.id;
+  const dbPath = process.env.DB_PATH || path.join(__dirname, 'database_v2.db');
+  const dbExists = fs.existsSync(dbPath);
+  
+  let asset = null;
+  let recent = [];
+  let error = null;
+
+  try {
+    const Database = require('better-sqlite3');
+    const debugDb = new Database(dbPath);
+    asset = debugDb.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+    recent = debugDb.prepare('SELECT ID, ItemName, LastUpdated FROM assets ORDER BY LastUpdated DESC LIMIT 5').all();
+  } catch (err) {
+    error = err.message;
+  }
+
+  res.json({
+    requested_id: id,
+    db_path: dbPath,
+    db_exists: dbExists,
+    found: !!asset,
+    asset_data: asset,
+    recent_assets: recent,
+    error: error,
+    env_port: process.env.PORT || 'default(8080)',
+    cwd: process.cwd()
+  });
+});
+
 // Increase payload limit for OCR uploads
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // DEBUG: Log all requests
 app.use((req, res, next) => {
-    console.log(`[Request] ${req.method} ${req.url}`);
+    // console.log(`[Request] ${req.method} ${req.url}`);
     // console.log(`[Cookies]`, req.headers.cookie);
     next();
 });
@@ -1457,6 +1490,16 @@ app.post('/api/asset_kinds/upload-image', upload.single('image'), (req, res) => 
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../asset-manager-frontend/dist/index.html'));
+});
+
+// Serve Asset Details View
+app.get('/asset/:id', (req, res) => {
+    const filePath = path.join(__dirname, '../asset-manager-frontend/asset-view.html');
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        res.status(404).send('Asset View file not found on server.');
+    }
 });
 
 
@@ -2980,42 +3023,7 @@ app.delete('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superus
 });
 
 // --- Company Template API ---
-
-app.get('/api/company-templates', authenticateJWT, (req, res) => {
-    try {
-        const templates = db.prepare('SELECT * FROM company_templates ORDER BY name').all();
-        res.json({ success: true, templates });
-    } catch (err) {
-        console.error('Error fetching company templates:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-app.post('/api/company-templates', authenticateJWT, (req, res) => {
-    try {
-        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
-        
-        if (!name || !company_name) {
-            return res.status(400).json({ success: false, error: 'Template name and Company Name are required' });
-        }
-
-        if (is_default) {
-            db.prepare('UPDATE company_templates SET is_default = 0').run();
-        }
-
-        const stmt = db.prepare(`
-            INSERT INTO company_templates (name, company_name, address, gst, cin, state_name, state_code, is_default)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        
-        const info = stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0);
-        
-        res.json({ success: true, id: info.lastInsertRowid });
-    } catch (err) {
-        console.error('Error creating company template:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+// (Moved to later in the file to prevent conflicts)
 
 // --- Project Search API for DC ---
 
@@ -3066,40 +3074,7 @@ app.get('/api/projects/:id/orders', authenticateJWT, (req, res) => {
     }
 });
 
-app.put('/api/company-templates/:id', authenticateJWT, (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
-
-        if (is_default) {
-            db.prepare('UPDATE company_templates SET is_default = 0').run();
-        }
-
-        const stmt = db.prepare(`
-            UPDATE company_templates 
-            SET name = ?, company_name = ?, address = ?, gst = ?, cin = ?, state_name = ?, state_code = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `);
-
-        stmt.run(name, company_name, address, gst, cin, state_name, state_code, is_default ? 1 : 0, id);
-        
-        res.json({ success: true });
-    } catch (err) {
-        console.error('Error updating company template:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-app.delete('/api/company-templates/:id', authenticateJWT, (req, res) => {
-    try {
-        const { id } = req.params;
-        db.prepare('DELETE FROM company_templates WHERE id = ?').run(id);
-        res.json({ success: true });
-    } catch (err) {
-        console.error('Error deleting company template:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+// (PUT and DELETE routes moved later)
 
 app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
   const { username, password, fullname, role, employeeId } = req.body || {};
@@ -3126,7 +3101,7 @@ app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuse
   }
 });
 
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
     try {
         const users = db.prepare('SELECT username, fullname, role FROM users').all();
         res.json({ ok: true, users });
@@ -3266,10 +3241,14 @@ app.post('/api/assets', async (req, res) => {
     // Generate QR Code if not present and NoQR is not true
     let qrCode = asset.QRCode;
     if (!qrCode && !asset.NoQR) {
-      const ip = getLocalIP();
-      const port = process.env.PORT || 8080;
-      // Direct URL to open asset details in the public view
+      // Use STATIC_IP if configured, otherwise detected local IP
+      const ip = STATIC_IP || getLocalIP();
+      // Use configured PORT or default to 9090 (Test Server)
+      const port = process.env.PORT || 9090;
+      
       const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`;
+
+      console.log(`Generating QR for Port ${port} with URL: ${urlText}`);
       qrCode = await qrcode.toDataURL(urlText, { width: 512 });
     }
 
@@ -3496,7 +3475,7 @@ app.post('/api/quantity/split', async (req, res) => {
     const noQr = child.NoQR ? 1 : 0
     if (!qrCode && !noQr) {
       const ip = getLocalIP()
-      const port = process.env.PORT || 8080
+      const port = process.env.PORT || 9090
       const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`
       qrCode = await qrcode.toDataURL(urlText, { width: 512 })
     }
@@ -3635,7 +3614,7 @@ app.post('/api/quantity/issue', async (req, res) => {
     if (existing) return res.status(500).json({ success: false, error: 'Failed to generate unique child ID' })
 
     const ip = getLocalIP()
-    const port = process.env.PORT || 8080
+    const port = process.env.PORT || 9090
     const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`
     const qrCode = await qrcode.toDataURL(urlText, { width: 512 })
 
@@ -4080,12 +4059,12 @@ app.post('/api/assets/bulk', async (req, res) => {
 
     const insertAssetStmt = db.prepare(`
       INSERT INTO assets (
-        ID, ItemName, Status, Make, Model, SrNo, Type,
+        ID, ItemName, ItemDescription, Status, Make, Model, SrNo, Type,
         Category, Icon, isPlaceholder, ParentId,
         CurrentLocation,
         DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
         warranty_months, amc_months, asset_value, Currency, PurchaseDate, warranty_tracking
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertItStmt = db.prepare(`
@@ -4099,6 +4078,7 @@ app.post('/api/assets/bulk', async (req, res) => {
         insertAssetStmt.run(
           asset.ID,
           asset.ItemName || '',
+          asset.ItemDescription || '',
           asset.Status || 'In Store',
           asset.Make || '',
           asset.Model || '',
@@ -4191,7 +4171,7 @@ app.post('/api/external/projects', checkApiKey, async (req, res) => {
         const id = generateProjectId(location || 'MUMBAI');
         
         const ip = getLocalIP();
-        const port = process.env.PORT || 8080;
+        const port = process.env.PORT || 9090;
         
         // Use the new standardized Project QR payload generator
         // Include asset details URL for scanning
@@ -4325,7 +4305,7 @@ app.post('/api/projects', async (req, res) => {
         const id = generateProjectId(location || 'MUMBAI');
         
         const ip = getLocalIP();
-        const port = process.env.PORT || 8080;
+        const port = process.env.PORT || 9090;
         
         // Use the new standardized Project QR payload generator
         const qrPayload = generateProjectQRPayload({
@@ -4731,7 +4711,7 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         const newAssetId = generateModernAssetId(location);
         
         const ip = getLocalIP();
-        const port = process.env.PORT || 8080;
+        const port = process.env.PORT || 9090;
         const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newAssetId)}`;
         const qrCode = await qrcode.toDataURL(urlText, { width: 512 });
 
@@ -5327,7 +5307,7 @@ app.get('/api/qr/:id', async (req, res) => {
   
   try {
     const ip = getLocalIP();
-    const port = process.env.PORT || 8080;
+    const port = process.env.PORT || 9090;
 
     const projectExists = db.prepare('SELECT 1 FROM projects WHERE ID = ?').get(id);
     if (projectExists) {
@@ -5421,12 +5401,16 @@ app.delete('/api/dynamic/:code', (req, res) => {
   res.json({ ok: true })
 })
 
+app.get('/test-asset/:id', (req, res) => {
+  res.sendFile(path.join(__dirname, '../asset-manager-frontend/test_asset_view.html'))
+})
+
 app.get('/asset/:id', (req, res) => {
-  res.sendFile(path.join(__dirname, '../asset-manager-frontend/dist/asset-view.html'))
+  res.sendFile(path.join(__dirname, '../asset-manager-frontend/asset-view.html'))
 })
 
 app.get('/project/:id', (req, res) => {
-  res.sendFile(path.join(__dirname, '../asset-manager-frontend/dist/project-view.html'))
+  res.sendFile(path.join(__dirname, '../asset-manager-frontend/project-view.html'))
 })
 
 app.get('/api/assets/search', (req, res) => {
@@ -5956,7 +5940,7 @@ setInterval(runNetworkMonitor, MONITOR_INTERVAL);
 // Initial run after server starts
 setTimeout(runNetworkMonitor, 15000);
 
-const PORT = process.env.PORT || 8080
+const PORT = process.env.PORT || 9090
 // 5. Update Project (e.g., for Kanban status moves or details editing)
 app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
     try {
@@ -5985,7 +5969,7 @@ app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
                     const project = db.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
                     if (project) {
                         const ip = getLocalIP();
-                        const port = process.env.PORT || 8080;
+                        const port = process.env.PORT || 9090;
                         
                         // Use the new standardized Project QR payload generator
                         const qrPayload = generateProjectQRPayload(project, ip, port);

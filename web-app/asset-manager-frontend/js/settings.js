@@ -1,4 +1,6 @@
 
+import { fetchWithAuth } from './auth.js?v=5.8';
+
 console.log('SETTINGS.JS: Module loaded');
 
 export function initSettingsView() {
@@ -9,7 +11,7 @@ export function initSettingsView() {
 
 async function loadEmailSettings() {
     try {
-        const response = await fetch('/api/settings/email');
+        const response = await fetchWithAuth('/api/settings/email');
         const settings = await response.json();
         
         document.getElementById('emailEnabled').checked = settings.enabled;
@@ -56,7 +58,7 @@ function setupSettingsHandlers() {
             };
 
             try {
-                const response = await fetch('/api/settings/email', {
+                const response = await fetchWithAuth('/api/settings/email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(settings)
@@ -93,7 +95,7 @@ function setupSettingsHandlers() {
             testBtn.textContent = 'Sending...';
 
             try {
-                const response = await fetch('/api/settings/email/test', {
+                const response = await fetchWithAuth('/api/settings/email/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(settings)

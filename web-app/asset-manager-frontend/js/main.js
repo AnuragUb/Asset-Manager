@@ -13,6 +13,7 @@ import { initSettingsView } from './settings.js?v=5.7';
 import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
 import { initDCProjectFetcher } from './dcProjectFetcher.js?v=1.1';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
+import { initFormAutosave } from './formAutosave.js?v=1.0';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -44,6 +45,9 @@ initCompanyTemplates();
 
 // Initialize DC Project Fetcher
 initDCProjectFetcher();
+
+// Initialize Form Autosave
+initFormAutosave();
 
 // --- RELEASES VIEW RENDERING ---
 export function renderReleases() {
@@ -262,6 +266,10 @@ async function saveAsset(asset) {
         if (response.ok) {
             const result = await response.json().catch(() => ({ success: true }));
             console.log('Asset saved successfully', result);
+            
+            // Clear autosave draft
+            if (window.clearAssetDraft) window.clearAssetDraft();
+
             await loadAssets(); // Reload to get the latest state from DB
             await renderSidebarTree(); // Re-render sidebar to update counts and hierarchy
             

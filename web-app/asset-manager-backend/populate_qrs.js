@@ -6,7 +6,7 @@ const dbPath = 'c:/Users/Admin/AssetManager/duplicate/web-app/asset-manager-back
 const db = new Database(dbPath);
 
 const regenerateAll = process.argv.includes('--all') || process.env.REGEN_ALL === '1';
-const port = Number(process.env.PORT || 8080);
+const port = Number(process.env.PORT || 9090);
 
 function getLocalIP() {
     const interfaces = os.networkInterfaces();

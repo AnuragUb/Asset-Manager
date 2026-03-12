@@ -7,13 +7,22 @@
 export class DataProcessor {
     static get DB_COLUMNS() {
         return {
-            'ItemName': { label: 'Item Name', synonyms: ['asset name', 'item', 'description', 'name', 'asset'] },
+            'ItemName': { label: 'Item Name', synonyms: ['asset name', 'item', 'name', 'asset'] },
+            'ItemDescription': { label: 'Item Description', synonyms: ['description', 'desc', 'details'] },
             'Make': { label: 'Manufacturer/Make', synonyms: ['make', 'manufacturer', 'brand', 'mfr'] },
             'Model': { label: 'Model', synonyms: ['model', 'model no', 'model number'] },
             'SrNo': { label: 'Serial Number', synonyms: ['serial', 'srno', 's/n', 'sn', 'serial no'] },
             'Status': { label: 'Status', synonyms: ['status', 'state', 'condition'] },
+            'Category': { label: 'Category', synonyms: ['category', 'group', 'cat'] },
+            'asset_value': { label: 'Asset Value', synonyms: ['value', 'price', 'cost', 'amount', 'asset value'] },
+            'Currency': { label: 'Currency', synonyms: ['currency', 'curr'] },
             'CurrentLocation': { label: 'Location', synonyms: ['location', 'site', 'place'] },
             'AssignedTo': { label: 'Assigned To', synonyms: ['assigned', 'user', 'owner', 'employee'] },
+            'PurchaseDate': { label: 'Purchase Date', synonyms: ['purchase date', 'date of purchase', 'bought on'] },
+            'PurchaseDetails': { label: 'Purchase Details', synonyms: ['purchase details', 'vendor', 'supplier'] },
+            'Remarks': { label: 'Remarks', synonyms: ['remarks', 'notes', 'comment'] },
+            'warranty_months': { label: 'Warranty (Months)', synonyms: ['warranty', 'warranty months'] },
+            'amc_months': { label: 'AMC (Months)', synonyms: ['amc', 'amc months'] },
             'MACAddress': { label: 'MAC Address', synonyms: ['mac', 'physical address', 'ethernet'] },
             'IPAddress': { label: 'IP Address', synonyms: ['ip', 'network address'] },
             'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] }
@@ -80,8 +89,23 @@ export class DataProcessor {
                 if (type === 'asset') {
                     // Default asset fields
                     if (!obj.ItemName && obj.Name) obj.ItemName = obj.Name;
+                    
+                    // Normalize Category and Type logic
+                    // If the user mapped a column to 'Category' but it contains a specific type (e.g. 'Laptop'),
+                    // we should set Category to 'IT' (or current context) and Type to that value.
+                    // This prevents assets from disappearing from the main views.
+                    
+                    const rawCategory = obj.Category || '';
+                    const knownTypes = ['server', 'workstation', 'laptop', 'desktop', 'monitor', 'printer', 'scanner', 'broadcast monitor', 'camera', 'lens', 'tripod', 'audio'];
+                    
+                    if (rawCategory && knownTypes.includes(rawCategory.toLowerCase())) {
+                        obj.Type = obj.Category; // Move specific value to Type
+                        obj.Category = category || 'IT'; // Force generic Category
+                    } else {
+                        obj.Category = obj.Category || category || 'IT';
+                    }
+
                     obj.Type = obj.Type || kind || 'AST';
-                    obj.Category = obj.Category || category || 'IT';
                     obj.Status = obj.Status || 'In Store';
                 } else if (type === 'employee') {
                     obj.Status = obj.Status || 'ACTIVE';
