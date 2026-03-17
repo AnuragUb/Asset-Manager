@@ -2,14 +2,15 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const IdGenerator = require('./IdGenerator');
 
 // Helper to get Data Directory from Environment or Default
 const getDataDir = () => {
-    return process.env.DATA_DIR || path.join(__dirname, '../../');
+    return process.env.DATA_DIR || path.join(__dirname, '../../data');
 };
 
 const getDbPath = () => {
-    return process.env.DB_PATH || path.join(__dirname, 'database_v2.db');
+    return process.env.DB_PATH || path.join(__dirname, '../../data/test/database_v2.db');
 };
 
 // Ensure Data Directory exists if it's a custom one
@@ -47,7 +48,7 @@ const auditFile = path.join(dataDir, 'audit_log.json');
 // dynamic.json is historically in the backend folder, but let's allow it to be in DATA_DIR too if we want
 // For now, let's keep it relative to __dirname unless DATA_DIR is explicitly set distinct from default
 // Actually, for containerization, we want ALL state in /app/data.
-const dynamicFile = path.join(process.env.DATA_DIR ? dataDir : __dirname, 'dynamic.json');
+const dynamicFile = path.join(dataDir, 'dynamic.json');
 
 // Ensure dynamicFile exists
 if (!fs.existsSync(dynamicFile)) {
@@ -508,43 +509,23 @@ function generateModernAssetId(location, type) {
         }
     }
 
-    // Date format MMYY as per user request
-    const d = new Date();
-    // MonthYear: MMyy (e.g. 0326)
-    const date = (d.getMonth() + 1).toString().padStart(2, '0') + d.getFullYear().toString().substr(-2);
-    
-    // 6 Character Random Alphanumeric String
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let rand6 = '';
-    for (let i = 0; i < 6; i++) {
-        rand6 += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    
-    // "Extra random" - 1 char
-    const extra = chars.charAt(Math.floor(Math.random() * chars.length));
-
-    // Result: TYPE-LOC-MMYY-RAND6-EXTRA
-    // Example: LPT-MUM-0126-VV7BWM-A
-    return `${typ}-${loc}-${date}-${rand6}-${extra}`;
+    return IdGenerator.generateAssetId(typ, loc);
 }
 
 // Temporary ID generator for assets not yet synced
 function generateTempAssetId() {
-    return 'TEMP-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    return IdGenerator.generateTempAssetId();
 }
 
 // Split Asset ID Generator
 function generateSplitAssetId(parentId, index) {
-    return `${parentId}-${index + 1}`;
+    return IdGenerator.generateSplitAssetId(parentId, index);
 }
 
 // Project ID Generator
 function generateProjectId(clientName, location) {
-    const clientCode = (clientName || 'CLI').substring(0, 3).toUpperCase();
     const loc = (location || 'LOC').substring(0, 3).toUpperCase();
-    const date = dateCode();
-    const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `PRJ/${clientCode}/${loc}/${date}/${rand}`;
+    return IdGenerator.generateProjectId(loc);
 }
 
 // Project QR Payload Generator

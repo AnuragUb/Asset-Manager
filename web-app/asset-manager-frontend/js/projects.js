@@ -3,12 +3,6 @@ import { showView } from './utils.js?v=5.0';
 let allProjects = [];
 let currentProjectId = null;
 
-// Expose to window for global access
-window.showProjectDetails = showProjectDetails;
-window.switchProjectTab = switchProjectTab;
-window.showAssignAssetModal = showAssignAssetModal;
-window.showAddTempAssetModal = showAddTempAssetModal;
-
 export function initProjectsView() {
     console.log('[Projects] Initializing Projects View...');
     
@@ -293,7 +287,7 @@ async function showProjectDetails(id) {
                 <div style="font-size: 11px; color: #64748b;">Location</div>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <span id="projectLocationValue" style="font-weight: 500;">${locationDisplay}</span>
-                    <button id="btnEditProjectLocation" class="action-button small" style="padding:2px 6px; font-size:10px;">Edit</button>
+                    <button id="btnEditProjectLocation" class="action-button small" style="padding:2px 8px; font-size:10px; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; cursor: pointer;">Edit</button>
                 </div>
             </div>
             <div>
@@ -311,6 +305,7 @@ async function showProjectDetails(id) {
             <div style="grid-column: span 2; margin-top: 10px; text-align: center; border-top: 1px solid #eee; padding-top: 10px;">
                 <img src="/api/qr/dynamic/project/${encodeURIComponent(project.ID)}" style="width: 120px; height: 120px; object-fit: contain;" alt="Project QR" onerror="this.style.display='none'">
                 <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Project QR Code (Dynamic)</div>
+                <div style="font-size: 13px; font-weight: 600; color: #334155; margin-top: 4px; letter-spacing: 0.5px; border: 1px dashed #cbd5e1; display: inline-block; padding: 2px 8px; border-radius: 4px; background: #f8fafc;">${project.ID}</div>
             </div>
         `;
 
@@ -326,7 +321,7 @@ async function showProjectDetails(id) {
                     return;
                 }
                 try {
-                    const response = await fetch(`/api/projects/${project.ID}`, {
+                    const response = await fetch(`/api/projects/${encodeURIComponent(project.ID)}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ Location: trimmed })
@@ -373,7 +368,7 @@ async function loadProjectAssets(projectId) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading assets...</td></tr>';
 
     try {
-        const res = await fetch(`/api/projects/${projectId}/assets`);
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`);
         if (!res.ok) throw new Error('Failed to load assets');
         const assets = await res.json();
 
@@ -394,7 +389,7 @@ async function loadProjectAssets(projectId) {
                 <td><span style="padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #f1f5f9; color: #475569;">${a.Status}</span></td>
                 <td>${a.Category || '-'}</td>
                 <td>
-                    <button class="action-button small" onclick="window.location.href='/#asset-details?id=${a.ID}'">View</button>
+                    <button class="action-button small" onclick="handleViewAsset('${a.ID}')" style="padding:4px 12px; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; cursor: pointer; border-radius: 4px;">View</button>
                 </td>
             </tr>
         `).join('');
@@ -404,6 +399,33 @@ async function loadProjectAssets(projectId) {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: red;">Error: ${err.message}</td></tr>`;
     }
 }
+
+// Dedicated function for handling asset view
+window.handleViewAsset = function(assetId) {
+    console.log('[Projects] handleViewAsset called for:', assetId);
+    
+    // Check if showAssetDetails is available
+    if (typeof window.showAssetDetails === 'function') {
+        try {
+            window.showAssetDetails(assetId);
+            // Update hash silently or for history
+            const targetHash = 'asset-details?id=' + assetId;
+            if (window.location.hash.substring(1) !== targetHash) {
+                 // Use replaceState to avoid cluttering history if preferred, or just hash assignment
+                 window.location.hash = targetHash;
+            }
+        } catch (e) {
+            console.error('[Projects] Error in showAssetDetails:', e);
+            alert('Error opening asset details: ' + e.message);
+        }
+    } else {
+        console.error('[Projects] showAssetDetails function is missing!');
+        alert('System error: Asset Details view is not loaded. Please refresh the page.');
+    }
+};
+
+// Expose to window for HTML onclick handlers
+window.showAddTempAssetModal = showAddTempAssetModal;
 
 async function handleCreateProject(e) {
     if (e) e.preventDefault();
@@ -520,7 +542,7 @@ async function loadProjectOrders(projectId) {
             headers['Authorization'] = `Bearer ${token}`;
         }
         
-        const res = await fetch(`/api/projects/${projectId}/orders`, { headers });
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders`, { headers });
         if (!res.ok) throw new Error('Failed to fetch orders');
         const data = await res.json();
         
@@ -552,7 +574,7 @@ async function loadProjectOrders(projectId) {
 window.deleteProjectOrder = async function(projectId, orderId) {
     if (!confirm('Are you sure you want to delete this order?')) return;
     try {
-        const res = await fetch(`/api/projects/${projectId}/orders/${orderId}`, { method: 'DELETE' });
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders/${orderId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Failed to delete');
         showToast('Order deleted', 'success');
         loadProjectOrders(projectId);
@@ -587,7 +609,7 @@ window.showAddOrderModal = function(projectId, projectData) {
 
                 <h4 style="margin-top: 15px; margin-bottom: 10px;">Consignee Details</h4>
                 <div class="form-group">
-                    <button type="button" id="btnCopyConsignee" class="action-button small" style="margin-bottom: 10px;">Copy from Project Default</button>
+                    <button type="button" id="btnCopyConsignee" class="action-button" style="margin-bottom: 10px; width: 100%; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; cursor: pointer;">Copy from Project Default</button>
                     <input type="text" id="newOrderConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
                     <textarea id="newOrderConsigneeAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
@@ -615,12 +637,27 @@ window.showAddOrderModal = function(projectId, projectData) {
 
     // Copy Handler
     document.getElementById('btnCopyConsignee').onclick = () => {
-        if (projectData) {
+        console.log('[Projects] Copying Consignee Details from:', projectData);
+        
+        // Check if there is anything to copy
+        const hasData = projectData && (
+            projectData.ConsigneeName || 
+            projectData.ConsigneeAddress || 
+            projectData.ConsigneeGSTIN
+        );
+
+        if (hasData) {
             document.getElementById('newOrderConsigneeName').value = projectData.ConsigneeName || '';
             document.getElementById('newOrderConsigneeAddress').value = projectData.ConsigneeAddress || '';
             document.getElementById('newOrderConsigneeGSTIN').value = projectData.ConsigneeGSTIN || '';
             document.getElementById('newOrderConsigneeState').value = projectData.ConsigneeState || '';
             document.getElementById('newOrderConsigneeStateCode').value = projectData.ConsigneeStateCode || '';
+            
+            if (typeof showToast === 'function') {
+                showToast('Copied details from project defaults', 'success');
+            }
+        } else {
+            alert('No default consignee details found for this project.\n\nPlease set them in the project "Edit Billing & Shipping Details" section first.');
         }
     };
 
@@ -647,7 +684,7 @@ window.showAddOrderModal = function(projectId, projectData) {
             btnSave.textContent = 'Saving...';
             btnSave.disabled = true;
 
-            const res = await fetch(`/api/projects/${projectId}/orders`, {
+            const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -671,6 +708,14 @@ window.showAddOrderModal = function(projectId, projectData) {
 
     modal.style.display = 'flex';
 }
+
+// Expose to window for global access
+window.showProjectDetails = showProjectDetails;
+window.switchProjectTab = switchProjectTab;
+window.showAssignAssetModal = showAssignAssetModal;
+window.showAddTempAssetModal = showAddTempAssetModal;
+window.loadProjects = loadProjects;
+console.log('[Projects] Global functions exposed');
 
 async function loadProjectTempAssets(projectId) {
     const tbody = document.getElementById('projectTempAssetsTableBody');
@@ -751,23 +796,170 @@ window.deleteTempAsset = async function(id) {
 };;
 
 async function showAssignAssetModal() {
+    console.log('[Projects] showAssignAssetModal called (V3 - Dynamic Injection)');
+    
     if (!currentProjectId) {
+        console.error('[Projects] No currentProjectId set');
         alert('No project selected');
         return;
     }
-    const modal = document.getElementById('assignAssetModal');
-    const select = document.getElementById('assignAssetSelect');
-    if (!modal || !select) return;
+    
+    // Check if modal exists, if not, create it
+    let modal = document.getElementById('assignAssetModal_v2');
+    
+    if (!modal) {
+        console.warn('[Projects] Modal element #assignAssetModal_v2 not found in DOM. Injecting dynamically...');
+        
+        const modalHtml = `
+            <div id="assignAssetModal_v2" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); align-items: center; justify-content: center;">
+                <div class="modal-content" style="background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 900px; min-height: 400px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); position: relative; display: flex; flex-direction: column;">
+                    <span class="close-modal" id="btnCloseAssignAsset_v2" style="color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+                    <h3 style="margin-top: 0; color: #333;">Assign Asset to Project</h3>
+                    <div class="form-group" style="margin-bottom: 20px; position: relative; flex-grow: 1;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Asset ID</label>
+                        <input type="text" id="assignAssetInput_v2" class="form-input" placeholder="Enter Asset ID or Scan..." style="width: 100%; padding: 12px; font-size: 1.1em; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" autocomplete="off">
+                        <div id="assignAssetSearchResults" style="display: none; position: absolute; top: 75px; left: 0; right: 0; background: white; border: 1px solid #ddd; border-top: none; max-height: 300px; overflow-y: auto; z-index: 1001; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+                        <div style="margin-top: 5px; font-size: 12px; color: #666;">Enter the Asset ID manually or scan its QR code.</div>
+                    </div>
+                    <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="action-button" id="btnCancelAssignAsset_v2" style="padding: 8px 16px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer;">Cancel</button>
+                        <button id="btnConfirmAssignAsset_v2" class="action-button blue" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Assign to Project</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modal = document.getElementById('assignAssetModal_v2');
+        
+        // Add close listeners for the new modal
+        document.getElementById('btnCloseAssignAsset_v2').onclick = () => modal.style.display = 'none';
+        document.getElementById('btnCancelAssignAsset_v2').onclick = () => modal.style.display = 'none';
+        
+        // Close on outside click
+        window.addEventListener('click', (event) => {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
 
-    select.innerHTML = '<option>Loading...</option>';
+    const input = document.getElementById('assignAssetInput_v2');
+    const resultsContainer = document.getElementById('assignAssetSearchResults');
+    
+    console.log('[Projects] Modal element (V3):', modal);
+    console.log('[Projects] Input element (V3):', input);
+
+    // Autocomplete Logic
+    let debounceTimer;
+    input.oninput = () => {
+        clearTimeout(debounceTimer);
+        const query = input.value.trim();
+        
+        if (query.length < 2) {
+            if(resultsContainer) resultsContainer.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+            if(!resultsContainer) return;
+            try {
+                const response = await fetch(`/api/assets/search?q=${encodeURIComponent(query)}&size=10`);
+                if (!response.ok) throw new Error('Search failed');
+                const data = await response.json();
+                
+                resultsContainer.innerHTML = '';
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(asset => {
+                        const div = document.createElement('div');
+                        div.style.padding = '10px';
+                        div.style.cursor = 'pointer';
+                        div.style.borderBottom = '1px solid #eee';
+                        div.style.display = 'flex';
+                        div.style.justifyContent = 'space-between';
+                        
+                        div.innerHTML = `
+                            <div>
+                                <div style="font-weight: bold; color: #333;">${asset.ItemName || 'Unknown Item'}</div>
+                                <div style="font-size: 0.85em; color: #666;">ID: ${asset.ID}</div>
+                            </div>
+                            <div style="text-align: right; font-size: 0.85em; color: #888;">
+                                <div>${asset.Model || ''}</div>
+                                <div>${asset.Status || ''}</div>
+                            </div>
+                        `;
+                        
+                        div.onmouseover = () => div.style.background = '#f5f9ff';
+                        div.onmouseout = () => div.style.background = 'white';
+                        
+                        div.onclick = (e) => {
+                            e.stopPropagation();
+                            input.value = asset.ID;
+                            resultsContainer.style.display = 'none';
+                        };
+                        
+                        resultsContainer.appendChild(div);
+                    });
+                    resultsContainer.style.display = 'block';
+                } else {
+                    resultsContainer.innerHTML = '<div style="padding:10px; color:#888;">No assets found</div>';
+                    resultsContainer.style.display = 'block';
+                }
+            } catch (err) {
+                console.error('Search error:', err);
+            }
+        }, 300);
+    };
+
+    // Close dropdown handler
+    if (input._closeHandler) {
+        document.removeEventListener('click', input._closeHandler);
+    }
+    input._closeHandler = (e) => {
+        if (resultsContainer && e.target !== input && !resultsContainer.contains(e.target)) {
+            resultsContainer.style.display = 'none';
+        }
+    };
+    document.addEventListener('click', input._closeHandler);
+
+    if (!modal) {
+        console.error('[Projects] CRITICAL: Modal could not be created');
+        alert('System Error: Could not create assignment modal');
+        return;
+    }
+    
+    if (!input) {
+         console.error('[Projects] Input element #assignAssetInput_v2 not found in injected modal');
+         return;
+    }
+
+    input.value = ''; // Clear previous input
     modal.style.display = 'flex';
+    console.log('[Projects] Modal display set to flex');
+    
+    setTimeout(() => {
+        input.focus();
+        console.log('[Projects] Input focus attempted');
+    }, 100);
 
     // Setup Confirm Button
-    const btnConfirm = document.getElementById('btnConfirmAssignAsset');
+    const btnConfirm = document.getElementById('btnConfirmAssignAsset_v2');
+    console.log('[Projects] Confirm button (V3):', btnConfirm);
+    
     if (btnConfirm) {
-        btnConfirm.onclick = async () => {
-            const assetId = select.value;
-            if (!assetId) return;
+        // Use cloneNode to wipe previous listeners and ensure clean slate
+        const newBtn = btnConfirm.cloneNode(true);
+        btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
+        
+        newBtn.onclick = async () => {
+            console.log('[Projects] Assign button clicked');
+            const assetId = input.value.trim();
+            console.log('[Projects] Asset ID to assign:', assetId);
+            
+            if (!assetId) {
+                alert('Please enter an Asset ID');
+                return;
+            }
             
             try {
                 // Call backend endpoint to assign asset
@@ -775,7 +967,8 @@ async function showAssignAssetModal() {
                 const headers = { 'Content-Type': 'application/json' };
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                const response = await fetch(`/api/projects/${currentProjectId}/assign-asset`, {
+                console.log(`[Projects] Sending POST to /api/projects/${currentProjectId}/assign-asset`);
+                const response = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/assign-asset`, {
                     method: 'POST',
                     headers: headers,
                     body: JSON.stringify({ AssetID: assetId, Type: 'Permanent' })
@@ -786,6 +979,7 @@ async function showAssignAssetModal() {
                     throw new Error(errorData.error || 'Failed to assign asset');
                 }
 
+                console.log('[Projects] Assignment successful');
                 showToast('Asset assigned successfully', 'success');
                 modal.style.display = 'none';
                 
@@ -793,31 +987,22 @@ async function showAssignAssetModal() {
                 const activeTab = document.querySelector('.tab-btn.active');
                 if (activeTab && activeTab.textContent.toLowerCase().includes('asset')) {
                     loadProjectAssets(currentProjectId);
+                } else {
+                     // Force reload anyway just in case
+                     loadProjectAssets(currentProjectId);
                 }
             } catch (err) {
-                console.error(err);
+                console.error('[Projects] Error assigning asset:', err);
                 alert('Error assigning asset: ' + err.message);
             }
         };
-    }
-
-    try {
-        const res = await fetch('/api/assets?all=true'); 
-        let assets = [];
-        if (res.ok) assets = await res.json();
-        
-        // Filter for 'In Store' or available assets
-        const available = assets.filter(a => a.Status === 'In Store');
-
-        select.innerHTML = available.length ? available.map(a => 
-            `<option value="${a.ID}">${a.ItemName} (${a.ID}) - ${a.Model || ''}</option>`
-        ).join('') : '<option disabled>No assets available in store</option>';
-
-    } catch (err) {
-        console.error(err);
-        select.innerHTML = '<option disabled>Error loading assets</option>';
+    } else {
+        console.error('[Projects] Confirm button #btnConfirmAssignAsset_v2 not found');
     }
 }
+
+// Expose to window for HTML onclick handlers
+window.showAssignAssetModal = showAssignAssetModal;
 
 function showAddTempAssetModal() {
     if (!currentProjectId) {
@@ -977,7 +1162,7 @@ function showEditBillingModal(project) {
             btnSave.textContent = 'Saving...';
             btnSave.disabled = true;
 
-            const res = await fetch(`/api/projects/${project.ID}`, {
+            const res = await fetch(`/api/projects/${encodeURIComponent(project.ID)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

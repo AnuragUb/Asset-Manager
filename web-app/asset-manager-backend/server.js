@@ -18,9 +18,14 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 
 // Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, '../../input');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
+}
+
+const exportDir = path.join(__dirname, '../../export');
+if (!fs.existsSync(exportDir)) {
+  fs.mkdirSync(exportDir);
 }
 
 const storage = multer.diskStorage({
@@ -1050,6 +1055,10 @@ app.get('/api/audit-logs/export/json', (req, res) => {
     try {
         const stmt = db.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC');
         const rows = stmt.all();
+        
+        const filename = 'audit_logs_' + Date.now() + '.json';
+        fs.writeFileSync(path.join(exportDir, filename), JSON.stringify(rows, null, 2));
+
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', 'attachment; filename="audit_logs.json"');
         res.send(JSON.stringify(rows, null, 2));
@@ -1070,6 +1079,9 @@ app.get('/api/audit-logs/export/excel', (req, res) => {
         XLSX.utils.book_append_sheet(wb, ws, 'Audit Logs');
 
         const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        const filename = 'audit_logs_' + Date.now() + '.xlsx';
+        fs.writeFileSync(path.join(exportDir, filename), buffer);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename="audit_logs.xlsx"');
@@ -2533,6 +2545,56 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
   }
 });
 
+// Projects API
+app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), (req, res) => {
+    try {
+        const projects = db.prepare('SELECT * FROM projects ORDER BY Timestamp DESC').all();
+        res.json(projects);
+    } catch (err) {
+        console.error('Failed to fetch projects:', err);
+        res.status(500).json({ error: 'Failed to fetch projects' });
+    }
+});
+
+app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), (req, res) => {
+    try {
+        const { ProjectName, ClientName, Description, Status, StartDate, EndDate, OwnerEmail, CoordinatorEmail, ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode, BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode } = req.body;
+        
+        if (!ProjectName || !ClientName) {
+            return res.status(400).json({ error: 'Project Name and Client Name are required' });
+        }
+
+        const id = 'PRJ' + Date.now();
+        const timestamp = new Date().toISOString();
+
+        const stmt = db.prepare(`
+            INSERT INTO projects (
+                ID, ProjectName, ClientName, Description, Status, StartDate, EndDate, 
+                CreatedBy, Timestamp, OwnerEmail, CoordinatorEmail,
+                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run(
+            id, ProjectName, ClientName, Description, Status || 'Planning', StartDate, EndDate, 
+            req.user.username, timestamp, OwnerEmail, CoordinatorEmail,
+            ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+        );
+
+        // Generate QR Code for the new project
+        // Note: Ideally this should be async or handled by a separate process/function call to avoid blocking
+        // But for simplicity we'll let the client handle QR generation trigger or do it later
+        
+        res.json({ ok: true, id, message: 'Project created successfully' });
+    } catch (err) {
+        console.error('Failed to create project:', err);
+        res.status(500).json({ error: 'Failed to create project' });
+    }
+});
+
 app.post('/api/login', async (req, res) => {
   const { username, password, category } = req.body || {};
   console.log(`Login attempt for user: ${username} (Category: ${category})`);
@@ -3294,6 +3356,14 @@ app.post('/api/assets', async (req, res) => {
       asset.conversion_mode || 'multiply',
       asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0
     );
+
+    appendAudit({
+      Action: 'CREATE',
+      User: req.headers['x-user'] || 'web',
+      AssetId: newId,
+      Severity: 'INFO',
+      Details: `Asset created: ${asset.ItemName} (${asset.Type})`
+    });
 
     const qtyUnit = normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit)
     const qtyTotal = parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal)
@@ -4534,6 +4604,30 @@ app.patch('/api/projects/:id', async (req, res) => {
     }
 });
 
+app.get('/api/companies', (req, res) => {
+    try {
+        // Check if table exists first
+        const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='company_templates'").get();
+        if (!tableExists) return res.json([]);
+
+        // Fetch from company_templates and map to expected format
+        const companies = db.prepare(`
+            SELECT 
+                company_name as name, 
+                address, 
+                gst as gstin, 
+                state_name as state, 
+                state_code as stateCode 
+            FROM company_templates 
+            ORDER BY company_name ASC
+        `).all();
+        res.json(companies);
+    } catch (err) {
+        console.error('Error fetching companies:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/projects/:id/assets', (req, res) => {
     try {
         const { id } = req.params;
@@ -4934,6 +5028,14 @@ app.put('/api/assets/:id', (req, res) => {
       asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
       id
     );
+
+    appendAudit({
+      Action: 'UPDATE',
+      User: req.headers['x-user'] || 'web',
+      AssetId: id,
+      Severity: 'INFO',
+      Details: `Asset updated: ${asset.ItemName || existing.ItemName}`
+    });
 
     // Propagate quantity_unit change to all descendants if this is the root asset
     const newQtyUnit = asset.quantity_unit !== undefined ? asset.quantity_unit : existing.quantity_unit;

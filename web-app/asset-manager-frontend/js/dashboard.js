@@ -3692,63 +3692,97 @@ export function renderDashboard(assets, filteredAssets) {
         searchResultsHeader.innerHTML = `<span>🔍 Search Results for "${query}"</span> <span style="font-weight: normal; font-size: 12px; color: #666;">(${assetsToRender.length} matches)</span>`;
         assetGrid.appendChild(searchResultsHeader);
 
-        // Show top 20 matches as individual items if they are not many, or just show them
-        const topMatches = assetsToRender.slice(0, 50);
-        topMatches.forEach(asset => {
-            const item = document.createElement('div');
-            item.className = 'asset-card search-result-card';
-            // Use minimal inline styles, rely on .search-result-card CSS
-            item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative;';
-            item.onclick = (e) => {
-                e.stopPropagation();
-                if (typeof editAsset === 'function') {
-                    editAsset(asset);
-                } else {
-                    console.error('editAsset function not found');
-                }
-            };
+        // Show matches with "Load More" pagination (15 at a time)
+        let renderedCount = 0;
+        const BATCH_SIZE = 15;
 
-            const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
-            const statusColor = getStatusColor(asset.Status);
+        const renderBatch = () => {
+            const batch = assetsToRender.slice(renderedCount, renderedCount + BATCH_SIZE);
             
-            item.innerHTML = `
-                <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
-                <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">
-                    ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
-                        ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
-                        : (asset.Icon || '📦')}
-                </div>
-                <div class="search-result-info">
-                    <div class="search-result-title">${asset.ItemName}</div>
-                    <div class="search-result-subtitle">
-                        ID: ${asset.ID} • ${asset.Type} • ${asset.CurrentLocation || 'No Location'} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
-                        ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? ` • <span style="color: #0078d4; font-weight: 600;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>` : ''}
-                        • <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
+            batch.forEach(asset => {
+                const item = document.createElement('div');
+                item.className = 'asset-card search-result-card';
+                item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative;';
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    if (typeof editAsset === 'function') {
+                        editAsset(asset);
+                    } else {
+                        console.error('editAsset function not found');
+                    }
+                };
+
+                const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
+                const statusColor = getStatusColor(asset.Status);
+                
+                item.innerHTML = `
+                    <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
+                    <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">
+                        ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                            ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
+                            : (asset.Icon || '📦')}
                     </div>
-                </div>
-                <div style="text-align: right; flex-shrink: 0;">
-                    <span class="status-badge" style="font-size: 10px; padding: 2px 6px; background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40; border-radius: 4px;">${asset.Status || 'Owned'}</span>
-                </div>
-            `;
-            // item.style.position = 'relative'; // Already set above
-            assetGrid.appendChild(item);
-        });
+                    <div class="search-result-info">
+                        <div class="search-result-title">${asset.ItemName}</div>
+                        <div class="search-result-subtitle">
+                            ID: ${asset.ID} • ${asset.Type} • ${asset.CurrentLocation || 'No Location'} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
+                            ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? ` • <span style="color: #0078d4; font-weight: 600;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>` : ''}
+                            • <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
+                        </div>
+                    </div>
+                    <div style="text-align: right; flex-shrink: 0;">
+                        <span class="status-badge" style="font-size: 10px; padding: 2px 6px; background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40; border-radius: 4px;">${asset.Status || 'Owned'}</span>
+                    </div>
+                `;
+                assetGrid.appendChild(item);
+            });
 
-        if (assetsToRender.length > 50) {
-            const more = document.createElement('div');
-            more.style = 'grid-column: 1 / -1; text-align: center; padding: 10px; color: #999; font-size: 12px;';
-            more.textContent = `... and ${assetsToRender.length - 50} more results. Use the Sheet View for a full list.`;
-            assetGrid.appendChild(more);
-        }
+            renderedCount += batch.length;
 
-        const separator = document.createElement('hr');
-        separator.style = 'grid-column: 1 / -1; border: none; border-top: 1px solid #eee; margin: 20px 0;';
-        assetGrid.appendChild(separator);
+            // Remove old button
+            const oldBtn = document.getElementById('btnLoadMoreSearchResults');
+            if (oldBtn) oldBtn.remove();
 
-        const categoryHeader = document.createElement('div');
-        categoryHeader.style = 'grid-column: 1 / -1; margin-bottom: 10px; font-weight: bold; color: #666;';
-        categoryHeader.textContent = 'Browse by Category';
-        assetGrid.appendChild(categoryHeader);
+            if (renderedCount < assetsToRender.length) {
+                const loadMoreContainer = document.createElement('div');
+                loadMoreContainer.id = 'btnLoadMoreSearchResults';
+                loadMoreContainer.style = 'grid-column: 1 / -1; text-align: center; padding: 20px;';
+                
+                const btn = document.createElement('button');
+                btn.textContent = `Load More (${assetsToRender.length - renderedCount} remaining)`;
+                btn.className = 'action-button';
+                // Add inline styles for visibility
+                btn.style.padding = '10px 20px';
+                btn.style.background = '#007bff';
+                btn.style.color = 'white';
+                btn.style.border = 'none';
+                btn.style.borderRadius = '4px';
+                btn.style.cursor = 'pointer';
+                btn.style.fontWeight = '600';
+                btn.onmouseover = () => btn.style.background = '#0056b3';
+                btn.onmouseout = () => btn.style.background = '#007bff';
+                
+                btn.onclick = renderBatch;
+                
+                loadMoreContainer.appendChild(btn);
+                assetGrid.appendChild(loadMoreContainer);
+            } else {
+                // Separator and Category Header (Only add once at the end)
+                if (!document.getElementById('searchResultsSeparator')) {
+                    const separator = document.createElement('hr');
+                    separator.id = 'searchResultsSeparator';
+                    separator.style = 'grid-column: 1 / -1; border: none; border-top: 1px solid #eee; margin: 20px 0;';
+                    assetGrid.appendChild(separator);
+
+                    const categoryHeader = document.createElement('div');
+                    categoryHeader.style = 'grid-column: 1 / -1; margin-bottom: 10px; font-weight: bold; color: #666;';
+                    categoryHeader.textContent = 'Browse by Category';
+                    assetGrid.appendChild(categoryHeader);
+                }
+            }
+        };
+
+        renderBatch(); // Initial render
     }
 
     displayNodes.forEach(node => {
@@ -5829,18 +5863,34 @@ async function loadDCDropdowns() {
     if (!companySearch && !consigneeSearch && !buyerSearch) return;
     
     try {
-        const [projectsRes, ordersRes] = await Promise.all([
+        const [projectsRes, ordersRes, companiesRes] = await Promise.all([
             fetch('/api/projects'),
-            fetch('/api/all-orders')
+            fetch('/api/all-orders'),
+            fetch('/api/companies')
         ]);
         
         const projects = projectsRes.ok ? await projectsRes.json() : [];
         const orders = ordersRes.ok ? await ordersRes.json() : [];
+        const dbCompanies = companiesRes.ok ? await companiesRes.json() : [];
         
         // Extract Unique Data
         const consignees = new Map();
         const buyers = new Map();
         const companies = new Map();
+
+        // Process DB Companies (Highest Priority or Fallback? Let's treat them as base data)
+        dbCompanies.forEach(c => {
+            const name = (c.name || '').trim();
+            if (name) {
+                companies.set(name, {
+                    name: name,
+                    address: c.address || '',
+                    gstin: c.gstin || '',
+                    state: c.state || '',
+                    stateCode: c.state_code || c.stateCode || ''
+                });
+            }
+        });
 
         projects.forEach(p => {
             // Consignee Logic

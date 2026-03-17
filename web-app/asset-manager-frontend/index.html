@@ -698,19 +698,21 @@
                                         <input type="text" id="dcConsigneeStateCode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px;" placeholder="State Code">
                                     </div>
 
-                                    <div class="form-group" style="margin-bottom: 15px;">
-                                        <div style="font-weight: 700; margin-bottom: 8px;">Buyer (Bill To)</div>
+                                    <div class="form-group" style="margin-bottom: 15px; background: #f8fbff; padding: 15px; border-radius: 8px; border: 1px solid #e1effe;">
+                                        <div style="font-weight: 700; margin-bottom: 8px; color: #0056b3; display: flex; align-items: center; gap: 6px;">
+                                            <span>🏢</span> Buyer (Bill To)
+                                        </div>
                                         <div style="position: relative; margin-bottom: 8px;">
-                                            <input type="text" id="dcProjectSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search & Fetch Buyer from Project...">
+                                            <input type="text" id="dcProjectSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; background: white;" placeholder="Search & Fetch Buyer from Project...">
                                             <div id="dcProjectSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
                                         </div>
-                                        <input type="text" id="dcBuyerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;" placeholder="Buyer name">
-                                        <textarea id="dcBuyerAddress" class="form-input" style="width: 100%; min-height: 70px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-bottom: 8px;" placeholder="Buyer address (multi-line)"></textarea>
+                                        <input type="text" id="dcBuyerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; margin-bottom: 8px; background: white;" placeholder="Buyer name">
+                                        <textarea id="dcBuyerAddress" class="form-input" style="width: 100%; min-height: 70px; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; resize: vertical; margin-bottom: 8px; background: white;" placeholder="Buyer address (multi-line)"></textarea>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                            <input type="text" id="dcBuyerGST" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="GSTIN/UIN">
-                                            <input type="text" id="dcBuyerState" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="State Name">
+                                            <input type="text" id="dcBuyerGST" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; background: white;" placeholder="GSTIN/UIN">
+                                            <input type="text" id="dcBuyerState" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; background: white;" placeholder="State Name">
                                         </div>
-                                        <input type="text" id="dcBuyerStateCode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px;" placeholder="State Code">
+                                        <input type="text" id="dcBuyerStateCode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #b6d4fe; border-radius: 4px; margin-top: 8px; background: white;" placeholder="State Code">
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 15px;">
@@ -2002,16 +2004,20 @@
                 </div>
             </div>
 
-            <div id="assignAssetModal" class="modal" style="display: none;">
-                <div class="modal-content" style="max-width: 500px;">
-                    <span class="close-modal" onclick="document.getElementById('assignAssetModal').style.display='none'">&times;</span>
+            <!-- Assign Asset Modal V2 -->
+            <div id="assignAssetModal_v2" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 900px; width: 90%; min-height: 400px; display: flex; flex-direction: column;">
+                    <span class="close-modal" onclick="document.getElementById('assignAssetModal_v2').style.display='none'">&times;</span>
                     <h3>Assign Asset to Project</h3>
-                    <div class="form-group" style="margin-bottom: 20px;">
-                        <label style="display: block; margin-bottom: 8px;">Select Asset</label>
-                        <select id="assignAssetSelect" class="form-input" style="width: 100%; padding: 8px;"></select>
+                    <div class="form-group" style="margin-bottom: 20px; position: relative; flex-grow: 1;">
+                        <label style="display: block; margin-bottom: 8px;">Asset ID</label>
+                        <input type="text" id="assignAssetInput_v2" class="form-input" placeholder="Enter Asset ID or Scan..." style="width: 100%; padding: 12px; font-size: 1.1em;" autocomplete="off">
+                        <div id="assignAssetSearchResults" style="display: none; position: absolute; top: 75px; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 0 0 4px 4px; max-height: 300px; overflow-y: auto; z-index: 1001; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+                        <div style="margin-top: 5px; font-size: 12px; color: #666;">Enter the Asset ID manually or scan its QR code.</div>
                     </div>
                     <div class="modal-actions" style="display: flex; justify-content: flex-end;">
-                        <button id="btnConfirmAssignAsset" class="action-button blue">Assign to Project</button>
+                        <button class="action-button" onclick="document.getElementById('assignAssetModal_v2').style.display='none'" style="margin-right: 10px;">Cancel</button>
+                        <button id="btnConfirmAssignAsset_v2" class="action-button blue">Assign to Project</button>
                     </div>
                 </div>
             </div>
@@ -2211,7 +2217,7 @@
         </div>
     </div>
 
-    <script type="module" src="/js/main.js?v=5.8"></script>
+    <script type="module" src="/js/main.js?v=5.11"></script>
     
     <!-- Forgot Password Modal -->
     <div id="forgotPasswordModal" class="modal">

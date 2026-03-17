@@ -344,6 +344,9 @@ function handleInitialUrl() {
     }
 }
 
+// Handle hash changes (in-app navigation)
+window.addEventListener('hashchange', handleInitialUrl);
+
 let currentUser = null;
 let filteredAssets = () => {
     const selectedCategory = localStorage.getItem('selectedAssetCategory');
@@ -393,7 +396,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update header title based on category
         const appTitle = document.querySelector('.app-title');
         if (appTitle && user.category) {
-            appTitle.textContent = `${user.category} Asset Manager`;
+            // Extra validation to prevent UUID display
+            let displayCategory = user.category;
+            if (displayCategory.length > 20 || displayCategory.includes('-')) {
+                 displayCategory = 'IT'; 
+                 user.category = 'IT'; // correct the user object too
+                 localStorage.setItem('selectedAssetCategory', 'IT');
+            }
+            appTitle.textContent = `${displayCategory} Asset Manager`;
         }
 
         // Update display username
@@ -496,7 +506,14 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Session restored for:', user.username);
             // Restore category if missing
             if (!user.category) {
-                user.category = localStorage.getItem('selectedAssetCategory') || 'IT';
+                let savedCategory = localStorage.getItem('selectedAssetCategory');
+                // Validate category - prevent UUIDs or invalid strings
+                if (savedCategory && (savedCategory.length > 20 || savedCategory.includes('-'))) {
+                    console.warn('Invalid category in localStorage:', savedCategory);
+                    localStorage.removeItem('selectedAssetCategory');
+                    savedCategory = null;
+                }
+                user.category = savedCategory || 'IT';
             }
             handleLoginSuccess(user);
         } else {
