@@ -83,6 +83,9 @@ let DEFAULT_COMPANY_ID = null;
 const app = express();
 const port = process.env.PORT || 9090;
 
+// QA Test Route
+app.get('/api/test-ping', (req, res) => res.json({ pong: true, time: new Date().toISOString() }));
+
 // Debug Endpoint
 app.get('/api/debug/diagnose/:id', (req, res) => {
   const id = req.params.id;
@@ -560,8 +563,23 @@ try {
     db.prepare("ALTER TABLE projects ADD COLUMN QRCode TEXT").run();
     console.log('Added QRCode column to projects table');
   }
+
+  // Ensure other new columns exist
+  const existingColumns = new Set(tableInfo.map(c => c.name));
+  const newColumns = [
+    'OwnerEmail', 'CoordinatorEmail',
+    'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 'ConsigneeState', 'ConsigneeStateCode',
+    'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+  ];
+
+  newColumns.forEach(col => {
+    if (!existingColumns.has(col)) {
+      db.prepare(`ALTER TABLE projects ADD COLUMN ${col} TEXT`).run();
+      console.log(`Added ${col} column to projects table`);
+    }
+  });
 } catch (err) {
-  console.error('Migration error (projects QRCode):', err);
+  console.error('Migration error (projects columns):', err);
 }
 try {
   const historyTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_history'").get();
@@ -580,6 +598,78 @@ try {
 } catch (err) {
   console.error('Migration error (project_history):', err);
 }
+
+// --- Purchase Order (PO) Migrations ---
+try {
+  // 1. project_orders table
+  const ordersTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_orders'").get();
+  if (!ordersTable) {
+    db.prepare(`
+      CREATE TABLE project_orders (
+        ID TEXT PRIMARY KEY,
+        ProjectID TEXT NOT NULL,
+        PONumber TEXT,
+        PODate TEXT,
+        VendorName TEXT,
+        TotalAmount REAL DEFAULT 0,
+        Status TEXT DEFAULT 'Active',
+        ConsigneeName TEXT,
+        ConsigneeAddress TEXT,
+        ConsigneeGSTIN TEXT,
+        ConsigneeState TEXT,
+        ConsigneeStateCode TEXT,
+        BuyerName TEXT,
+        BuyerAddress TEXT,
+        BuyerGSTIN TEXT,
+        BuyerState TEXT,
+        BuyerStateCode TEXT,
+        Timestamp TEXT,
+        FOREIGN KEY (ProjectID) REFERENCES projects(ID)
+      )
+    `).run();
+    console.log('Created project_orders table');
+  } else {
+    // Ensure all columns exist for project_orders
+    const cols = db.prepare("PRAGMA table_info(project_orders)").all();
+    const existing = new Set(cols.map(c => c.name));
+    const needed = [
+      'OrderNo', 'OrderDate', 'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 
+      'ConsigneeState', 'ConsigneeStateCode', 'BuyerName', 'BuyerAddress', 
+      'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+    ];
+    needed.forEach(col => {
+      if (!existing.has(col)) {
+        db.prepare(`ALTER TABLE project_orders ADD COLUMN ${col} TEXT`).run();
+        console.log(`Added ${col} to project_orders`);
+      }
+    });
+  }
+
+  // 2. project_order_items table
+  const itemsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_order_items'").get();
+  if (!itemsTable) {
+    db.prepare(`
+      CREATE TABLE project_order_items (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        OrderID TEXT NOT NULL,
+        SrNo INTEGER,
+        ItemDescription TEXT,
+        DueDate TEXT,
+        QtyOrdered REAL,
+        UOM TEXT,
+        UnitPrice REAL,
+        Total REAL,
+        AssetID TEXT, -- Optional link to a specific asset if tracked
+        Timestamp TEXT,
+        FOREIGN KEY (OrderID) REFERENCES project_orders(ID)
+      )
+    `).run();
+    console.log('Created project_order_items table');
+  }
+} catch (err) {
+  console.error('Migration error (PO tables):', err);
+}
+
 try {
   const dcTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_challans'").get();
   if (!dcTable) {
@@ -613,6 +703,9 @@ try {
   const cols = db.prepare("PRAGMA table_info(assets)").all();
   const hasCol = (name) => cols.some((c) => c.name === name);
 
+  if (!hasCol('BoughtAgainstPO')) db.prepare('ALTER TABLE assets ADD COLUMN BoughtAgainstPO TEXT').run();
+  if (!hasCol('SentAgainstDC')) db.prepare('ALTER TABLE assets ADD COLUMN SentAgainstDC TEXT').run();
+  
   if (!hasCol('quantity_parent_id')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_parent_id TEXT').run();
   if (!hasCol('quantity_root_id')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_root_id TEXT').run();
   if (!hasCol('quantity_unit')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_unit TEXT').run();
@@ -628,6 +721,7 @@ try {
     // Proactively enable it for assets that already have quantity data
     db.prepare("UPDATE assets SET is_quantity_tracked = 1 WHERE quantity_unit IS NOT NULL OR quantity_total > 0").run();
   }
+  if (!hasCol('is_batch')) db.prepare('ALTER TABLE assets ADD COLUMN is_batch INTEGER DEFAULT 0').run();
 } catch (err) {
   console.error('Migration error (assets quantity columns):', err);
 }
@@ -928,14 +1022,14 @@ function getQuantityAsset(id) {
       pa.ProjectID
     FROM assets a
     LEFT JOIN project_assets pa ON a.ID = pa.AssetID
-    WHERE a.ID = ?
+    WHERE LOWER(a.ID) = LOWER(?)
   `).get(id)
 }
 
 const applyQuantityEvent = db.transaction((event) => {
   const now = new Date().toISOString()
   const root = getQuantityAsset(event.rootId)
-  if (!root || !root.quantity_root_id || root.quantity_root_id !== event.rootId) {
+  if (!root || !root.quantity_root_id || String(root.quantity_root_id).toLowerCase() !== String(event.rootId).toLowerCase()) {
     throw new Error('Invalid quantity root')
   }
   const unit = normalizeQtyUnit(root.quantity_unit)
@@ -957,8 +1051,8 @@ const applyQuantityEvent = db.transaction((event) => {
       quantity_total = COALESCE(quantity_total, 0) + ?,
       quantity_updated_at = ?,
       quantity_precision = COALESCE(quantity_precision, ?)
-    WHERE ID = ?
-      AND quantity_root_id = ?
+    WHERE LOWER(ID) = LOWER(?)
+      AND LOWER(quantity_root_id) = LOWER(?)
       AND (COALESCE(quantity_available, 0) + ?) >= 0
       AND (COALESCE(quantity_total, 0) + ?) >= 0
       AND (COALESCE(quantity_available, 0) + ?) <= (COALESCE(quantity_total, 0) + ?)
@@ -997,7 +1091,8 @@ const applyQuantityEvent = db.transaction((event) => {
     ).changes
 
     if (changes !== 1) {
-      throw new Error('Quantity update rejected')
+      console.warn(`Quantity update rejected for asset ${line.assetId} (root: ${event.rootId}). Delta: ${deltaAvailable}/${deltaTotal}. Root info:`, root);
+      throw new Error(`Quantity update rejected: Possibly insufficient available quantity (${deltaAvailable}) for asset ${line.assetId}`)
     }
   }
 
@@ -1461,6 +1556,7 @@ app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js
 app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
 app.use('/uploads', express.static(uploadsDir));
+app.use('/input', express.static(uploadsDir));
 app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons')));
 
 const iconsDir = path.join(__dirname, '../asset-manager-frontend/dist/assets/icons');
@@ -2002,7 +2098,7 @@ app.get('/api/dc/:id', (req, res) => {
 
 app.post('/api/dc', async (req, res) => {
   try {
-    const { CustomerName, DeliveryDate, AssetIds, CreatedBy, payload } = req.body || {};
+    const { CustomerName, DeliveryDate, AssetIds, CreatedBy, POReference, payload } = req.body || {};
     // 1. Prepare Data (Sync)
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = normalizedAssetIds.map((assetId) => {
@@ -2014,7 +2110,7 @@ app.post('/api/dc', async (req, res) => {
       return row || { ID: assetId }
     });
 
-    // 2. Atomic Transaction: Get Next ID -> Insert Placeholder
+    // 2. Atomic Transaction: Get Next ID -> Insert Placeholder -> Update Assets & PO
     const createResult = db.transaction(() => {
         const now = new Date();
         const fullYear = now.getFullYear();
@@ -2022,8 +2118,6 @@ app.post('/api/dc', async (req, res) => {
         let nextSeq = 1;
 
         try {
-            // New Format: YY/NNNN (e.g. 25/0001)
-            // Query for ChallanNo matching 'YY/%'
             const lastDc = db.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE '${shortYear}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
             if (lastDc && lastDc.ChallanNo) {
                 const parts = lastDc.ChallanNo.split('/');
@@ -2042,6 +2136,48 @@ app.post('/api/dc', async (req, res) => {
         const challanNo = `${shortYear}/${String(nextSeq).padStart(4, '0')}`;
         const id = `DC${Date.now()}`;
         
+        // Update Assets with PO and DC reference
+        if (normalizedAssetIds.length > 0) {
+            const updateAsset = db.prepare(`
+                UPDATE assets 
+                SET SentAgainstDC = ?, 
+                    BoughtAgainstPO = COALESCE(BoughtAgainstPO, ?) 
+                WHERE ID = ?
+            `);
+            
+            normalizedAssetIds.forEach(assetId => {
+                // Update asset assignment (bought against PO and sent against DC)
+                updateAsset.run(challanNo, POReference ? POReference.PONumber : null, assetId);
+                
+                // Manual Checklist Mode: We only link the AssetID to the PO row for traceability, 
+                // but we DO NOT automatically mark it as 'Shipped' to allow for partial shipments across multiple DCs.
+                if (POReference) {
+                    const itemName = assetsForDc.find(a => a.ID === assetId)?.ItemName || '';
+                    
+                    // Try to find a matching PO item row for this description
+                    const matchingItem = db.prepare(`
+                        SELECT SrNo FROM project_order_items 
+                        WHERE OrderID = ? 
+                        AND (ItemDescription = ? OR ItemDescription LIKE ?)
+                        LIMIT 1
+                    `).get(
+                        POReference.OrderID, 
+                        itemName,
+                        '%' + itemName + '%'
+                    );
+
+                    if (matchingItem) {
+                        db.prepare(`
+                            UPDATE project_order_items 
+                            SET AssetID = ?
+                            WHERE OrderID = ? AND SrNo = ?
+                        `).run(assetId, POReference.OrderID, matchingItem.SrNo);
+                        console.log(`[DC] Linked Asset ${assetId} to PO item: ${itemName} (SrNo: ${matchingItem.SrNo}) for PO: ${POReference.PONumber}`);
+                    }
+                }
+            });
+        }
+
         // Initial Payload (without QR)
         const initialPayload = payload && typeof payload === 'object' ? payload : {
           company: {},
@@ -2079,8 +2215,8 @@ app.post('/api/dc', async (req, res) => {
           CustomerName || '',
           DeliveryDate || '',
           JSON.stringify(normalizedAssetIds),
-          'Initializing', // Temporary status
-          '', // Empty QR initially
+          'Initializing', 
+          '', 
           CreatedBy || 'System',
           new Date().toISOString(),
           JSON.stringify(initialPayload)
@@ -2171,7 +2307,8 @@ app.post('/api/upload-logo', upload.single('logo'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: 'No logo file uploaded' });
     }
-    const logoUrl = `/uploads/${req.file.filename}`;
+    // Correct URL mapping: /input/ filename, since the static middleware maps /input to ../../input
+    const logoUrl = `/input/${req.file.filename}`;
     res.json({ success: true, url: logoUrl });
 });
 
@@ -2556,42 +2693,87 @@ app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', '
     }
 });
 
-app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), (req, res) => {
+app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
     try {
-        const { ProjectName, ClientName, Description, Status, StartDate, EndDate, OwnerEmail, CoordinatorEmail, ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode, BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode } = req.body;
+        const { 
+            ProjectName, ClientName, Description, Status, StartDate, EndDate, 
+            OwnerEmail, CoordinatorEmail, ConsigneeName, ConsigneeAddress, 
+            ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode, 
+            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode, 
+            Location, Currency 
+        } = req.body;
         
         if (!ProjectName || !ClientName) {
             return res.status(400).json({ error: 'Project Name and Client Name are required' });
         }
 
-        const id = 'PRJ' + Date.now();
+        // Use standardized ID generator if available
+        let id;
+        if (typeof generateProjectId === 'function') {
+            id = generateProjectId(Location || 'MUMBAI');
+        } else {
+            id = 'PRJ' + Date.now();
+        }
+
         const timestamp = new Date().toISOString();
+        const createdBy = req.user ? req.user.fullname || req.user.username || req.user.user_id : 'System';
+
+        // Generate QR Code if possible
+        let qrCode = null;
+        try {
+            if (typeof generateProjectQRPayload === 'function' && typeof qrcode !== 'undefined') {
+                const ip = getLocalIP();
+                const port = process.env.PORT || 9090;
+                const qrPayload = generateProjectQRPayload({
+                    ID: id,
+                    Name: ProjectName,
+                    Client: ClientName,
+                    Status: Status || 'Planning',
+                    Location: Location || 'MUMBAI',
+                    Description: Description || '',
+                    StartDate: StartDate || '',
+                    EndDate: EndDate || '',
+                    OwnerEmail: OwnerEmail || '',
+                    CoordinatorEmail: CoordinatorEmail || ''
+                }, ip, port);
+                qrCode = await qrcode.toDataURL(qrPayload, { width: 512 });
+            }
+        } catch (qrErr) {
+            console.error('QR Generation failed:', qrErr);
+        }
 
         const stmt = db.prepare(`
             INSERT INTO projects (
                 ID, ProjectName, ClientName, Description, Status, StartDate, EndDate, 
                 CreatedBy, Timestamp, OwnerEmail, CoordinatorEmail,
                 ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode, Location, QRCode, Currency
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         stmt.run(
-            id, ProjectName, ClientName, Description, Status || 'Planning', StartDate, EndDate, 
-            req.user.username, timestamp, OwnerEmail, CoordinatorEmail,
-            ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+            id, ProjectName, ClientName, Description || null, Status || 'Planning', StartDate || null, EndDate || null, 
+            createdBy, timestamp, OwnerEmail || null, CoordinatorEmail || null,
+            ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
+            BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null, 
+            Location || 'MUMBAI', qrCode, Currency || 'INR'
         );
 
-        // Generate QR Code for the new project
-        // Note: Ideally this should be async or handled by a separate process/function call to avoid blocking
-        // But for simplicity we'll let the client handle QR generation trigger or do it later
+        // Record project history if table exists
+        try {
+            db.prepare(`
+              INSERT INTO project_history (ProjectID, Status, Note, Timestamp)
+              VALUES (?, ?, ?, ?)
+            `).run(id, Status || 'Planning', 'Project initialized', timestamp);
+        } catch (histErr) {
+            console.warn('Could not record project history:', histErr.message);
+        }
         
-        res.json({ ok: true, id, message: 'Project created successfully' });
+        res.json({ success: true, id, message: 'Project created successfully' });
     } catch (err) {
         console.error('Failed to create project:', err);
-        res.status(500).json({ error: 'Failed to create project' });
+        res.status(500).json({ error: 'Failed to create project: ' + err.message });
     }
 });
 
@@ -3116,28 +3298,7 @@ app.get('/api/projects/search', authenticateJWT, (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/orders', authenticateJWT, (req, res) => {
-    try {
-        const { id } = req.params;
-        // Fetch all orders for this project to get potential consignees
-        // We include Consignee details and the OrderNo itself
-        const orders = db.prepare(`
-            SELECT 
-                ID, OrderNo, OrderDate,
-                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode
-            FROM project_orders 
-            WHERE ProjectID = ?
-        `).all(id);
-
-        res.json({ success: true, orders });
-    } catch (err) {
-        console.error('Error fetching project orders:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// (PUT and DELETE routes moved later)
-
+// --- User Management API ---
 app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
   const { username, password, fullname, role, employeeId } = req.body || {};
   if (!username || !password) {
@@ -3322,8 +3483,8 @@ app.post('/api/assets', async (req, res) => {
         DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
         warranty_months, amc_months, asset_value, Currency, PurchaseDate,
         conversion_unit, conversion_factor, conversion_mode,
-        is_quantity_tracked
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_quantity_tracked, is_batch
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -3354,7 +3515,8 @@ app.post('/api/assets', async (req, res) => {
       asset.conversion_unit || null,
       asset.conversion_factor || null,
       asset.conversion_mode || 'multiply',
-      asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0
+      asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
+      asset.is_batch || 0
     );
 
     appendAudit({
@@ -3382,7 +3544,7 @@ app.post('/api/assets', async (req, res) => {
           quantity_updated_at = ?,
           is_quantity_tracked = 1
         WHERE ID = ?
-      `).run(newId, qtyUnit, qtyPrecision, new Date().toISOString(), newId)
+      `).run(newId, qtyUnit, qtyPrecision || 0, new Date().toISOString(), newId)
 
       applyQuantityEvent({
         rootId: newId,
@@ -3391,7 +3553,7 @@ app.post('/api/assets', async (req, res) => {
         note: asset.quantity_note || asset.quantityNote || null,
         metadata: { source: 'asset_create' },
         lines: [
-          { assetId: newId, unit: qtyUnit, deltaAvailable: qtyTotal, deltaTotal: qtyTotal, precision: qtyPrecision }
+          { assetId: newId, unit: qtyUnit, deltaAvailable: qtyTotal, deltaTotal: qtyTotal, precision: qtyPrecision || 0 }
         ]
       })
     }
@@ -4362,67 +4524,6 @@ app.get('/api/projects', (req, res) => {
     }
 });
 
-app.post('/api/projects', async (req, res) => {
-    try {
-        const { 
-            name, client, location, currency, description, status, startDate, endDate, 
-            createdBy, ownerEmail, coordinatorEmail,
-            consigneeName, consigneeAddress, consigneeGSTIN, consigneeState, consigneeStateCode,
-            buyerName, buyerAddress, buyerGSTIN, buyerState, buyerStateCode
-        } = req.body;
-        
-        // Use the new standardized Project ID generator
-        const id = generateProjectId(location || 'MUMBAI');
-        
-        const ip = getLocalIP();
-        const port = process.env.PORT || 9090;
-        
-        // Use the new standardized Project QR payload generator
-        const qrPayload = generateProjectQRPayload({
-            ID: id,
-            Name: name,
-            Client: client,
-            Status: status,
-            Location: location,
-            Description: description,
-            StartDate: startDate,
-            EndDate: endDate,
-            OwnerEmail: ownerEmail,
-            CoordinatorEmail: coordinatorEmail
-        }, ip, port);
-        
-        const qrCode = await qrcode.toDataURL(qrPayload, { width: 512 });
-
-        const stmt = db.prepare(`
-            INSERT INTO projects (
-                ID, ProjectName, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
-                CreatedBy, OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
-                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        const ts = new Date().toISOString();
-        stmt.run(
-            id, name || '', client || '', location || 'MUMBAI', currency || 'INR', description || '', status || 'Planning', startDate || '', endDate || '', 
-            createdBy || 'System', ownerEmail || '', coordinatorEmail || '', ts, qrCode,
-            consigneeName || '', consigneeAddress || '', consigneeGSTIN || '', consigneeState || '', consigneeStateCode || '',
-            buyerName || '', buyerAddress || '', buyerGSTIN || '', buyerState || '', buyerStateCode || ''
-        );
-
-        // Record initial project history
-        db.prepare(`
-          INSERT INTO project_history (ProjectID, Status, Note, Timestamp)
-          VALUES (?, ?, ?, ?)
-        `).run(id, status || 'Planning', 'Project initialized', ts);
-
-        res.json({ success: true, id });
-    } catch (err) {
-        console.error('Failed to create project:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 app.get('/api/projects/:id', (req, res) => {
     try {
         const { id } = req.params;
@@ -4453,18 +4554,40 @@ app.get('/api/projects/:id/history', (req, res) => {
 app.get('/api/projects/:id/orders', (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`[PO] Fetching orders for project: ${id}`);
         const rows = db.prepare('SELECT * FROM project_orders WHERE ProjectID = ? ORDER BY Timestamp DESC').all(id);
-        res.json(rows);
+        
+        // Fetch items for each order
+        const ordersWithItems = rows.map(order => {
+            const items = db.prepare('SELECT * FROM project_order_items WHERE OrderID = ? ORDER BY SrNo ASC').all(order.ID);
+            return { ...order, items };
+        });
+        
+        // QA Fix: Return both plain array and success object for frontend compatibility
+        res.json({ success: true, orders: ordersWithItems, data: ordersWithItems });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('[PO] Fetch Error:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-app.get('/api/all-orders', (req, res) => {
+app.get('/api/orders/:orderId', (req, res) => {
     try {
-        const rows = db.prepare('SELECT * FROM project_orders ORDER BY Timestamp DESC').all();
-        res.json(rows);
+        const { orderId } = req.params;
+        // QA Diagnostic: Log the DB path being used
+        const currentDbPath = db.name;
+        console.log(`[PO GET] Fetching order: ${orderId} from DB: ${currentDbPath}`);
+        
+        const order = db.prepare('SELECT * FROM project_orders WHERE ID = ?').get(orderId);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+        
+        const items = db.prepare('SELECT * FROM project_order_items WHERE OrderID = ? ORDER BY SrNo ASC').all(orderId);
+        
+        console.log(`[PO GET] Found ${items.length} items. First item status: ${items.length > 0 ? items[0].Status : 'N/A'}`);
+        
+        res.json({ ...order, items });
     } catch (err) {
+        console.error(`[PO GET] Error:`, err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -4472,33 +4595,138 @@ app.get('/api/all-orders', (req, res) => {
 app.post('/api/projects/:id/orders', (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`[PO] Creating order for project: ${id}`);
         const { 
-            OrderNo, OrderDate, 
+            PONumber, PODate, VendorName, TotalAmount, Status, items,
             ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
             BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
         } = req.body;
 
-        const orderId = `ORD-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+        const orderId = `PO-${Date.now()}-${Math.floor(Math.random()*1000)}`;
         const ts = new Date().toISOString();
 
-        const stmt = db.prepare(`
+        // Use a transaction for atomic insert of order and items
+        const insertOrder = db.prepare(`
             INSERT INTO project_orders (
-                ID, ProjectID, OrderNo, OrderDate,
+                ID, ProjectID, PONumber, PODate, VendorName, TotalAmount, Status, 
                 ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
                 BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode,
-                CreatedBy, Timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                Timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
-        stmt.run(
-            orderId, id, OrderNo, OrderDate,
-            ConsigneeName || '', ConsigneeAddress || '', ConsigneeGSTIN || '', ConsigneeState || '', ConsigneeStateCode || '',
-            BuyerName || '', BuyerAddress || '', BuyerGSTIN || '', BuyerState || '', BuyerStateCode || '',
-            'System', ts
-        );
+        const insertItem = db.prepare(`
+            INSERT INTO project_order_items (
+                OrderID, SrNo, ItemDescription, DueDate, QtyOrdered, UOM, UnitPrice, Total, AssetID, Status, Timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
+        db.transaction(() => {
+            console.log(`[PO] Inserting header: ${orderId}`);
+            insertOrder.run(
+                orderId, id, PONumber || null, PODate || null, VendorName || null, TotalAmount || 0, Status || 'Active', 
+                ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
+                BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null,
+                ts
+            );
+
+            if (items && Array.isArray(items)) {
+                console.log(`[PO] Inserting ${items.length} items`);
+                items.forEach((item, index) => {
+                    insertItem.run(
+                        orderId, 
+                        item.SrNo || (index + 1), 
+                        item.ItemDescription || '', 
+                        item.DueDate || null, 
+                        item.QtyOrdered || 0, 
+                        item.UOM || 'Nos', 
+                        item.UnitPrice || 0, 
+                        item.Total || 0, 
+                        item.AssetID || null, 
+                        item.Status || 'Pending',
+                        ts
+                    );
+                });
+            }
+        })();
+
+        console.log(`[PO] Success: ${orderId}`);
         res.json({ success: true, id: orderId });
     } catch (err) {
+        console.error('[PO] Failed to create project order:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/orders/:orderId', (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const { 
+            PONumber, PODate, VendorName, TotalAmount, Status, items,
+            ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
+            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
+        } = req.body;
+        
+        console.log(`[DEBUG PO] Updating order: ${orderId}`);
+        console.log(`[DEBUG PO] Received ${items ? items.length : 0} items`);
+        
+        const ts = new Date().toISOString();
+
+        const updateOrder = db.prepare(`
+            UPDATE project_orders 
+            SET PONumber = ?, PODate = ?, VendorName = ?, TotalAmount = ?, Status = ?,
+                ConsigneeName = ?, ConsigneeAddress = ?, ConsigneeGSTIN = ?, ConsigneeState = ?, ConsigneeStateCode = ?,
+                BuyerName = ?, BuyerAddress = ?, BuyerGSTIN = ?, BuyerState = ?, BuyerStateCode = ?
+            WHERE ID = ?
+        `);
+
+        const deleteItems = db.prepare('DELETE FROM project_order_items WHERE OrderID = ?');
+        
+        // Explicitly naming columns in the insert to be 100% sure of mapping
+        const insertItem = db.prepare(`
+            INSERT INTO project_order_items (
+                OrderID, SrNo, ItemDescription, DueDate, QtyOrdered, UOM, UnitPrice, Total, AssetID, Timestamp, Status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        db.transaction(() => {
+            updateOrder.run(
+                PONumber, PODate, VendorName, TotalAmount || 0, Status || 'Active', 
+                ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
+                BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null,
+                orderId
+            );
+
+            deleteItems.run(orderId);
+
+            if (items && Array.isArray(items)) {
+                items.forEach((item, index) => {
+                    let receivedStatus = item.Status || item.status || 'Pending';
+                    if (receivedStatus.toLowerCase().includes('ship')) receivedStatus = 'Shipped';
+                    else receivedStatus = 'Pending';
+
+                    console.log(`[DEBUG PO] Row ${index + 1} | "${item.ItemDescription}" | Writing Status: "${receivedStatus}"`);
+
+                    insertItem.run(
+                        orderId, 
+                        item.SrNo || (index + 1), 
+                        item.ItemDescription || '', 
+                        item.DueDate || null, 
+                        item.QtyOrdered || 0, 
+                        item.UOM || 'Nos', 
+                        item.UnitPrice || 0, 
+                        item.Total || 0, 
+                        item.AssetID || null, 
+                        ts,
+                        receivedStatus
+                    );
+                });
+            }
+        })();
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(`[DEBUG PO] Update failed:`, err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -4506,8 +4734,12 @@ app.post('/api/projects/:id/orders', (req, res) => {
 app.delete('/api/projects/:projectId/orders/:orderId', (req, res) => {
     try {
         const { projectId, orderId } = req.params;
-        const result = db.prepare('DELETE FROM project_orders WHERE ID = ? AND ProjectID = ?').run(orderId, projectId);
-        if (result.changes === 0) return res.status(404).json({ error: 'Order not found' });
+        
+        db.transaction(() => {
+            db.prepare('DELETE FROM project_order_items WHERE OrderID = ?').run(orderId);
+            db.prepare('DELETE FROM project_orders WHERE ID = ? AND ProjectID = ?').run(orderId, projectId);
+        })();
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -4532,7 +4764,7 @@ app.patch('/api/projects/:id', async (req, res) => {
         ];
         const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
         
-        if (fields.length === 0 && !updates.status) {
+        if (fields.length === 0) {
              // Backward compatibility for old simple status updates
              if (updates.status) {
                  fields.push('Status');
@@ -4992,7 +5224,8 @@ app.put('/api/assets/:id', (req, res) => {
         conversion_unit = ?, conversion_factor = ?, conversion_mode = ?,
         quantity_unit = ?, quantity_total = ?, quantity_precision = ?,
         quantity_available = COALESCE(quantity_available, 0) + ?,
-        is_quantity_tracked = ?
+        is_quantity_tracked = ?,
+        is_batch = ?
       WHERE LOWER(ID) = LOWER(?)
     `);
 
@@ -5026,6 +5259,7 @@ app.put('/api/assets/:id', (req, res) => {
       asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
       qtyAvailableDelta,
       asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
+      asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
       id
     );
 
@@ -6789,9 +7023,137 @@ app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, r
     }
 });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-  console.log(`Access locally at http://localhost:${PORT}`);
+app.post('/api/assets/split', (req, res) => {
+  try {
+    const { parentId, serials, autoAssign, projectId } = req.body;
+    if (!parentId || !serials || !Array.isArray(serials) || serials.length === 0) {
+      return res.status(400).json({ error: 'Parent ID and serial numbers list required' });
+    }
+
+    const parent = db.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
+    if (!parent) return res.status(404).json({ error: 'Parent asset not found' });
+
+    const currentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+    const newSerials = currentSerials.filter(sn => !serials.includes(sn));
+    const splitCount = currentSerials.length - newSerials.length;
+
+    if (splitCount === 0) {
+      return res.status(400).json({ error: 'None of the selected serial numbers were found in this batch' });
+    }
+
+    const ts = new Date().toISOString();
+    const actor = getRequestActor(req);
+
+    db.transaction(() => {
+      // 1. Force Sync Parent Quantity to match current Serial Number count
+      // This fixes cases where the DB Qty (e.g. 1) doesn't match the S/N count (e.g. 3)
+      db.prepare(`
+        UPDATE assets 
+        SET 
+          quantity_total = ?, 
+          quantity_available = ?, 
+          quantity_unit = COALESCE(quantity_unit, 'pcs'),
+          is_quantity_tracked = 1,
+          quantity_root_id = COALESCE(quantity_root_id, ID)
+        WHERE LOWER(ID) = LOWER(?)
+      `).run(currentSerials.length, currentSerials.length, parentId);
+
+      // Re-fetch parent to ensure we have the synchronized quantity for applyQuantityEvent
+      const syncedParent = db.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
+
+      // 2. Update Parent Serial Numbers (Now that qty is synced)
+      db.prepare(`
+        UPDATE assets 
+        SET SrNo = ?, LastUpdated = ?
+        WHERE LOWER(ID) = LOWER(?)
+      `).run(newSerials.join(', '), ts, parentId);
+
+      // 3. Create Children
+      const insertChild = db.prepare(`
+        INSERT INTO assets (
+          ID, ItemName, Status, Make, Model, SrNo, Type, Category, Icon, 
+          isPlaceholder, ParentId, CurrentLocation, DispatchReceiveDt, 
+          PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR, 
+          warranty_months, amc_months, asset_value, Currency, PurchaseDate, 
+          conversion_unit, conversion_factor, conversion_mode, is_quantity_tracked, is_batch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      serials.forEach(sn => {
+        // Use standard ID generation logic from utils
+        const childId = generateModernAssetId(syncedParent.CurrentLocation, syncedParent.Type);
+        
+        // Determine status and assignment
+        let status = syncedParent.Status;
+        let assignedTo = syncedParent.AssignedTo;
+        
+        if (autoAssign) {
+            status = 'Assigned';
+            assignedTo = autoAssign;
+        } else if (projectId) {
+            status = 'Project';
+            assignedTo = `PROJECT:${projectId}`;
+        }
+
+        insertChild.run(
+          childId,
+          syncedParent.ItemName,
+          status,
+          syncedParent.Make,
+          syncedParent.Model,
+          sn,
+          syncedParent.Type,
+          syncedParent.Category,
+          syncedParent.Icon,
+          0, parentId, syncedParent.CurrentLocation, syncedParent.DispatchReceiveDt,
+          syncedParent.PurchaseDetails, syncedParent.Remarks, ts, null, assignedTo, syncedParent.NoQR,
+          syncedParent.warranty_months, syncedParent.amc_months, syncedParent.asset_value, syncedParent.Currency, syncedParent.PurchaseDate,
+          syncedParent.conversion_unit, syncedParent.conversion_factor, syncedParent.conversion_mode, 0, 0
+        );
+
+        // If assigning to project, also update project_assets table
+        if (projectId) {
+          db.prepare(`
+            INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
+            VALUES (?, ?, ?, ?)
+          `).run(projectId, childId, ts, 'Permanent');
+        }
+      });
+
+      // 4. Record Quantity Event for Parent
+      if (syncedParent.is_quantity_tracked) {
+        const note = autoAssign ? `Split ${serials.join(', ')} and assigned to ${autoAssign}` : 
+                     (projectId ? `Split ${serials.join(', ')} and assigned to Project ${projectId}` : 
+                     `Split ${splitCount} units to individual assets`);
+                     
+        applyQuantityEvent({
+          rootId: syncedParent.quantity_root_id || syncedParent.ID,
+          type: 'SPLIT',
+          actor: actor,
+          note: note,
+          metadata: { 
+            parentId: syncedParent.ID, 
+            splitCount: splitCount, 
+            serials: serials.join(', '),
+            assignedTo: autoAssign || (projectId ? `PROJECT:${projectId}` : null)
+          },
+          lines: [
+            { assetId: syncedParent.ID, unit: syncedParent.quantity_unit || 'pcs', deltaAvailable: -splitCount, deltaTotal: -splitCount, precision: syncedParent.quantity_precision || 0 }
+          ]
+        });
+      }
+    })();
+
+    res.json({ success: true, count: splitCount });
+  } catch (err) {
+    console.error('Split error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${port}`);
+  console.log(`Access locally at http://localhost:${port}`);
   console.log('Server started successfully.');
 });
 

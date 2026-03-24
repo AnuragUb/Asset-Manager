@@ -1298,7 +1298,17 @@
                             </div>
                             <div class="form-group">
                                 <label for="itemSrNo">Serial No</label>
-                                <input type="text" id="itemSrNo" name="itemSrNo">
+                                <div id="srNoContainer">
+                                    <input type="text" id="itemSrNo" name="itemSrNo" placeholder="S/N Number">
+                                    <textarea id="itemSrNoBatch" name="itemSrNoBatch" style="display: none; width: 100%; height: 80px; margin-top: 5px;" placeholder="Enter multiple serial numbers (one per line or comma-separated)"></textarea>
+                                    <div id="batchSnListContainer" style="display: none; margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 4px; background: #f8fafc; padding: 5px;">
+                                        <!-- List of serial numbers for batch management -->
+                                    </div>
+                                    <div style="margin-top: 4px; display: flex; gap: 8px;">
+                                        <button type="button" id="btnToggleBatchMode" style="font-size: 10px; color: #0078d4; background: #e7f3ff; border: 1px solid #b3d7ff; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Enable Batch S/N</button>
+                                        <button type="button" id="btnSplitBatch" style="display: none; font-size: 10px; color: #166534; background: #f0fdf4; border: 1px solid #dcfce7; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Split Selected S/N</button>
+                                    </div>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="itemLocation">Current Location</label>
@@ -1432,6 +1442,14 @@
                                 </div>
                                 <div id="linkComponentResults" style="max-height: 100px; overflow-y: auto; background: #fff; border: 1px solid #eee; display: none; margin-top: 5px;"></div>
                                 <div id="linkedComponentsList" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Split Assets Section -->
+                        <div id="splitAssetsSection" style="display: none; margin-top: 15px; border-top: 2px solid #6366f1; padding-top: 15px;">
+                            <h4 style="margin: 0 0 10px 0; color: #6366f1;">Split / Individual Assets</h4>
+                            <div id="splitAssetsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <!-- Split assets will be listed here -->
                             </div>
                         </div>
 
@@ -1913,6 +1931,48 @@
                             <input type="date" id="sideProjectEndDate" name="sideProjectEndDate" class="form-input">
                         </div>
                     </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                        <h4 style="margin-bottom: 10px; color: #0078d4;">Billing Details (Buyer)</h4>
+                        <div class="form-group">
+                            <input type="text" id="sideBuyerName" placeholder="Buyer Name" class="form-input" style="margin-bottom: 5px;">
+                            <textarea id="sideBuyerAddress" placeholder="Buyer Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
+                                <input type="text" id="sideBuyerGSTIN" placeholder="GSTIN" class="form-input">
+                                <input type="text" id="sideBuyerState" placeholder="State" class="form-input">
+                                <input type="text" id="sideBuyerStateCode" placeholder="Code" class="form-input">
+                            </div>
+                        </div>
+
+                        <h4 style="margin: 15px 0 10px 0; color: #0078d4; display: flex; justify-content: space-between; align-items: center;">
+                            Shipping Details (Consignee)
+                            <label style="font-size: 11px; font-weight: normal; color: #666; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                                <input type="checkbox" id="chkSameAsBuyer" style="width: 13px; height: 13px;"> Same as Buyer
+                            </label>
+                        </h4>
+                        <div class="form-group">
+                            <input type="text" id="sideConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
+                            <textarea id="sideConsigneeAddress" placeholder="Consignee Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
+                                <input type="text" id="sideConsigneeGSTIN" placeholder="GSTIN" class="form-input">
+                                <input type="text" id="sideConsigneeState" placeholder="State" class="form-input">
+                                <input type="text" id="sideConsigneeStateCode" placeholder="Code" class="form-input">
+                            </div>
+                        </div>
+
+                        <h4 style="margin: 15px 0 10px 0; color: #0078d4;">Project Contacts</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="form-group">
+                                <label style="font-size: 11px;">Owner Email</label>
+                                <input type="email" id="sideOwnerEmail" placeholder="owner@client.com" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 11px;">Coordinator Email</label>
+                                <input type="email" id="sideCoordinatorEmail" placeholder="coord@client.com" class="form-input">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="modal-actions">
                         <button id="btnSideSubmitProject" class="action-button blue">Initialize Project</button>
                     </div>
@@ -1942,21 +2002,24 @@
 
                     <div id="projectOrdersTab" class="project-tab-content" style="display: none;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                            <h3 style="margin: 0;">Project Orders</h3>
-                            <button class="action-button blue" id="btnAddProjectOrder">+ Add Order</button>
+                            <h3 style="margin: 0;">Project Purchase Orders (PO)</h3>
+                            <button class="action-button blue" id="btnAddProjectOrder">+ Create New PO</button>
                         </div>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Order No</th>
-                                    <th>Date</th>
-                                    <th>Consignee</th>
-                                    <th>Location</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="projectOrdersTableBody"></tbody>
-                        </table>
+                        <div id="projectOrdersList">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>PO Number</th>
+                                        <th>Date</th>
+                                        <th>Vendor</th>
+                                        <th>Total Amount</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="projectOrdersTableBody"></tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div id="projectAssetsTab" class="project-tab-content active">
@@ -2217,7 +2280,35 @@
         </div>
     </div>
 
-    <script type="module" src="/js/main.js?v=5.11"></script>
+    <!-- Quantity History Modal -->
+    <div id="qtyHistoryModal" class="modal" style="z-index: 10005;">
+        <div class="modal-content" style="max-width: 700px; padding: 0; overflow: hidden; border-radius: 12px;">
+            <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #1e293b; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">⚖️</span> Quantity & Batch History
+                </h3>
+                <span class="close-modal" onclick="document.getElementById('qtyHistoryModal').style.display='none'" style="font-size: 24px; cursor: pointer;">&times;</span>
+            </div>
+            
+            <div id="qtyHistoryLoading" style="padding: 40px; text-align: center; color: #64748b;">
+                <div class="spinner" style="margin: 0 auto 10px; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;"></div>
+                Loading history...
+            </div>
+
+            <div id="qtyHistoryContent" style="display: none; padding: 20px; max-height: 500px; overflow-y: auto; background: #fff;">
+                <div id="qtySummaryHeader" style="margin-bottom: 20px; padding: 15px; background: #eff6ff; border-radius: 8px; border: 1px solid #dbeafe; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <!-- Filled by JS -->
+                </div>
+                
+                <div style="margin-bottom: 10px; font-weight: 700; color: #475569; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Activity Timeline</div>
+                <div id="qtyTimelineContainer" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/js/main.js?v=5.25"></script>
     
     <!-- Forgot Password Modal -->
     <div id="forgotPasswordModal" class="modal">

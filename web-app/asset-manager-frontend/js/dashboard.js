@@ -58,6 +58,7 @@ function matchesQuery(asset, query) {
         asset.MACAddress,
         asset.User,
         asset.Department,
+        asset.ParentId,
         asset.EstimatedPrice ? String(asset.EstimatedPrice) : null
     ];
     
@@ -726,6 +727,7 @@ function initDCView() {
                         DeliveryDate: deliveryDate,
                         AssetIds: assetIds,
                         CreatedBy: localStorage.getItem('username') || 'System',
+                        POReference: window.currentDC_POReference || null,
                         payload
                     })
                 });
@@ -733,6 +735,8 @@ function initDCView() {
                 const result = await response.json();
                 if (result.success) {
                     showDCPreview(result);
+                    // Clear PO reference after successful generation
+                    window.currentDC_POReference = null;
                 } else {
                     showToast('Error creating DC: ' + result.error, 'error');
                 }
@@ -2347,6 +2351,8 @@ window.showAssetDetails = async function(assetId) {
                 <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
                 <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
                 <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
+                <p><strong>Bought Against PO:</strong> ${asset.BoughtAgainstPO || '-'}</p>
+                <p><strong>Sent Against DC:</strong> ${asset.SentAgainstDC || '-'}</p>
                 <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
                 <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
                     <img src="${qrSrc}" style="width: 120px; height: 120px;" onerror="this.src='/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}'">
@@ -2628,6 +2634,85 @@ window.showCreateClientUserModal = async function() {
 };
 
 // Initialize the confirm button handler
+window.showQuantityHistoryModal = async function(assetId) {
+    const modal = document.getElementById('qtyHistoryModal');
+    const loading = document.getElementById('qtyHistoryLoading');
+    const content = document.getElementById('qtyHistoryContent');
+    const header = document.getElementById('qtySummaryHeader');
+    const timelineContainer = document.getElementById('qtyTimelineContainer');
+    
+    if (!modal || !loading || !content) return;
+
+    modal.style.display = 'flex';
+    loading.style.display = 'block';
+    content.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/quantity/events/${encodeURIComponent(assetId)}`);
+        if (!response.ok) throw new Error('Failed to fetch quantity history');
+        const data = await response.json();
+
+        loading.style.display = 'none';
+        content.style.display = 'block';
+
+        // 1. Render Summary Header
+        const firstEvent = data.events && data.events.length > 0 ? data.events[0] : null;
+        const totalQty = firstEvent && firstEvent.lines ? firstEvent.lines.reduce((sum, l) => sum + (l.delta_total || 0), 0) : 0;
+        const unit = firstEvent && firstEvent.lines && firstEvent.lines.length > 0 ? firstEvent.lines[0].unit : 'units';
+
+        if (header) {
+            header.innerHTML = `
+                <div>
+                    <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Asset ID</div>
+                    <div style="font-weight: 700; color: #1e293b;">${assetId}</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Current Batch Total</div>
+                    <div style="font-weight: 800; color: #2563eb; font-size: 18px;">${data.events.length > 0 ? data.events[data.events.length-1].lines[0].delta_total : 0} ${unit}</div>
+                </div>
+            `;
+        }
+
+        // 2. Render Timeline
+        if (timelineContainer) {
+            if (data.events && data.events.length > 0) {
+                timelineContainer.innerHTML = data.events.map(e => {
+                    const date = new Date(e.timestamp).toLocaleString();
+                    const color = e.type === 'INIT' ? '#10b981' : (e.type === 'SPLIT' ? '#f59e0b' : '#3b82f6');
+                    const icon = e.type === 'INIT' ? '📦' : (e.type === 'SPLIT' ? '✂️' : '⚖️');
+                    
+                    return `
+                        <div style="padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid ${color}; background: #fff; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span>${icon}</span>
+                                    <span style="font-weight: 800; color: ${color}; text-transform: uppercase; font-size: 11px;">${e.type}</span>
+                                </div>
+                                <span style="color: #64748b; font-size: 11px;">${date}</span>
+                            </div>
+                            <div style="color: #1e293b; font-weight: 700; margin-bottom: 2px;">By ${e.actor}</div>
+                            ${e.note ? `<div style="color: #475569; font-style: italic; margin-top: 4px; padding: 4px 8px; background: #f8fafc; border-radius: 4px; border-left: 2px solid #cbd5e1;">"${e.note}"</div>` : ''}
+                            ${e.metadata ? `
+                                <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-family: monospace; font-size: 11px; color: #475569;">
+                                    ${Object.entries(e.metadata).map(([k,v]) => `<div><b style="color: #1e293b;">${k}:</b> ${v}</div>`).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                timelineContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No quantity history recorded yet.</div>';
+            }
+        }
+
+    } catch (err) {
+        console.error(err);
+        if (content) content.innerHTML = `<div style="padding: 20px; color: #ef4444; text-align: center;">Error loading history: ${err.message}</div>`;
+    }
+};
+
+window.showQuantityHistoryModal = showQuantityHistoryModal;
+
 document.addEventListener('DOMContentLoaded', () => {
     const btnConfirm = document.getElementById('btnConfirmAssignAsset');
     if (btnConfirm) {
@@ -3457,7 +3542,7 @@ export function renderDashboard(assets, filteredAssets) {
                             </div>
                         </div>
                         <div style="font-size: 9px; margin-top: 5px; text-align: center;">
-                            <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; display: inline-flex; align-items: center; gap: 3px;">🔗 Qty API</a>
+                            <a href="#" onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; display: inline-flex; align-items: center; gap: 3px;">🔗 Qty API</a>
                         </div>
                         <div style="position: absolute; bottom: 0; left: 0; right: 0; display: flex; height: 28px; border-top: 1px solid #eee; background: #fff; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; overflow: hidden;">
                             <button onclick="event.stopPropagation(); makeAssetPermanent('${asset.ID}')" style="flex: 1; border: none; background: #f0f7ff; color: #007bff; font-size: 10px; font-weight: 600; cursor: pointer; border-right: 1px solid #eee; transition: all 0.2s;" onmouseover="this.style.background='#e6f0ff'" onmouseout="this.style.background='#f0f7ff'">Convert</button>
@@ -3727,7 +3812,7 @@ export function renderDashboard(assets, filteredAssets) {
                         <div class="search-result-subtitle">
                             ID: ${asset.ID} • ${asset.Type} • ${asset.CurrentLocation || 'No Location'} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
                             ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? ` • <span style="color: #0078d4; font-weight: 600;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>` : ''}
-                            • <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
+                            • <a href="#" onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
                         </div>
                     </div>
                     <div style="text-align: right; flex-shrink: 0;">
@@ -4094,6 +4179,28 @@ export function openAddItemModal(kind) {
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
 
+        // Reset Batch UI
+        const srNoInput = document.getElementById('itemSrNo');
+        const srNoBatch = document.getElementById('itemSrNoBatch');
+        const batchList = document.getElementById('batchSnListContainer');
+        const btnToggleBatch = document.getElementById('btnToggleBatchMode');
+        const btnSplit = document.getElementById('btnSplitBatch');
+        
+        if (srNoInput) srNoInput.style.display = 'block';
+        if (srNoBatch) {
+            srNoBatch.style.display = 'none';
+            srNoBatch.value = '';
+        }
+        if (batchList) {
+            batchList.style.display = 'none';
+            batchList.innerHTML = '';
+        }
+        if (btnToggleBatch) {
+            btnToggleBatch.style.display = 'block';
+            btnToggleBatch.textContent = 'Enable Batch S/N';
+        }
+        if (btnSplit) btnSplit.style.display = 'none';
+
         const qtyUnit = document.getElementById('itemQtyUnit');
         const qtyTotal = document.getElementById('itemQtyTotal');
         const qtyPrecision = document.getElementById('itemQtyPrecision');
@@ -4227,6 +4334,56 @@ export function openAddItemModal(kind) {
                 assignedSelect.appendChild(opt);
             });
         }
+
+        // Setup Batch S/N Toggle
+        const isQtyTrackedToggle = document.getElementById('itemIsQtyTracked');
+        const qtyTotalField = document.getElementById('itemQtyTotal');
+        const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
+
+        if (btnToggleBatch && srNoInput && srNoBatch) {
+            srNoInput.style.display = 'block';
+            srNoBatch.style.display = 'none';
+            btnToggleBatch.textContent = 'Enable Batch S/N';
+            
+            btnToggleBatch.onclick = () => {
+                const isBatch = srNoInput.style.display === 'block';
+                if (isBatch) {
+                    // Moving from single to batch
+                    const currentSn = srNoInput.value.trim();
+                    srNoInput.style.display = 'none';
+                    srNoBatch.style.display = 'block';
+                    btnToggleBatch.textContent = 'Disable Batch S/N';
+                    
+                    // Transfer current serial to batch box if batch box is empty
+                    if (currentSn && !srNoBatch.value.trim()) {
+                        srNoBatch.value = currentSn;
+                        // Trigger input to update quantity
+                        srNoBatch.dispatchEvent(new Event('input'));
+                    }
+
+                    // Auto-enable Qty tracking if not enabled
+                    if (isQtyTrackedToggle && !isQtyTrackedToggle.checked) {
+                        isQtyTrackedToggle.checked = true;
+                        if (qtyFieldsContainer) qtyFieldsContainer.style.display = 'grid';
+                    }
+                } else {
+                    srNoInput.style.display = 'block';
+                    srNoBatch.style.display = 'none';
+                    btnToggleBatch.textContent = 'Enable Batch S/N';
+                }
+            };
+
+            // Auto-update Qty Total based on serial numbers in batch mode
+            srNoBatch.oninput = () => {
+                const raw = srNoBatch.value;
+                const lines = raw.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+                if (qtyTotalField && srNoInput.style.display === 'none') {
+                    qtyTotalField.value = lines.length;
+                    // Trigger change event for any listeners
+                    qtyTotalField.dispatchEvent(new Event('input'));
+                }
+            };
+        }
     } else {
         console.error('CRITICAL: addAssetItemModal NOT found in DOM');
     }
@@ -4262,6 +4419,271 @@ export async function editAsset(asset) {
     document.getElementById('itemModel').value = asset.Model || '';
     document.getElementById('itemSrNo').value = asset.SrNo || '';
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
+
+    // Handle Batch UI in Edit Modal
+    const srNoInputEdit = document.getElementById('itemSrNo');
+    const srNoBatchEdit = document.getElementById('itemSrNoBatch');
+    const batchListEdit = document.getElementById('batchSnListContainer');
+    const btnToggleBatchEdit = document.getElementById('btnToggleBatchMode');
+    const btnSplitEdit = document.getElementById('btnSplitBatch');
+
+    // Handle Split Assets display
+    const splitSection = document.getElementById('splitAssetsSection');
+    const splitList = document.getElementById('splitAssetsList');
+    if (splitSection && splitList) {
+        splitSection.style.display = 'none';
+        splitList.innerHTML = '';
+        
+        // Fetch children (splits)
+        try {
+            const resp = await fetch(`/api/assets?all=true`);
+            if (resp.ok) {
+                const allAssets = await resp.json();
+                const children = allAssets.filter(a => String(a.ParentId).toLowerCase() === String(asset.ID).toLowerCase());
+                if (children.length > 0) {
+                    splitSection.style.display = 'block';
+                    splitList.innerHTML = children.map(c => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border: 1px solid #e2e8f0; border-radius: 6px;">
+                            <div>
+                                <div style="font-weight: 600; color: #1e293b; font-size: 13px;">${c.ID}</div>
+                                <div style="font-size: 11px; color: #64748b;">S/N: ${c.SrNo || 'N/A'} | Status: ${c.Status}</div>
+                            </div>
+                            <button type="button" class="btn-view-split" data-id="${c.ID}" style="font-size: 10px; color: #6366f1; background: #eef2ff; border: 1px solid #e0e7ff; padding: 4px 8px; border-radius: 4px; cursor: pointer;">View</button>
+                        </div>
+                    `).join('');
+
+                    splitList.querySelectorAll('.btn-view-split').forEach(btn => {
+                        btn.onclick = () => {
+                            const childId = btn.getAttribute('data-id');
+                            const childAsset = allAssets.find(a => a.ID === childId);
+                            if (childAsset) editAsset(childAsset);
+                        };
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching split assets:', err);
+        }
+    }
+
+    if (asset.is_batch) {
+        if (srNoInputEdit) srNoInputEdit.style.display = 'none';
+        if (srNoBatchEdit) srNoBatchEdit.style.display = 'none'; // Hide the textarea during edit, show the managed list
+        if (batchListEdit) batchListEdit.style.display = 'block';
+        if (btnToggleBatchEdit) btnToggleBatchEdit.style.display = 'none'; // Disable switching mode for existing batch
+        if (btnSplitEdit) btnSplitEdit.style.display = 'block';
+
+        const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+        if (batchListEdit) {
+            batchListEdit.innerHTML = serials.map(sn => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px; border-bottom: 1px solid #edf2f7; background: white; margin-bottom: 2px; border-radius: 4px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" class="batch-sn-checkbox" data-sn="${sn}" style="width: 15px; height: 15px; cursor: pointer;">
+                    <span style="font-family: 'Segoe UI', monospace; font-size: 12px; font-weight: 600; color: #334155;">${sn}</span>
+                </div>
+                <div style="display: flex; gap: 4px;">
+                    <button type="button" class="btn-quick-assign" data-sn="${sn}" style="font-size: 10px; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
+                        Split & Assign
+                    </button>
+                    <button type="button" class="btn-quick-project" data-sn="${sn}" style="font-size: 10px; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
+                        Project
+                    </button>
+                </div>
+            </div>
+        `).join('') || '<div style="padding: 10px; color: #94a3b8; font-style: italic; text-align: center;">No Serial Numbers found</div>';
+
+        // Add handler for Quick Split & Assign
+        batchListEdit.querySelectorAll('.btn-quick-assign').forEach(btn => {
+            btn.onclick = async (e) => {
+                const sn = btn.getAttribute('data-sn');
+                const employee = prompt(`Enter Employee Name to assign ${sn} to:`);
+                if (!employee) return;
+
+                try {
+                    const response = await fetch('/api/assets/split', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            parentId: asset.ID, 
+                            serials: [sn],
+                            autoAssign: employee
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        alert(`Successfully split ${sn} and assigned to ${employee}`);
+                        document.getElementById('addAssetItemModal').style.display = 'none';
+                        if (window.loadAssets) await window.loadAssets();
+                    }
+                } catch (err) {
+                    console.error('Split/Assign error:', err);
+                }
+            };
+        });
+
+        // Add handler for Split & Assign Project
+        batchListEdit.querySelectorAll('.btn-quick-project').forEach(btn => {
+            btn.onclick = async (e) => {
+                const sn = btn.getAttribute('data-sn');
+                
+                // Fetch projects
+                try {
+                    const res = await fetch('/api/projects');
+                    const projects = await res.json();
+                    
+                    if (!projects || projects.length === 0) {
+                        alert('No active projects found.');
+                        return;
+                    }
+
+                    // Create a searchable project selection UI in a mini modal
+                    let pModal = document.getElementById('projectSearchSplitModal');
+                    if (!pModal) {
+                        pModal = document.createElement('div');
+                        pModal.id = 'projectSearchSplitModal';
+                        pModal.className = 'modal';
+                        pModal.style.zIndex = '10006';
+                        pModal.innerHTML = `
+                            <div class="modal-content" style="max-width: 400px; padding: 0; border-radius: 8px; overflow: hidden;">
+                                <div style="background: #f8fafc; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                                    <h4 style="margin: 0; font-size: 14px; color: #1e293b;">Select Project for Split</h4>
+                                    <span class="close-modal" onclick="document.getElementById('projectSearchSplitModal').style.display='none'" style="cursor: pointer;">&times;</span>
+                                </div>
+                                <div style="padding: 15px;">
+                                    <div style="margin-bottom: 10px; font-size: 12px; color: #64748b;">Splitting Serial: <b id="splitSnLabel" style="color: #1e293b;"></b></div>
+                                    <div style="position: relative;">
+                                        <input type="text" id="splitProjectSearchInput" placeholder="Search project name or ID..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                        <div id="splitProjectSearchResults" style="display: none; position: absolute; top: 42px; left: 0; right: 0; background: white; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; z-index: 10007; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 4px;"></div>
+                                    </div>
+                                </div>
+                                <div style="padding: 12px 15px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+                                    <button onclick="document.getElementById('projectSearchSplitModal').style.display='none'" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ddd; background: #fff; cursor: pointer; font-size: 12px;">Cancel</button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(pModal);
+                    }
+
+                    document.getElementById('splitSnLabel').textContent = sn;
+                    const pInput = document.getElementById('splitProjectSearchInput');
+                    const pResults = document.getElementById('splitProjectSearchResults');
+                    pInput.value = '';
+                    pResults.style.display = 'none';
+                    pModal.style.display = 'flex';
+
+                    pInput.oninput = () => {
+                        const q = pInput.value.toLowerCase().trim();
+                        if (!q) {
+                            pResults.style.display = 'none';
+                            return;
+                        }
+
+                        const matches = projects.filter(p => 
+                            p.ID.toLowerCase().includes(q) || 
+                            (p.ProjectName && p.ProjectName.toLowerCase().includes(q))
+                        ).slice(0, 10);
+
+                        pResults.innerHTML = matches.map(p => `
+                            <div class="p-search-item" data-id="${p.ID}" style="padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background 0.2s;">
+                                <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${p.ProjectName}</div>
+                                <div style="font-size: 11px; color: #64748b;">ID: ${p.ID}</div>
+                            </div>
+                        `).join('');
+
+                        if (matches.length > 0) {
+                            pResults.style.display = 'block';
+                            pResults.querySelectorAll('.p-search-item').forEach(item => {
+                                item.onclick = async () => {
+                                    const selectedId = item.getAttribute('data-id');
+                                    pModal.style.display = 'none';
+                                    
+                                    try {
+                                        const response = await fetch('/api/assets/split', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ 
+                                                parentId: asset.ID, 
+                                                serials: [sn],
+                                                projectId: selectedId
+                                            })
+                                        });
+                                        
+                                        if (response.ok) {
+                                            alert(`Successfully split ${sn} and assigned to Project ${selectedId}`);
+                                            document.getElementById('addAssetItemModal').style.display = 'none';
+                                            if (window.loadAssets) await window.loadAssets();
+                                            // Refresh project assets if currently viewing a project
+                                            if (window.location.hash.startsWith('#projects') || document.getElementById('projects-view').style.display !== 'none') {
+                                                if (typeof window.loadProjectAssets === 'function' && window.currentProjectId) {
+                                                    window.loadProjectAssets(window.currentProjectId);
+                                                }
+                                            }
+                                        }
+                                    } catch (err) {
+                                        console.error('Split/Project error:', err);
+                                    }
+                                };
+                                item.onmouseover = () => item.style.background = '#f8fafc';
+                                item.onmouseout = () => item.style.background = 'white';
+                            });
+                        } else {
+                            pResults.innerHTML = '<div style="padding: 10px; color: #94a3b8; font-size: 12px; text-align: center;">No projects found</div>';
+                            pResults.style.display = 'block';
+                        }
+                    };
+                } catch (err) {
+                    console.error('Split/Project error:', err);
+                    alert('Error split-assigning to project');
+                }
+            };
+        });
+        }
+
+        if (btnSplitEdit) {
+            btnSplitEdit.onclick = async () => {
+                const selected = Array.from(batchListEdit.querySelectorAll('.batch-sn-checkbox:checked')).map(cb => cb.getAttribute('data-sn'));
+                if (selected.length === 0) {
+                    alert('Please select at least one Serial Number to split.');
+                    return;
+                }
+
+                if (confirm(`Are you sure you want to split ${selected.length} serial number(s) into individual assets?`)) {
+                    try {
+                        const response = await fetch('/api/assets/split', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ parentId: asset.ID, serials: selected })
+                        });
+                        
+                        if (response.ok) {
+                            const result = await response.json();
+                            alert(`Successfully split ${result.count} assets!`);
+                            document.getElementById('addAssetItemModal').style.display = 'none';
+                            if (window.loadAssets) await window.loadAssets();
+                            // Refresh project assets if currently viewing a project
+                            if (window.location.hash.startsWith('#projects') || document.getElementById('projects-view').style.display !== 'none') {
+                                if (typeof window.loadProjectAssets === 'function' && window.currentProjectId) {
+                                    window.loadProjectAssets(window.currentProjectId);
+                                }
+                            }
+                        } else {
+                            const err = await response.text();
+                            alert('Split failed: ' + err);
+                        }
+                    } catch (err) {
+                        console.error('Split error:', err);
+                        alert('Error splitting batch');
+                    }
+                }
+            };
+        }
+    } else {
+        if (srNoInputEdit) srNoInputEdit.style.display = 'block';
+        if (srNoBatchEdit) srNoBatchEdit.style.display = 'none';
+        if (batchListEdit) batchListEdit.style.display = 'none';
+        if (btnToggleBatchEdit) btnToggleBatchEdit.style.display = 'block';
+        if (btnSplitEdit) btnSplitEdit.style.display = 'none';
+    }
     
     if (asset.DispatchReceiveDt) {
         // Handle date format if needed
@@ -4275,15 +4697,15 @@ export async function editAsset(asset) {
     document.getElementById('itemParentId').value = asset.ParentId || '';
 
     const qtyUnit = document.getElementById('itemQtyUnit');
-    const qtyTotal = document.getElementById('itemQtyTotal');
+    const qtyTotalInput = document.getElementById('itemQtyTotal');
     const qtyPrecision = document.getElementById('itemQtyPrecision');
     const qtyNote = document.getElementById('itemQtyNote');
     if (qtyUnit) qtyUnit.value = asset.quantity_unit || '';
-    if (qtyTotal) qtyTotal.value = (asset.quantity_total ?? '') === null ? '' : (asset.quantity_total ?? '');
+    if (qtyTotalInput) qtyTotalInput.value = (asset.quantity_total ?? '') === null ? '' : (asset.quantity_total ?? '');
     if (qtyPrecision) qtyPrecision.value = (asset.quantity_precision ?? 0);
     if (qtyNote) qtyNote.value = asset.quantity_note || '';
     if (qtyUnit) qtyUnit.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
-    if (qtyTotal) qtyTotal.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+    if (qtyTotalInput) qtyTotalInput.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
     if (qtyPrecision) qtyPrecision.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
     if (qtyNote) qtyNote.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
 
@@ -4342,7 +4764,7 @@ export async function editAsset(asset) {
             qtyHint.style.background = '#fff7ed';
             qtyHint.style.border = '1px solid #ffedd5';
             qtyHint.style.color = '#9a3412';
-            qtyHint.innerHTML = `Quantity setup can’t be edited here. Use <a href="/asset/${encodeURIComponent(asset.ID)}" target="_blank" style="color: #9a3412; text-decoration: underline; font-weight: 800;">Asset Details</a> to Split / Issue / Consume.`;
+            qtyHint.innerHTML = `Quantity setup can’t be edited here. Use <a href="#" onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="color: #9a3412; text-decoration: underline; font-weight: 800;">Qty History</a> to view events.`;
         } else if (isRootAsset) {
             qtyHint.style.display = 'block';
             qtyHint.style.background = '#f0fdf4';
@@ -4411,7 +4833,7 @@ export async function editAsset(asset) {
                  const historyHeader = historySection.querySelector('h4');
                  if (historyHeader) {
                      historyHeader.innerHTML = `Quantity History & Timeline 
-                         <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" 
+                         <a href="#" onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" 
                             style="float: right; font-size: 11px; color: #0056b3; background: #e7f3ff; padding: 2px 8px; border-radius: 4px; text-decoration: none; border: 1px solid #b3d7ff;">
                             🔗 Qty API
                          </a>`;
@@ -4575,7 +4997,7 @@ function showAssetList(nodeOrKindName) {
                             <strong style="color: #0078d4;">⚖️ ${a.quantity_total ?? 0}</strong> ${a.quantity_unit || ''}
                             ${a.quantity_available !== undefined ? `<br><span style="color: #666;">Avail: ${a.quantity_available}</span>` : ''}
                         ` : ''}
-                        <br><a href="/api/quantity/events/${encodeURIComponent(a.ID)}" target="_blank" onclick="event.stopPropagation()" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 5px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px;">🔗 Qty API</a>
+                        <br><a href="#" onclick="window.showQuantityHistoryModal('${a.ID}'); return false;" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 5px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px;">🔗 Qty API</a>
                     </div>
                 </td>
                 <td>${a.ParentId || '-'}</td>
@@ -4959,6 +5381,34 @@ export function setupDashboardFormHandlers() {
                 const assetId = document.getElementById('assetDbId').value;
                 const category = localStorage.getItem('selectedAssetCategory') || 'IT';
                 
+                // Determine SrNo and is_batch based on which UI is visible
+                const srNoInput = document.getElementById('itemSrNo');
+                const srNoBatch = document.getElementById('itemSrNoBatch');
+                const batchList = document.getElementById('batchSnListContainer');
+                
+                let srNoValue;
+                let isBatchValue = 0;
+                
+                if (srNoInput.style.display !== 'none') {
+                    // Standard single S/N mode
+                    srNoValue = formData.get('itemSrNo');
+                    isBatchValue = 0;
+                } else if (srNoBatch.style.display !== 'none') {
+                    // Batch S/N entry mode (textarea)
+                    srNoValue = srNoBatch.value;
+                    isBatchValue = 1;
+                } else if (batchList.style.display === 'block') {
+                    // Managed Batch S/N mode (list of buttons)
+                    // Do not send SrNo to avoid overwriting the existing serials
+                    // but keep the is_batch flag
+                    srNoValue = undefined;
+                    isBatchValue = 1;
+                } else {
+                    // Fallback
+                    srNoValue = formData.get('itemSrNo');
+                    isBatchValue = 0;
+                }
+
                 // Collect basic fields
                 const asset = {
                     ID: assetId || null,
@@ -4968,7 +5418,8 @@ export function setupDashboardFormHandlers() {
                     Status: formData.get('itemStatus'),
                     Make: formData.get('itemMake'),
                     Model: formData.get('itemModel'),
-                    SrNo: formData.get('itemSrNo'),
+                    SrNo: srNoValue,
+                    is_batch: isBatchValue,
                     CurrentLocation: formData.get('itemLocation'),
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
@@ -5740,17 +6191,31 @@ window.uploadDCLogo = async function() {
         if (data.success) {
             // Store logo URL in local storage for persistence across reloads
             const logos = JSON.parse(localStorage.getItem('companyLogos') || '[]');
-            logos.push(data.url);
-            localStorage.setItem('companyLogos', JSON.stringify(logos));
+            // Check if logo already exists to prevent duplicates
+            if (!logos.includes(data.url)) {
+                logos.push(data.url);
+                localStorage.setItem('companyLogos', JSON.stringify(logos));
+            }
             
             // Refresh logo selection dropdown
-            window.loadLogoDropdown();
+            if (typeof window.loadLogoDropdown === 'function') {
+                window.loadLogoDropdown();
+            }
             
             // Auto-select the new logo
             const select = document.getElementById('dcLogoSelect');
-            if (select) select.value = data.url;
+            if (select) {
+                select.value = data.url;
+                // Manually trigger change to update preview
+                const event = new Event('change');
+                select.dispatchEvent(event);
+            }
             
-            alert('Logo uploaded successfully!');
+            if (typeof showToast === 'function') {
+                showToast('Logo uploaded successfully!', 'success');
+            } else {
+                alert('Logo uploaded successfully!');
+            }
         } else {
             alert('Upload failed: ' + data.error);
         }

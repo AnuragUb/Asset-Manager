@@ -1,6 +1,6 @@
-console.log('MAIN.JS: Entry point (v5.11)');
+console.log('MAIN.JS: Entry point (v5.16)');
 import { showView } from './utils.js?v=5.7';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.20';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.25';
 import { initScannerView } from './networkScanner.js?v=5.7';
 import { renderItAssets } from './itAssets.js?v=5.7';
 import { setupAuth, checkSession } from './auth.js?v=5.8';
@@ -8,7 +8,7 @@ import { HierarchyManager } from './hierarchy.js?v=5.7';
 import { initEmployeeView, loadEmployees } from './employees.js?v=5.7';
 import { setupOcr } from './ocr.js?v=5.7';
 import { initWarrantyView } from './warranty.js?v=5.7';
-import { initProjectsView } from './projects.js?v=5.8';
+import { initProjectsView } from './projects.js?v=5.25';
 import { initSettingsView } from './settings.js?v=5.7';
 import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
 import { initDCProjectFetcher } from './dcProjectFetcher.js?v=1.1';

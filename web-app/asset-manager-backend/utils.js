@@ -494,7 +494,7 @@ function generateModernAssetId(location, type) {
     let loc = locCode[location];
     if (!loc) {
         if (location && location.length >= 3) {
-            loc = location.substring(0, 3).toUpperCase();
+            loc = location.substring(0, 3).toUpperCase().replace(/\s+/g, '');
         } else {
             loc = 'LOC'; // Default fallback
         }
