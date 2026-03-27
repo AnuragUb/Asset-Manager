@@ -633,13 +633,15 @@ try {
     const cols = db.prepare("PRAGMA table_info(project_orders)").all();
     const existing = new Set(cols.map(c => c.name));
     const needed = [
+      'PONumber', 'PODate', 'VendorName', 'TotalAmount', 'Status',
       'OrderNo', 'OrderDate', 'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 
       'ConsigneeState', 'ConsigneeStateCode', 'BuyerName', 'BuyerAddress', 
       'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
     ];
     needed.forEach(col => {
       if (!existing.has(col)) {
-        db.prepare(`ALTER TABLE project_orders ADD COLUMN ${col} TEXT`).run();
+        const type = (col === 'TotalAmount') ? 'REAL DEFAULT 0' : 'TEXT';
+        db.prepare(`ALTER TABLE project_orders ADD COLUMN ${col} ${type}`).run();
         console.log(`Added ${col} to project_orders`);
       }
     });
@@ -661,10 +663,19 @@ try {
         Total REAL,
         AssetID TEXT, -- Optional link to a specific asset if tracked
         Timestamp TEXT,
+        Status TEXT DEFAULT 'Pending',
         FOREIGN KEY (OrderID) REFERENCES project_orders(ID)
       )
     `).run();
     console.log('Created project_order_items table');
+  } else {
+    // Ensure Status column exists for project_order_items
+    const cols = db.prepare("PRAGMA table_info(project_order_items)").all();
+    const existing = new Set(cols.map(c => c.name));
+    if (!existing.has('Status')) {
+      db.prepare("ALTER TABLE project_order_items ADD COLUMN Status TEXT DEFAULT 'Pending'").run();
+      console.log('Added Status column to project_order_items');
+    }
   }
 } catch (err) {
   console.error('Migration error (PO tables):', err);
