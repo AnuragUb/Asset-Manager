@@ -1,0 +1,24 @@
+{
+  "name": "asset-manager-frontend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:minify-main": "terser dist/js/main.js -o dist/js/main.min.js",
+    "build:copy-js": "copyfiles -u 1 \"js/**/*.js\" dist/js",
+    "build:copy-html": "copyfiles index.html dist/",
+    "build": "npm run build:copy-js && npm run build:copy-html && npm run build:minify-main"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "copyfiles": "^2.4.1",
+    "terser": "^5.44.1"
+  },
+  "dependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}

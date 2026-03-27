@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dynamic QR Admin</title>
+    <style>
+      :root { --bg:#1e1e1e; --panel:#252526; --border:#3c3c3c; --text:#d4d4d4; --muted:#a6a6a6; --accent:#007acc; }
+      * { box-sizing: border-box; }
+      body { font-family: Segoe UI, Arial, sans-serif; margin:0; background: var(--bg); color: var(--text); }
+      header { display:flex; align-items:center; justify-content:space-between; background: var(--panel); color:#fff; padding:10px 14px; border-bottom:1px solid var(--border); }
+      header h3 { margin:0; }
+      header .nav a { color: var(--muted); text-decoration:none; margin-left:10px; padding:6px 10px; border:1px solid transparent; border-radius:4px; }
+      header .nav a:hover { color:#fff; border-color: var(--border); }
+      main { padding:12px 14px; }
+      .card { background: var(--panel); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px; }
+      input { background: var(--bg); color: var(--text); border:1px solid var(--border); padding:6px 8px; border-radius:4px; }
+      button { background: var(--accent); color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; }
+      #result { white-space: pre-wrap; color: var(--muted); }
+      #qr img { max-width:220px; border:1px solid var(--border); border-radius:6px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h3>Dynamic QR Admin</h3>
+      <div class="nav"><a href="/">Dashboard</a></div>
+    </header>
+    <main>
+      <div class="card" style="display:flex; gap:8px; align-items:center">
+        <input id="txtUser" placeholder="Username" style="width:160px" />
+        <span id="lblUser" style="margin-left:auto; color: var(--muted)"></span>
+      </div>
+      <div class="card" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <input id="txtTarget" placeholder="Target URL" style="flex:1" />
+        <button id="btnCreate">Create Dynamic QR</button>
+      </div>
+      <div class="card" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <input id="txtCode" placeholder="Code" style="width:180px" />
+        <input id="txtNewTarget" placeholder="New Target URL" style="flex:1" />
+        <button id="btnUpdate">Update Target</button>
+        <button id="btnGet">Get Info</button>
+      </div>
+      <div class="card"><div id="result"></div></div>
+      <div class="card"><div id="qr"></div></div>
+    </main>
+    <script>
+      const user = document.getElementById('txtUser')
+      const lblUser = document.getElementById('lblUser')
+      const target = document.getElementById('txtTarget')
+      const btnCreate = document.getElementById('btnCreate')
+      const code = document.getElementById('txtCode')
+      const newTarget = document.getElementById('txtNewTarget')
+      const btnUpdate = document.getElementById('btnUpdate')
+      const btnGet = document.getElementById('btnGet')
+      const result = document.getElementById('result')
+      const qr = document.getElementById('qr')
+      user.addEventListener('input', () => { lblUser.textContent = 'User: ' + user.value })
+      btnCreate.addEventListener('click', async () => {
+        const r = await fetch('/api/dynamic', { method:'POST', headers:{'Content-Type':'application/json','X-User':user.value}, body: JSON.stringify({ target: target.value }) })
+        const j = await r.json()
+        result.textContent = 'Created code: ' + j.code + ' URL: ' + j.url
+        qr.innerHTML = '<img src="/api/qr/d/' + encodeURIComponent(j.code) + '" />'
+      })
+      btnUpdate.addEventListener('click', async () => {
+        const r = await fetch('/api/dynamic/' + encodeURIComponent(code.value), { method:'PUT', headers:{'Content-Type':'application/json','X-User':user.value}, body: JSON.stringify({ target: newTarget.value }) })
+        const j = await r.json()
+        result.textContent = 'Updated target: ' + j.target
+      })
+      btnGet.addEventListener('click', async () => {
+        const r = await fetch('/api/dynamic/' + encodeURIComponent(code.value))
+        const j = await r.json()
+        result.textContent = JSON.stringify(j, null, 2)
+        qr.innerHTML = '<img src="/api/qr/d/' + encodeURIComponent(code.value) + '" />'
+      })
+    </script>
+  </body>
+ </html>
