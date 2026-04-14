@@ -1,14 +1,14 @@
-console.log('MAIN.JS: Entry point (v5.16)');
-import { showView } from './utils.js?v=5.7';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.45';
-import { initScannerView } from './networkScanner.js?v=5.7';
-import { renderItAssets } from './itAssets.js?v=5.7';
-import { setupAuth, checkSession } from './auth.js?v=5.8';
-import { HierarchyManager } from './hierarchy.js?v=5.7';
-import { initEmployeeView, loadEmployees } from './employees.js?v=5.7';
-import { setupOcr } from './ocr.js?v=5.7';
-import { initWarrantyView } from './warranty.js?v=5.7';
-import { initProjectsView } from './projects.js?v=5.45';
+console.log('MAIN.JS: Entry point (v5.52)');
+import { showView } from './utils.js?v=5.50';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=5.50';
+// import { initScannerView } from './networkScanner.js?v=5.50';
+import { renderItAssets } from './itAssets.js?v=5.50';
+import { setupAuth, checkSession } from './auth.js?v=5.50';
+import { HierarchyManager } from './hierarchy.js?v=5.50';
+import { initEmployeeView, loadEmployees } from './employees.js?v=5.50';
+// import { setupOcr } from './ocr.js?v=5.50';
+import { initWarrantyView } from './warranty.js?v=5.50';
+import { initProjectsView } from './projects.js?v=5.52';
 import { initSettingsView } from './settings.js?v=5.7';
 import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=1.2';
@@ -384,12 +384,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initLoginModuleSelector();
     initSignupModal();
     
-    setupOcr();
+    // setupOcr();
     
     // --- AUTHENTICATION & SESSION HANDLING ---
     const handleLoginSuccess = async (user) => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
+        localStorage.setItem('username', user.username); // Store for legacy module support
         if (window.location.hash) {
             window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
         }
@@ -664,6 +665,7 @@ function setupNavigation() {
                 }
             } 
         },
+/* 
         'nav-sheet': { 
             view: 'dashboardView', 
             subView: 'sheet-view', 
@@ -672,6 +674,7 @@ function setupNavigation() {
                 if (window.initSheetView) window.initSheetView();
             }
         },
+*/
         'nav-employees': { 
             view: 'dashboardView', 
             subView: 'employee-view', 
@@ -700,6 +703,7 @@ function setupNavigation() {
             subView: 'releases-view',
             init: () => typeof renderReleases === 'function' && renderReleases()
         },
+/* 
         'nav-scanner': { 
             view: 'dashboardView', 
             subView: 'scanner-view', 
@@ -710,6 +714,7 @@ function setupNavigation() {
             subView: 'ocr-view', 
             init: () => typeof setupOcr === 'function' && setupOcr() 
         },
+*/
         'nav-warranty': { 
             view: 'dashboardView', 
             subView: 'warranty-view', 

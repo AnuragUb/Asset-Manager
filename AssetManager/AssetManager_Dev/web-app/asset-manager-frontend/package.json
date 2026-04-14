@@ -15,7 +15,10 @@
   "license": "ISC",
   "type": "module",
   "devDependencies": {
+    "clean-css": "^5.3.3",
     "copyfiles": "^2.4.1",
+    "html-minifier-terser": "^7.2.0",
+    "javascript-obfuscator": "^5.4.1",
     "terser": "^5.44.1"
   },
   "dependencies": {

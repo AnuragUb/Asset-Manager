@@ -1,7 +1,7 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast } from './utils.js?v=3.8';
-import { HierarchyManager } from './hierarchy.js?v=3.8';
-import { DataProcessor } from './dataProcessor.js?v=4.1';
-import { initScannerView } from './networkScanner.js?v=3.8';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast } from './utils.js?v=5.50';
+import { HierarchyManager } from './hierarchy.js?v=5.50';
+import { DataProcessor } from './dataProcessor.js?v=5.50';
+import { initScannerView } from './networkScanner.js?v=5.50';
 
 console.log('DASHBOARD.JS: Module loading (v3.0)');
 
@@ -1183,6 +1183,7 @@ async function initSheetView() {
     let columns = [];
     if (isTemp) {
         columns = [
+            { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40 },
             { title: "ID", field: "ID", width: 120, headerFilter: "input" },
             { title: "Item Name", field: "ItemName", headerFilter: "input" },
             { title: "Project ID", field: "ProjectId", width: 120, headerFilter: "input" },
@@ -1213,6 +1214,7 @@ async function initSheetView() {
         ];
     } else {
         columns = [
+            { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40 },
             { title: "ID", field: "ID", width: 150, headerFilter: "input" },
             { title: "Type", field: "Type", width: 120, headerFilter: "input" },
             { title: "Item Name", field: "ItemName", editor: "input", headerFilter: "input" },
@@ -1283,6 +1285,15 @@ async function initSheetView() {
                 window.showTempAssetDetails(data.ID);
             } else {
                 window.showAssetDetails(data.ID);
+            }
+        },
+        rowSelectionChanged: function(data, rows) {
+            const btnBulkDelete = document.getElementById('btnBulkDeleteSheet');
+            if (btnBulkDelete) {
+                btnBulkDelete.style.display = data.length > 0 ? 'inline-block' : 'none';
+                if (data.length > 0) {
+                    btnBulkDelete.textContent = `Delete Selected (${data.length})`;
+                }
             }
         }
     });
@@ -1541,6 +1552,12 @@ export function setupDashboard() {
             showToast('Microsoft Graph API integration requires Azure AD app registration. Please configure Client ID in settings.', 'info');
             console.log('Graph API Sync requested');
         };
+    }
+
+    // Bulk Delete Sheet Handler
+    const btnBulkDeleteSheet = document.getElementById('btnBulkDeleteSheet');
+    if (btnBulkDeleteSheet) {
+        btnBulkDeleteSheet.onclick = () => window.bulkDeleteAssets();
     }
 
     // Batch Print Handlers
@@ -2380,9 +2397,21 @@ window.showAssetDetails = async function(assetId) {
         <div style="margin-top: 20px; text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
              <button onclick="window.open('/asset/${asset.ID}', '_blank')" class="btn-action" style="background: #36b37e; margin-right: 10px;">🌐 Full View Page</button>
         </div>
+        
+        <div id="assetHistoryContainer" style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+            <h4 style="margin-bottom: 10px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                📜 Assignment History
+            </h4>
+            <div id="assetHistoryList" style="max-height: 200px; overflow-y: auto; font-size: 12px;">
+                <p style="color: #94a3b8; text-align: center; padding: 10px;">Loading history...</p>
+            </div>
+        </div>
     `;
 
     content.innerHTML = html;
+
+    // Fetch and render history
+    fetchAssetHistory(asset.ID);
     
     if (btnEdit) {
         btnEdit.onclick = () => {
@@ -2398,6 +2427,52 @@ window.showAssetDetails = async function(assetId) {
         };
     }
 };
+
+async function fetchAssetHistory(assetId) {
+    const list = document.getElementById('assetHistoryList');
+    if (!list) return;
+
+    try {
+        const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/history`);
+        const data = await res.json();
+
+        if (data.success && data.history && data.history.length > 0) {
+            list.innerHTML = data.history.map(entry => {
+                const date = new Date(entry.Timestamp).toLocaleString();
+                let icon = '📝';
+                let actionLabel = entry.Action.replace('_', ' ');
+                if (entry.Action === 'ASSIGNMENT_CHANGE') { icon = '👤'; actionLabel = 'Personnel Assignment'; }
+                if (entry.Action === 'PROJECT_CHANGE') { icon = '🏗️'; actionLabel = 'Project Assignment'; }
+                if (entry.Action === 'STATUS_CHANGE') { icon = '🔄'; actionLabel = 'Status Update'; }
+                if (entry.Action === 'LOCATION_CHANGE') { icon = '📍'; actionLabel = 'Location Transfer'; }
+                if (entry.Action === 'CREATE') { icon = '🆕'; actionLabel = 'Asset Created'; }
+
+                return `
+                    <div style="padding: 10px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 12px; align-items: flex-start;">
+                        <div style="font-size: 16px; background: #f8fafc; padding: 8px; border-radius: 8px;">${icon}</div>
+                        <div style="flex: 1;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <strong style="color: #334155; font-size: 13px;">${actionLabel}</strong>
+                                <span style="color: #94a3b8; font-size: 10px;">${date}</span>
+                            </div>
+                            <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">
+                                ${entry.FromValue ? `<span style="background: #fee2e2; color: #991b1b; padding: 1px 4px; border-radius: 3px;">${entry.FromValue}</span> <span style="margin: 0 4px;">→</span> ` : ''}
+                                <span style="background: #dcfce7; color: #166534; padding: 1px 4px; border-radius: 3px; font-weight: 500;">${entry.ToValue || 'None'}</span>
+                            </div>
+                            ${entry.Details ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px; font-style: italic;">"${entry.Details}"</div>` : ''}
+                            <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px;">Admin: <strong>${entry.User}</strong></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            list.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 10px;">No history available for this asset.</p>';
+        }
+    } catch (err) {
+        console.error('[History] Fetch error:', err);
+        list.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 10px;">Failed to load history.</p>';
+    }
+}
 
 window.showTempAssetDetails = async function(assetId) {
     console.log('showTempAssetDetails() for:', assetId);
@@ -2452,7 +2527,7 @@ window.showTempAssetDetails = async function(assetId) {
 };
 
 window.deleteAsset = async function(assetId) {
-    if (!confirm(`Are you sure you want to delete asset ${assetId}? This action cannot be undone.`)) return;
+    if (!confirm(`Are you sure you want to delete asset ${assetId}? \n\nThis will mark the asset as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
     
     try {
         const username = localStorage.getItem('username') || 'web';
@@ -2462,7 +2537,7 @@ window.deleteAsset = async function(assetId) {
         });
         
         if (response.ok) {
-            showToast('Asset deleted successfully', 'success');
+            showToast('Asset marked for deletion (30-day grace period)', 'success');
             if (window.loadAssets) await window.loadAssets();
             if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
             
@@ -2478,6 +2553,81 @@ window.deleteAsset = async function(assetId) {
     } catch (err) {
         console.error('Delete error:', err);
         showToast('Failed to delete asset', 'error');
+    }
+};
+
+window.bulkDeleteAssets = async function() {
+    if (!window.tabulatorInstance) return;
+    
+    const selectedData = window.tabulatorInstance.getSelectedData();
+    if (selectedData.length === 0) return;
+    
+    const ids = selectedData.map(d => d.ID);
+    
+    if (!confirm(`Are you sure you want to delete ${ids.length} selected assets? \n\nThese will be marked as deleted and hidden from the system. They will be PERMANENTLY removed from the database after 30 days.`)) return;
+    
+    try {
+        const username = localStorage.getItem('username') || 'web';
+        const response = await fetch(`/api/assets/bulk`, {
+            method: 'DELETE',
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-user': username 
+            },
+            body: JSON.stringify({ ids })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showToast(result.message || `Marked ${result.count} assets for deletion`, 'success');
+            
+            if (window.loadAssets) await window.loadAssets();
+            if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+            
+            // If we are in sheet view, refresh it
+            initSheetView();
+        } else {
+            const err = await response.text();
+            showToast('Error in bulk delete: ' + err, 'error');
+        }
+    } catch (err) {
+        console.error('Bulk delete error:', err);
+        showToast('Failed to perform bulk delete', 'error');
+    }
+};
+
+window.deleteAssetKind = async function(name) {
+    if (!confirm(`Are you sure you want to delete the category "${name}"? \n\nThis will hide the category and all its associated items. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+
+    try {
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const response = await fetch(`/api/asset_kinds/${encodeURIComponent(name)}`, {
+            method: 'DELETE',
+            headers: headers
+        });
+
+        if (response.ok) {
+            showToast('Category marked for deletion', 'success');
+            await renderSidebarTree();
+            // Refresh home view if active
+            const homeView = document.getElementById('home-view');
+            if (homeView && homeView.style.display !== 'none') {
+                const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+                fetch('/api/asset_kinds').then(r => r.json()).then(kinds => {
+                    const moduleKinds = kinds.filter(k => k.Module === category);
+                    renderAssetKinds(moduleKinds);
+                });
+            }
+        } else {
+            const data = await response.json();
+            alert('Failed to delete category: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('Delete category error:', err);
+        alert('Error deleting category');
     }
 };
 
@@ -3236,7 +3386,7 @@ export function renderSidebarTree() {
                 };
             });
 
-            // Handle Edit Kind buttons
+            // Handle Edit & Delete Kind buttons
             container.querySelectorAll('.edit-kind-btn').forEach(btn => {
                 btn.onclick = (e) => {
                     e.preventDefault();
@@ -3245,6 +3395,18 @@ export function renderSidebarTree() {
                     const node = manager.findNode(id);
                     if (node && node.type === 'kind') {
                         openEditKindModal(node);
+                    }
+                };
+            });
+
+            container.querySelectorAll('.delete-kind-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    const node = manager.findNode(id);
+                    if (node && node.type === 'kind') {
+                        window.deleteAssetKind(node.Name);
                     }
                 };
             });
@@ -4001,21 +4163,24 @@ function showBatchPrintPreview() {
     const container = document.getElementById('batchQrContainer');
     if (!batchView || !container) return;
 
-    console.log(`[BatchPrint] Rendering ${selectedBatchAssets.length} assets using dashboard QR data`);
+    console.log(`[BatchPrint] Rendering ${selectedBatchAssets.length} assets`);
+
+    const activeBtn = document.querySelector('.batch-size-btn.active');
+    const size = activeBtn ? activeBtn.dataset.size : '5cm';
+    const labelClass = size === '5cm' ? 'print-label-50mm' : (size === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
+
+    // Apply initial size class
+    batchView.className = `view qr-print-${size}`;
 
     container.innerHTML = selectedBatchAssets.map(asset => {
-        // Use the stored complex QR data if available (contains full info)
-        // Otherwise fall back to the URL-based QR from the API
         let qrUrl = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
+        const title = asset.ItemName || asset.Model || 'Asset QR';
         
         return `
-            <div class="batch-qr-item" style="text-align: center; display: inline-block; margin: 15px; border: 1px solid #eee; padding: 15px; background: white; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                <img src="${qrUrl}" 
-                     class="batch-qr-img"
-                     style="display: block; margin: 0 auto; background: white;" 
-                     onload="console.log('Batch QR loaded for ${asset.ID}')" 
-                     onerror="console.error('Batch QR failed for ${asset.ID}')">
-                <div style="font-size: 13px; margin-top: 10px; color: #333; font-weight: bold; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; border-top: 1px solid #f0f0f0; padding-top: 8px;">${asset.ID}</div>
+            <div class="batch-qr-item ${labelClass}" style="text-align: center; background: white;">
+                ${size !== '1cm' ? `<h2 style="margin: 0;">${title}</h2>` : ''}
+                <img src="${qrUrl}" class="batch-qr-img" style="display: block; margin: 0 auto;">
+                ${size !== '1cm' ? `<div class="asset-id" style="margin-top: 5px; font-weight: bold;">${asset.ID}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -4026,12 +4191,6 @@ function showBatchPrintPreview() {
     const btnConfirm = document.getElementById('btnConfirmBatchPrint');
     if (btnConfirm) {
         btnConfirm.onclick = () => {
-            const activeBtn = document.querySelector('.batch-size-btn.active');
-            if (activeBtn) {
-                const size = activeBtn.dataset.size;
-                container.classList.remove('qr-print-1cm', 'qr-print-2cm', 'qr-print-5cm');
-                container.classList.add(`qr-print-${size}`);
-            }
             window.print();
         };
     }
@@ -4048,9 +4207,25 @@ function showBatchPrintPreview() {
         btn.onclick = () => {
             document.querySelectorAll('.batch-size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            const size = btn.dataset.size;
-            container.classList.remove('qr-print-1cm', 'qr-print-2cm', 'qr-print-5cm');
-            container.classList.add(`qr-print-${size}`);
+            const newSize = btn.dataset.size;
+            const newLabelClass = newSize === '5cm' ? 'print-label-50mm' : (newSize === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
+            
+            batchView.className = `view qr-print-${newSize}`;
+            
+            // Re-render items with new label class
+            container.querySelectorAll('.batch-qr-item').forEach(item => {
+                item.className = `batch-qr-item ${newLabelClass}`;
+                // Toggle text visibility
+                const h2 = item.querySelector('h2');
+                const id = item.querySelector('.asset-id');
+                if (newSize === '1cm') {
+                    if (h2) h2.style.display = 'none';
+                    if (id) id.style.display = 'none';
+                } else {
+                    if (h2) h2.style.display = 'block';
+                    if (id) id.style.display = 'block';
+                }
+            });
         };
     });
 }
@@ -4181,18 +4356,21 @@ export function openEditKindModal(node) {
     }
 }
 
-export function openAddItemModal(kind) {
-    console.log('openAddItemModal() called for kind:', kind);
+export function openAddItemModal(kind, prefillData = null) {
+    console.log('openAddItemModal() called for kind:', kind, 'prefill:', prefillData);
     const modal = document.getElementById('addAssetItemModal');
     if (modal) {
         modal.style.display = 'flex';
         
         // Reset the form and hidden ID
         const form = document.getElementById('addAssetItemForm');
-            if (form) {
-                form.reset();
-                if (window.updateIconPreview) window.updateIconPreview('📦');
-            }
+        if (form) {
+            form.reset();
+            delete form.dataset.linkedPoItemId;
+            delete form.dataset.boughtAgainstPo;
+            if (window.updateIconPreview) window.updateIconPreview('📦');
+        }
+        
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
 
@@ -4243,7 +4421,7 @@ export function openAddItemModal(kind) {
         }
 
         // Ensure conversion UI is set up
-        setupConversionUI();
+        if (typeof setupConversionUI === 'function') setupConversionUI();
 
         const qtyHint = document.getElementById('qtyEditHint');
         if (qtyHint) {
@@ -4265,8 +4443,8 @@ export function openAddItemModal(kind) {
 
         // Populate the Kind dropdown
         const kindSelect = document.getElementById('itemKind');
+        const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
         if (kindSelect) {
-            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
             const allKinds = window.allAssetKinds || [];
             
             // Only show kinds that belong to the current module (category)
@@ -4274,7 +4452,7 @@ export function openAddItemModal(kind) {
             
             console.log(`Populating Kind dropdown with ${filteredKinds.length} options for ${currentCategory}`);
             
-            kindSelect.innerHTML = '<option value="" disabled>Select Kind...</option>';
+            kindSelect.innerHTML = '<option value="" disabled selected>Select Kind...</option>';
             filteredKinds.forEach(k => {
                 const opt = document.createElement('option');
                 opt.value = k.Name;
@@ -4282,7 +4460,6 @@ export function openAddItemModal(kind) {
                 kindSelect.appendChild(opt);
             });
             
-            // Add change listener to update title when kind changes manually
             kindSelect.onchange = () => {
                 const title = document.getElementById('addItemModalTitle');
                 if (title && kindSelect.value) {
@@ -4308,7 +4485,8 @@ export function openAddItemModal(kind) {
                     itFields.style.display = (currentCategory === 'IT') ? 'block' : 'none';
                 }
             };
-            
+
+            // Apply Kind if provided
             if (kind) {
                 kindSelect.value = kind;
                 const title = document.getElementById('addItemModalTitle');
@@ -4331,7 +4509,7 @@ export function openAddItemModal(kind) {
                 const title = document.getElementById('addItemModalTitle');
                 if (title) title.textContent = 'Add New Asset';
             }
-            
+
             // Initial toggle for IT fields
             const itFields = document.getElementById('itFields');
             if (itFields) {
@@ -4363,8 +4541,8 @@ export function openAddItemModal(kind) {
             btnToggleBatch.textContent = 'Enable Batch S/N';
             
             btnToggleBatch.onclick = () => {
-                const isBatch = srNoInput.style.display === 'block';
-                if (isBatch) {
+                const isCurrentlySingle = srNoInput.style.display === 'block';
+                if (isCurrentlySingle) {
                     // Moving from single to batch
                     const currentSn = srNoInput.value.trim();
                     srNoInput.style.display = 'none';
@@ -4401,10 +4579,45 @@ export function openAddItemModal(kind) {
                 }
             };
         }
+
+        // --- PREFILL LOGIC ---
+        if (prefillData) {
+            console.log('[Dashboard] Applying prefill data:', prefillData);
+            
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el && val !== undefined && val !== null) el.value = val;
+            };
+
+            setVal('itemName', prefillData.ItemName);
+            setVal('itemMake', prefillData.Make);
+            setVal('itemModel', prefillData.Model);
+            setVal('itemPurchase', prefillData.PurchaseDetails);
+            setVal('itemValue', prefillData.AssetValue);
+            setVal('itemCurrency', prefillData.Currency || 'INR');
+            setVal('itemPurchaseDate', prefillData.PurchaseDate);
+            setVal('itemRemarks', prefillData.Remarks);
+            setVal('itemQtyUnit', prefillData.UOM);
+            setVal('itemQtyTotal', prefillData.QtyOrdered);
+            
+            if (prefillData.Icon) {
+                setVal('itemIcon', prefillData.Icon);
+                if (window.updateIconPreview) window.updateIconPreview(prefillData.Icon);
+            }
+
+            // Store PO Item ID if provided
+            if (prefillData.linked_po_item_id) {
+                form.dataset.linkedPoItemId = prefillData.linked_po_item_id;
+            }
+            if (prefillData.BoughtAgainstPO) {
+                form.dataset.boughtAgainstPo = prefillData.BoughtAgainstPO;
+            }
+        }
     } else {
         console.error('CRITICAL: addAssetItemModal NOT found in DOM');
     }
 }
+window.openAddItemModal = openAddItemModal;
 
 export async function editAsset(asset) {
     console.log('editAsset() called for:', asset.ID);
@@ -5067,12 +5280,20 @@ function showAssetList(nodeOrKindName) {
                 const id = btn.getAttribute('data-id');
                 const asset = assets.find(a => a.ID === id);
                 if (asset) {
-                    // Open QR view with this asset
-                    const qrInput = document.getElementById('qrAssetId');
-                    if (qrInput) {
-                        qrInput.value = asset.ID;
-                        showView('qrView');
-                        document.getElementById('btnGenerateQr').click();
+                    // Show the QR modal first so they can pick a size
+                    const qrModal = document.getElementById('qrModal');
+                    const qrImg = document.getElementById('qrModalImage');
+                    const qrTitle = document.getElementById('qrModalTitle');
+                    const qrId = document.getElementById('qrModalId');
+                    
+                    if (qrModal && qrImg) {
+                        qrTitle.textContent = asset.ItemName || asset.Model || 'Asset QR';
+                        qrId.textContent = asset.ID;
+                        qrImg.src = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
+                        qrModal.style.display = 'flex';
+                        
+                        // Store the full asset object on the modal for the print function to use
+                        qrModal.dataset.currentAsset = JSON.stringify(asset);
                     }
                 }
             };
@@ -5161,6 +5382,118 @@ async function fetchAndPopulateIcons() {
     }
 }
 
+/**
+ * Generic image scaling and formatting utility
+ * @param {File} file - The uploaded image file
+ * @param {number} targetSize - Target width/height (square)
+ * @returns {Promise<Blob>} - The processed image blob
+ */
+async function scaleImageToFormat(file, targetSize = 256) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onerror = reject;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                canvas.width = targetSize;
+                canvas.height = targetSize;
+
+                // Cover logic: Scale and center
+                let width = img.width;
+                let height = img.height;
+                let x = 0;
+                let y = 0;
+
+                const imgRatio = width / height;
+                const targetRatio = 1; // Square
+
+                if (imgRatio > targetRatio) {
+                    // Landscape
+                    const ratio = targetSize / height;
+                    width = width * ratio;
+                    height = targetSize;
+                    x = (targetSize - width) / 2;
+                } else {
+                    // Portrait or Square
+                    const ratio = targetSize / width;
+                    width = targetSize;
+                    height = height * ratio;
+                    y = (targetSize - height) / 2;
+                }
+
+                // Professional background fill
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, targetSize, targetSize);
+
+                // High-quality scaling
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, x, y, width, height);
+
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Canvas to Blob conversion failed'));
+                }, 'image/png');
+            };
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
+ * Scales an image to fit within maximum dimensions while preserving aspect ratio
+ * @param {File} file - The uploaded image file
+ * @param {number} maxWidth - Maximum width
+ * @param {number} maxHeight - Maximum height
+ * @returns {Promise<Blob>} - The processed image blob
+ */
+async function fitImageToDimensions(file, maxWidth = 800, maxHeight = 400) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onerror = reject;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                let width = img.width;
+                let height = img.height;
+
+                // Calculate scaling
+                if (width > maxWidth) {
+                    height = height * (maxWidth / width);
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = width * (maxHeight / height);
+                    height = maxHeight;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Canvas to Blob conversion failed'));
+                }, 'image/png');
+            };
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 // Icon Upload Logic
 let currentIconTargetId = null;
 
@@ -5184,10 +5517,17 @@ document.getElementById('iconUploadInput').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('icon', file);
-
     try {
+        console.log(`[Icon] Processing: ${file.name} (${Math.round(file.size / 1024)}KB)`);
+        
+        // Scale to standard icon size (256px)
+        const scaledBlob = await scaleImageToFormat(file, 256);
+        console.log(`[Icon] Optimized size: ${Math.round(scaledBlob.size / 1024)}KB`);
+
+        const formData = new FormData();
+        const originalName = file.name.split('.')[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        formData.append('icon', scaledBlob, `${originalName}_icon.png`);
+
         const response = await fetch('/api/icons/upload', {
             method: 'POST',
             body: formData
@@ -5200,11 +5540,11 @@ document.getElementById('iconUploadInput').onchange = async (e) => {
                 window.updateIconPreview(result.path);
             }
             await fetchAndPopulateIcons();
-            alert('Icon uploaded successfully!');
+            showToast('Icon optimized and uploaded successfully!', 'success');
         }
     } catch (err) {
         console.error('Icon upload failed:', err);
-        alert('Failed to upload icon.');
+        alert('Failed to process icon. Please ensure it is a valid image file.');
     }
 };
 
@@ -5445,6 +5785,10 @@ export function setupDashboardFormHandlers() {
                     ParentId: formData.get('itemParentId'),
                     Category: category,
                     
+                    // PO Linking
+                    linked_po_item_id: form.dataset.linkedPoItemId || null,
+                    BoughtAgainstPO: form.dataset.boughtAgainstPo || formData.get('itemPurchase')?.includes('PO:') ? formData.get('itemPurchase').split('PO:')[1].trim().split(' ')[0] : null,
+                    
                     // Warranty
                     warranty_months: formData.get('itemWarranty') || 0,
                     amc_months: formData.get('itemAMC') || 0,
@@ -5602,10 +5946,16 @@ export function setupDashboardFormHandlers() {
         window.uploadKindImage = async (input) => {
             if (!input.files || !input.files[0]) return;
             
-            const formData = new FormData();
-            formData.append('image', input.files[0]);
-            
             try {
+                console.log(`[Category] Processing image: ${input.files[0].name}`);
+                
+                // Scale category image to professional 512px format
+                const scaledBlob = await scaleImageToFormat(input.files[0], 512);
+                
+                const formData = new FormData();
+                const safeName = input.files[0].name.split('.')[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                formData.append('image', scaledBlob, `${safeName}_display.png`);
+                
                 const response = await fetch('/api/asset_kinds/upload-image', {
                     method: 'POST',
                     body: formData
@@ -5614,12 +5964,13 @@ export function setupDashboardFormHandlers() {
                 if (response.ok) {
                     const result = await response.json();
                     document.getElementById('newKindImage').value = result.url;
+                    showToast('Category image optimized and uploaded', 'success');
                 } else {
-                    alert('Failed to upload image');
+                    throw new Error('Upload failed');
                 }
             } catch (err) {
-                console.error('Image upload error:', err);
-                alert('Error uploading image');
+                console.error('Category image upload error:', err);
+                alert('Failed to process or upload category image.');
             }
         };
 
@@ -5874,26 +6225,75 @@ window.showQRModal = function(id, name) {
     modal.style.display = 'flex';
 };
 
-window.printQR = function() {
-    const img = document.getElementById('qrModalImage');
-    if (!img) return;
+window.printSingleAssetQR = function(asset, size = '5cm') {
+    if (!asset) return;
     
-    const printWindow = window.open('', '', 'height=600,width=800');
-    printWindow.document.write('<html><head><title>Print QR Code</title>');
-    printWindow.document.write('</head><body style="text-align:center; padding: 50px;">');
-    printWindow.document.write(`<h2 style="font-family: sans-serif; margin-bottom: 20px;">${document.getElementById('qrModalTitle').textContent}</h2>`);
-    printWindow.document.write(`<img src="${img.src}" style="width: 400px; height: 400px;">`);
-    printWindow.document.write(`<p style="font-family: monospace; font-size: 24px; margin-top: 20px;">${document.getElementById('qrModalId').textContent}</p>`);
-    printWindow.document.write('</body></html>');
-    
-    printWindow.document.close();
-    printWindow.focus();
-    // Wait for image to load before printing
+    const printContainer = document.getElementById('singleQrPrintContainer');
+    if (!printContainer) return;
+
+    // Use stored complex QR if available, otherwise API URL
+    const qrUrl = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
+    const title = asset.ItemName || asset.Model || 'Asset QR';
+    const assetId = asset.ID;
+
+    // Apply the size class to the container
+    printContainer.className = `print-only qr-print-${size}`;
+
+    // Map size to label class
+    const labelClass = size === '5cm' ? 'print-label-50mm' : (size === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
+
+    // Populate the print-only container
+    printContainer.innerHTML = `
+        <div class="${labelClass}">
+            ${size !== '1cm' ? `<h2>${title}</h2>` : ''}
+            <img src="${qrUrl}">
+            ${size !== '1cm' ? `<div class="asset-id">${assetId}</div>` : ''}
+        </div>
+    `;
+
+    // Trigger Print with delay to ensure image is rendered
     setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 500);
+        window.print();
+        // Cleanup after print dialog closes
+        setTimeout(() => {
+            printContainer.innerHTML = '';
+            printContainer.className = 'print-only';
+        }, 1000);
+    }, 300);
 };
+
+window.printQR = function() {
+    const qrModal = document.getElementById('qrModal');
+    if (!qrModal) return;
+
+    const activeBtn = qrModal.querySelector('.qr-modal-size-btn.active');
+    const size = activeBtn ? activeBtn.dataset.size : '5cm';
+    
+    let asset;
+    if (qrModal.dataset.currentAsset) {
+        asset = JSON.parse(qrModal.dataset.currentAsset);
+    } else {
+        // Fallback to reading from modal elements if data attribute is missing
+        asset = {
+            ID: document.getElementById('qrModalId').textContent,
+            ItemName: document.getElementById('qrModalTitle').textContent,
+            QRCode: document.getElementById('qrModalImage').src
+        };
+    }
+    
+    window.printSingleAssetQR(asset, size);
+};
+
+// Setup QR Modal Size Buttons
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('qr-modal-size-btn')) {
+        const modal = e.target.closest('#qrModal');
+        if (modal) {
+            modal.querySelectorAll('.qr-modal-size-btn').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+        }
+    }
+});
 
 // --- QR SCANNER LOGIC REMOVED ---
 
@@ -6189,11 +6589,17 @@ window.uploadDCLogo = async function() {
     const input = document.getElementById('dcLogoInput');
     if (!input || !input.files || !input.files[0]) return;
 
-    const file = input.files[0];
-    const formData = new FormData();
-    formData.append('logo', file);
-
     try {
+        const file = input.files[0];
+        console.log(`[Logo] Processing: ${file.name}`);
+        
+        // Fit logo within professional 800x400 area while preserving aspect ratio
+        const scaledBlob = await fitImageToDimensions(file, 800, 400);
+        
+        const formData = new FormData();
+        const safeName = file.name.split('.')[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        formData.append('logo', scaledBlob, `${safeName}_logo.png`);
+
         const btn = document.getElementById('btnUploadLogo');
         const originalText = btn.textContent;
         btn.textContent = 'Uploading...';
@@ -6229,9 +6635,9 @@ window.uploadDCLogo = async function() {
             }
             
             if (typeof showToast === 'function') {
-                showToast('Logo uploaded successfully!', 'success');
+                showToast('Logo optimized and uploaded!', 'success');
             } else {
-                alert('Logo uploaded successfully!');
+                alert('Logo optimized and uploaded!');
             }
         } else {
             alert('Upload failed: ' + data.error);
@@ -6242,7 +6648,7 @@ window.uploadDCLogo = async function() {
         input.value = ''; // Reset input
     } catch (err) {
         console.error('Logo upload error:', err);
-        alert('Error uploading logo');
+        alert('Failed to process or upload logo. Please ensure it is a valid image file.');
     }
 };
 

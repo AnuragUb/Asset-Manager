@@ -11,7 +11,8 @@
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.0/dist/js/tabulator.min.js"></script>
     <script type="text/javascript" src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script type="text/javascript" src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script type="text/javascript" src="/js/sidebar-raul.js?v=1.0"></script>
     <style>
         /* Skeleton Loader Styles */
         .skeleton {
@@ -409,14 +410,14 @@
                     <div class="bubble bubble-active"></div>
                     <ul>
                         <li><a href="#" class="nav-link active" id="nav-dashboard">Dashboard</a></li>
-                        <li><a href="#" class="nav-link" id="nav-sheet">Sheet</a></li>
+                        <li style="display: none;"><a href="#" class="nav-link" id="nav-sheet">Sheet</a></li>
                         <li><a href="#" class="nav-link" id="nav-employees">Employees</a></li>
                         <li><a href="#" class="nav-link" id="nav-dc">Create DC</a></li>
                         <li><a href="#" class="nav-link" id="nav-projects">Projects</a></li>
                         <li><a href="#" class="nav-link" id="nav-consignments">Consignments</a></li>
                         <li><a href="#" class="nav-link" id="nav-rentals">Rentals</a></li>
-                        <li><a href="#" class="nav-link" id="nav-scanner">Network Scanner</a></li>
-                        <li><a href="#" class="nav-link" id="nav-ocr">Document OCR</a></li>
+                        <li style="display: none;"><a href="#" class="nav-link" id="nav-scanner">Network Scanner</a></li>
+                        <li style="display: none;"><a href="#" class="nav-link" id="nav-ocr">Document OCR</a></li>
                         <li><a href="#" class="nav-link" id="nav-warranty">Warranty</a></li>
                         <li><a href="#" class="nav-link" id="nav-admin">Admin</a></li>
                         <li><a href="#" class="nav-link" id="nav-settings">Settings</a></li>
@@ -548,6 +549,7 @@
                         <div class="view-toolbar">
                             <h2 class="view-title">Excel Sheet View</h2>
                             <div class="view-actions">
+                                <button class="action-button red" id="btnBulkDeleteSheet" style="display: none;">Bulk Delete</button>
                                 <button class="action-button orange" id="btnReportSheet">Report</button>
                                 <button class="action-button purple" id="btnSyncTally">Sync Tally</button>
                                 <button class="action-button green" id="btnExportExcel">Export Excel</button>
@@ -1521,7 +1523,7 @@
                         </div>
                         <div style="position: sticky; bottom: 0; background: white; margin-top: 20px; border-top: 1px solid #eee; padding: 15px 0; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
                             <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Add Asset</button>
-                            <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="display: none; align-items: center; gap: 10px;">
                                 <span style="font-size: 0.9em; color: #666;">Or Bulk Upload:</span>
                                 <a href="/static/Asset_Import_Template.xlsx" download class="action-button blue" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center;">📥 General Template</a>
                                 <a href="/static/IT_Asset_Import_Template.xlsx" download class="action-button purple" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center;">📥 IT Template</a>
@@ -2402,7 +2404,7 @@
         </div>
     </div>
 
-    <script type="module" src="/js/main.js?v=5.45"></script>
+    <script type="module" src="/js/main.js?v=5.54"></script>
     
     <!-- Forgot Password Modal -->
     <div id="forgotPasswordModal" class="modal">
@@ -2450,14 +2452,117 @@
             <span class="close-modal" onclick="document.getElementById('qrModal').style.display='none'">&times;</span>
             <h3 id="qrModalTitle">QR Code</h3>
             <div id="qrModalBody" style="margin: 20px 0;">
-                <img id="qrModalImage" src="" style="width: 250px; height: 250px; border: 1px solid #eee; padding: 10px; border-radius: 8px; background: white;">
+                <img id="qrModalImage" src="" style="width: 200px; height: 200px; border: 1px solid #eee; padding: 10px; border-radius: 8px; background: white;">
                 <p id="qrModalId" style="font-family: monospace; margin-top: 10px; color: #666;"></p>
             </div>
-            <button onclick="window.printQR()" class="action-button blue">Print QR Code</button>
+            
+            <div style="margin-bottom: 20px;">
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">Select Print Size:</p>
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button class="size-btn qr-modal-size-btn" data-size="1cm">1x1 cm</button>
+                    <button class="size-btn qr-modal-size-btn" data-size="2cm">2x2 cm</button>
+                    <button class="size-btn qr-modal-size-btn active" data-size="5cm">5x5 cm</button>
+                </div>
+            </div>
+            
+            <button onclick="window.printQR()" class="action-button blue" style="width: 100%;">Print QR Code</button>
         </div>
     </div>
+    <!-- Single QR Print Container (Only visible during print) -->
+    <div id="singleQrPrintContainer"></div>
+
     <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;"></div>
     <style>
+        #singleQrPrintContainer { display: none; }
+        
+        /* Global Print Styles */
+        @media print {
+            /* Hide everything by default at the root level */
+            body > * {
+                display: none !important;
+            }
+            
+            /* Explicitly show only the containers we need */
+            #singleQrPrintContainer, 
+            #batchPrintView {
+                display: block !important;
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                background: white !important;
+                z-index: 99999 !important;
+            }
+
+            /* Ensure children are visible */
+            #singleQrPrintContainer *,
+            #batchPrintView * {
+                display: block !important;
+            }
+
+            /* Single Print Layout */
+            #singleQrPrintContainer {
+                display: flex !important;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                text-align: center !important;
+                padding: 10mm !important;
+            }
+
+            /* Batch Print Layout */
+            #batchPrintView {
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            #batchPrintView .no-print {
+                display: none !important;
+            }
+            #batchQrContainer {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                justify-content: flex-start !important;
+                gap: 5mm !important;
+                padding: 5mm !important;
+            }
+
+            /* Standard Label Sizes (Single & Batch) */
+            .qr-print-1cm img { width: 10mm !important; height: 10mm !important; }
+            .qr-print-2cm img { width: 20mm !important; height: 20mm !important; }
+            .qr-print-5cm img { width: 40mm !important; height: 40mm !important; }
+            
+            .print-label-1cm { width: 10mm; height: 10mm; display: flex; align-items: center; justify-content: center; }
+            .print-label-1cm h2, .print-label-1cm .asset-id { display: none !important; }
+            
+            .print-label-2cm { width: 20mm; text-align: center; }
+            .print-label-2cm h2 { font-size: 6pt !important; margin: 0 0 1mm 0 !important; white-space: nowrap; overflow: hidden; }
+            .print-label-2cm .asset-id { font-size: 5pt !important; margin-top: 1mm !important; }
+            
+            .print-label-50mm {
+                width: 50mm;
+                margin: 0 auto;
+                text-align: center;
+            }
+            .print-label-50mm h2 { 
+                font-size: 14pt !important; 
+                margin: 0 0 5mm 0 !important;
+                font-family: sans-serif !important;
+            }
+            .print-label-50mm .asset-id { 
+                font-family: monospace !important; 
+                font-size: 12pt !important; 
+                font-weight: bold !important; 
+                margin-top: 5mm !important; 
+            }
+
+            /* Ensure background is white and no UI elements leak */
+            html, body {
+                background: white !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+        }
+
         .toast {
             background: #333;
             color: white;
@@ -2486,6 +2591,5 @@
             to { opacity: 0; }
         }
     </style>
-    <script src="/static/sidebar-raul.js"></script>
 </body>
 </html>

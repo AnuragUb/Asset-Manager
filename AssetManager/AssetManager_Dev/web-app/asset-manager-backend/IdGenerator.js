@@ -1,5 +1,9 @@
 class IdGenerator {
     static generateAssetId(typeCode, locCode) {
+        // Trim codes to prevent spaces in IDs
+        const t = String(typeCode || '').trim();
+        const l = String(locCode || '').trim();
+
         // Date format MMYY (e.g. 0326)
         const d = new Date();
         const date = (d.getMonth() + 1).toString().padStart(2, '0') + d.getFullYear().toString().substr(-2);
@@ -15,7 +19,7 @@ class IdGenerator {
         const extra = chars.charAt(Math.floor(Math.random() * chars.length));
 
         // Result: TYPE-LOC-MMYY-RAND6-EXTRA
-        return `${typeCode}-${locCode}-${date}-${rand6}-${extra}`;
+        return `${t}-${l}-${date}-${rand6}-${extra}`;
     }
 
     static generateProjectId(locCode) {

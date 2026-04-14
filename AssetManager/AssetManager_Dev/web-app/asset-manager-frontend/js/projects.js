@@ -1,6 +1,6 @@
-import { showView } from './utils.js?v=5.0';
+import { showView } from './utils.js?v=5.50';
 
-console.log('[Projects] Module loading... (v5.45)');
+console.log('[Projects] Module loading... (v5.50)');
 
 let allProjects = [];
 let currentProjectId = null;
@@ -228,6 +228,36 @@ window.loadPOFromPrevious = async function(orderId) {
     }
 };
 
+window.deleteProject = async function(projectId) {
+    if (!confirm(`Are you sure you want to delete this project? \n\nThis will mark the project as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+
+    try {
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+            method: 'DELETE',
+            headers: headers
+        });
+
+        if (response.ok) {
+            showToast('Project marked for deletion', 'success');
+            // Close modal if open
+            const modal = document.getElementById('projectDetailsModal');
+            if (modal) modal.style.display = 'none';
+            // Refresh list
+            loadProjects();
+        } else {
+            const data = await response.json();
+            alert('Failed to delete project: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('Delete project error:', err);
+        alert('Error deleting project');
+    }
+};
+
 export function initProjectsView() {
     console.log('[Projects] Initializing Projects View...');
     
@@ -387,8 +417,11 @@ function renderProjectsKanban(projects) {
                         ${statusProjects.length > 0 ? statusProjects.map(p => `
                             <div class="project-card" draggable="true" ondragstart="projectsDragProject(event, '${p.ID}')" onclick="window.showProjectDetails('${p.ID}')" style="background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: grab; border: 1px solid #e2e8f0; transition: all 0.2s;">
                                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-                                    <div style="font-weight: 600; color: #0f172a; font-size: 15px;">${p.Name}</div>
-                                    ${p.Priority ? `<span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${p.Priority === 'High' ? '#fee2e2' : '#f1f5f9'}; color: ${p.Priority === 'High' ? '#ef4444' : '#64748b'};">${p.Priority}</span>` : ''}
+                                    <div style="font-weight: 600; color: #0f172a; font-size: 15px; flex: 1;">${p.Name}</div>
+                                    <div style="display: flex; gap: 6px; align-items: center;">
+                                        ${p.Priority ? `<span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${p.Priority === 'High' ? '#fee2e2' : '#f1f5f9'}; color: ${p.Priority === 'High' ? '#ef4444' : '#64748b'};">${p.Priority}</span>` : ''}
+                                        <button onclick="event.stopPropagation(); window.deleteProject('${p.ID}')" title="Delete Project" style="background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.6; padding: 0;">🗑️</button>
+                                    </div>
                                 </div>
                                 <div style="font-size: 13px; color: #64748b; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
                                     ${p.ClientName}
@@ -937,6 +970,8 @@ function switchProjectTab(tabName) {
         if (el) {
             el.style.display = 'block';
             initProjectWorkspace(currentProjectId);
+            // Ensure inventory is fresh
+            loadWorkspaceInventory();
         }
     }
 
@@ -1606,6 +1641,9 @@ window.addPOLineItem = function(data = null) {
     const sr = tbody.children.length + 1;
     const row = document.createElement('tr');
     row.className = 'po-item-row';
+    if (data && data.ID) {
+        row.dataset.poItemId = data.ID;
+    }
     
     // Status Logic for Standalone Checklist
     const status = (data && data.Status) ? data.Status : 'Pending';
@@ -1640,9 +1678,14 @@ window.addPOLineItem = function(data = null) {
         <td><input type="number" class="form-input item-price" value="${data ? data.UnitPrice : '0'}" oninput="window.calculatePOTotals()" style="width: 100%; border: none; background: transparent; text-align: right; padding: 8px;"></td>
         <td class="item-total" style="text-align: right; padding: 8px;">${data ? (data.Total || 0).toFixed(2) : '0.00'}</td>
         <td style="text-align: center; vertical-align: middle;">
-            <button onclick="this.closest('tr').remove(); window.calculatePOTotals();" 
-                    style="border:none; background:none; color:#ef4444; cursor:pointer; font-size: 18px;" 
-                    title="Remove Item">&times;</button>
+            <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                <button onclick="window.convertPOItemToAsset(this)" 
+                        style="border:none; background:#f0f9ff; color:#0369a1; cursor:pointer; font-size: 14px; padding: 4px 8px; border-radius: 4px; border: 1px solid #bae6fd;" 
+                        title="Convert to Asset">📦+</button>
+                <button onclick="this.closest('tr').remove(); window.calculatePOTotals();" 
+                        style="border:none; background:none; color:#ef4444; cursor:pointer; font-size: 18px;" 
+                        title="Remove Item">&times;</button>
+            </div>
         </td>
     `;
     
@@ -1669,6 +1712,48 @@ window.addPOLineItem = function(data = null) {
     };
     
     tbody.appendChild(row);
+};
+
+window.convertPOItemToAsset = function(btn) {
+    const row = btn.closest('tr');
+    if (!row) return;
+
+    // Extract data from the row
+    const itemDescription = row.querySelector('.item-desc').value;
+    const qty = row.querySelector('.item-qty').value;
+    const uom = row.querySelector('.item-uom').value;
+    const price = row.querySelector('.item-price').value;
+    const poNumber = document.getElementById('newPONumber')?.value || '';
+    const poDate = document.getElementById('newPODate')?.value || '';
+    const vendor = document.getElementById('newPOVendor')?.value || '';
+
+    // Create prefill object
+    const prefill = {
+        linked_po_item_id: row.dataset.poItemId || null,
+        ItemName: itemDescription,
+        PurchaseDetails: `Purchased via PO: ${poNumber} from ${vendor} on ${poDate}`,
+        AssetValue: price,
+        Currency: 'INR',
+        PurchaseDate: poDate,
+        UOM: uom,
+        QtyOrdered: qty,
+        BoughtAgainstPO: poNumber,
+        Remarks: `PO Item conversion. Original Qty: ${qty} ${uom}`
+    };
+
+    console.log('[PO -> Asset] Prefilling modal with:', prefill);
+
+    // Hide the PO modal if it's open
+    const poModal = document.getElementById('purchaseOrderModal');
+    if (poModal) poModal.style.display = 'none';
+
+    // Open the Add Asset modal
+    if (typeof window.openAddItemModal === 'function') {
+        window.openAddItemModal(null, prefill);
+    } else {
+        console.error('window.openAddItemModal not found');
+        alert('Could not open Add Asset modal. Please ensure you are on the dashboard.');
+    }
 };
 
 window.calculatePOTotals = function() {
@@ -2112,6 +2197,8 @@ async function initProjectWorkspace(projectId) {
 async function loadWorkspaceInventory(term = '') {
     const list = document.getElementById('workspaceInventoryList');
     if (!list) return;
+    
+    console.log(`[Workspace] Searching inventory for: "${term}"`);
     list.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:12px;">Searching...</div>';
     
     try {
@@ -2121,21 +2208,24 @@ async function loadWorkspaceInventory(term = '') {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const res = await fetch(`/api/assets?search=${encodeURIComponent(term)}&limit=50`, { headers });
+        // Fetch "Available" assets from server (In Store, Owned, Demo)
+        const url = `/api/assets?search=${encodeURIComponent(term)}&status=In Store,Owned,Demo&limit=100`;
+        const res = await fetch(url, { headers });
         const result = await res.json();
         
-        // Handle Tabulator format { data: [...] } or flat array
         const assets = Array.isArray(result) ? result : (result.data || []);
-        
-        // Filter for "In Store" locally if not supported by simple query param
-        const filteredAssets = assets.filter(a => a.Status === 'In Store');
+        console.log(`[Workspace] Server returned ${assets.length} matching assets`);
 
-        if (filteredAssets.length === 0) {
-            list.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px;">No available assets found</div>';
+        if (assets.length === 0) {
+            list.innerHTML = `<div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px;">
+                No available assets found${term ? ` matching "${term}"` : ''}.
+                <br><br>
+                <button onclick="loadWorkspaceInventory('${term}')" style="background:none; border:1px solid #ddd; padding:4px 8px; border-radius:4px; font-size:10px; cursor:pointer; color:#666;">🔄 Refresh</button>
+            </div>`;
             return;
         }
 
-        list.innerHTML = filteredAssets.map(asset => `
+        list.innerHTML = assets.map(asset => `
             <div class="workspace-asset-card" draggable="true" 
                  style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; cursor: grab; user-select: none; margin-bottom: 8px;"
                  data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}'>

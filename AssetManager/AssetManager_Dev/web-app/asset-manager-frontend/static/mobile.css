@@ -1,0 +1,266 @@
+
+/* --- Mobile Responsive Styles (Max-Width: 768px) --- */
+@media (max-width: 768px) {
+
+    /* 1. Base Layout & Typography */
+    body {
+        font-size: 14px; /* Slightly larger base for readability */
+        overflow: auto; /* Allow body scroll if needed, though we use flex containers */
+    }
+
+    /* 2. Sidebar - Mobile Drawer */
+    #app-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: 80%; /* Takes most of the screen width */
+        max-width: 300px;
+        z-index: 1000;
+        transform: translateX(-100%); /* Hidden by default */
+        transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+        box-shadow: 2px 0 10px rgba(0,0,0,0.2);
+    }
+
+    #app-sidebar.mobile-open {
+        transform: translateX(0); /* Slide in */
+    }
+
+    /* Mobile Backdrop */
+    .mobile-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+        display: none;
+        backdrop-filter: blur(2px);
+    }
+    .mobile-backdrop.active {
+        display: block;
+    }
+
+    /* 3. Header Improvements */
+    #app-header {
+        padding: 10px 15px;
+        justify-content: space-between;
+    }
+
+    /* 3.1 Top Bar Navigation Scrolling & Compactness */
+    .top-bar-pill {
+        padding: 8px 5px !important; /* Reduce padding to maximize space */
+        gap: 5px;
+        /* overflow: hidden; Removed to prevent clipping if sizing is tight */
+    }
+    
+    .header-left {
+        flex-shrink: 0; /* Always show title */
+        margin-right: 0;
+    }
+
+    .app-title {
+        display: none !important; /* Hide title on mobile */
+    }
+
+    /* Compact Right Side */
+    .header-right .user-name-display {
+        display: none !important; /* Hide username */
+    }
+    
+    /* Make Logout Button Icon Only */
+    #logout-btn {
+        font-size: 0 !important;
+        padding: 0 !important;
+        width: 28px;
+        height: 28px !important;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+    #logout-btn::after {
+        content: '🚪';
+        font-size: 14px;
+    }
+
+    /* Scrollable Navigation */
+    .nav-center {
+        flex: 1; /* Take remaining space */
+        min-width: 0; /* CRITICAL: Allows flex child to shrink below content size for scrolling */
+        justify-content: flex-start !important; /* Align left */
+        overflow-x: auto;
+        margin: 0 5px;
+        /* Fade out effect on the right */
+        mask-image: linear-gradient(to right, black 85%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none;  /* IE 10+ */
+        
+        /* Ensure touch scrolling works smoothly */
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+        cursor: grab;
+    }
+    
+    .nav-center::-webkit-scrollbar {
+        display: none; /* Chrome/Safari */
+    }
+
+    .nav-center ul {
+        padding-right: 20px; /* Space for scroll end */
+        flex-wrap: nowrap;
+        display: flex; /* Reinforce flex */
+        width: max-content; /* Ensure content forces width */
+    }
+
+    .nav-center li {
+        flex-shrink: 0; /* Prevent squishing */
+    }
+    
+    /* 4. View Toolbar Wrapping (Project, Employee, etc.) */
+    .view-toolbar {
+        flex-direction: column;
+        align-items: flex-start !important; /* Override center alignment */
+        gap: 10px;
+        height: auto !important; /* Allow growing */
+        padding: 15px !important;
+    }
+
+    .view-toolbar > div {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    /* Title Row */
+    .view-toolbar h2.view-title {
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+
+    /* Search Boxes */
+    .view-toolbar .search-box {
+        width: 100% !important; /* Full width search */
+        margin: 5px 0;
+        max-width: none !important;
+    }
+    
+    .view-toolbar .search-box input {
+        width: 100% !important;
+        box-sizing: border-box; /* Include padding in width */
+    }
+
+    /* Dropdowns */
+    .view-toolbar select {
+        width: 100% !important;
+        margin: 5px 0;
+    }
+
+    /* Action Buttons Container */
+    .view-actions, .dashboard-actions {
+        width: 100%;
+        overflow-x: auto; /* Horizontal scroll for buttons */
+        display: flex;
+        gap: 8px;
+        padding-bottom: 5px; /* Space for scrollbar */
+        justify-content: flex-start; /* Left align */
+        margin-top: 10px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .action-button {
+        flex-shrink: 0; /* Prevent buttons from shrinking */
+        white-space: nowrap;
+        padding: 5px 10px !important; /* Reduced padding */
+        font-size: 11px !important; /* Reduced font size */
+        height: 28px !important; /* Fixed smaller height */
+        display: flex;
+        align-items: center;
+    }
+
+    /* 5. Projects Tab - Kanban Horizontal Scroll */
+    #projectsGrid {
+        /* The flex container is now projectsGrid itself */
+        scroll-snap-type: x mandatory; /* Snap to columns */
+        padding-right: 20px; /* End padding */
+    }
+
+    #projectsGrid > .project-column {
+        /* The columns */
+        min-width: 85vw !important; /* 85% of viewport width */
+        max-width: 85vw !important;
+        scroll-snap-align: center;
+        margin-right: 10px;
+    }
+
+    /* 6. Dashboard - Asset Grid */
+    .asset-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+        gap: 10px !important;
+        padding: 10px !important;
+    }
+
+    .asset-card {
+        min-height: 120px; /* Slightly smaller */
+    }
+
+    /* 7. Hide/Adjust non-essential elements */
+    #dashboard-title > div {
+        /* "Asset Overview" toggle button container */
+        margin-left: auto; /* Push to right */
+    }
+
+    /* Sidebar Toggle Button */
+    #sidebarToggle {
+        display: block !important; /* Ensure visible */
+        font-size: 24px;
+        padding: 10px;
+        margin: 0;
+    }
+
+    /* Fix Header Right Icons */
+    .header-right {
+        gap: 10px;
+    }
+    .icon-button {
+        margin-left: 5px;
+        font-size: 20px;
+    }
+
+    /* 8. Login Page - Mobile Layout */
+    .login-container {
+        flex-direction: column;
+        width: 90%;
+        min-height: auto;
+        height: auto;
+        margin: 20px auto; /* Center horizontally */
+    }
+
+    .login-left {
+        width: 100%;
+        height: 250px; /* Fixed height for image area */
+        padding: 30px;
+        box-sizing: border-box;
+        flex: none; /* Disable flex grow/shrink */
+    }
+
+    .login-left h1 {
+        font-size: 32px;
+        margin-bottom: 15px;
+    }
+    
+    .login-left p {
+        font-size: 12px;
+        display: -webkit-box;
+        -webkit-line-clamp: 3; /* Limit text lines */
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .login-right {
+        width: 100%;
+        padding: 20px 30px 40px; /* Adjust padding */
+        box-sizing: border-box;
+        flex: none;
+    }
+}

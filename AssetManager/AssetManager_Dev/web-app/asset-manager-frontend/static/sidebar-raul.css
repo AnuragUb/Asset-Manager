@@ -1,0 +1,179 @@
+:root {
+    --sidebar-bg: #0a0a0a;
+    --sidebar-text: #888;
+    --sidebar-text-hover: #fff;
+    --sidebar-text-active: #fff;
+    --sidebar-bubble-active: #1f1f1f;
+    --sidebar-bubble-hover: #161616;
+    --ease-spring: cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* Scoped to #app-sidebar to prevent leakage */
+#app-sidebar {
+    position: relative; /* Anchor for absolute bubbles */
+}
+
+#app-sidebar .sidebar-menu-wrapper {
+    position: relative;
+    /* Ensure stacking context for bubbles */
+    z-index: 0; 
+}
+
+#app-sidebar .tree-item-wrapper, 
+#app-sidebar .menu-item-wrapper {
+    position: relative;
+    z-index: 2; /* Above bubbles */
+    color: var(--sidebar-text);
+    transition: color 0.2s;
+    background-color: transparent !important; /* Override inline/old styles */
+    border-right: none !important;
+    margin: 2px 8px; /* Add some spacing for the bubble look */
+    border-radius: 999px; /* Pill shape */
+    
+    /* Structural styles moved from inline */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 8px 20px 8px 0; /* padding-left is set inline via JS */
+}
+
+#app-sidebar .tree-item-wrapper:hover,
+#app-sidebar .menu-item-wrapper:hover {
+    color: var(--sidebar-text-hover);
+}
+
+#app-sidebar .tree-item-wrapper.active,
+#app-sidebar .menu-item-wrapper.active {
+    color: var(--sidebar-text-active) !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+/* Fix for "All Assets" link getting white background from style.css */
+#app-sidebar .sidebar-menu li a.active,
+#app-sidebar .sidebar-menu li a:hover {
+    background-color: transparent !important;
+    color: inherit !important;
+    padding: 0 !important; /* Remove padding to fit wrapper layout */
+}
+
+#app-sidebar .tree-link,
+#app-sidebar .menu-item { /* Treat menu-item same as tree-link */
+    color: inherit !important; /* Inherit from wrapper */
+    font-weight: 500;
+    flex: 1;
+    font-size: 13px;
+    text-decoration: none !important;
+    padding: 0 !important; /* Override style.css padding */
+}
+
+#app-sidebar .tree-toggle,
+#app-sidebar .tree-toggle-main {
+    color: #666 !important;
+    width: 14px;
+    text-align: center;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+#app-sidebar .tree-icon {
+    /* filter: grayscale(100%) opacity(0.7); Removed to show original colors */
+    transition: filter 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+#app-sidebar .tree-icon img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+}
+
+#app-sidebar .tree-item-wrapper:hover .tree-icon,
+#app-sidebar .tree-item-wrapper.active .tree-icon {
+    filter: none;
+}
+
+#app-sidebar .edit-kind-btn {
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 2px 5px;
+    font-size: 12px;
+}
+
+/* Bubbles */
+#app-sidebar .sidebar-bubble {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    height: 34px; /* Matches wrapper height approx */
+    border-radius: 6px;
+    pointer-events: none;
+    transition: top 0.4s var(--ease-spring), opacity 0.2s, height 0.4s var(--ease-spring); /* Added height transition */
+    z-index: 1;
+    opacity: 0;
+}
+
+#app-sidebar .sidebar-bubble.active-bubble {
+    background: var(--sidebar-bubble-active);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+#app-sidebar .sidebar-bubble.hover-bubble {
+    background: var(--sidebar-bubble-hover);
+}
+
+/* Asset Health Widget - Light Theme Raul Drunk Cards */
+.stat-card {
+    /* background: white; - set inline or via JS, but good to have default */
+    /* padding: 15px; - set inline or via JS */
+    /* border-radius: 16px; - set inline or via JS */
+    /* border-left: 5px solid ...; - set inline */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+}
+
+.stat-card.active {
+    background: #fff;
+    /* Simulate selection with a ring or glow */
+    box-shadow: 0 0 0 2px var(--active-color, #007bff), 0 12px 24px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+/* Active indicator "bubble" corner */
+.stat-card.active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 30px;
+    height: 30px;
+    background: var(--active-color, #007bff);
+    border-radius: 0 0 0 30px;
+    opacity: 0.15;
+    pointer-events: none;
+}
+
+/* Checkmark in the corner */
+.stat-card.active::before {
+    content: '✓';
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 12px;
+    color: var(--active-color, #007bff);
+    font-weight: 800;
+    z-index: 1;
+}

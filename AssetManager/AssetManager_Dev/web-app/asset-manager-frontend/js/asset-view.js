@@ -1,3 +1,5 @@
+import { checkSession } from './auth.js?v=5.50';
+
 // Asset View Module
 // Handles fetching and displaying asset details
 // Minimal implementation to fix mobile loading issues
@@ -26,6 +28,15 @@ async function loadAssetDetails() {
     // If the last part is empty or just 'asset', try the one before
     if ((!assetId || assetId === 'asset') && pathParts.length > 1) {
         assetId = pathParts[pathParts.length - 2];
+    }
+
+    // Decode ID from URL to handle spaces and special characters correctly
+    if (assetId) {
+        try {
+            assetId = decodeURIComponent(assetId);
+        } catch (e) {
+            console.warn('Failed to decode assetId from URL:', assetId);
+        }
     }
     
     // console.log('[AssetView] Detected ID:', assetId);
@@ -87,10 +98,21 @@ function renderError(msg) {
     }
 }
 
-function renderAsset(data) {
+async function renderAsset(data) {
     const { asset, children, parent } = data;
     const app = document.getElementById('app');
     
+    // Check user session for permissions
+    const currentUser = await checkSession();
+    const canDelete = currentUser && (
+        currentUser.role === 'admin' || 
+        currentUser.role === 'superuser' ||
+        (Array.isArray(currentUser.role) && (currentUser.role.includes('admin') || currentUser.role.includes('superuser'))) ||
+        (typeof currentUser.role === 'string' && currentUser.role.startsWith('[') && (currentUser.role.includes('"admin"') || currentUser.role.includes('"superuser"')))
+    );
+
+    console.log('[AssetView] Current User:', currentUser ? currentUser.username : 'Guest', 'Can Delete:', canDelete);
+
     // 1. Header Card (Basic Identity)
     let html = `
         <div class="header-card">
@@ -190,18 +212,51 @@ function renderAsset(data) {
     }
 
     // 5. History Timeline (Merged & Simplified)
-    // Combine standard audit history with quantity events if available
     const historyItems = [];
     
-    if (data.history && Array.isArray(data.history)) {
-        data.history.forEach(h => {
+    // 1. Add Structured History (Priority for detailed changes)
+    if (data.structuredHistory && Array.isArray(data.structuredHistory)) {
+        data.structuredHistory.forEach(h => {
+            let details = h.Details || '';
+            let actionLabel = h.Action.replace(/_/g, ' ');
+            
+            // Format From -> To values nicely
+            const changeText = (h.FromValue || h.ToValue) 
+                ? `<div style="margin-top:4px; font-weight:500; color:#1e293b;">
+                    ${h.FromValue ? `<span style="background:#fee2e2; color:#991b1b; padding:1px 4px; border-radius:3px;">${h.FromValue}</span> → ` : ''}
+                    <span style="background:#dcfce7; color:#166534; padding:1px 4px; border-radius:3px;">${h.ToValue || 'None'}</span>
+                   </div>`
+                : '';
+
             historyItems.push({
                 timestamp: h.Timestamp,
-                action: h.Action,
-                details: h.Details,
+                action: actionLabel,
+                details: details,
+                changeHtml: changeText,
                 user: h.User,
-                type: 'AUDIT'
+                type: 'STRUCTURED'
             });
+        });
+    }
+
+    // 2. Add Audit Log (Filter out duplicates if they exist in structured history)
+    if (data.history && Array.isArray(data.history)) {
+        data.history.forEach(h => {
+            // Basic heuristic: if it's a generic UPDATE and we already have a structured change at roughly the same time, skip it
+            const isGenericUpdate = h.Action === 'UPDATE';
+            const hasStructuredMatch = isGenericUpdate && historyItems.some(sh => 
+                Math.abs(new Date(sh.timestamp) - new Date(h.Timestamp)) < 2000
+            );
+
+            if (!hasStructuredMatch) {
+                historyItems.push({
+                    timestamp: h.Timestamp,
+                    action: h.Action,
+                    details: h.Details,
+                    user: h.User,
+                    type: 'AUDIT'
+                });
+            }
         });
     }
 
@@ -223,7 +278,7 @@ function renderAsset(data) {
 
     if (historyItems.length > 0) {
         // Sort history by timestamp descending
-        const sortedHistory = historyItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
+        const sortedHistory = historyItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
         
         html += `
             <div class="card">
@@ -231,16 +286,34 @@ function renderAsset(data) {
                 <div style="position: relative; padding-left: 20px; border-left: 2px solid #e0e0e0; margin-left: 10px;">
                     ${sortedHistory.map(h => `
                         <div style="margin-bottom: 20px; position: relative;">
-                            <div style="position: absolute; left: -26px; top: 0; width: 10px; height: 10px; background: ${h.type === 'QTY' ? '#28a745' : '#007bff'}; border-radius: 50%; border: 2px solid white;"></div>
-                            <div style="font-size: 12px; color: #888;">${new Date(h.timestamp).toLocaleString()}</div>
-                            <div style="font-weight: 600; font-size: 14px; margin-top: 2px; color: ${h.type === 'QTY' ? '#28a745' : '#333'}">
+                            <div style="position: absolute; left: -26px; top: 0; width: 10px; height: 10px; background: ${h.type === 'QTY' ? '#28a745' : (h.type === 'STRUCTURED' ? '#007bff' : '#64748b')}; border-radius: 50%; border: 2px solid white;"></div>
+                            <div style="font-size: 11px; color: #888;">${new Date(h.timestamp).toLocaleString()}</div>
+                            <div style="font-weight: 600; font-size: 14px; margin-top: 2px; color: #333">
                                 ${h.type === 'QTY' ? '[QTY] ' : ''}${safe(h.action)}
                             </div>
-                            <div style="font-size: 13px; color: #555; margin-top: 2px;">${safe(h.details)}</div>
-                            <div style="font-size: 11px; color: #888; margin-top: 2px;">by ${safe(h.user)}</div>
+                            ${h.changeHtml || ''}
+                            <div style="font-size: 13px; color: #555; margin-top: 4px;">${safe(h.details)}</div>
+                            <div style="font-size: 11px; color: #888; margin-top: 4px;">by <strong>${safe(h.user)}</strong></div>
                         </div>
                     `).join('')}
                 </div>
+            </div>
+        `;
+    }
+
+    // Actions (Delete) - Only show for authorized users
+    if (canDelete) {
+        html += `
+            <div style="margin-top: 20px; display: flex; gap: 12px; justify-content: center;">
+                <button id="btnDeleteStandalone" style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px;">
+                    🗑️ Delete Asset
+                </button>
+            </div>
+        `;
+    } else {
+        html += `
+            <div style="margin-top: 20px; text-align: center; color: #64748b; font-size: 13px;">
+                <p>Login as Admin to perform administrative actions.</p>
             </div>
         `;
     }
@@ -255,6 +328,33 @@ function renderAsset(data) {
     `;
 
     app.innerHTML = html;
+
+    // Attach Delete Handler
+    const btnDelete = document.getElementById('btnDeleteStandalone');
+    if (btnDelete) {
+        btnDelete.onclick = async () => {
+            if (!confirm(`Are you sure you want to delete this asset (${asset.ID})?\n\nThis will mark the asset as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+            
+            try {
+                const username = currentUser ? currentUser.username : 'web';
+                const response = await fetch(`/api/assets/${encodeURIComponent(asset.ID)}`, {
+                    method: 'DELETE',
+                    headers: { 'x-user': username }
+                });
+                
+                if (response.ok) {
+                    alert('Asset marked for deletion (30-day grace period)');
+                    window.location.href = '/';
+                } else {
+                    const err = await response.text();
+                    alert('Error deleting asset: ' + err);
+                }
+            } catch (err) {
+                console.error('Delete error:', err);
+                alert('Failed to delete asset');
+            }
+        };
+    }
 }
 
 // Helper: Safe String Rendering

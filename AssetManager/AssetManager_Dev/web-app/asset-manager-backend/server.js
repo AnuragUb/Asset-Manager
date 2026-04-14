@@ -7,9 +7,9 @@ const fs = require('fs');
 const os = require('os');
 const { exec, execSync } = require('child_process');
 const dns = require('dns').promises;
-const Evilscan = require('evilscan');
-const find = require('local-devices');
-const XLSX = require('xlsx');
+// const Evilscan = require('evilscan');
+// const { find } = require('local-devices');
+// const XLSX = require('xlsx');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
@@ -72,6 +72,7 @@ const crypto = require('crypto');
 const tokenService = require('./services/tokenService');
 const passwordService = require('./services/passwordService');
 const emailService = require('./services/emailService');
+const encryptionService = require('./services/encryptionService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
 const JWT_EXPIRES_IN_SECONDS = parseInt(process.env.JWT_EXPIRES_IN_SECONDS || '3600', 10);
@@ -82,6 +83,129 @@ let DEFAULT_COMPANY_ID = null;
 
 const app = express();
 const port = process.env.PORT || 9090;
+
+// --- Automated Backup System ---
+function performDatabaseBackup() {
+  try {
+    const isProd = __dirname.includes('AssetManager_Prod');
+    const backupBaseDir = 'c:/Users/Admin/AssetManager/backups';
+    const subDir = isProd ? '8080_prod' : '9090_dev';
+    const targetDir = path.join(backupBaseDir, subDir);
+    
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data', isProd ? 'prod' : 'test', 'database_v2.db');
+    
+    // Check if source DB exists
+    if (!fs.existsSync(dbPath)) {
+      console.error(`[BACKUP] Source database not found at: ${dbPath}`);
+      return;
+    }
+
+    const now = new Date();
+    const ts = now.getFullYear() + 
+               String(now.getMonth() + 1).padStart(2, '0') + 
+               String(now.getDate()).padStart(2, '0') + '_' + 
+               String(now.getHours()).padStart(2, '0') + 
+               String(now.getMinutes()).padStart(2, '0');
+    
+    const backupPath = path.join(targetDir, `database_v2_${ts}.db`);
+    
+    fs.copyFileSync(dbPath, backupPath);
+    console.log(`[BACKUP] Success! Saved to: ${backupPath}`);
+    
+    // Cleanup: Keep only last 30 backups
+    const files = fs.readdirSync(targetDir)
+      .filter(f => f.startsWith('database_v2_') && f.endsWith('.db'))
+      .map(f => ({ name: f, time: fs.statSync(path.join(targetDir, f)).mtime.getTime() }))
+      .sort((a, b) => b.time - a.time);
+
+    if (files.length > 30) {
+      files.slice(30).forEach(f => {
+        fs.unlinkSync(path.join(targetDir, f.name));
+        console.log(`[BACKUP] Cleaned up old backup: ${f.name}`);
+      });
+    }
+  } catch (err) {
+    console.error('[BACKUP] Failed:', err);
+  }
+}
+
+// 1. Run on Restart
+performDatabaseBackup();
+
+// 2. Schedule every 12 hours (at 00:00 and 12:00)
+cron.schedule('0 0,12 * * *', () => {
+  console.log('[CRON] Starting scheduled 12-hour backup...');
+  performDatabaseBackup();
+});
+
+// --- Automated Cleanup System (Permanent Deletion after 30 days) ---
+function performPermanentDeletionCleanup() {
+  try {
+    const tablesToCleanup = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateStr = thirtyDaysAgo.toISOString();
+
+    console.log(`[CLEANUP] Starting permanent deletion cleanup for items deleted before ${dateStr}...`);
+
+    tablesToCleanup.forEach(tableName => {
+      // Check if table exists before trying to delete from it
+      const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
+      if (tableExists) {
+        const result = db.prepare(`DELETE FROM ${tableName} WHERE is_deleted = 1 AND deleted_at < ?`).run(dateStr);
+        if (result.changes > 0) {
+          console.log(`[CLEANUP] Permanently deleted ${result.changes} items from ${tableName}`);
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[CLEANUP] Permanent deletion failed:', err);
+  }
+}
+
+// Run cleanup on restart and every 24 hours
+performPermanentDeletionCleanup();
+cron.schedule('0 2 * * *', () => { // Every day at 2 AM
+  performPermanentDeletionCleanup();
+});
+
+// --- Asset History System ---
+try {
+  const historyTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='asset_history'").get();
+  if (!historyTable) {
+    db.prepare(`
+      CREATE TABLE asset_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        AssetID TEXT NOT NULL,
+        Action TEXT NOT NULL,
+        FromValue TEXT,
+        ToValue TEXT,
+        User TEXT,
+        Timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+        Details TEXT
+      )
+    `).run();
+    console.log('Created asset_history table');
+  }
+} catch (err) {
+  console.error('Migration error (asset_history):', err);
+}
+
+// Helper to log asset history
+function logAssetHistory(assetId, action, fromVal, toVal, user, details = '') {
+  try {
+    db.prepare(`
+      INSERT INTO asset_history (AssetID, Action, FromValue, ToValue, User, Timestamp, Details)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(assetId, action, fromVal, toVal, user, new Date().toISOString(), details);
+  } catch (err) {
+    console.error('[HISTORY] Failed to log:', err);
+  }
+}
 
 // QA Test Route
 app.get('/api/test-ping', (req, res) => res.json({ pong: true, time: new Date().toISOString() }));
@@ -136,6 +260,18 @@ app.get('/api/debug/cookies', (req, res) => {
         parsed: parseCookies(req.headers.cookie || ''),
         ip: req.ip
     });
+});
+
+// --- Asset History Endpoint ---
+app.get('/api/assets/:id/history', (req, res) => {
+  try {
+    const { id } = req.params;
+    const history = db.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
+    res.json({ success: true, history });
+  } catch (err) {
+    console.error('[HISTORY] Fetch error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 function parseCookies(header) {
@@ -837,6 +973,30 @@ try {
   db.prepare("UPDATE users SET client_id = ? WHERE client_id IS NULL OR client_id = ?").run(DEFAULT_COMPANY_ID, DEFAULT_COMPANY_NAME);
 } catch (err) {
   console.error('Migration error (users company_id):', err);
+}
+
+// --- Soft Delete Migrations ---
+try {
+  const tablesToUpdate = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
+  tablesToUpdate.forEach(tableName => {
+    // Check if table exists
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
+    if (tableExists) {
+      const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
+      const existingColumns = new Set(tableInfo.map(c => c.name));
+      
+      if (!existingColumns.has('is_deleted')) {
+        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN is_deleted INTEGER DEFAULT 0`).run();
+        console.log(`Added is_deleted column to ${tableName} table`);
+      }
+      if (!existingColumns.has('deleted_at')) {
+        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN deleted_at TEXT`).run();
+        console.log(`Added deleted_at column to ${tableName} table`);
+      }
+    }
+  });
+} catch (err) {
+  console.error('Migration error (soft delete columns):', err);
 }
 
 try {
@@ -1585,10 +1745,10 @@ app.post('/api/settings/email/run-check', async (req, res) => {
     }
 });
 
-// Existing routes follow...
+// Standard Dev serving: Serve JS and static from source folders for easier debugging
 app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
-app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
-app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
+app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
+app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
 app.use('/uploads', express.static(uploadsDir));
 app.use('/input', express.static(uploadsDir));
 app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons')));
@@ -1631,7 +1791,7 @@ app.post('/api/asset_kinds/upload-image', upload.single('image'), (req, res) => 
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../asset-manager-frontend/dist/index.html'));
+  res.sendFile(path.join(__dirname, '../asset-manager-frontend/index.html'));
 });
 
 // Serve Asset Details View
@@ -1690,26 +1850,34 @@ app.get('/api/assets', (req, res) => {
         let params = [];
         
         if (projectId) {
-            // Note: If projectId is filtered, we might already have the join above, but let's keep it safe.
-            // Since we added LEFT JOIN project_assets pa above, we should adjust the filter logic below.
-            // However, the original code added INNER JOIN if projectId was present.
-            // Let's refine:
-            // If projectId is requested, we filter by it.
-            baseQuery += ` WHERE pa.ProjectID = ?`;
+            baseQuery += ` WHERE pa.ProjectID = ? AND (a.is_deleted = 0 OR a.is_deleted IS NULL)`;
             params.push(projectId);
+        } else {
+            baseQuery += ` WHERE (a.is_deleted = 0 OR a.is_deleted IS NULL)`;
         }
         
         baseQuery += ` ORDER BY a.LastUpdated DESC`;
         
         const assets = db.prepare(baseQuery).all(...params);
         
-        // Process assets (mark components)
+        // Process assets (mark components and Decrypt)
         const componentIds = new Set(db.prepare('SELECT ID FROM components').all().map(c => c.ID));
-        const processed = assets.map(a => ({
-          ...a,
-          isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
-          isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
-        }));
+        const processed = assets.map(a => {
+          const decrypted = {
+            ...a,
+            isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
+            isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
+          };
+          
+          // Decrypt sensitive fields
+          if (decrypted.SerialNo) decrypted.SerialNo = encryptionService.universalDecrypt(decrypted.SerialNo);
+          if (decrypted.SrNo) decrypted.SrNo = encryptionService.universalDecrypt(decrypted.SrNo);
+          if (decrypted.MACAddress) decrypted.MACAddress = encryptionService.universalDecrypt(decrypted.MACAddress);
+          if (decrypted.IPAddress) decrypted.IPAddress = encryptionService.universalDecrypt(decrypted.IPAddress);
+          if (decrypted.SocketID) decrypted.SocketID = encryptionService.universalDecrypt(decrypted.SocketID);
+          
+          return decrypted;
+        });
         
         return res.json(processed);
     }
@@ -1733,13 +1901,27 @@ app.get('/api/assets', (req, res) => {
       ) pa_raw ON a.ID = pa_raw.AssetID
       LEFT JOIN projects p ON pa_raw.ProjectID = p.ID
     `;
-    let whereClauses = ["1=1"];
+    let whereClauses = ["(a.is_deleted = 0 OR a.is_deleted IS NULL)"];
     let params = [];
 
     // 1. Apply Project Filter
     if (projectId) {
       whereClauses.push(`pa_raw.ProjectID = ?`);
       params.push(projectId);
+    }
+
+    // 1.2 Apply Status Filter (Direct query param - supports comma-separated list)
+    const statusFilter = req.query.status;
+    if (statusFilter) {
+        const statuses = statusFilter.split(',').map(s => s.trim());
+        if (statuses.length === 1) {
+            whereClauses.push(`a.Status = ?`);
+            params.push(statuses[0]);
+        } else {
+            const placeholders = statuses.map(() => '?').join(',');
+            whereClauses.push(`a.Status IN (${placeholders})`);
+            params.push(...statuses);
+        }
     }
 
     // 1.5 Apply Global Search (Google-like Multi-Keyword Search)
@@ -1752,20 +1934,24 @@ app.get('/api/assets', (req, res) => {
         
         terms.forEach(term => {
             const searchParam = `%${term}%`;
+            const encryptedTerm = encryptionService.encryptDeterministic(term);
+            
             whereClauses.push(`(
                 a.ID LIKE ? OR 
                 a.ItemName LIKE ? OR 
                 a.Make LIKE ? OR 
                 a.Model LIKE ? OR 
                 a.SrNo LIKE ? OR 
+                a.SrNo = ? OR
+                it.IPAddress = ? OR
                 a.CurrentLocation LIKE ? OR 
                 a.AssignedTo LIKE ? OR
                 a.Type LIKE ? OR
                 a.Category LIKE ? OR
                 a.Status LIKE ?
             )`);
-            // Push param once for each ? placeholder in the OR group
-            for(let i=0; i<10; i++) params.push(searchParam);
+            // Push params
+            params.push(searchParam, searchParam, searchParam, searchParam, searchParam, encryptedTerm, encryptedTerm, searchParam, searchParam, searchParam, searchParam, searchParam);
         });
     }
 
@@ -1836,14 +2022,25 @@ app.get('/api/assets', (req, res) => {
 
     const assets = db.prepare(dataQuery).all(...params);
 
-    // 7. Process Assets (Mark components)
+    // 7. Process Assets (Mark components and Decrypt)
     const componentIds = new Set(db.prepare('SELECT ID FROM components').all().map(c => c.ID));
     
-    const processedAssets = assets.map(a => ({
-      ...a,
-      isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
-      isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
-    }));
+    const processedAssets = assets.map(a => {
+      const decrypted = {
+        ...a,
+        isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
+        isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
+      };
+      
+      // Decrypt sensitive fields
+      if (decrypted.SerialNo) decrypted.SerialNo = encryptionService.universalDecrypt(decrypted.SerialNo);
+      if (decrypted.SrNo) decrypted.SrNo = encryptionService.universalDecrypt(decrypted.SrNo);
+      if (decrypted.MACAddress) decrypted.MACAddress = encryptionService.universalDecrypt(decrypted.MACAddress);
+      if (decrypted.IPAddress) decrypted.IPAddress = encryptionService.universalDecrypt(decrypted.IPAddress);
+      if (decrypted.SocketID) decrypted.SocketID = encryptionService.universalDecrypt(decrypted.SocketID);
+      
+      return decrypted;
+    });
 
     // Return format for Tabulator Remote Pagination
     res.json({
@@ -1890,8 +2087,19 @@ app.get('/api/asset-details/:id', (req, res) => {
       return res.status(404).send('Asset not found');
     }
 
+    // Decrypt sensitive fields
+    if (asset.SerialNo) asset.SerialNo = encryptionService.universalDecrypt(asset.SerialNo);
+    if (asset.SrNo) asset.SrNo = encryptionService.universalDecrypt(asset.SrNo);
+    if (asset.MACAddress) asset.MACAddress = encryptionService.universalDecrypt(asset.MACAddress);
+    if (asset.IPAddress) asset.IPAddress = encryptionService.universalDecrypt(asset.IPAddress);
+    if (asset.SocketID) asset.SocketID = encryptionService.universalDecrypt(asset.SocketID);
+
     const children = db.prepare('SELECT * FROM components WHERE ParentId = ?').all(id);
-    const history = db.prepare('SELECT * FROM audit_log WHERE AssetId = ? ORDER BY Timestamp DESC').all(id);
+    
+    // Fetch both audit log and structured asset history
+    const auditHistory = db.prepare('SELECT * FROM audit_log WHERE AssetId = ? ORDER BY Timestamp DESC').all(id);
+    const structuredHistory = db.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
+    
     const parent = asset.ParentId ? db.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.ParentId) : null;
 
     let quantity = null
@@ -1927,7 +2135,18 @@ app.get('/api/asset-details/:id', (req, res) => {
     }
 
     console.log(`[API] Successfully fetched details for ${id}`);
-    res.json({ asset, children, history, parent, quantity, quantityChildren, quantityParent, quantityRoot, quantityEvents });
+    res.json({ 
+      asset, 
+      children, 
+      history: auditHistory, 
+      structuredHistory,
+      parent, 
+      quantity, 
+      quantityChildren, 
+      quantityParent, 
+      quantityRoot, 
+      quantityEvents 
+    });
   } catch (err) {
     console.error(`[API] Error fetching asset details for ${id}:`, err);
     res.status(500).send('Database error: ' + err.message);
@@ -2293,6 +2512,9 @@ app.post('/api/dc', async (req, res) => {
                             
                             // 2. Update main assets table to reflect assignment
                             updateAssetStmt.run(`Project: ${refNo}`, assetId);
+
+                            // 3. Log to asset history
+                            logAssetHistory(assetId, 'PROJECT_CHANGE', 'General Stock', `Project: ${refNo}`, CreatedBy || 'System', `Assigned via Delivery Challan ${challanNo}`);
                         });
                     })();
                 }
@@ -2657,11 +2879,27 @@ app.delete('/api/employees/:id', (req, res) => {
 
 app.get('/api/asset_kinds', (req, res) => {
   try {
-    const kinds = db.prepare('SELECT * FROM asset_kinds').all();
+    const kinds = db.prepare('SELECT * FROM asset_kinds WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY Name ASC').all();
     res.json(kinds);
   } catch (err) {
     console.error('Failed to fetch asset kinds:', err);
     res.status(500).send('Database error');
+  }
+});
+
+app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser', 'admin'), (req, res) => {
+  try {
+    const { name } = req.params;
+    const now = new Date().toISOString();
+    const result = db.prepare("UPDATE asset_kinds SET is_deleted = 1, deleted_at = ? WHERE Name = ?").run(now, name);
+    if (result.changes > 0) {
+      res.json({ success: true, message: 'Asset Category marked for deletion' });
+    } else {
+      res.status(404).json({ error: 'Asset Category not found' });
+    }
+  } catch (err) {
+    console.error('Failed to delete asset kind:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2730,11 +2968,27 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
 // Projects API
 app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), (req, res) => {
     try {
-        const projects = db.prepare('SELECT * FROM projects ORDER BY Timestamp DESC').all();
+        const projects = db.prepare('SELECT * FROM projects WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY Timestamp DESC').all();
         res.json(projects);
     } catch (err) {
         console.error('Failed to fetch projects:', err);
         res.status(500).json({ error: 'Failed to fetch projects' });
+    }
+});
+
+app.delete('/api/projects/:id', authenticateJWT, authorizeRoles('superuser', 'admin'), (req, res) => {
+    try {
+        const { id } = req.params;
+        const now = new Date().toISOString();
+        const result = db.prepare("UPDATE projects SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+        if (result.changes > 0) {
+            res.json({ success: true, message: 'Project marked for deletion' });
+        } else {
+            res.status(404).json({ error: 'Project not found' });
+        }
+    } catch (err) {
+        console.error('Failed to delete project:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -3538,7 +3792,7 @@ app.post('/api/assets', async (req, res) => {
       asset.Status || 'In Store',
       asset.Make || '',
       asset.Model || '',
-      asset.SrNo || '',
+      encryptionService.encryptDeterministic(asset.SrNo || ''),
       asset.Type || '',
       asset.Category || '',
       asset.Icon || '',
@@ -3571,6 +3825,9 @@ app.post('/api/assets', async (req, res) => {
       Severity: 'INFO',
       Details: `Asset created: ${asset.ItemName} (${asset.Type})`
     });
+
+    // Log to asset history
+    logAssetHistory(newId, 'CREATE', null, asset.Status || 'In Store', req.headers['x-user'] || 'web', `Initial assignment to: ${asset.AssignedTo || 'None'}`);
 
     const qtyUnit = normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit)
     const qtyTotal = parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal)
@@ -3611,12 +3868,12 @@ app.post('/api/assets', async (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         newId,
-        asset.MACAddress || '',
-        asset.IPAddress || '',
+        encryptionService.encrypt(asset.MACAddress || ''),
+        encryptionService.encryptDeterministic(asset.IPAddress || ''),
         asset.NetworkType || '',
         asset.PhysicalPort || '',
         asset.VLAN || '',
-        asset.SocketID || '',
+        encryptionService.encrypt(asset.SocketID || ''),
         asset.UserID || ''
       );
     }
@@ -3695,6 +3952,20 @@ app.post('/api/assets', async (req, res) => {
       }
     }
 
+    // 6. Link back to PO if applicable
+    if (asset.linked_po_item_id) {
+        try {
+            db.prepare('UPDATE project_order_items SET AssetID = ?, Status = "Asset Created" WHERE ID = ?').run(newId, asset.linked_po_item_id);
+            
+            // Also update the asset record with PO linking info if not already set
+            db.prepare('UPDATE assets SET linked_po_item_id = ?, BoughtAgainstPO = ? WHERE ID = ?')
+              .run(asset.linked_po_item_id, asset.BoughtAgainstPO || null, newId);
+              
+            console.log(`[PO Link] Linked Asset ${newId} to PO Item ${asset.linked_po_item_id}`);
+        } catch (linkErr) {
+            console.error('[PO Link] Failed to link back to PO item:', linkErr);
+        }
+    }
 
     appendAudit({ 
       Action: 'CREATE', 
@@ -4531,10 +4802,10 @@ app.get('/api/external/assets', checkApiKey, (req, res) => {
 app.get('/api/external/stats', checkApiKey, (req, res) => {
     try {
         const stats = {
-            totalAssets: db.prepare('SELECT COUNT(*) as count FROM assets').get().count,
-            totalProjects: db.prepare('SELECT COUNT(*) as count FROM projects').get().count,
-            activeProjects: db.prepare("SELECT COUNT(*) as count FROM projects WHERE Status = 'Active'").get().count,
-            assetsInUse: db.prepare("SELECT COUNT(*) as count FROM assets WHERE Status = 'In Use'").get().count
+            totalAssets: db.prepare('SELECT COUNT(*) as count FROM assets WHERE (is_deleted = 0 OR is_deleted IS NULL)').get().count,
+            totalProjects: db.prepare('SELECT COUNT(*) as count FROM projects WHERE (is_deleted = 0 OR is_deleted IS NULL)').get().count,
+            activeProjects: db.prepare("SELECT COUNT(*) as count FROM projects WHERE Status = 'Active' AND (is_deleted = 0 OR is_deleted IS NULL)").get().count,
+            assetsInUse: db.prepare("SELECT COUNT(*) as count FROM assets WHERE Status = 'In Use' AND (is_deleted = 0 OR is_deleted IS NULL)").get().count
         };
         res.json({ success: true, data: stats });
     } catch (err) {
@@ -4557,8 +4828,10 @@ app.get('/api/projects', (req, res) => {
         let params = [];
 
         if (projectId) {
-            query += ' WHERE ID = ?';
+            query += ' WHERE ID = ? AND (is_deleted = 0 OR is_deleted IS NULL)';
             params.push(projectId);
+        } else {
+            query += ' WHERE (is_deleted = 0 OR is_deleted IS NULL)';
         }
 
         query += ' ORDER BY Timestamp DESC';
@@ -5020,6 +5293,10 @@ app.post('/api/projects/:id/assign-asset', (req, res) => {
             WHERE ID = ?
         `).run(`Project: ${projectName}`, AssetID);
 
+        // --- Log Asset History ---
+        logAssetHistory(AssetID, 'PROJECT_CHANGE', 'General Stock', `Project: ${projectName}`, req.headers['x-user'] || 'web', `Assigned to project manually`);
+        logAssetHistory(AssetID, 'STATUS_CHANGE', 'In Store', 'In-Use', req.headers['x-user'] || 'web', `Status updated via project assignment`);
+
         stmt.run(id, AssetID, new Date().toISOString(), Type || 'Permanent');
         res.json({ success: true });
     } catch (err) {
@@ -5196,6 +5473,10 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
                 Severity: 'INFO', 
                 Details: `Converted temporary asset "${tempAsset.ItemName}" to permanent asset. Linked to Project ID: ${tempAsset.ProjectId}` 
             });
+
+            // 5. Asset History
+            logAssetHistory(newAssetId, 'CREATE', 'Temporary', 'Permanent', req.headers['x-user'] || 'web', `Created from temporary asset. Assigned to project ${tempAsset.ProjectId}`);
+            logAssetHistory(newAssetId, 'PROJECT_CHANGE', 'None', tempAsset.ProjectId, req.headers['x-user'] || 'web', `Initial project assignment`);
         })();
 
         res.json({ success: true, permanentId: newAssetId });
@@ -5208,8 +5489,9 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
 app.delete('/api/temporary-assets/:id', (req, res) => {
     try {
         const { id } = req.params;
-        db.prepare('DELETE FROM temporary_assets WHERE ID = ?').run(id);
-        res.json({ success: true });
+        const now = new Date().toISOString();
+        db.prepare("UPDATE temporary_assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+        res.json({ success: true, message: 'Temporary asset marked for deletion' });
     } catch (err) {
         console.error('Error deleting temporary asset:', err);
         res.status(500).json({ error: err.message });
@@ -5349,7 +5631,7 @@ app.put('/api/assets/:id', (req, res) => {
       asset.Status || existing.Status || 'In Store',
       asset.Make || existing.Make || '',
       asset.Model || existing.Model || '',
-      asset.SrNo || existing.SrNo || '',
+      encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.SrNo || '')),
       asset.Type || existing.Type || '',
       asset.Category || existing.Category || '',
       asset.Icon || existing.Icon || '',
@@ -5384,6 +5666,32 @@ app.put('/api/assets/:id', (req, res) => {
       AssetId: id,
       Severity: 'INFO',
       Details: `Asset updated: ${asset.ItemName || existing.ItemName}`
+    });
+
+    // --- TRACK ALL CHANGES FOR HISTORY ---
+    const currentUser = req.headers['x-user'] || 'web';
+    const trackedFields = [
+        { field: 'AssignedTo', action: 'ASSIGNMENT_CHANGE', label: 'Personnel' },
+        { field: 'Status', action: 'STATUS_CHANGE', label: 'Status' },
+        { field: 'CurrentLocation', action: 'LOCATION_CHANGE', label: 'Location' },
+        { field: 'AssignedProjectID', action: 'PROJECT_CHANGE', label: 'Project' }
+    ];
+
+    trackedFields.forEach(({ field, action, label }) => {
+        let newVal;
+        if (field === 'AssignedProjectID') {
+            newVal = asset.ProjectId || asset.ProjectID || asset.AssignedProjectID;
+        } else {
+            newVal = asset[field];
+        }
+
+        const oldVal = existing[field];
+        
+        // Only log if the field was actually sent in the request AND it's different from current
+        if (newVal !== undefined && String(newVal || '').trim() !== String(oldVal || '').trim()) {
+            console.log(`[HISTORY] ${label} change detected for ${id}: "${oldVal}" -> "${newVal}"`);
+            logAssetHistory(id, action, oldVal || 'None', newVal || 'None', currentUser, `${label} updated`);
+        }
     });
 
     // Propagate quantity_unit change to all descendants if this is the root asset
@@ -5464,12 +5772,12 @@ app.put('/api/assets/:id', (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
-        asset.MACAddress !== undefined ? asset.MACAddress : (existing.MACAddress || ''),
-        asset.IPAddress !== undefined ? asset.IPAddress : (existing.IPAddress || ''),
+        encryptionService.encrypt(asset.MACAddress !== undefined ? asset.MACAddress : (existing.MACAddress || '')),
+        encryptionService.encryptDeterministic(asset.IPAddress !== undefined ? asset.IPAddress : (existing.IPAddress || '')),
         asset.NetworkType !== undefined ? asset.NetworkType : (existing.NetworkType || ''),
         asset.PhysicalPort !== undefined ? asset.PhysicalPort : (existing.PhysicalPort || ''),
         asset.VLAN !== undefined ? asset.VLAN : (existing.VLAN || ''),
-        asset.SocketID !== undefined ? asset.SocketID : (existing.SocketID || ''),
+        encryptionService.encrypt(asset.SocketID !== undefined ? asset.SocketID : (existing.SocketID || '')),
         asset.UserID !== undefined ? asset.UserID : (existing.UserID || '')
       );
     }
@@ -5631,24 +5939,185 @@ app.put('/api/orders/:orderId/status', authenticateJWT, (req, res) => {
   }
 });
 
+app.delete('/api/assets/bulk', (req, res) => {
+  try {
+    const { ids } = req.body;
+    const username = req.headers['x-user'] || 'web';
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).send('No asset IDs provided');
+    }
+
+    // Check permissions
+    console.log(`[BULK DELETE] Auth check for user: "${username}"`);
+    const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username);
+    let hasPermission = false;
+    if (user) {
+      console.log(`[BULK DELETE] Found user: "${user.username}" with role: ${user.role}`);
+      if (user.role === 'admin' || user.role === 'superuser') {
+        hasPermission = true;
+      } else {
+        try {
+          const roles = JSON.parse(user.role);
+          if (Array.isArray(roles) && (roles.includes('admin') || roles.includes('superuser'))) {
+            hasPermission = true;
+          }
+        } catch (e) {
+          // Not a JSON role, already checked above
+        }
+      }
+    }
+
+    if (!hasPermission) {
+      appendAudit({ Action: 'BULK_DELETE_DENIED', User: username, AssetId: ids.join(','), Severity: 'WARN', Details: 'Unauthorized bulk delete attempt' });
+      return res.status(403).send('Forbidden');
+    }
+
+    const now = new Date().toISOString();
+    let deletedCount = 0;
+
+    // Use a transaction for bulk operations
+    const deleteTransaction = db.transaction((assetIds) => {
+      for (const id of assetIds) {
+        const asset = db.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+        if (!asset) continue;
+
+        // 1. Quantity Logic for Bulk
+        if (asset.quantity_root_id) {
+          const isRoot = String(asset.quantity_root_id).toLowerCase() === String(id).toLowerCase();
+          if (isRoot) {
+            // Root: Only delete if no active children
+            const activeChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) LIMIT 1').get(id);
+            if (activeChildren) continue; // Skip root with children
+          } else {
+            // Child: Return quantity to parent
+            const qtyToReturn = asset.quantity_total || 0;
+            const parentId = asset.quantity_parent_id;
+            if (qtyToReturn > 0 && parentId) {
+              applyQuantityEvent({
+                rootId: asset.quantity_root_id,
+                type: 'BULK_RETURN_ON_DELETE',
+                actor: username,
+                note: `Returned quantity from bulk deleted split: ${id}`,
+                lines: [
+                  { assetId: parentId, deltaAvailable: qtyToReturn, deltaTotal: 0 },
+                  { assetId: id, deltaAvailable: -qtyToReturn, deltaTotal: -qtyToReturn }
+                ]
+              });
+            }
+          }
+        } else {
+          // 2. Component Logic for Bulk
+          const qtyChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? LIMIT 1').get(id);
+          if (qtyChildren) continue;
+        }
+
+        // Clear ParentId for linked assets
+        const linkedComponents = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 0').all(id);
+        for (const comp of linkedComponents) {
+          db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(comp.ID);
+        }
+
+        db.prepare('DELETE FROM components WHERE ID = ?').run(id);
+        db.prepare('DELETE FROM components WHERE ParentId = ?').run(id);
+
+        const result = db.prepare("UPDATE assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+        if (result.changes > 0) deletedCount++;
+      }
+    });
+
+    deleteTransaction(ids);
+
+    appendAudit({ 
+      Action: 'BULK_DELETE', 
+      User: username, 
+      AssetId: ids.join(','), 
+      Severity: 'INFO', 
+      Details: `Marked ${deletedCount} assets for deletion (30-day grace period)` 
+    });
+
+    res.json({ success: true, count: deletedCount, message: `Successfully marked ${deletedCount} assets for deletion` });
+  } catch (err) {
+    console.error('Failed bulk delete:', err);
+    res.status(500).send('Error in bulk deletion: ' + err.message);
+  }
+});
+
 app.delete('/api/assets/:id', (req, res) => {
   try {
     const id = req.params.id;
     const username = req.headers['x-user'] || 'web';
 
-    const qtyInfo = db.prepare('SELECT quantity_root_id FROM assets WHERE ID = ?').get(id)
-    if (qtyInfo && qtyInfo.quantity_root_id) {
-      return res.status(400).send('Cannot delete quantity-tracked assets')
+    // 1. Fetch asset details for quantity check
+    const asset = db.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+    if (!asset) return res.status(404).send('Asset not found');
+
+    // 2. Quantity Tracked Asset Logic
+    if (asset.quantity_root_id) {
+      const isRoot = String(asset.quantity_root_id).toLowerCase() === String(id).toLowerCase();
+      
+      if (isRoot) {
+        // --- Root Asset Deletion ---
+        // Check for active children (allocations/splits)
+        const activeChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) LIMIT 1').get(id);
+        if (activeChildren) {
+          return res.status(400).send('Cannot delete Root Quantity asset while active splits exist. Return or delete all splits first.');
+        }
+        // If no active children, we can proceed to soft-delete the root
+      } else {
+        // --- Child Asset (Split) Deletion ---
+        // We must return the quantity back to the parent before deleting the child
+        const qtyToReturn = asset.quantity_total || 0;
+        const parentId = asset.quantity_parent_id;
+        
+        if (qtyToReturn > 0 && parentId) {
+          try {
+            console.log(`[QTY RETURN] Returning ${qtyToReturn} from child ${id} to parent ${parentId}`);
+            applyQuantityEvent({
+              rootId: asset.quantity_root_id,
+              type: 'RETURN_ON_DELETE',
+              actor: username,
+              note: `Returned quantity from deleted split: ${id}`,
+              lines: [
+                { assetId: parentId, deltaAvailable: qtyToReturn, deltaTotal: 0 },
+                { assetId: id, deltaAvailable: -qtyToReturn, deltaTotal: -qtyToReturn }
+              ]
+            });
+          } catch (qtyErr) {
+            console.error('[QTY RETURN ERROR]', qtyErr);
+            return res.status(500).send('Failed to return quantity to parent: ' + qtyErr.message);
+          }
+        }
+      }
+    } else {
+      // 3. Component Hierarchy Check (Non-quantity assets)
+      const qtyChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? LIMIT 1').get(id);
+      if (qtyChildren) {
+        return res.status(400).send('Cannot delete asset with quantity children');
+      }
     }
 
-    const qtyChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? LIMIT 1').get(id)
-    if (qtyChildren) {
-      return res.status(400).send('Cannot delete asset with quantity children')
+    // 4. Auth check
+    console.log(`[DELETE] Auth check for user: "${username}" on asset ${id}`);
+    const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username);
+    let hasPermission = false;
+    if (user) {
+      console.log(`[DELETE] Found user: "${user.username}" with role: ${user.role}`);
+      if (user.role === 'admin' || user.role === 'superuser') {
+        hasPermission = true;
+      } else {
+        try {
+          const roles = JSON.parse(user.role);
+          if (Array.isArray(roles) && (roles.includes('admin') || roles.includes('superuser'))) {
+            hasPermission = true;
+          }
+        } catch (e) {
+          // Not a JSON role, already checked above
+        }
+      }
     }
 
-    // Check permissions using the database
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-    if (!user || (user.role !== 'admin' && user.role !== 'superuser')) {
+    if (!hasPermission) {
       appendAudit({ Action: 'DELETE_DENIED', User: username, AssetId: id, Severity: 'WARN', Details: 'Unauthorized delete attempt' });
       return res.status(403).send('Forbidden');
     }
@@ -5664,11 +6133,13 @@ app.delete('/api/assets/:id', (req, res) => {
     db.prepare('DELETE FROM components WHERE ParentId = ?').run(id);
 
     const stmt = db.prepare('DELETE FROM assets WHERE ID = ?');
-    const result = stmt.run(id);
+    // Soft Delete: Mark as deleted instead of removing immediately
+    const now = new Date().toISOString();
+    const result = db.prepare("UPDATE assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
 
     if (result.changes > 0) {
-      appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset deleted' });
-      res.json({ ok: true });
+      appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
+      res.json({ success: true, message: 'Asset marked for deletion (30-day grace period)' });
     } else {
       res.status(404).send('Asset not found');
     }
@@ -6156,6 +6627,7 @@ async function getManufacturer(mac) {
   });
 }
 
+/* 
 app.get('/api/scan', async (req, res) => {
   const target = req.query.target;
   const ports = req.query.ports;
@@ -6347,9 +6819,11 @@ app.get('/api/scan', async (req, res) => {
     res.status(500).send('Scan failed: ' + err.message);
   }
 });
+*/
 
 // Background Network Monitor (DHCP Tracker)
 let isBgScanning = false;
+/*
 async function runNetworkMonitor() {
   if (isBgScanning) return;
   isBgScanning = true;
@@ -6425,11 +6899,13 @@ async function runNetworkMonitor() {
 }
 
 // Run every 5 minutes
+/*
 const MONITOR_INTERVAL = 5 * 60 * 1000;
 setInterval(runNetworkMonitor, MONITOR_INTERVAL);
 
 // Initial run after server starts
 setTimeout(runNetworkMonitor, 15000);
+*/
 
 const PORT = process.env.PORT || 9090
 // 5. Update Project (e.g., for Kanban status moves or details editing)
@@ -6832,6 +7308,7 @@ app.delete('/api/ocr/history/:filename', (req, res) => {
     }
 });
 
+/* 
 app.post('/api/ocr/process', ocrUpload.single('document'), async (req, res) => {
     try {
         if (!req.file) {
@@ -7177,6 +7654,7 @@ app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, r
         res.status(500).json({ error: err.message });
     }
 });
+*/
 
 app.post('/api/assets/split', async (req, res) => {
   try {

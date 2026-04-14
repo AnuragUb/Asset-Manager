@@ -148,6 +148,7 @@ export class HierarchyManager {
                         <span class="tree-link ${activeClass}" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
                         ${node.type === 'kind' ? `
                             <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">✏️</span>
+                            <span class="delete-kind-btn" data-id="${node.ID}" title="Delete Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">🗑️</span>
                         ` : ''}
                     </div>
                     ${hasChildren ? `
