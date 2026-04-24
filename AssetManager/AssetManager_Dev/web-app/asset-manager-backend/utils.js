@@ -3,42 +3,55 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const IdGenerator = require('./IdGenerator');
+const knexConfig = require('./knexfile');
 
 // Helper to get Data Directory from Environment or Default
 const getDataDir = () => {
     return process.env.DATA_DIR || path.join(__dirname, '../../data');
 };
+const dataDir = getDataDir();
 
 const getDbPath = () => {
     return process.env.DB_PATH || path.join(__dirname, '../../data/test/database_v2.db');
 };
 
-// Ensure Data Directory exists if it's a custom one
-const dataDir = getDataDir();
-if (!fs.existsSync(dataDir)) {
-    try {
-        fs.mkdirSync(dataDir, { recursive: true });
-    } catch (e) {
-        console.warn('Could not create data directory:', dataDir, e);
-    }
-}
+// Database connection configuration
+const environment = process.env.NODE_ENV || 'development';
+const db = require('knex')(knexConfig[environment]);
 
-// Database connection
-const dbPath = getDbPath();
-// Ensure directory for DB exists
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-    try {
+// Legacy direct connection for migration/compatibility
+let legacyDb = null;
+const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
+if (!isPostgres) {
+    const dbPath = getDbPath();
+    // Ensure the directory exists before opening
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
-    } catch (e) {
-        console.warn('Could not create DB directory:', dbDir, e);
     }
+    legacyDb = new Database(dbPath);
+    console.log(`[DB] Legacy SQLite path: ${dbPath}`);
+} else {
+    console.log(`[DB] Running on PostgreSQL. Legacy SQLite disabled.`);
+    // Provide a shim for legacy code that still tries to use legacyDb
+    const noop = () => ({ 
+        all: () => [], 
+        get: () => null, 
+        run: () => ({ changes: 0 }),
+        iterate: () => ({ [Symbol.iterator]: () => ({ next: () => ({ done: true }) }) })
+    });
+    legacyDb = {
+        prepare: noop,
+        exec: () => {},
+        transaction: (callback) => {
+            console.log('[DB] Shimmed transaction called.');
+            return callback(legacyDb);
+        }
+    };
 }
 
-console.log('Database Path:', dbPath);
-console.log('Data Directory:', dataDir);
-
-const db = new Database(dbPath);
+console.log(`[DB] Knex initialized for environment: ${environment}`);
 
 // File paths (for legacy support or specific data)
 // Use DATA_DIR for these JSON files if possible, or fall back to relative
@@ -51,6 +64,10 @@ const auditFile = path.join(dataDir, 'audit_log.json');
 const dynamicFile = path.join(dataDir, 'dynamic.json');
 
 // Ensure dynamicFile exists
+const dynamicDir = path.dirname(dynamicFile);
+if (!fs.existsSync(dynamicDir)) {
+    fs.mkdirSync(dynamicDir, { recursive: true });
+}
 if (!fs.existsSync(dynamicFile)) {
     fs.writeFileSync(dynamicFile, JSON.stringify({}));
 }
@@ -87,35 +104,34 @@ function getLocalIP() {
     return '127.0.0.1';
 }
 
-function appendAudit(entry) {
-    // Write to SQLite database
+async function appendAudit(entry) {
+    // Write to database using Knex (Async)
     try {
-        const stmt = db.prepare(`
-            INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(
-            entry.Action || 'UNKNOWN',
-            entry.User || 'System',
-            entry.AssetId || '',
-            entry.Severity || 'INFO',
-            entry.Details || '',
-            entry.Timestamp || new Date().toISOString()
-        );
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+            await db('audit_log').insert({
+                action: entry.Action || 'UNKNOWN',
+                user: entry.User || 'System',
+                assetid: entry.AssetId || '',
+                severity: entry.Severity || 'INFO',
+                details: entry.Details || '',
+                timestamp: entry.Timestamp || new Date().toISOString()
+            });
+        } else {
+            legacyDb.prepare(`
+                INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `).run(
+                entry.Action || 'UNKNOWN',
+                entry.User || 'System',
+                entry.AssetId || '',
+                entry.Severity || 'INFO',
+                entry.Details || '',
+                entry.Timestamp || new Date().toISOString()
+            );
+        }
     } catch (err) {
         console.error('Failed to append audit log to DB:', err);
-    }
-
-    // Also keep JSON for backup/legacy if needed (optional, but good for safety)
-    try {
-        // const log = readJson(auditFile); // Skipping JSON for now to prevent I/O load
-        // log.push({
-        //     ...entry,
-        //     Timestamp: new Date().toISOString()
-        // });
-        // writeJson(auditFile, log);
-    } catch (err) {
-        console.error('Failed to append audit log to JSON:', err);
     }
 }
 
@@ -576,9 +592,10 @@ function parseTallyXml(xml) {
     return { status, data };
 }
 
-module.exports = { 
-  db, 
-  readJson, 
+module.exports = {
+    db,
+    legacyDb,
+    readJson, 
   writeJson, 
   getLocalIP, 
   appendAudit, 
@@ -602,5 +619,6 @@ module.exports = {
   sendTallyRequest,
   parseTallyXml,
   TALLY_CONFIG,
-  getTallyConfig
+  getTallyConfig,
+  legacyDb
 };

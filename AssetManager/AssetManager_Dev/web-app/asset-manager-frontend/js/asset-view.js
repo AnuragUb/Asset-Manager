@@ -18,19 +18,16 @@ window.onerror = function(msg, url, line, col, error) {
 
 // Main function to load asset details
 async function loadAssetDetails() {
-    // console.log('[AssetView] Initializing loadAssetDetails...');
+    console.log('[AssetView] Initializing loadAssetDetails...');
     const debugEl = document.getElementById('debug-log');
 
     const pathParts = window.location.pathname.split('/').filter(p => p);
-    // Handle trailing slashes or extra segments if any
     let assetId = pathParts[pathParts.length - 1];
     
-    // If the last part is empty or just 'asset', try the one before
     if ((!assetId || assetId === 'asset') && pathParts.length > 1) {
         assetId = pathParts[pathParts.length - 2];
     }
 
-    // Decode ID from URL to handle spaces and special characters correctly
     if (assetId) {
         try {
             assetId = decodeURIComponent(assetId);
@@ -39,7 +36,7 @@ async function loadAssetDetails() {
         }
     }
     
-    // console.log('[AssetView] Detected ID:', assetId);
+    console.log('[AssetView] Detected ID:', assetId);
 
     if (!assetId || assetId === 'asset') {
         renderError('Invalid or missing Asset ID in URL');
@@ -51,21 +48,29 @@ async function loadAssetDetails() {
 
     try {
         const url = `/api/asset-details/${encodeURIComponent(assetId)}`;
-        // console.log('[AssetView] Fetching:', url);
+        console.log('[AssetView] Fetching:', url);
         
-        const response = await fetch(url);
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        const response = await fetch(url, { headers });
+        console.log('[AssetView] Response status:', response.status);
+
         if (!response.ok) {
-            throw new Error(`API Error: ${response.status}`);
+            const errText = await response.text();
+            throw new Error(`API Error: ${response.status} - ${errText}`);
         }
         
         const data = await response.json();
-        // console.log('[AssetView] Data received', data);
+        console.log('[AssetView] Data received:', data);
         
         if (!data || !data.asset) {
-            throw new Error('Invalid data format received');
+            console.error('[AssetView] Invalid data structure:', data);
+            throw new Error('Invalid data format received from server');
         }
 
-        renderAsset(data);
+        await renderAsset(data);
         
         // Hide loading
         if (loadingEl) loadingEl.style.display = 'none';
@@ -73,7 +78,7 @@ async function loadAssetDetails() {
         if (appEl) appEl.style.display = 'block';
 
     } catch (err) {
-        // console.error('[AssetView] Error:', err);
+        console.error('[AssetView] Fatal Error:', err);
         if (debugEl) {
             debugEl.style.display = 'block';
             debugEl.innerHTML += `<div style="color:red">Fatal: ${err.message}</div>`;
@@ -99,11 +104,24 @@ function renderError(msg) {
 }
 
 async function renderAsset(data) {
+    console.log('[AssetView] Rendering asset data:', data);
     const { asset, children, parent } = data;
     const app = document.getElementById('app');
     
+    if (!asset) {
+        console.error('[AssetView] No asset object in data');
+        renderError('Asset data is missing');
+        return;
+    }
+
     // Check user session for permissions
-    const currentUser = await checkSession();
+    let currentUser = null;
+    try {
+        currentUser = await checkSession();
+    } catch (e) {
+        console.warn('[AssetView] Session check failed, continuing as guest');
+    }
+    
     const canDelete = currentUser && (
         currentUser.role === 'admin' || 
         currentUser.role === 'superuser' ||
@@ -122,6 +140,15 @@ async function renderAsset(data) {
             <div class="status-pill" style="margin-top: 15px; background: rgba(255,255,255,0.25); padding: 5px 15px; border-radius: 20px; display: inline-block; font-weight: 600;">
                 ${safe(asset.Status)}
             </div>
+            
+            ${asset.ParentId ? `
+                <div style="margin-top: 15px;">
+                    <button id="btnUnsplitAssetView" class="action-button" 
+                            style="background: #fff; color: #2563eb; border: none; padding: 6px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <span>🔗</span> Unsplit & Merge back to Parent
+                    </button>
+                </div>
+            ` : ''}
         </div>
     `;
 
@@ -173,6 +200,48 @@ async function renderAsset(data) {
         `;
     }
 
+    // 2.7 Barcode / Client Label (New)
+    if (asset.client_label) {
+        html += `
+            <div class="card" style="text-align: center;">
+                <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Client Label & QR Verification</h3>
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 10px 0;">
+                    <div style="display: flex; flex-direction: column; align-items: center;">
+                        <svg id="barcode"></svg>
+                        <div style="font-family: monospace; font-size: 16px; font-weight: bold; letter-spacing: 2px; margin-top: 5px;">
+                            ${safe(asset.client_label)}
+                        </div>
+                    </div>
+                    
+                    <div style="border-top: 1px dashed #ddd; width: 100%; padding-top: 20px;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 10px;">Scan for Public Specs & Verification</div>
+                        <canvas id="client-qr" style="max-width: 150px;"></canvas>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+                    <button id="btnPrintBarcode" class="action-button small" style="background: #0078d4; color: white; padding: 8px 16px;">🖨️ Print Combined Label</button>
+                </div>
+            </div>
+        `;
+    }
+
+    // 3. Internal QR Tag (The permanent tag)
+    html += `
+        <div class="card" style="text-align: center;">
+            <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Internal QR Tag</h3>
+            <div style="margin: 20px 0;">
+                <canvas id="internal-qr" style="max-width: 150px;"></canvas>
+            </div>
+            <div style="font-size: 13px; font-weight: 600; color: #334155; margin-top: 4px; letter-spacing: 0.5px; border: 1px dashed #cbd5e1; display: inline-block; padding: 2px 8px; border-radius: 4px; background: #f8fafc;">
+                ${safe(asset.ID)}
+            </div>
+            <div style="font-size: 11px; color: #666; margin-top: 10px;">
+                Permanent internal tracking ID
+            </div>
+        </div>
+    `;
+
     // 3. Current Assignment (Crucial for knowing who has it)
     if (asset.AssignedTo) {
         html += `
@@ -193,17 +262,20 @@ async function renderAsset(data) {
 
     // 4. Components / Children (If any)
     if (children && children.length > 0) {
+        const hasSplitChildren = children.some(c => c.isSplitChild);
+        const title = hasSplitChildren ? 'Linked Assets / Components' : 'Components';
         html += `
             <div class="card">
-                <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Components (${children.length})</h3>
+                <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">${title} (${children.length})</h3>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     ${children.map(c => `
-                        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee;">
+                        <div onclick="window.location.href='/asset/${encodeURIComponent(c.ID || c.id)}'" style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee; cursor: pointer;">
                             <div style="font-size: 20px;">${getIcon(c.Icon)}</div>
                             <div style="flex: 1;">
-                                <div style="font-weight: 600; font-size: 14px;">${safe(c.ItemName)}</div>
-                                <div style="font-size: 11px; color: #666;">${safe(c.ID)} • ${safe(c.Status)}</div>
+                                <div style="font-weight: 600; font-size: 14px;">${safe(c.ItemName || c.itemname)}</div>
+                                <div style="font-size: 11px; color: #666;">${safe(c.ID || c.id)} • ${safe(c.Status || c.status)} ${c.isSplitChild ? '<span style="color:#0078d4; font-weight:bold;">(Split Part)</span>' : ''}</div>
                             </div>
+                            <div style="font-size: 12px; color: #999;">View &rarr;</div>
                         </div>
                     `).join('')}
                 </div>
@@ -217,23 +289,30 @@ async function renderAsset(data) {
     // 1. Add Structured History (Priority for detailed changes)
     if (data.structuredHistory && Array.isArray(data.structuredHistory)) {
         data.structuredHistory.forEach(h => {
-            let details = h.Details || '';
-            let actionLabel = h.Action.replace(/_/g, ' ');
+            if (!h) return;
+            const action = h.Action || h.action || 'Unknown';
+            const timestamp = h.Timestamp || h.timestamp;
+            const user = h.User || h.user || 'web';
+            const details = h.Details || h.details || '';
+            const fromVal = h.FromValue || h.oldvalue;
+            const toVal = h.ToValue || h.newvalue;
+
+            let actionLabel = action ? action.replace(/_/g, ' ') : 'Unknown Action';
             
             // Format From -> To values nicely
-            const changeText = (h.FromValue || h.ToValue) 
+            const changeText = (fromVal || toVal) 
                 ? `<div style="margin-top:4px; font-weight:500; color:#1e293b;">
-                    ${h.FromValue ? `<span style="background:#fee2e2; color:#991b1b; padding:1px 4px; border-radius:3px;">${h.FromValue}</span> → ` : ''}
-                    <span style="background:#dcfce7; color:#166534; padding:1px 4px; border-radius:3px;">${h.ToValue || 'None'}</span>
+                    ${fromVal ? `<span style="background:#fee2e2; color:#991b1b; padding:1px 4px; border-radius:3px;">${safe(fromVal)}</span> → ` : ''}
+                    <span style="background:#dcfce7; color:#166534; padding:1px 4px; border-radius:3px;">${safe(toVal) || 'None'}</span>
                    </div>`
                 : '';
 
             historyItems.push({
-                timestamp: h.Timestamp,
+                timestamp: timestamp,
                 action: actionLabel,
                 details: details,
                 changeHtml: changeText,
-                user: h.User,
+                user: user,
                 type: 'STRUCTURED'
             });
         });
@@ -242,18 +321,23 @@ async function renderAsset(data) {
     // 2. Add Audit Log (Filter out duplicates if they exist in structured history)
     if (data.history && Array.isArray(data.history)) {
         data.history.forEach(h => {
-            // Basic heuristic: if it's a generic UPDATE and we already have a structured change at roughly the same time, skip it
-            const isGenericUpdate = h.Action === 'UPDATE';
+            if (!h) return;
+            const action = h.Action || h.action || 'Unknown';
+            const timestamp = h.Timestamp || h.timestamp;
+            const user = h.User || h.user || 'web';
+            const details = h.Details || h.details || '';
+
+            const isGenericUpdate = action === 'UPDATE';
             const hasStructuredMatch = isGenericUpdate && historyItems.some(sh => 
-                Math.abs(new Date(sh.timestamp) - new Date(h.Timestamp)) < 2000
+                sh.timestamp && timestamp && Math.abs(new Date(sh.timestamp) - new Date(timestamp)) < 2000
             );
 
             if (!hasStructuredMatch) {
                 historyItems.push({
-                    timestamp: h.Timestamp,
-                    action: h.Action,
-                    details: h.Details,
-                    user: h.User,
+                    timestamp: timestamp,
+                    action: action,
+                    details: details,
+                    user: user,
                     type: 'AUDIT'
                 });
             }
@@ -262,15 +346,21 @@ async function renderAsset(data) {
 
     if (data.quantityEvents && Array.isArray(data.quantityEvents)) {
         data.quantityEvents.forEach(e => {
-            let details = e.note || '';
+            if (!e) return;
+            const action = e.type || e.Action || 'QTY_CHANGE';
+            const timestamp = e.timestamp || e.Timestamp;
+            const actor = e.actor || e.User || 'system';
+            const note = e.note || e.Details || '';
+
+            let details = note;
             if (e.metadata && typeof e.metadata === 'object') {
                  details += ' ' + Object.entries(e.metadata).map(([k,v]) => `${k}: ${v}`).join(', ');
             }
             historyItems.push({
-                timestamp: e.timestamp,
-                action: e.type,
+                timestamp: timestamp,
+                action: action,
                 details: details.trim(),
-                user: e.actor,
+                user: actor,
                 type: 'QTY'
             });
         });
@@ -282,8 +372,11 @@ async function renderAsset(data) {
         
         html += `
             <div class="card">
-                <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Recent History</h3>
-                <div style="position: relative; padding-left: 20px; border-left: 2px solid #e0e0e0; margin-left: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">
+                    <h3 style="margin: 0;">Recent History</h3>
+                    <button id="toggleHistory" class="action-button small" style="background: #64748b; color: white; padding: 4px 12px; font-size: 12px; border: none; border-radius: 4px; cursor: pointer;">Hide History</button>
+                </div>
+                <div id="historyContainer" style="position: relative; padding-left: 20px; border-left: 2px solid #e0e0e0; margin-left: 10px;">
                     ${sortedHistory.map(h => `
                         <div style="margin-bottom: 20px; position: relative;">
                             <div style="position: absolute; left: -26px; top: 0; width: 10px; height: 10px; background: ${h.type === 'QTY' ? '#28a745' : (h.type === 'STRUCTURED' ? '#007bff' : '#64748b')}; border-radius: 50%; border: 2px solid white;"></div>
@@ -329,6 +422,79 @@ async function renderAsset(data) {
 
     app.innerHTML = html;
 
+    // Initialize Barcode if element exists
+    if (asset.client_label && typeof JsBarcode !== 'undefined') {
+        try {
+            JsBarcode("#barcode", asset.client_label, {
+                format: "CODE128",
+                lineColor: "#000",
+                width: 2,
+                height: 50,
+                displayValue: false
+            });
+
+            // Initialize Client QR Code
+            if (typeof QRCode !== 'undefined') {
+                const publicUrl = `${window.location.origin}/public/asset/${encodeURIComponent(asset.client_label)}`;
+                QRCode.toCanvas(document.getElementById('client-qr'), publicUrl, {
+                    width: 150,
+                    margin: 2,
+                    color: { dark: '#000000', light: '#ffffff' }
+                });
+            }
+        } catch (e) {
+            console.error('Barcode/QR generation failed:', e);
+        }
+    }
+
+    // Initialize Internal QR Code (The permanent tag)
+    if (typeof QRCode !== 'undefined') {
+        try {
+            const internalUrl = `${window.location.origin}/asset/${encodeURIComponent(asset.ID)}`;
+            QRCode.toCanvas(document.getElementById('internal-qr'), internalUrl, {
+                width: 150,
+                margin: 2,
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+        } catch (e) {
+            console.error('Internal QR generation failed:', e);
+        }
+    }
+
+    // Add event listener for unsplit button
+    const btnUnsplit = document.getElementById('btnUnsplitAssetView');
+    if (btnUnsplit && asset.ParentId) {
+        btnUnsplit.onclick = async () => {
+            if (!confirm(`Are you sure you want to merge this asset back into its parent batch (${asset.ParentId})? This individual asset record will be deleted.`)) {
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch('/api/assets/unsplit', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ childIds: [asset.ID] })
+                });
+
+                if (response.ok) {
+                    alert('Asset successfully merged back to parent batch.');
+                    // Redirect to parent asset page
+                    window.location.href = `/asset/${encodeURIComponent(asset.ParentId)}`;
+                } else {
+                    const err = await response.json();
+                    alert('Unsplit failed: ' + (err.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('[AssetView] Unsplit error:', err);
+                alert('Error processing unsplit request');
+            }
+        };
+    }
+
     // Attach Delete Handler
     const btnDelete = document.getElementById('btnDeleteStandalone');
     if (btnDelete) {
@@ -353,6 +519,131 @@ async function renderAsset(data) {
                 console.error('Delete error:', err);
                 alert('Failed to delete asset');
             }
+        };
+    }
+
+    // History Toggle Logic
+    const toggleBtn = document.getElementById('toggleHistory');
+    if (toggleBtn) {
+        toggleBtn.onclick = () => {
+            const container = document.getElementById('historyContainer');
+            if (container) {
+                const isHidden = container.style.display === 'none';
+                container.style.display = isHidden ? 'block' : 'none';
+                toggleBtn.textContent = isHidden ? 'Hide History' : 'Show History';
+            }
+        };
+    }
+
+    // Print Barcode Logic
+    const printBtn = document.getElementById('btnPrintBarcode');
+    if (printBtn) {
+        printBtn.onclick = () => {
+            const printWindow = window.open('', '_blank');
+            const barcodeSvg = document.getElementById('barcode').outerHTML;
+            const qrCanvas = document.getElementById('client-qr');
+            const qrImage = qrCanvas.toDataURL("image/png");
+            const clientLabel = asset.client_label;
+            const itemName = asset.ItemName || asset.itemname;
+
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Print Label - ${clientLabel}</title>
+                    <style>
+                        @page { size: 100mm 50mm; margin: 0; }
+                        body { 
+                            font-family: 'Inter', sans-serif; 
+                            margin: 0;
+                            padding: 0;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            width: 100mm;
+                            height: 50mm;
+                        }
+                        .label-card {
+                            width: 90mm;
+                            height: 40mm;
+                            border: 1px solid #eee;
+                            display: flex;
+                            padding: 2mm;
+                            box-sizing: border-box;
+                        }
+                        .left-side {
+                            flex: 1.5;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: space-between;
+                            padding-right: 2mm;
+                        }
+                        .right-side {
+                            flex: 1;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            border-left: 1px dashed #ccc;
+                        }
+                        .item-name {
+                            font-size: 11pt;
+                            font-weight: bold;
+                            text-transform: uppercase;
+                            border-bottom: 1px solid #000;
+                            padding-bottom: 1mm;
+                        }
+                        .barcode-area {
+                            flex-grow: 1;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 1mm 0;
+                        }
+                        .label-text {
+                            font-family: monospace;
+                            font-size: 14pt;
+                            font-weight: bold;
+                            letter-spacing: 1.5px;
+                            text-align: center;
+                        }
+                        .qr-image {
+                            width: 32mm;
+                            height: 32mm;
+                        }
+                        .qr-caption {
+                            font-size: 7pt;
+                            color: #666;
+                            margin-top: 1mm;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="label-card">
+                        <div class="left-side">
+                            <div class="item-name">${itemName}</div>
+                            <div class="barcode-area">
+                                ${barcodeSvg}
+                                <div class="label-text">${clientLabel}</div>
+                            </div>
+                        </div>
+                        <div class="right-side">
+                            <img src="${qrImage}" class="qr-image">
+                            <div class="qr-caption">Scan for Specs</div>
+                        </div>
+                    </div>
+                    <script>
+                        window.onload = () => {
+                            setTimeout(() => {
+                                window.print();
+                                window.onafterprint = () => window.close();
+                            }, 500);
+                        };
+                    </script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
         };
     }
 }

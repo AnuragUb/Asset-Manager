@@ -16,6 +16,7 @@ const { Document, Packer, Paragraph, TextRun } = require('docx');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const cache = require('./services/cacheService');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../input');
@@ -66,7 +67,8 @@ const {
   sendTallyRequest, 
   parseTallyXml, 
   TALLY_CONFIG,
-  getTallyConfig
+  getTallyConfig,
+  legacyDb
 } = require('./utils')
 const crypto = require('crypto');
 const tokenService = require('./services/tokenService');
@@ -83,6 +85,143 @@ let DEFAULT_COMPANY_ID = null;
 
 const app = express();
 const port = process.env.PORT || 9090;
+
+// --- DATABASE UTILITIES ---
+
+/**
+ * Universal Normalizer for PostgreSQL results.
+ * Maps lowercase PostgreSQL keys to CamelCase/PascalCase keys expected by the frontend.
+ * Also handles common type conversions and date formatting.
+ */
+function normalizeResult(data) {
+  if (!data) return data;
+  if (Array.isArray(data)) return data.map(item => normalizeResult(item));
+  if (typeof data !== 'object') return data;
+
+  const result = { ...data };
+  const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
+  if (isPostgres) {
+    // 1. Common Key Mapping (lower -> Pascal/Camel)
+    const mappings = {
+      'id': 'ID',
+      'itemname': 'ItemName',
+      'itemdescription': 'ItemDescription',
+      'status': 'Status',
+      'make': 'Make',
+      'model': 'Model',
+      'srno': 'SrNo',
+      'serialno': 'SerialNo',
+      'type': 'Type',
+      'category': 'Category',
+      'icon': 'Icon',
+      'isplaceholder': 'IsPlaceholder',
+      'parentid': 'ParentId',
+      'currentlocation': 'CurrentLocation',
+      'previouslocation': 'PreviousLocation',
+      'dispatchreceivedt': 'DispatchReceiveDt',
+      'purchasedetails': 'PurchaseDetails',
+      'remarks': 'Remarks',
+      'purpose': 'Purpose',
+      'purchasedate': 'PurchaseDate',
+      'lastupdated': 'LastUpdated',
+      'qrcode': 'QRCode',
+      'assignedto': 'AssignedTo',
+      'macaddress': 'MACAddress',
+      'ipaddress': 'IPAddress',
+      'networktype': 'NetworkType',
+      'physicalport': 'PhysicalPort',
+      'vlan': 'VLAN',
+      'socketid': 'SocketID',
+      'userid': 'UserID',
+      'noqr': 'NoQR',
+      'currency': 'Currency',
+      'asset_value': 'AssetValue',
+      'unitprice': 'UnitPrice',
+      'warranty_months': 'WarrantyMonths',
+      'amc_months': 'AMCMonths',
+      'employeeid': 'EmployeeID',
+      'name': 'Name',
+      'fullname': 'Fullname',
+      'department': 'Department',
+      'designation': 'Designation',
+      'email': 'Email',
+      'phone': 'Phone',
+      'timestamp': 'Timestamp',
+      'projectname': 'ProjectName',
+      'clientname': 'ClientName',
+      'location': 'Location',
+      'startdate': 'StartDate',
+      'enddate': 'EndDate',
+      'owneremail': 'OwnerEmail',
+      'coordinatoremail': 'CoordinatorEmail',
+      'consigneename': 'ConsigneeName',
+      'consigneeaddress': 'ConsigneeAddress',
+      'consigneegstin': 'ConsigneeGSTIN',
+      'consigneestate': 'ConsigneeState',
+      'consigneestatecode': 'ConsigneeStateCode',
+      'buyername': 'BuyerName',
+      'buyeraddress': 'BuyerAddress',
+      'buyergstin': 'BuyerGSTIN',
+      'buyerstate': 'BuyerState',
+      'buyerstatecode': 'BuyerStateCode',
+      'ponumber': 'PONumber',
+      'podate': 'PODate',
+      'vendorname': 'VendorName',
+      'totalamount': 'TotalAmount',
+      'orderno': 'OrderNo',
+      'orderdate': 'OrderDate',
+      'challanno': 'ChallanNo',
+      'customername': 'CustomerName',
+      'deliverydate': 'DeliveryDate',
+      'assetids': 'AssetIds',
+      'payloadjson': 'PayloadJSON',
+      'createdby': 'CreatedBy',
+      'module': 'Module',
+      'parentname': 'ParentName',
+      'displayimage': 'DisplayImage',
+      'identifier': 'Identifier'
+    };
+
+    Object.keys(data).forEach(key => {
+      const mapped = mappings[key];
+      if (mapped && mapped !== key) {
+        result[mapped] = data[key];
+      }
+    });
+
+    // 2. Specialized Logic
+    if (result.PayloadJSON && typeof result.PayloadJSON === 'string') {
+        try { result.PayloadJSON = JSON.parse(result.PayloadJSON); } catch(e) {}
+    }
+    if (result.metadata_json && typeof result.metadata_json === 'string') {
+        try { result.metadata = JSON.parse(result.metadata_json); } catch(e) {}
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Executes a query against the active database (Postgres or legacy SQLite).
+ * Automatically normalizes results for PostgreSQL.
+ */
+async function executeQuery(tableName, callback) {
+  const isPostgres = process.env.DB_CLIENT === 'postgresql';
+  try {
+    if (isPostgres) {
+        const result = await callback(db(tableName));
+        return normalizeResult(result);
+    } else {
+        // Fallback for legacy calls during transition
+        console.warn(`[DB] Falling back to legacy SQLite for table: ${tableName}`);
+        return null; 
+    }
+  } catch (err) {
+    console.error(`[DB] Query Error on ${tableName}:`, err.message);
+    throw err;
+  }
+}
 
 // --- Automated Backup System ---
 function performDatabaseBackup() {
@@ -143,7 +282,7 @@ cron.schedule('0 0,12 * * *', () => {
 });
 
 // --- Automated Cleanup System (Permanent Deletion after 30 days) ---
-function performPermanentDeletionCleanup() {
+async function performPermanentDeletionCleanup() {
   try {
     const tablesToCleanup = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
     const thirtyDaysAgo = new Date();
@@ -152,16 +291,20 @@ function performPermanentDeletionCleanup() {
 
     console.log(`[CLEANUP] Starting permanent deletion cleanup for items deleted before ${dateStr}...`);
 
-    tablesToCleanup.forEach(tableName => {
-      // Check if table exists before trying to delete from it
-      const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
+    for (const tableName of tablesToCleanup) {
+      // Check if table exists before trying to delete from it (Database agnostic way)
+      const tableExists = await db.schema.hasTable(tableName);
       if (tableExists) {
-        const result = db.prepare(`DELETE FROM ${tableName} WHERE is_deleted = 1 AND deleted_at < ?`).run(dateStr);
-        if (result.changes > 0) {
-          console.log(`[CLEANUP] Permanently deleted ${result.changes} items from ${tableName}`);
+        const result = await db(tableName)
+          .where('is_deleted', 1)
+          .andWhere('deleted_at', '<', dateStr)
+          .delete();
+        
+        if (result > 0) {
+          console.log(`[CLEANUP] Permanently deleted ${result} items from ${tableName}`);
         }
       }
-    });
+    }
   } catch (err) {
     console.error('[CLEANUP] Permanent deletion failed:', err);
   }
@@ -174,37 +317,115 @@ cron.schedule('0 2 * * *', () => { // Every day at 2 AM
 });
 
 // --- Asset History System ---
-try {
-  const historyTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='asset_history'").get();
-  if (!historyTable) {
-    db.prepare(`
-      CREATE TABLE asset_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        AssetID TEXT NOT NULL,
-        Action TEXT NOT NULL,
-        FromValue TEXT,
-        ToValue TEXT,
-        User TEXT,
-        Timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-        Details TEXT
-      )
-    `).run();
-    console.log('Created asset_history table');
-  }
-} catch (err) {
-  console.error('Migration error (asset_history):', err);
-}
-
-// Helper to log asset history
-function logAssetHistory(assetId, action, fromVal, toVal, user, details = '') {
+// --- Asset History System ---
+async function initializeHistory() {
   try {
-    db.prepare(`
-      INSERT INTO asset_history (AssetID, Action, FromValue, ToValue, User, Timestamp, Details)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(assetId, action, fromVal, toVal, user, new Date().toISOString(), details);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    const hasTable = await db.schema.hasTable('asset_history');
+    
+    if (hasTable && isPostgres) {
+      // Check if columns are lowercase or PascalCase
+      const columns = await db('asset_history').columnInfo();
+      if (columns['AssetID']) {
+        console.log('[MIGRATION] asset_history has PascalCase columns. Dropping for recreation...');
+        await db.schema.dropTable('asset_history');
+        return initializeHistory(); // Re-run to create new table
+      }
+    }
+
+    if (!hasTable) {
+      await db.schema.createTable('asset_history', table => {
+        table.increments('id').primary();
+        if (isPostgres) {
+          table.string('assetid').notNullable();
+          table.string('action').notNullable();
+          table.text('oldvalue');
+          table.text('newvalue');
+          table.string('user');
+          table.timestamp('timestamp').defaultTo(db.fn.now());
+          table.text('details');
+        } else {
+          table.string('AssetID').notNullable();
+          table.string('Action').notNullable();
+          table.text('FromValue');
+          table.text('ToValue');
+          table.string('User');
+          table.timestamp('Timestamp').defaultTo(db.fn.now());
+          table.text('Details');
+        }
+      });
+      console.log('Created asset_history table');
+    }
+
+    // Ensure temporary_assets has soft delete columns
+    const hasTempTable = await db.schema.hasTable('temporary_assets');
+    if (hasTempTable) {
+      const tempColumns = await db('temporary_assets').columnInfo();
+      if (!tempColumns['is_deleted']) {
+        await db.schema.table('temporary_assets', table => {
+          table.integer('is_deleted').defaultTo(0);
+          table.string('deleted_at');
+        });
+        console.log('Added soft delete columns to temporary_assets');
+      }
+    }
+  } catch (err) {
+    console.error('Migration error (initialization):', err);
+  }
+}
+initializeHistory();
+
+// Unified logAssetHistory
+async function logAssetHistory(assetId, action, oldValue, newValue, user, details = '') {
+  try {
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    const timestamp = new Date().toISOString();
+    
+    if (isPostgres) {
+      await db('asset_history').insert({
+        assetid: assetId,
+        action: action,
+        oldvalue: oldValue,
+        newvalue: newValue,
+        user: user || 'web',
+        timestamp: timestamp,
+        details: details
+      });
+    } else {
+      legacyDb.prepare(`
+        INSERT INTO asset_history (AssetID, Action, FromValue, ToValue, User, Timestamp, Details)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(assetId, action, oldValue, newValue, user || 'web', timestamp, details);
+    }
   } catch (err) {
     console.error('[HISTORY] Failed to log:', err);
   }
+}
+
+// Unified logAudit
+async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO') {
+    try {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        const timestamp = new Date().toISOString();
+        
+        if (isPostgres) {
+            await db('audit_log').insert({
+                user: user || 'web',
+                action: action,
+                details: details,
+                assetid: assetId,
+                severity: severity,
+                timestamp: timestamp
+            });
+        } else {
+            legacyDb.prepare(`
+                INSERT INTO audit_log (User, Action, Details, AssetId, Severity, Timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `).run(user || 'web', action, details, assetId, severity, timestamp);
+        }
+    } catch (err) {
+        console.error('[AUDIT] Failed to log audit:', err.message);
+    }
 }
 
 // QA Test Route
@@ -223,8 +444,8 @@ app.get('/api/debug/diagnose/:id', (req, res) => {
   try {
     const Database = require('better-sqlite3');
     const debugDb = new Database(dbPath);
-    asset = debugDb.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
-    recent = debugDb.prepare('SELECT ID, ItemName, LastUpdated FROM assets ORDER BY LastUpdated DESC LIMIT 5').all();
+    asset = debuglegacyDb.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+    recent = debuglegacyDb.prepare('SELECT ID, ItemName, LastUpdated FROM assets ORDER BY LastUpdated DESC LIMIT 5').all();
   } catch (err) {
     error = err.message;
   }
@@ -266,7 +487,7 @@ app.get('/api/debug/cookies', (req, res) => {
 app.get('/api/assets/:id/history', (req, res) => {
   try {
     const { id } = req.params;
-    const history = db.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
+    const history = legacyDb.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
     res.json({ success: true, history });
   } catch (err) {
     console.error('[HISTORY] Fetch error:', err);
@@ -291,7 +512,7 @@ function parseCookies(header) {
 
 // --- DB Migrations for Auth ---
 try {
-    db.exec(`
+    legacyDb.exec(`
         CREATE TABLE IF NOT EXISTS auth_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -318,27 +539,50 @@ try {
 // --- Auth Endpoints ---
 
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password, category, rememberMe } = req.body;
+  const { username, password, category, rememberMe } = req.body || {};
+  console.log(`[AUTH] Login attempt for: ${username} (${category})`);
+
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
   try {
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const user = await getUserFromDb(username);
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      console.log(`[AUTH] User not found: ${username}`);
+      return res.status(401).json({ error: 'Invalid credentials', message: 'Invalid credentials' });
     }
     
+    const stored = user.password || '';
+    let passwordMatch = false;
+    
+    if (stored && typeof stored === 'string' && (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$'))) {
+      passwordMatch = await bcrypt.compare(password, stored);
+    } else {
+      if (stored === password) {
+        passwordMatch = true;
+        console.log(`[AUTH] Plaintext match for ${username}. Upgrading to bcrypt.`);
+        const newHash = await bcrypt.hash(password, 12);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+          await db('users').where('username', user.username).update({ password: newHash });
+        } else {
+          legacyDb.prepare('UPDATE users SET password = ? WHERE username = ?').run(newHash, user.username);
+        }
+      }
+    }
+
+    if (!passwordMatch) {
+      console.log(`[AUTH] Password mismatch for: ${username}`);
+      return res.status(401).json({ error: 'Invalid credentials', message: 'Invalid credentials' });
+    }
+
     // Generate JWT
     const { token, claims } = signJwtForUser(user, category);
-    
+
     // Set JWT Cookie
     res.cookie(JWT_COOKIE_NAME, token, {
       httpOnly: true,
-      secure: false, // Force false for local/HTTP usage
+      secure: false, 
       sameSite: 'lax',
       maxAge: JWT_EXPIRES_IN_SECONDS * 1000
     });
@@ -346,18 +590,19 @@ app.post('/api/auth/login', async (req, res) => {
     // Handle Remember Me
     if (rememberMe) {
         const rememberToken = tokenService.generateToken();
-        // Use user.username as ID since that's how we key users
-        tokenService.storeRememberToken(user.username, rememberToken, 30);
-        
+        tokenService.storeRememberToken(user.username, rememberToken, 30);      
+
         res.cookie(REMEMBER_COOKIE_NAME, rememberToken, {
             httpOnly: true,
-            secure: false, // Force false for local/HTTP usage
+            secure: false, 
             sameSite: 'lax',
             maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
         });
     }
 
-    // Response
+    console.log(`[AUTH] Login successful for: ${username}`);
+    const permissions = Array.from(rolePermissionCache[user.role] || []);
+
     res.json({
       ok: true,
       user: {
@@ -367,11 +612,13 @@ app.post('/api/auth/login', async (req, res) => {
         role: claims.role,
         projectId: user.project_id,
         clientId: user.client_id,
-        category: category
+        department: user.department,
+        permissions: permissions,
+        category
       }
     });
   } catch (err) {
-    console.error('Login error:', err);
+    console.error('[AUTH] Login error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -404,7 +651,7 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/auth/me', async (req, res) => {
     try {
         const cookies = parseCookies(req.headers.cookie || '');
-        // console.log('[Auth] Check Session. Cookies:', Object.keys(cookies));
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
         // 1. Try standard JWT check first
         let token = null;
@@ -418,7 +665,14 @@ app.get('/api/auth/me', async (req, res) => {
         if (token) {
             try {
                 const decoded = jwt.verify(token, JWT_SECRET);
-                const user = db.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(decoded.user_id, decoded.user_id);
+                let user;
+                if (isPostgres) {
+                    user = await db('users').where('username', decoded.user_id).orWhere('username', decoded.user_id).first();
+                    user = normalizeResult(user);
+                } else {
+                    user = legacyDb.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(decoded.user_id, decoded.user_id);
+                }
+
                 if (user) {
                     return res.json({
                         ok: true,
@@ -433,28 +687,29 @@ app.get('/api/auth/me', async (req, res) => {
                         }
                     });
                 }
-            } catch (e) {
-                // console.log('[Auth] JWT invalid/expired:', e.message);
-            }
+            } catch (e) {}
         }
 
         // 2. Try Remember Me
         const rememberToken = cookies[REMEMBER_COOKIE_NAME];
-        
         if (rememberToken) {
-            console.log('[Auth] Found Remember Token, attempting verification...');
             const userId = tokenService.verifyRememberToken(rememberToken);
             if (userId) {
-                console.log('[Auth] Remember Token Valid for user:', userId);
-                const user = db.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(userId, userId);
+                let user;
+                if (isPostgres) {
+                    user = await db('users').where('username', userId).first();
+                    user = normalizeResult(user);
+                } else {
+                    user = legacyDb.prepare('SELECT * FROM users WHERE username = ? OR id = ?').get(userId, userId);
+                }
+
                 if (user) {
-                    // Valid Remember Me -> Issue new JWT
-                    const category = 'IT'; // Default or retrieve from last session if possible?
+                    const category = 'IT';
                     const { token: newToken, claims } = signJwtForUser(user, category);
                     
                     res.cookie(JWT_COOKIE_NAME, newToken, {
                         httpOnly: true,
-                        secure: false, // Force false for local/HTTP usage
+                        secure: false, 
                         sameSite: 'lax',
                         maxAge: JWT_EXPIRES_IN_SECONDS * 1000
                     });
@@ -472,13 +727,10 @@ app.get('/api/auth/me', async (req, res) => {
                         }
                     });
                 }
-            } else {
-                console.log('[Auth] Remember Token Invalid or Expired');
             }
         }
 
         return res.status(401).json({ error: 'Not authenticated' });
-
     } catch (err) {
         console.error('Session check error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -488,100 +740,49 @@ app.get('/api/auth/me', async (req, res) => {
 app.post('/api/auth/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
-        console.log(`[Auth] Forgot Password requested for: ${email}`);
-
-        // Search by username OR fullname (since some users store email in fullname)
-        let user = db.prepare('SELECT * FROM users WHERE username = ? OR fullname = ?').get(email, email);
-        
-        // If not found exact match, try case-insensitive
-        if (!user) {
-             user = db.prepare('SELECT * FROM users WHERE lower(username) = lower(?) OR lower(fullname) = lower(?)').get(email, email);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let user;
+        if (isPostgres) {
+            user = await db('users').where('username', email).orWhere('fullname', email).first();
+            if (!user) user = await db('users').whereRaw('LOWER(username) = LOWER(?)', [email]).orWhereRaw('LOWER(fullname) = LOWER(?)', [email]).first();
+            user = normalizeResult(user);
+        } else {
+            user = legacyDb.prepare('SELECT * FROM users WHERE username = ? OR fullname = ?').get(email, email);
         }
-
-        if (!user) {
-            console.log(`[Auth] User not found for input: ${email}`);
-            // Fake success to prevent enumeration
-            return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
-        }
-
-        console.log(`[Auth] Found user: ${user.username} (Fullname: ${user.fullname})`);
-
-        // Determine the email address to send to
-        let targetEmail = null;
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-        if (emailRegex.test(user.fullname)) {
-            targetEmail = user.fullname;
-        } else if (emailRegex.test(user.username)) {
-            targetEmail = user.username;
-        } else if (emailRegex.test(email)) {
-            // If the user entered an email, and we matched it (e.g. against fullname), use that.
-            // But we already checked fullname.
-            // If the user matched by username (e.g. input 'admin'), we still don't have an email unless we assume input is email (which it isn't if it matched 'admin').
-            // If the input was an email and matched fullname, targetEmail is set.
-        }
-
-        if (!targetEmail) {
-            console.warn(`[Auth] Cannot determine email address for user ${user.username}. Fullname is '${user.fullname}'`);
-            // We can't send an email. 
-            return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
-        }
-
+        if (!user) return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
         const resetToken = tokenService.generateToken();
-        // Store token against the *username* so we can look it up later, OR store against the *email*?
-        // The verify endpoint uses `tokenService.verifyResetToken(token)` which returns the stored key.
-        // Then it runs `UPDATE users ... WHERE username = ?`.
-        // So we MUST store the USERNAME as the key in the token service, NOT the email (unless username=email).
         tokenService.storeResetToken(user.username, resetToken);
-
-        const ip = getLocalIP();
-        const port = process.env.PORT || 9090;
+        const host = req.get('host'); 
         const protocol = req.protocol;
-        const host = req.get('host'); // Should include port
         const resetLink = `${protocol}://${host}/#reset-password?token=${resetToken}`;
-
-        const sent = await emailService.sendPasswordResetEmail(targetEmail, resetLink);
-        
-        if (!sent) {
-             console.log(`[DEV] Password Reset Link for ${targetEmail}: ${resetLink}`);
-        }
-
+        await emailService.sendPasswordResetEmail(user.fullname || email, resetLink);
         res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
-
     } catch (err) {
         console.error('Forgot password error:', err);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ ok: false, message: 'Internal server error' });
     }
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
     try {
         const { token, newPassword } = req.body;
-        
-        const email = tokenService.verifyResetToken(token);
-        if (!email) {
-            return res.status(400).json({ error: 'Invalid or expired reset token' });
+        const username = tokenService.verifyResetToken(token);
+        if (!username) return res.status(400).json({ error: 'Invalid or expired reset token' });
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+            await db('users').where('username', username).update({ password: passwordHash });
+        } else {
+            legacyDb.prepare('UPDATE users SET password = ? WHERE username = ?').run(passwordHash, username);
         }
-
-        const passwordHash = await passwordService.hashPassword(newPassword);
-        
-        // Update user password
-        db.prepare('UPDATE users SET password = ? WHERE username = ?').run(passwordHash, email);
-        
-        // Invalidate all sessions
-        tokenService.invalidateAllUserTokens(email);
+        tokenService.invalidateAllUserTokens(username);
         tokenService.consumeResetToken(token);
-
-        res.json({ ok: true, message: 'Password has been reset successfully' });
-
+        res.json({ ok: true, message: 'Password reset successful' });
     } catch (err) {
         console.error('Reset password error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
-
-// Helper for existing authenticateJWT to use
-// ...
 
 function buildUserClaims(user, category) {
   const companyId = user.company_id || user.client_id || DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
@@ -589,7 +790,8 @@ function buildUserClaims(user, category) {
     user_id: String(user.username || user.id),
     role: user.role || 'employee',
     company_id: String(companyId),
-    category: category || null
+    category: category || null,
+    department: user.department || null
   };
 }
 
@@ -598,7 +800,8 @@ function signJwtForUser(user, category) {
   const payload = {
     user_id: claims.user_id,
     role: claims.role,
-    company_id: claims.company_id
+    company_id: claims.company_id,
+    department: claims.department
   };
   const token = jwt.sign(payload, JWT_SECRET, {
     algorithm: 'HS256',
@@ -630,7 +833,8 @@ function authenticateJWT(req, res, next) {
     req.user = {
       user_id: String(decoded.user_id),
       role: String(decoded.role),
-      company_id: String(decoded.company_id)
+      company_id: String(decoded.company_id),
+      department: decoded.department || null
     };
     return next();
   } catch (err) {
@@ -656,17 +860,25 @@ function authorizeRoles() {
 
 let rolePermissionCache = {};
 
-function loadRolePermissionsIntoCache() {
+async function loadRolePermissionsIntoCache() {
   try {
-    const rows = db.prepare('SELECT role_name, permission_key FROM role_permissions').all();
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    const rows = isPostgres 
+      ? await db('role_permissions').select('role_name', 'permission_key')
+      : legacyDb.prepare('SELECT role_name, permission_key FROM role_permissions').all();
+      
     const map = {};
     rows.forEach(row => {
-      if (!map[row.role_name]) {
-        map[row.role_name] = new Set();
+      const roleName = row.role_name || row.role_name; // Postgres lowercase
+      const permKey = row.permission_key || row.permission_key;
+      
+      if (!map[roleName]) {
+        map[roleName] = new Set();
       }
-      map[row.role_name].add(row.permission_key);
+      map[roleName].add(permKey);
     });
     rolePermissionCache = map;
+    console.log(`[AUTH] Loaded ${rows.length} permissions for ${Object.keys(map).length} roles into cache.`);
   } catch (err) {
     console.error('Error loading role permissions into cache:', err);
     rolePermissionCache = {};
@@ -691,479 +903,526 @@ function requirePermission(permissionKey) {
 }
 
 // --- Database Migrations ---
-try {
-  // Check if projects table has QRCode column
-  const tableInfo = db.prepare("PRAGMA table_info(projects)").all();
-  const hasQRCode = tableInfo.some(col => col.name === 'QRCode');
-  if (!hasQRCode) {
-    db.prepare("ALTER TABLE projects ADD COLUMN QRCode TEXT").run();
-    console.log('Added QRCode column to projects table');
-  }
+const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-  // Ensure other new columns exist
-  const existingColumns = new Set(tableInfo.map(c => c.name));
-  const newColumns = [
-    'OwnerEmail', 'CoordinatorEmail',
-    'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 'ConsigneeState', 'ConsigneeStateCode',
-    'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
-  ];
-
-  newColumns.forEach(col => {
-    if (!existingColumns.has(col)) {
-      db.prepare(`ALTER TABLE projects ADD COLUMN ${col} TEXT`).run();
-      console.log(`Added ${col} column to projects table`);
+if (!isPostgres) {
+  try {
+    // Check if projects table has QRCode column
+    const tableInfo = legacyDb.prepare("PRAGMA table_info(projects)").all();
+    const hasQRCode = tableInfo.some(col => col.name === 'QRCode');
+    if (!hasQRCode) {
+      legacyDb.prepare("ALTER TABLE projects ADD COLUMN QRCode TEXT").run();
+      console.log('Added QRCode column to projects table');
     }
-  });
-} catch (err) {
-  console.error('Migration error (projects columns):', err);
-}
-try {
-  const historyTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_history'").get();
-  if (!historyTable) {
-    db.prepare(`
-      CREATE TABLE IF NOT EXISTS project_history (
-        ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        ProjectID TEXT,
-        Status TEXT,
-        Note TEXT,
-        Timestamp TEXT
-      )
-    `).run();
-    console.log('Created project_history table');
+
+    // Ensure other new columns exist
+    const existingColumns = new Set(tableInfo.map(c => c.name));
+    const newColumns = [
+      'OwnerEmail', 'CoordinatorEmail',
+      'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 'ConsigneeState', 'ConsigneeStateCode',
+      'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+    ];
+
+    newColumns.forEach(col => {
+      if (!existingColumns.has(col)) {
+        legacyDb.prepare(`ALTER TABLE projects ADD COLUMN ${col} TEXT`).run();
+        console.log(`Added ${col} column to projects table`);
+      }
+    });
+  } catch (err) {
+    console.error('Migration error (projects columns):', err);
   }
-} catch (err) {
-  console.error('Migration error (project_history):', err);
+}
+
+if (!isPostgres) {
+  try {
+    const historyTable = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_history'").get();
+    if (!historyTable) {
+      legacyDb.prepare(`
+        CREATE TABLE IF NOT EXISTS project_history (
+          ID INTEGER PRIMARY KEY AUTOINCREMENT,
+          ProjectID TEXT,
+          Status TEXT,
+          Note TEXT,
+          Timestamp TEXT
+        )
+      `).run();
+      console.log('Created project_history table');
+    }
+  } catch (err) {
+    console.error('Migration error (project_history):', err);
+  }
 }
 
 // --- Purchase Order (PO) Migrations ---
-try {
-  // 1. project_orders table
-  const ordersTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_orders'").get();
-  if (!ordersTable) {
-    db.prepare(`
-      CREATE TABLE project_orders (
-        ID TEXT PRIMARY KEY,
-        ProjectID TEXT NOT NULL,
-        PONumber TEXT,
-        PODate TEXT,
-        VendorName TEXT,
-        TotalAmount REAL DEFAULT 0,
-        Status TEXT DEFAULT 'Active',
-        ConsigneeName TEXT,
-        ConsigneeAddress TEXT,
-        ConsigneeGSTIN TEXT,
-        ConsigneeState TEXT,
-        ConsigneeStateCode TEXT,
-        BuyerName TEXT,
-        BuyerAddress TEXT,
-        BuyerGSTIN TEXT,
-        BuyerState TEXT,
-        BuyerStateCode TEXT,
-        Timestamp TEXT,
-        FOREIGN KEY (ProjectID) REFERENCES projects(ID)
-      )
-    `).run();
-    console.log('Created project_orders table');
-  } else {
-    // Ensure all columns exist for project_orders
-    const cols = db.prepare("PRAGMA table_info(project_orders)").all();
-    const existing = new Set(cols.map(c => c.name));
-    const needed = [
-      'PONumber', 'PODate', 'VendorName', 'TotalAmount', 'Status',
-      'OrderNo', 'OrderDate', 'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 
-      'ConsigneeState', 'ConsigneeStateCode', 'BuyerName', 'BuyerAddress', 
-      'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
-    ];
-    needed.forEach(col => {
-      if (!existing.has(col)) {
-        const type = (col === 'TotalAmount') ? 'REAL DEFAULT 0' : 'TEXT';
-        db.prepare(`ALTER TABLE project_orders ADD COLUMN ${col} ${type}`).run();
-        console.log(`Added ${col} to project_orders`);
-      }
-    });
-  }
-
-  // 2. project_order_items table
-  const itemsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_order_items'").get();
-  if (!itemsTable) {
-    db.prepare(`
-      CREATE TABLE project_order_items (
-        ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        OrderID TEXT NOT NULL,
-        SrNo INTEGER,
-        ItemDescription TEXT,
-        DueDate TEXT,
-        QtyOrdered REAL,
-        UOM TEXT,
-        UnitPrice REAL,
-        Total REAL,
-        AssetID TEXT, -- Optional link to a specific asset if tracked
-        Timestamp TEXT,
-        Status TEXT DEFAULT 'Pending',
-        FOREIGN KEY (OrderID) REFERENCES project_orders(ID)
-      )
-    `).run();
-    console.log('Created project_order_items table');
-  } else {
-    // Ensure Status column exists for project_order_items
-    const cols = db.prepare("PRAGMA table_info(project_order_items)").all();
-    const existing = new Set(cols.map(c => c.name));
-    if (!existing.has('Status')) {
-      db.prepare("ALTER TABLE project_order_items ADD COLUMN Status TEXT DEFAULT 'Pending'").run();
-      console.log('Added Status column to project_order_items');
+if (!isPostgres) {
+  try {
+    // 1. project_orders table
+    const ordersTable = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_orders'").get();
+    if (!ordersTable) {
+      legacyDb.prepare(`
+        CREATE TABLE project_orders (
+          ID TEXT PRIMARY KEY,
+          ProjectID TEXT NOT NULL,
+          PONumber TEXT,
+          PODate TEXT,
+          VendorName TEXT,
+          TotalAmount REAL DEFAULT 0,
+          Status TEXT DEFAULT 'Active',
+          ConsigneeName TEXT,
+          ConsigneeAddress TEXT,
+          ConsigneeGSTIN TEXT,
+          ConsigneeState TEXT,
+          ConsigneeStateCode TEXT,
+          BuyerName TEXT,
+          BuyerAddress TEXT,
+          BuyerGSTIN TEXT,
+          BuyerState TEXT,
+          BuyerStateCode TEXT,
+          Timestamp TEXT,
+          FOREIGN KEY (ProjectID) REFERENCES projects(ID)
+        )
+      `).run();
+      console.log('Created project_orders table');
+    } else {
+      // Ensure all columns exist for project_orders
+      const cols = legacyDb.prepare("PRAGMA table_info(project_orders)").all();
+      const existing = new Set(cols.map(c => c.name));
+      const needed = [
+        'PONumber', 'PODate', 'VendorName', 'TotalAmount', 'Status',
+        'OrderNo', 'OrderDate', 'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 
+        'ConsigneeState', 'ConsigneeStateCode', 'BuyerName', 'BuyerAddress', 
+        'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+      ];
+      needed.forEach(col => {
+        if (!existing.has(col)) {
+          const type = (col === 'TotalAmount') ? 'REAL DEFAULT 0' : 'TEXT';
+          legacyDb.prepare(`ALTER TABLE project_orders ADD COLUMN ${col} ${type}`).run();
+          console.log(`Added ${col} to project_orders`);
+        }
+      });
     }
+
+    // 2. project_order_items table
+    const itemsTable = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_order_items'").get();
+    if (!itemsTable) {
+      legacyDb.prepare(`
+        CREATE TABLE project_order_items (
+          ID INTEGER PRIMARY KEY AUTOINCREMENT,
+          OrderID TEXT NOT NULL,
+          SrNo INTEGER,
+          ItemDescription TEXT,
+          DueDate TEXT,
+          QtyOrdered REAL,
+          UOM TEXT,
+          UnitPrice REAL,
+          Total REAL,
+          AssetID TEXT, -- Optional link to a specific asset if tracked
+          Timestamp TEXT,
+          Status TEXT DEFAULT 'Pending',
+          FOREIGN KEY (OrderID) REFERENCES project_orders(ID)
+        )
+      `).run();
+      console.log('Created project_order_items table');
+    } else {
+      // Ensure Status column exists for project_order_items
+      const cols = legacyDb.prepare("PRAGMA table_info(project_order_items)").all();
+      const existing = new Set(cols.map(c => c.name));
+      if (!existing.has('Status')) {
+        legacyDb.prepare("ALTER TABLE project_order_items ADD COLUMN Status TEXT DEFAULT 'Pending'").run();
+        console.log('Added Status column to project_order_items');
+      }
+    }
+  } catch (err) {
+    console.error('Migration error (PO tables):', err);
   }
-} catch (err) {
-  console.error('Migration error (PO tables):', err);
 }
 
-try {
-  const dcTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_challans'").get();
-  if (!dcTable) {
-    db.prepare(`
-      CREATE TABLE IF NOT EXISTS delivery_challans (
-        ID TEXT PRIMARY KEY,
-        ChallanNo TEXT,
-        CustomerName TEXT,
-        DeliveryDate TEXT,
-        AssetIds TEXT,
-        Status TEXT,
-        QRCode TEXT,
-        CreatedBy TEXT,
-        Timestamp TEXT,
-        PayloadJSON TEXT
-      )
-    `).run();
-  } else {
-    const cols = db.prepare("PRAGMA table_info(delivery_challans)").all();
-    const hasPayload = cols.some(c => c.name === 'PayloadJSON');
-    if (!hasPayload) {
-      db.prepare("ALTER TABLE delivery_challans ADD COLUMN PayloadJSON TEXT").run();
-      console.log('Added PayloadJSON column to delivery_challans table');
+if (!isPostgres) {
+  try {
+    const dcTable = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_challans'").get();
+    if (!dcTable) {
+      legacyDb.prepare(`
+        CREATE TABLE IF NOT EXISTS delivery_challans (
+          ID TEXT PRIMARY KEY,
+          ChallanNo TEXT,
+          CustomerName TEXT,
+          DeliveryDate TEXT,
+          AssetIds TEXT,
+          Status TEXT,
+          QRCode TEXT,
+          CreatedBy TEXT,
+          Timestamp TEXT,
+          PayloadJSON TEXT
+        )
+      `).run();
+    } else {
+      const cols = legacyDb.prepare("PRAGMA table_info(delivery_challans)").all();
+      const hasPayload = cols.some(c => c.name === 'PayloadJSON');
+      if (!hasPayload) {
+        legacyDb.prepare("ALTER TABLE delivery_challans ADD COLUMN PayloadJSON TEXT").run();
+        console.log('Added PayloadJSON column to delivery_challans table');
+      }
     }
+  } catch (err) {
+    console.error('Migration error (delivery_challans PayloadJSON):', err);
   }
-} catch (err) {
-  console.error('Migration error (delivery_challans PayloadJSON):', err);
 }
 
 // Migration for DC Item Mappings (White Labeling)
-try {
-  const mappingTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='dc_item_mappings'").get();
-  if (!mappingTable) {
-    db.prepare(`
-      CREATE TABLE dc_item_mappings (
-        ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        DC_ID TEXT NOT NULL,
-        AssetID TEXT NOT NULL,
-        CustomName TEXT,
-        CustomDescription TEXT,
-        Timestamp TEXT,
-        FOREIGN KEY (DC_ID) REFERENCES delivery_challans(ID),
-        UNIQUE(DC_ID, AssetID)
-      )
-    `).run();
-    console.log('Created dc_item_mappings table');
+if (!isPostgres) {
+  try {
+    const mappingTable = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='dc_item_mappings'").get();
+    if (!mappingTable) {
+      legacyDb.prepare(`
+        CREATE TABLE dc_item_mappings (
+          ID INTEGER PRIMARY KEY AUTOINCREMENT,
+          DC_ID TEXT NOT NULL,
+          AssetID TEXT NOT NULL,
+          CustomName TEXT,
+          CustomDescription TEXT,
+          Timestamp TEXT,
+          FOREIGN KEY (DC_ID) REFERENCES delivery_challans(ID),
+          UNIQUE(DC_ID, AssetID)
+        )
+      `).run();
+      console.log('Created dc_item_mappings table');
+    }
+  } catch (err) {
+    console.error('Migration error (dc_item_mappings):', err);
   }
-} catch (err) {
-  console.error('Migration error (dc_item_mappings):', err);
 }
 
-try {
-  const cols = db.prepare("PRAGMA table_info(assets)").all();
-  const hasCol = (name) => cols.some((c) => c.name === name);
+if (!isPostgres) {
+  try {
+    const cols = legacyDb.prepare("PRAGMA table_info(assets)").all();
+    const hasCol = (name) => cols.some((c) => c.name === name);
 
-  if (!hasCol('BoughtAgainstPO')) db.prepare('ALTER TABLE assets ADD COLUMN BoughtAgainstPO TEXT').run();
-  if (!hasCol('SentAgainstDC')) db.prepare('ALTER TABLE assets ADD COLUMN SentAgainstDC TEXT').run();
-  
-  if (!hasCol('quantity_parent_id')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_parent_id TEXT').run();
-  if (!hasCol('quantity_root_id')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_root_id TEXT').run();
-  if (!hasCol('quantity_unit')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_unit TEXT').run();
-  if (!hasCol('quantity_total')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_total REAL').run();
-  if (!hasCol('quantity_available')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_available REAL').run();
-  if (!hasCol('quantity_precision')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_precision INTEGER').run();
-  if (!hasCol('quantity_updated_at')) db.prepare('ALTER TABLE assets ADD COLUMN quantity_updated_at TEXT').run();
-  if (!hasCol('conversion_unit')) db.prepare('ALTER TABLE assets ADD COLUMN conversion_unit TEXT').run();
-  if (!hasCol('conversion_factor')) db.prepare('ALTER TABLE assets ADD COLUMN conversion_factor REAL').run();
-  if (!hasCol('conversion_mode')) db.prepare('ALTER TABLE assets ADD COLUMN conversion_mode TEXT').run();
-  if (!hasCol('is_quantity_tracked')) {
-    db.prepare('ALTER TABLE assets ADD COLUMN is_quantity_tracked INTEGER DEFAULT 0').run();
-    // Proactively enable it for assets that already have quantity data
-    db.prepare("UPDATE assets SET is_quantity_tracked = 1 WHERE quantity_unit IS NOT NULL OR quantity_total > 0").run();
+    if (!hasCol('BoughtAgainstPO')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN BoughtAgainstPO TEXT').run();
+    if (!hasCol('SentAgainstDC')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN SentAgainstDC TEXT').run();
+    
+    if (!hasCol('quantity_parent_id')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_parent_id TEXT').run();
+    if (!hasCol('quantity_root_id')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_root_id TEXT').run();
+    if (!hasCol('quantity_unit')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_unit TEXT').run();
+    if (!hasCol('quantity_total')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_total REAL').run();
+    if (!hasCol('quantity_available')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_available REAL').run();
+    if (!hasCol('quantity_precision')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_precision INTEGER').run();
+    if (!hasCol('quantity_updated_at')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN quantity_updated_at TEXT').run();
+    if (!hasCol('conversion_unit')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN conversion_unit TEXT').run();
+    if (!hasCol('conversion_factor')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN conversion_factor REAL').run();
+    if (!hasCol('conversion_mode')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN conversion_mode TEXT').run();
+    if (!hasCol('is_quantity_tracked')) {
+      legacyDb.prepare('ALTER TABLE assets ADD COLUMN is_quantity_tracked INTEGER DEFAULT 0').run();
+      // Proactively enable it for assets that already have quantity data
+      legacyDb.prepare("UPDATE assets SET is_quantity_tracked = 1 WHERE quantity_unit IS NOT NULL OR quantity_total > 0").run();
+    }
+    if (!hasCol('is_batch')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN is_batch INTEGER DEFAULT 0').run();
+    if (!hasCol('linked_po_item_id')) legacyDb.prepare('ALTER TABLE assets ADD COLUMN linked_po_item_id INTEGER').run();
+    if (!hasCol('Department')) {
+      legacyDb.prepare('ALTER TABLE assets ADD COLUMN Department TEXT').run();
+      console.log('Added Department column to assets table');
+    }
+  } catch (err) {
+    console.error('Migration error (assets quantity columns):', err);
   }
-  if (!hasCol('is_batch')) db.prepare('ALTER TABLE assets ADD COLUMN is_batch INTEGER DEFAULT 0').run();
-  if (!hasCol('linked_po_item_id')) db.prepare('ALTER TABLE assets ADD COLUMN linked_po_item_id INTEGER').run();
-} catch (err) {
-  console.error('Migration error (assets quantity columns):', err);
 }
 
-try {
-  const cols = db.prepare("PRAGMA table_info(asset_kinds)").all();
-  const hasIdentifier = cols.some(c => c.name === 'Identifier');
-  if (!hasIdentifier) {
-    db.prepare("ALTER TABLE asset_kinds ADD COLUMN Identifier TEXT").run();
-    console.log('Added Identifier column to asset_kinds table');
+if (!isPostgres) {
+  try {
+    const cols = legacyDb.prepare("PRAGMA table_info(asset_kinds)").all();
+    const hasIdentifier = cols.some(c => c.name === 'Identifier');
+    if (!hasIdentifier) {
+      legacyDb.prepare("ALTER TABLE asset_kinds ADD COLUMN Identifier TEXT").run();
+      console.log('Added Identifier column to asset_kinds table');
+    }
+  } catch (err) {
+    console.error('Migration error (asset_kinds Identifier):', err);
   }
-} catch (err) {
-  console.error('Migration error (asset_kinds Identifier):', err);
 }
 
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS quantity_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      root_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      actor TEXT,
-      timestamp TEXT NOT NULL,
-      note TEXT,
-      metadata_json TEXT
-    );
+if (!isPostgres) {
+  try {
+    legacyDb.exec(`
+      CREATE TABLE IF NOT EXISTS quantity_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        root_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        actor TEXT,
+        timestamp TEXT NOT NULL,
+        note TEXT,
+        metadata_json TEXT
+      );
 
-    CREATE TABLE IF NOT EXISTS quantity_event_lines (
-      event_id INTEGER NOT NULL,
-      asset_id TEXT NOT NULL,
-      unit TEXT,
-      delta_available REAL NOT NULL DEFAULT 0,
-      delta_total REAL NOT NULL DEFAULT 0,
-      PRIMARY KEY (event_id, asset_id),
-      FOREIGN KEY (event_id) REFERENCES quantity_events(id)
-    );
+      CREATE TABLE IF NOT EXISTS quantity_event_lines (
+        event_id INTEGER NOT NULL,
+        asset_id TEXT NOT NULL,
+        unit TEXT,
+        delta_available REAL NOT NULL DEFAULT 0,
+        delta_total REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (event_id, asset_id),
+        FOREIGN KEY (event_id) REFERENCES quantity_events(id)
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_quantity_events_root ON quantity_events(root_id);
-    CREATE INDEX IF NOT EXISTS idx_quantity_event_lines_asset ON quantity_event_lines(asset_id);
-    CREATE INDEX IF NOT EXISTS idx_assets_quantity_root ON assets(quantity_root_id);
-    CREATE INDEX IF NOT EXISTS idx_assets_quantity_parent ON assets(quantity_parent_id);
-  `);
-} catch (err) {
-  console.error('Migration error (quantity events tables):', err);
+      CREATE INDEX IF NOT EXISTS idx_quantity_events_root ON quantity_events(root_id);
+      CREATE INDEX IF NOT EXISTS idx_quantity_event_lines_asset ON quantity_event_lines(asset_id);
+      CREATE INDEX IF NOT EXISTS idx_assets_quantity_root ON assets(quantity_root_id);
+      CREATE INDEX IF NOT EXISTS idx_assets_quantity_parent ON assets(quantity_parent_id);
+    `);
+  } catch (err) {
+    console.error('Migration error (quantity events tables):', err);
+  }
 }
-try {
-  const cols = db.prepare("PRAGMA table_info(users)").all();
-  const hasCompanyId = cols.some(c => c.name === 'company_id');
-  const hasEmployeeId = cols.some(c => c.name === 'employee_id');
-  const hasClientId = cols.some(c => c.name === 'client_id');
-  if (!hasCompanyId) {
-    db.prepare("ALTER TABLE users ADD COLUMN company_id TEXT").run();
-    console.log('Added company_id column to users table');
+
+if (!isPostgres) {
+  try {
+    const cols = legacyDb.prepare("PRAGMA table_info(users)").all();
+    const hasCompanyId = cols.some(c => c.name === 'company_id');
+    const hasEmployeeId = cols.some(c => c.name === 'employee_id');
+    const hasClientId = cols.some(c => c.name === 'client_id');
+    if (!hasCompanyId) {
+      legacyDb.prepare("ALTER TABLE users ADD COLUMN company_id TEXT").run();
+      console.log('Added company_id column to users table');
+    }
+    if (!hasEmployeeId) {
+      legacyDb.prepare("ALTER TABLE users ADD COLUMN employee_id TEXT").run();
+      console.log('Added employee_id column to users table');
+    }
+    if (!hasClientId) {
+      legacyDb.prepare("ALTER TABLE users ADD COLUMN client_id TEXT").run();
+      console.log('Added client_id column to users table');
+    }
+    const hasUserDepartment = cols.some(c => c.name === 'department');
+    if (!hasUserDepartment) {
+      legacyDb.prepare("ALTER TABLE users ADD COLUMN department TEXT").run();
+      console.log('Added department column to users table');
+    }
+    legacyDb.prepare("CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
+    let company = legacyDb.prepare("SELECT id FROM companies WHERE name = ?").get(DEFAULT_COMPANY_NAME);
+    if (!company) {
+      const newId = (crypto.randomUUID && crypto.randomUUID()) || [
+        crypto.randomBytes(4).toString('hex'),
+        crypto.randomBytes(2).toString('hex'),
+        crypto.randomBytes(2).toString('hex'),
+        crypto.randomBytes(2).toString('hex'),
+        crypto.randomBytes(6).toString('hex')
+      ].join('-');
+      legacyDb.prepare("INSERT INTO companies (id, name) VALUES (?, ?)").run(newId, DEFAULT_COMPANY_NAME);
+      company = { id: newId };
+      console.log('Created default company record for', DEFAULT_COMPANY_NAME);
+    }
+    DEFAULT_COMPANY_ID = company.id;
+    legacyDb.prepare("UPDATE users SET company_id = ? WHERE company_id IS NULL OR company_id = ?").run(DEFAULT_COMPANY_ID, DEFAULT_COMPANY_NAME);
+    legacyDb.prepare("UPDATE users SET client_id = ? WHERE client_id IS NULL OR client_id = ?").run(DEFAULT_COMPANY_ID, DEFAULT_COMPANY_NAME);
+  } catch (err) {
+    console.error('Migration error (users company_id):', err);
   }
-  if (!hasEmployeeId) {
-    db.prepare("ALTER TABLE users ADD COLUMN employee_id TEXT").run();
-    console.log('Added employee_id column to users table');
-  }
-   if (!hasClientId) {
-    db.prepare("ALTER TABLE users ADD COLUMN client_id TEXT").run();
-    console.log('Added client_id column to users table');
-  }
-  db.prepare("CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
-  let company = db.prepare("SELECT id FROM companies WHERE name = ?").get(DEFAULT_COMPANY_NAME);
-  if (!company) {
-    const newId = (crypto.randomUUID && crypto.randomUUID()) || [
-      crypto.randomBytes(4).toString('hex'),
-      crypto.randomBytes(2).toString('hex'),
-      crypto.randomBytes(2).toString('hex'),
-      crypto.randomBytes(2).toString('hex'),
-      crypto.randomBytes(6).toString('hex')
-    ].join('-');
-    db.prepare("INSERT INTO companies (id, name) VALUES (?, ?)").run(newId, DEFAULT_COMPANY_NAME);
-    company = { id: newId };
-    console.log('Created default company record for', DEFAULT_COMPANY_NAME);
-  }
-  DEFAULT_COMPANY_ID = company.id;
-  db.prepare("UPDATE users SET company_id = ? WHERE company_id IS NULL OR company_id = ?").run(DEFAULT_COMPANY_ID, DEFAULT_COMPANY_NAME);
-  db.prepare("UPDATE users SET client_id = ? WHERE client_id IS NULL OR client_id = ?").run(DEFAULT_COMPANY_ID, DEFAULT_COMPANY_NAME);
-} catch (err) {
-  console.error('Migration error (users company_id):', err);
 }
 
 // --- Soft Delete Migrations ---
-try {
-  const tablesToUpdate = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
-  tablesToUpdate.forEach(tableName => {
-    // Check if table exists
-    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
-    if (tableExists) {
-      const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
-      const existingColumns = new Set(tableInfo.map(c => c.name));
-      
-      if (!existingColumns.has('is_deleted')) {
-        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN is_deleted INTEGER DEFAULT 0`).run();
-        console.log(`Added is_deleted column to ${tableName} table`);
+if (!isPostgres) {
+  try {
+    const tablesToUpdate = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
+    tablesToUpdate.forEach(tableName => {
+      // Check if table exists
+      const tableExists = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName);
+      if (tableExists) {
+        const tableInfo = legacyDb.prepare(`PRAGMA table_info(${tableName})`).all();
+        const existingColumns = new Set(tableInfo.map(c => c.name));
+        
+        if (!existingColumns.has('is_deleted')) {
+          legacyDb.prepare(`ALTER TABLE ${tableName} ADD COLUMN is_deleted INTEGER DEFAULT 0`).run();
+          console.log(`Added is_deleted column to ${tableName} table`);
+        }
+        if (!existingColumns.has('deleted_at')) {
+          legacyDb.prepare(`ALTER TABLE ${tableName} ADD COLUMN deleted_at TEXT`).run();
+          console.log(`Added deleted_at column to ${tableName} table`);
+        }
       }
-      if (!existingColumns.has('deleted_at')) {
-        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN deleted_at TEXT`).run();
-        console.log(`Added deleted_at column to ${tableName} table`);
-      }
-    }
-  });
-} catch (err) {
-  console.error('Migration error (soft delete columns):', err);
+    });
+  } catch (err) {
+    console.error('Migration error (soft delete columns):', err);
+  }
 }
 
-try {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS network_credentials (
-      id TEXT PRIMARY KEY,
-      device_name TEXT NOT NULL,
-      ip_address TEXT,
-      type TEXT,
-      username TEXT,
-      password TEXT,
-      notes TEXT,
-      created_by TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    )
-  `).run();
-  console.log('Created network_credentials table');
-} catch (err) {
-  console.error('Migration error (network_credentials):', err);
+if (!isPostgres) {
+  try {
+    legacyDb.prepare(`
+      CREATE TABLE IF NOT EXISTS network_credentials (
+        id TEXT PRIMARY KEY,
+        device_name TEXT NOT NULL,
+        ip_address TEXT,
+        type TEXT,
+        username TEXT,
+        password TEXT,
+        notes TEXT,
+        created_by TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `).run();
+    console.log('Created network_credentials table');
+  } catch (err) {
+    console.error('Migration error (network_credentials):', err);
+  }
 }
 
-try {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS network_contacts (
-      id TEXT PRIMARY KEY,
-      service TEXT NOT NULL,
-      provider TEXT,
-      contact TEXT,
-      email TEXT,
-      created_by TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    )
-  `).run();
-  console.log('Created network_contacts table');
-} catch (err) {
-  console.error('Migration error (network_contacts):', err);
+if (!isPostgres) {
+  try {
+    legacyDb.prepare(`
+      CREATE TABLE IF NOT EXISTS network_contacts (
+        id TEXT PRIMARY KEY,
+        service TEXT NOT NULL,
+        provider TEXT,
+        contact TEXT,
+        email TEXT,
+        created_by TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    `).run();
+    console.log('Created network_contacts table');
+  } catch (err) {
+    console.error('Migration error (network_contacts):', err);
+  }
 }
 
-try {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS roles (
-      name TEXT PRIMARY KEY,
-      description TEXT
-    )
-  `).run();
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS permissions (
-      key TEXT PRIMARY KEY,
-      description TEXT
-    )
-  `).run();
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS role_permissions (
-      role_name TEXT NOT NULL,
-      permission_key TEXT NOT NULL,
-      PRIMARY KEY (role_name, permission_key),
-      FOREIGN KEY (role_name) REFERENCES roles(name),
-      FOREIGN KEY (permission_key) REFERENCES permissions(key)
-    )
-  `).run();
+if (!isPostgres) {
+  try {
+    legacyDb.prepare(`
+      CREATE TABLE IF NOT EXISTS roles (
+        name TEXT PRIMARY KEY,
+        description TEXT
+      )
+    `).run();
+    legacyDb.prepare(`
+      CREATE TABLE IF NOT EXISTS permissions (
+        key TEXT PRIMARY KEY,
+        description TEXT
+      )
+    `).run();
+    legacyDb.prepare(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        role_name TEXT NOT NULL,
+        permission_key TEXT NOT NULL,
+        PRIMARY KEY (role_name, permission_key),
+        FOREIGN KEY (role_name) REFERENCES roles(name),
+        FOREIGN KEY (permission_key) REFERENCES permissions(key)
+      )
+    `).run();
 
-  const baseRoles = [
-    { name: 'superuser', description: 'System owner with full access' },
-    { name: 'admin', description: 'Company administrator with full access to modules' },
-    { name: 'manager', description: 'Manager with elevated asset and category access' },
-    { name: 'user', description: 'Standard internal user' },
-    { name: 'client', description: 'External client user' },
-    { name: 'it_user', description: 'IT personnel with network access' },
-    { name: 'it_manager', description: 'IT manager with network management access' }
-  ];
-  const insertRole = db.prepare("INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)");
-  baseRoles.forEach(r => insertRole.run(r.name, r.description));
+    const baseRoles = [
+      { name: 'superuser', description: 'System owner with full access' },
+      { name: 'admin', description: 'Company administrator with full access to modules' },
+      { name: 'manager', description: 'Manager with elevated asset and category access' },
+      { name: 'user', description: 'Standard internal user' },
+      { name: 'client', description: 'External client user' },
+      { name: 'it_user', description: 'IT personnel with network access' },
+      { name: 'it_manager', description: 'IT manager with network management access' }
+    ];
+    const insertRole = legacyDb.prepare("INSERT OR IGNORE INTO roles (name, description) VALUES (?, ?)");
+    baseRoles.forEach(r => insertRole.run(r.name, r.description));
 
-  const basePermissions = [
-    { key: 'module.assets.access', description: 'Access asset views and operations' },
-    { key: 'module.admin.access', description: 'Access admin area' },
-    { key: 'module.settings.access', description: 'Access settings area' },
-    { key: 'module.employees.access', description: 'Access employees area' },
-    { key: 'module.network_scanner.access', description: 'Access network scanner' },
-    { key: 'module.network.access', description: 'Access network tools and credentials' },
-    { key: 'asset.view', description: 'View assets' },
-    { key: 'asset.create', description: 'Create assets' },
-    { key: 'asset.edit', description: 'Edit assets' },
-    { key: 'asset.delete', description: 'Delete assets' },
-    { key: 'asset.search', description: 'Search assets' },
-    { key: 'category.create', description: 'Create categories' },
-    { key: 'category.delete', description: 'Delete categories' },
-    { key: 'user.manage', description: 'Manage users' },
-    { key: 'logs.view', description: 'View change logs' }
-  ];
-  const insertPerm = db.prepare("INSERT OR IGNORE INTO permissions (key, description) VALUES (?, ?)");
-  basePermissions.forEach(p => insertPerm.run(p.key, p.description));
+    const basePermissions = [
+      { key: 'module.assets.access', description: 'Access asset views and operations' },
+      { key: 'module.admin.access', description: 'Access admin area' },
+      { key: 'module.settings.access', description: 'Access settings area' },
+      { key: 'module.employees.access', description: 'Access employees area' },
+      { key: 'module.network_scanner.access', description: 'Access network scanner' },
+      { key: 'module.network.access', description: 'Access network tools and credentials' },
+      { key: 'asset.view', description: 'View assets' },
+      { key: 'asset.create', description: 'Create assets' },
+      { key: 'asset.edit', description: 'Edit assets' },
+      { key: 'asset.delete', description: 'Delete assets' },
+      { key: 'asset.search', description: 'Search assets' },
+      { key: 'category.create', description: 'Create categories' },
+      { key: 'category.delete', description: 'Delete categories' },
+      { key: 'user.manage', description: 'Manage users' },
+      { key: 'logs.view', description: 'View change logs' },
+      { key: 'asset.view_price', description: 'View asset value/price' },
+      { key: 'asset.edit_price', description: 'Edit asset value/price' }
+    ];
+    const insertPerm = legacyDb.prepare("INSERT OR IGNORE INTO permissions (key, description) VALUES (?, ?)");
+    basePermissions.forEach(p => insertPerm.run(p.key, p.description));
 
-  const rolePermissionPairs = [
-    ['superuser', 'module.assets.access'],
-    ['superuser', 'module.admin.access'],
-    ['superuser', 'module.settings.access'],
-    ['superuser', 'module.employees.access'],
-    ['superuser', 'module.network_scanner.access'],
-    ['superuser', 'module.network.access'],
-    ['superuser', 'asset.view'],
-    ['superuser', 'asset.create'],
-    ['superuser', 'asset.edit'],
-    ['superuser', 'asset.delete'],
-    ['superuser', 'asset.search'],
-    ['superuser', 'category.create'],
-    ['superuser', 'category.delete'],
-    ['superuser', 'user.manage'],
-    ['superuser', 'logs.view'],
+    const rolePermissionPairs = [
+      ['superuser', 'module.assets.access'],
+      ['superuser', 'module.admin.access'],
+      ['superuser', 'module.settings.access'],
+      ['superuser', 'module.employees.access'],
+      ['superuser', 'module.network_scanner.access'],
+      ['superuser', 'module.network.access'],
+      ['superuser', 'asset.view'],
+      ['superuser', 'asset.create'],
+      ['superuser', 'asset.edit'],
+      ['superuser', 'asset.delete'],
+      ['superuser', 'asset.search'],
+      ['superuser', 'category.create'],
+      ['superuser', 'category.delete'],
+      ['superuser', 'user.manage'],
+      ['superuser', 'logs.view'],
+      ['superuser', 'asset.view_price'],
+      ['superuser', 'asset.edit_price'],
 
-    ['admin', 'module.assets.access'],
-    ['admin', 'module.admin.access'],
-    ['admin', 'module.settings.access'],
-    ['admin', 'module.employees.access'],
-    ['admin', 'module.network_scanner.access'],
-    ['admin', 'module.network.access'],
-    ['admin', 'asset.view'],
-    ['admin', 'asset.create'],
-    ['admin', 'asset.edit'],
-    ['admin', 'asset.delete'],
-    ['admin', 'asset.search'],
-    ['admin', 'category.create'],
-    ['admin', 'user.manage'],
-    ['admin', 'logs.view'],
+      ['admin', 'module.assets.access'],
+      ['admin', 'module.admin.access'],
+      ['admin', 'module.settings.access'],
+      ['admin', 'module.employees.access'],
+      ['admin', 'module.network_scanner.access'],
+      ['admin', 'module.network.access'],
+      ['admin', 'asset.view'],
+      ['admin', 'asset.create'],
+      ['admin', 'asset.edit'],
+      ['admin', 'asset.delete'],
+      ['admin', 'asset.search'],
+      ['admin', 'category.create'],
+      ['admin', 'user.manage'],
+      ['admin', 'logs.view'],
+      ['admin', 'asset.view_price'],
+      ['admin', 'asset.edit_price'],
 
-    ['manager', 'module.assets.access'],
-    ['manager', 'asset.view'],
-    ['manager', 'asset.create'],
-    ['manager', 'asset.edit'],
-    ['manager', 'asset.search'],
-    ['manager', 'category.create'],
+      ['manager', 'module.assets.access'],
+      ['manager', 'asset.view'],
+      ['manager', 'asset.create'],
+      ['manager', 'asset.edit'],
+      ['manager', 'asset.search'],
+      ['manager', 'category.create'],
+      ['manager', 'asset.view_price'],
+      ['manager', 'asset.edit_price'],
 
-    ['user', 'module.assets.access'],
-    ['user', 'asset.view'],
-    ['user', 'asset.create'],
-    ['user', 'asset.edit'],
-    ['user', 'asset.search'],
+      ['user', 'module.assets.access'],
+      ['user', 'asset.view'],
+      ['user', 'asset.create'],
+      ['user', 'asset.edit'],
+      ['user', 'asset.search'],
 
-    ['client', 'module.assets.access'],
-    ['client', 'asset.view'],
-    ['client', 'asset.search'],
+      ['client', 'module.assets.access'],
+      ['client', 'asset.view'],
+      ['client', 'asset.search'],
 
-    ['it_user', 'module.assets.access'],
-    ['it_user', 'module.network_scanner.access'],
-    ['it_user', 'module.network.access'],
-    ['it_user', 'asset.view'],
-    ['it_user', 'asset.search'],
+      ['it_user', 'module.assets.access'],
+      ['it_user', 'module.network_scanner.access'],
+      ['it_user', 'module.network.access'],
+      ['it_user', 'asset.view'],
+      ['it_user', 'asset.search'],
 
-    ['it_manager', 'module.assets.access'],
-    ['it_manager', 'module.network_scanner.access'],
-    ['it_manager', 'module.network.access'],
-    ['it_manager', 'asset.view'],
-    ['it_manager', 'asset.create'],
-    ['it_manager', 'asset.edit'],
-    ['it_manager', 'asset.search'],
-    ['it_manager', 'user.manage']
-  ];
-  const insertRolePerm = db.prepare("INSERT OR IGNORE INTO role_permissions (role_name, permission_key) VALUES (?, ?)");
-  db.transaction((pairs) => {
-    pairs.forEach(([roleName, permKey]) => insertRolePerm.run(roleName, permKey));
-  })(rolePermissionPairs);
+      ['it_manager', 'module.assets.access'],
+      ['it_manager', 'module.network_scanner.access'],
+      ['it_manager', 'module.network.access'],
+      ['it_manager', 'asset.view'],
+      ['it_manager', 'asset.create'],
+      ['it_manager', 'asset.edit'],
+      ['it_manager', 'asset.search'],
+      ['it_manager', 'user.manage']
+    ];
+    const insertRolePerm = legacyDb.prepare("INSERT OR IGNORE INTO role_permissions (role_name, permission_key) VALUES (?, ?)");
+    rolePermissionPairs.forEach(([roleName, permKey]) => insertRolePerm.run(roleName, permKey));
 
-  loadRolePermissionsIntoCache();
-} catch (err) {
-  console.error('Migration error (RBAC tables):', err);
+    loadRolePermissionsIntoCache().then(() => {
+      console.log('Permissions cache initialized');
+    });
+  } catch (err) {
+    console.error('Migration error (RBAC tables):', err);
+  }
 }
 // ---------------------------
 
@@ -1186,112 +1445,124 @@ function getRequestActor(req) {
   return req.headers['x-user'] || 'web'
 }
 
-function getUserFromDb(username) {
+async function getUserFromDb(username) {
   if (!username) return null
-  return db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+  const isPostgres = process.env.DB_CLIENT === 'postgresql';
+  if (isPostgres) {
+    const user = await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
+    return normalizeResult(user);
+  }
+  return legacyDb.prepare('SELECT * FROM users WHERE username = ?').get(username)
 }
 
-function requireAdmin(req) {
+async function requireAdmin(req) {
   const username = String(req.headers['x-user'] || '')
-  const user = getUserFromDb(username)
+  const user = await getUserFromDb(username)
   if (!user || (user.role !== 'admin' && user.role !== 'superuser')) return null
   return user
 }
 
-function getQuantityAsset(id) {
-  return db.prepare(`
-    SELECT
-      a.ID,
-      a.ItemName,
-      a.Status,
-      a.CurrentLocation,
-      a.quantity_parent_id,
-      a.quantity_root_id,
-      a.quantity_unit,
-      a.quantity_total,
-      a.quantity_available,
-      a.quantity_precision,
-      a.conversion_unit,
-      a.conversion_factor,
-      pa.ProjectID
-    FROM assets a
-    LEFT JOIN project_assets pa ON a.ID = pa.AssetID
-    WHERE LOWER(a.ID) = LOWER(?)
-  `).get(id)
+// Helper to get quantity-tracked asset (Async)
+async function getQuantityAsset(id) {
+  const isPostgres = process.env.DB_CLIENT === 'postgresql';
+  const assetIdCol = isPostgres ? 'pa.assetid' : 'pa.AssetID';
+  const projectIdCol = isPostgres ? 'pa.projectid' : 'pa.ProjectID';
+
+  const asset = await db('assets as a')
+    .leftJoin('project_assets as pa', isPostgres ? 'a.id' : 'a.ID', assetIdCol)
+    .select(
+      isPostgres ? 'a.id as ID' : 'a.ID',
+      isPostgres ? 'a.itemname as ItemName' : 'a.ItemName',
+      isPostgres ? 'a.status as Status' : 'a.Status',
+      isPostgres ? 'a.currentlocation as CurrentLocation' : 'a.CurrentLocation',
+      'a.quantity_parent_id',
+      'a.quantity_root_id',
+      'a.quantity_unit',
+      'a.quantity_total',
+      'a.quantity_available',
+      'a.quantity_precision',
+      'a.conversion_unit',
+      'a.conversion_factor',
+      isPostgres ? 'pa.projectid as ProjectID' : 'pa.ProjectID'
+    )
+    .whereRaw(isPostgres ? 'LOWER(a.id) = LOWER(?)' : 'LOWER(a.ID) = LOWER(?)', [id])
+    .first();
+    
+  return normalizeResult(asset);
 }
 
-const applyQuantityEvent = db.transaction((event) => {
-  const now = new Date().toISOString()
-  const root = getQuantityAsset(event.rootId)
-  if (!root || !root.quantity_root_id || String(root.quantity_root_id).toLowerCase() !== String(event.rootId).toLowerCase()) {
-    throw new Error('Invalid quantity root')
-  }
-  const unit = normalizeQtyUnit(root.quantity_unit)
-  if (!unit) throw new Error('Root asset is missing quantity unit')
-
-  const insertEvent = db.prepare(`
-    INSERT INTO quantity_events (root_id, type, actor, timestamp, note, metadata_json)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `)
-  const insertLine = db.prepare(`
-    INSERT INTO quantity_event_lines (event_id, asset_id, unit, delta_available, delta_total)
-    VALUES (?, ?, ?, ?, ?)
-  `)
-  const updateAsset = db.prepare(`
-    UPDATE assets
-    SET
-      quantity_unit = COALESCE(quantity_unit, ?),
-      quantity_available = COALESCE(quantity_available, 0) + ?,
-      quantity_total = COALESCE(quantity_total, 0) + ?,
-      quantity_updated_at = ?,
-      quantity_precision = COALESCE(quantity_precision, ?)
-    WHERE LOWER(ID) = LOWER(?)
-      AND LOWER(quantity_root_id) = LOWER(?)
-      AND (COALESCE(quantity_available, 0) + ?) >= 0
-      AND (COALESCE(quantity_total, 0) + ?) >= 0
-      AND (COALESCE(quantity_available, 0) + ?) <= (COALESCE(quantity_total, 0) + ?)
-  `)
-
-  const metadataJson = event.metadata ? JSON.stringify(event.metadata) : null
-  const note = event.note ? String(event.note) : null
-  const actor = event.actor ? String(event.actor) : null
-
-  const eventResult = insertEvent.run(event.rootId, event.type, actor, now, note, metadataJson)
-  const eventId = eventResult.lastInsertRowid
-
-  for (const line of event.lines) {
-    const lineUnit = normalizeQtyUnit(line.unit) || unit
-    if (lineUnit !== unit) throw new Error('Unit mismatch')
-
-    const deltaAvailable = parseQtyNumber(line.deltaAvailable) ?? 0
-    const deltaTotal = parseQtyNumber(line.deltaTotal) ?? 0
-    if (!Number.isFinite(deltaAvailable) || !Number.isFinite(deltaTotal)) throw new Error('Invalid quantity delta')
-
-    insertLine.run(eventId, line.assetId, unit, deltaAvailable, deltaTotal)
-
-    const precision = Number.isFinite(line.precision) ? line.precision : (root.quantity_precision ?? null)
-    const changes = updateAsset.run(
-      unit,
-      deltaAvailable,
-      deltaTotal,
-      now,
-      precision,
-      line.assetId,
-      event.rootId,
-      deltaAvailable,
-      deltaTotal,
-      deltaAvailable,
-      deltaTotal
-    ).changes
-
-    if (changes !== 1) {
-      console.warn(`Quantity update rejected for asset ${line.assetId} (root: ${event.rootId}). Delta: ${deltaAvailable}/${deltaTotal}. Root info:`, root);
-      throw new Error(`Quantity update rejected: Possibly insufficient available quantity (${deltaAvailable}) for asset ${line.assetId}`)
+const applyQuantityEvent = async (event, externalTrx = null) => {
+  const isPostgres = process.env.DB_CLIENT === 'postgresql';
+  const runInTrx = async (trx) => {
+    const now = new Date().toISOString()
+    const root = await getQuantityAsset(event.rootId);
+    
+    if (!root || !root.quantity_root_id || String(root.quantity_root_id).toLowerCase() !== String(event.rootId).toLowerCase()) {
+      throw new Error(`Invalid quantity root: ${event.rootId}. Expected root: ${root ? root.quantity_root_id : 'none'}`)
     }
-  }
+    const unit = normalizeQtyUnit(root.quantity_unit)
+    if (!unit) throw new Error('Root asset is missing quantity unit')
 
-  return { eventId: Number(eventId), timestamp: now, unit }
-})
+    const metadataJson = event.metadata ? JSON.stringify(event.metadata) : null
+    const note = event.note ? String(event.note) : null
+    const actor = event.actor ? String(event.actor) : null
+
+    const insertResult = await trx('quantity_events').insert({
+      root_id: event.rootId,
+      type: event.type,
+      actor: actor,
+      timestamp: now,
+      note: note,
+      metadata_json: metadataJson
+    }).returning('id');
+    
+    const eventId = isPostgres ? insertResult[0].id : insertResult[0];
+
+    for (const line of event.lines) {
+      const lineUnit = normalizeQtyUnit(line.unit) || unit
+      if (lineUnit !== unit) throw new Error('Unit mismatch')
+
+      const deltaAvailable = parseQtyNumber(line.deltaAvailable) ?? 0
+      const deltaTotal = parseQtyNumber(line.deltaTotal) ?? 0
+      if (!Number.isFinite(deltaAvailable) || !Number.isFinite(deltaTotal)) throw new Error('Invalid quantity delta')
+
+      await trx('quantity_event_lines').insert({
+        event_id: eventId,
+        asset_id: line.assetId,
+        unit: unit,
+        delta_available: deltaAvailable,
+        delta_total: deltaTotal
+      });
+
+      const precision = Number.isFinite(line.precision) ? line.precision : (root.quantity_precision ?? null)
+      
+      const updateResult = await trx('assets')
+        .whereRaw(isPostgres ? 'LOWER(id) = LOWER(?)' : 'LOWER(ID) = LOWER(?)', [line.assetId])
+        .andWhereRaw(isPostgres ? 'LOWER(quantity_root_id) = LOWER(?)' : 'LOWER(quantity_root_id) = LOWER(?)', [event.rootId])
+        .update({
+          quantity_unit: db.raw('COALESCE(quantity_unit, ?)', [unit]),
+          quantity_available: db.raw('COALESCE(quantity_available, 0) + ?', [deltaAvailable]),
+          quantity_total: db.raw('COALESCE(quantity_total, 0) + ?', [deltaTotal]),
+          quantity_updated_at: now,
+          quantity_precision: db.raw('COALESCE(quantity_precision, ?)', [precision])
+        });
+
+      if (updateResult !== 1) {
+        throw new Error(`Quantity update failed: Asset ${line.assetId} not found or mismatch.`)
+      }
+    }
+
+    return { eventId: Number(eventId), timestamp: now, unit }
+  };
+
+  if (externalTrx) {
+    return await runInTrx(externalTrx);
+  } else {
+    return await db.transaction(async (trx) => {
+      return await runInTrx(trx);
+    });
+  }
+};
 
 // API Key for external integrations (Zoho, Odoo, etc.)
 // In a production environment, this should be moved to an environment variable or database.
@@ -1307,15 +1578,24 @@ const checkApiKey = (req, res, next) => {
 };
 
 // API to get recent activity log
-app.get('/api/recent-activity', (req, res) => {
+app.get('/api/recent-activity', async (req, res) => {
     try {
-        const stmt = db.prepare(`
-            SELECT Action, User, AssetId, Details, Timestamp 
-            FROM audit_log 
-            ORDER BY Timestamp DESC 
-            LIMIT 10
-        `);
-        const rows = stmt.all();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('audit_log')
+                .select('action as Action', 'user as User', 'assetid as AssetId', 'details as Details', 'timestamp as Timestamp')
+                .orderBy('timestamp', 'desc')
+                .limit(10);
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare(`
+                SELECT Action, User, AssetId, Details, Timestamp 
+                FROM audit_log 
+                ORDER BY Timestamp DESC 
+                LIMIT 10
+            `).all();
+        }
         res.json(rows);
     } catch (err) {
         console.error('Error fetching recent activity:', err);
@@ -1324,14 +1604,22 @@ app.get('/api/recent-activity', (req, res) => {
 });
 
 // API to get all audit logs
-app.get('/api/audit-logs', (req, res) => {
+app.get('/api/audit-logs', async (req, res) => {
     try {
-        const stmt = db.prepare(`
-            SELECT * FROM audit_log 
-            ORDER BY Timestamp DESC
-            LIMIT 1000
-        `);
-        const rows = stmt.all();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('audit_log')
+                .orderBy('timestamp', 'desc')
+                .limit(1000);
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare(`
+                SELECT * FROM audit_log 
+                ORDER BY Timestamp DESC
+                LIMIT 1000
+            `).all();
+        }
         res.json(rows);
     } catch (err) {
         console.error('Error fetching audit logs:', err);
@@ -1340,10 +1628,16 @@ app.get('/api/audit-logs', (req, res) => {
 });
 
 // API to export audit logs as JSON
-app.get('/api/audit-logs/export/json', (req, res) => {
+app.get('/api/audit-logs/export/json', async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC');
-        const rows = stmt.all();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('audit_log').orderBy('timestamp', 'desc');
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC').all();
+        }
         
         const filename = 'audit_logs_' + Date.now() + '.json';
         fs.writeFileSync(path.join(exportDir, filename), JSON.stringify(rows, null, 2));
@@ -1358,10 +1652,16 @@ app.get('/api/audit-logs/export/json', (req, res) => {
 });
 
 // API to export audit logs as Excel
-app.get('/api/audit-logs/export/excel', (req, res) => {
+app.get('/api/audit-logs/export/excel', async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC');
-        const rows = stmt.all();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('audit_log').orderBy('timestamp', 'desc');
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC').all();
+        }
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet(rows);
@@ -1445,7 +1745,7 @@ async function sendWarrantyEmail(asset, daysLeft, settings, recipientEmail = nul
     // Determine Project Context
     let projectContext = '';
     if (asset.ProjectID) {
-         const project = db.prepare('SELECT ProjectName, ClientName FROM projects WHERE ID = ?').get(asset.ProjectID);
+         const project = legacyDb.prepare('SELECT ProjectName, ClientName FROM projects WHERE ID = ?').get(asset.ProjectID);
          if (project) {
              projectContext = `
                 <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Project:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${project.ProjectName} (${project.ClientName})</td></tr>
@@ -1515,7 +1815,7 @@ async function checkWarrantyStatuses() {
     try {
         let employeeEmailStmt = null;
         try {
-            employeeEmailStmt = db.prepare(`
+            employeeEmailStmt = legacyDb.prepare(`
                 SELECT Email FROM employees
                 WHERE Email IS NOT NULL AND trim(Email) != ''
                   AND (
@@ -1531,7 +1831,7 @@ async function checkWarrantyStatuses() {
 
         let assetUserIdStmt = null;
         try {
-            assetUserIdStmt = db.prepare('SELECT UserID FROM asset_it_details WHERE AssetID = ?');
+            assetUserIdStmt = legacyDb.prepare('SELECT UserID FROM asset_it_details WHERE AssetID = ?');
         } catch (e) {
             assetUserIdStmt = null;
         }
@@ -1551,7 +1851,7 @@ async function checkWarrantyStatuses() {
         const sendToEmployeeEmails = settings.send_to_employee_emails !== false;
 
         // Fetch assets joined with project assignments
-        const assets = db.prepare(`
+        const assets = legacyDb.prepare(`
             SELECT a.*, pa.ProjectID 
             FROM assets a
             LEFT JOIN project_assets pa ON a.ID = pa.AssetID
@@ -1594,7 +1894,7 @@ async function checkWarrantyStatuses() {
                     }
 
                     if (sendToProjectEmails && asset.ProjectID) {
-                        const project = db.prepare('SELECT OwnerEmail, CoordinatorEmail FROM projects WHERE ID = ?').get(asset.ProjectID);
+                        const project = legacyDb.prepare('SELECT OwnerEmail, CoordinatorEmail FROM projects WHERE ID = ?').get(asset.ProjectID);
                         if (project) {
                             if (project.OwnerEmail && project.OwnerEmail.trim() !== '') recipientEmails.push(project.OwnerEmail);
                             if (project.CoordinatorEmail && project.CoordinatorEmail.trim() !== '') recipientEmails.push(project.CoordinatorEmail);
@@ -1745,10 +2045,22 @@ app.post('/api/settings/email/run-check', async (req, res) => {
     }
 });
 
-// Standard Dev serving: Serve JS and static from source folders for easier debugging
-app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
-app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
-app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
+// Environment-based static file serving
+const currentPort = process.env.PORT || 8080;
+if (currentPort == 8080) {
+    // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
+    console.log('[ENV] Serving minified assets from DIST folder on port 8080');
+    app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/dist/js')));
+    app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
+    app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
+} else {
+    // Port 9090: Serve from source (Easier debugging)
+    console.log('[ENV] Serving source assets from JS/STATIC folders on port 9090');
+    app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
+    app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
+    app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
+}
+
 app.use('/uploads', express.static(uploadsDir));
 app.use('/input', express.static(uploadsDir));
 app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons')));
@@ -1791,12 +2103,14 @@ app.post('/api/asset_kinds/upload-image', upload.single('image'), (req, res) => 
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../asset-manager-frontend/index.html'));
+  const rootPath = (currentPort == 8080) ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
+  res.sendFile(path.join(__dirname, rootPath, 'index.html'));
 });
 
 // Serve Asset Details View
 app.get('/asset/:id', (req, res) => {
-    const filePath = path.join(__dirname, '../asset-manager-frontend/asset-view.html');
+    const rootPath = (currentPort == 8080) ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
+    const filePath = path.join(__dirname, rootPath, 'asset-view.html');
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
     } else {
@@ -1806,18 +2120,38 @@ app.get('/asset/:id', (req, res) => {
 
 
 // Helper to check asset assignment status
-function getAssetAssignmentStatus(assetId) {
-    const asset = db.prepare('SELECT AssignedTo FROM assets WHERE ID = ?').get(assetId);
-    if (asset && asset.AssignedTo && asset.AssignedTo.trim() !== '') {
-        return { type: 'user', assignedTo: asset.AssignedTo };
+async function getAssetAssignmentStatus(assetId) {
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
+    // 1. Check user assignment
+    let asset;
+    if (isPostgres) {
+        asset = await db('assets').where('id', assetId).select('assignedto').first();
+    } else {
+        asset = legacyDb.prepare('SELECT AssignedTo FROM assets WHERE ID = ?').get(assetId);
+    }
+    
+    const assignedTo = asset ? (asset.assignedto || asset.AssignedTo) : null;
+    if (assignedTo && assignedTo.trim() !== '') {
+        return { type: 'user', assignedTo };
     }
 
-    const projectLink = db.prepare(`
-        SELECT pa.ProjectID, p.ProjectName, p.Status
-        FROM project_assets pa
-        JOIN projects p ON pa.ProjectID = p.ID
-        WHERE pa.AssetID = ?
-    `).get(assetId);
+    // 2. Check project assignment
+    let projectLink;
+    if (isPostgres) {
+        projectLink = await db('project_assets as pa')
+            .join('projects as p', 'pa.projectid', 'p.id')
+            .where('pa.assetid', assetId)
+            .select('pa.projectid as ProjectID', 'p.projectname as ProjectName', 'p.status as Status')
+            .first();
+    } else {
+        projectLink = legacyDb.prepare(`
+            SELECT pa.ProjectID, p.ProjectName, p.Status
+            FROM project_assets pa
+            JOIN projects p ON pa.ProjectID = p.ID
+            WHERE pa.AssetID = ?
+        `).get(assetId);
+    }
 
     if (projectLink) {
         return { 
@@ -1831,55 +2165,198 @@ function getAssetAssignmentStatus(assetId) {
     return null;
 }
 
-app.get('/api/assets', (req, res) => {
+// --- Public Asset View API ---
+// This endpoint is for client-facing barcode scans. 
+// It redacts sensitive internal information.
+app.get('/api/public/assets/:label', async (req, res) => {
+    try {
+        const { label } = req.params;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
+        const asset = await db('assets as a')
+            .leftJoin('project_assets as pa', isPostgres ? 'a.id' : 'a.ID', isPostgres ? 'pa.assetid' : 'pa.AssetID')
+            .leftJoin('projects as p', isPostgres ? 'pa.projectid' : 'pa.ProjectID', isPostgres ? 'p.id' : 'p.ID')
+            .whereRaw('LOWER(a.client_label) = LOWER(?)', [label])
+            .select(
+                'a.*',
+                isPostgres ? 'p.projectname as project_name' : 'p.ProjectName as project_name'
+            )
+            .first();
+
+        if (!asset) {
+            return res.status(404).json({ error: 'Asset not found' });
+        }
+
+        // Redact internal data
+        const publicAsset = {
+            ID: asset.id || asset.ID,
+            ClientLabel: asset.client_label,
+            ItemName: asset.itemname || asset.ItemName,
+            ItemDescription: asset.itemdescription || asset.ItemDescription,
+            Make: asset.make || asset.Make,
+            Model: asset.model || asset.Model,
+            SerialNo: asset.serialno || asset.SerialNo || asset.srno || asset.SrNo,
+            Type: asset.type || asset.Type,
+            Category: asset.category || asset.Category,
+            AssignedProject: asset.project_name || 'N/A',
+            CurrentLocation: asset.currentlocation || asset.CurrentLocation,
+            WarrantyMonths: asset.warranty_months || asset.Warranty_Months,
+            Department: asset.department || asset.Department,
+            // Include specifications but exclude pricing/vendors
+            Specifications: asset.remarks || asset.Remarks
+        };
+
+        res.json(publicAsset);
+    } catch (err) {
+        console.error('Public asset fetch error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/api/assets', authenticateJWT, async (req, res) => {
   try {
     const { projectId, all } = req.query;
-    
-    // If 'all' is requested, return all assets (flat array) for global cache
-    if (all === 'true') {
-        let baseQuery = `
-          SELECT a.*, 
-                 it.MACAddress, it.IPAddress, it.NetworkType, 
-                 it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
-                 p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
-          FROM assets a
-          LEFT JOIN asset_it_details it ON a.ID = it.AssetID
-          LEFT JOIN project_assets pa ON a.ID = pa.AssetID
-          LEFT JOIN projects p ON pa.ProjectID = p.ID
-        `;
-        let params = [];
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+    const hasViewPrice = hasPermission(req.user.role, 'asset.view_price');
+    const userDept = req.user.department;
+
+    // 1. Try Cache First
+    const cacheKey = `assets:list:${hasViewPrice}:${projectId || 'all'}`;
+    const cachedData = await cache.get(cacheKey);
+    if (cachedData) {
+        console.log(`[CACHE] Serving assets from cache for key: ${cacheKey}`);
+        return res.json(cachedData);
+    }
+
+    // Helper for processing assets (decrypting and redacting)
+    const processAssets = async (assets) => {
+      console.log(`[DB] Processing ${assets.length} assets. Using DB: ${process.env.DB_NAME || 'default'}`);
+      try {
+        const components = await db('components').select('id');
+        const componentIds = new Set(components.map(c => c.id));
         
-        if (projectId) {
-            baseQuery += ` WHERE pa.ProjectID = ? AND (a.is_deleted = 0 OR a.is_deleted IS NULL)`;
-            params.push(projectId);
-        } else {
-            baseQuery += ` WHERE (a.is_deleted = 0 OR a.is_deleted IS NULL)`;
-        }
-        
-        baseQuery += ` ORDER BY a.LastUpdated DESC`;
-        
-        const assets = db.prepare(baseQuery).all(...params);
-        
-        // Process assets (mark components and Decrypt)
-        const componentIds = new Set(db.prepare('SELECT ID FROM components').all().map(c => c.ID));
-        const processed = assets.map(a => {
+        return assets.map(a => {
+          const isTrueComponent = componentIds.has(a.id);
+          const hasParent = a.parentid !== null && a.parentid !== undefined && a.parentid !== '';
+          
+          // Comprehensive mapping from lowercase Postgres columns to CamelCase/PascalCase frontend keys
           const decrypted = {
             ...a,
-            isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
+            ID: a.id,
+            ItemName: a.itemname,
+            Category: a.category,
+            Status: a.status || 'In Store',
+            Make: a.make,
+            Model: a.model,
+            Type: a.type,
+            ParentId: a.parentid,
+            LastUpdated: a.lastupdated,
+            SrNo: a.srno,
+            SerialNo: a.serialno,
+            CurrentLocation: a.currentlocation,
+            AssignedTo: a.assignedto,
+            ProjectID: a.projectid,
+            // isComponent should ONLY be true for items in the components table
+            // Items with a parentid but NOT in the components table are "Split Assets" or "Sub-Assets"
+            // which should be counted as real assets in the dashboard.
+            isComponent: isTrueComponent,
+            isSplitChild: hasParent && !isTrueComponent,
             isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
           };
           
           // Decrypt sensitive fields
-          if (decrypted.SerialNo) decrypted.SerialNo = encryptionService.universalDecrypt(decrypted.SerialNo);
-          if (decrypted.SrNo) decrypted.SrNo = encryptionService.universalDecrypt(decrypted.SrNo);
-          if (decrypted.MACAddress) decrypted.MACAddress = encryptionService.universalDecrypt(decrypted.MACAddress);
-          if (decrypted.IPAddress) decrypted.IPAddress = encryptionService.universalDecrypt(decrypted.IPAddress);
-          if (decrypted.SocketID) decrypted.SocketID = encryptionService.universalDecrypt(decrypted.SocketID);
+          try {
+              if (a.serialno) decrypted.SerialNo = encryptionService.universalDecrypt(a.serialno);
+              if (a.srno) decrypted.SrNo = encryptionService.universalDecrypt(a.srno);
+              if (a.macaddress) decrypted.MACAddress = encryptionService.universalDecrypt(a.macaddress);
+              if (a.ipaddress) decrypted.IPAddress = encryptionService.universalDecrypt(a.ipaddress);
+              if (a.socketid) decrypted.SocketID = encryptionService.universalDecrypt(a.socketid);
+          } catch (e) {
+              // Only log if it looks like it should have been encrypted but failed
+              if (a.serialno && a.serialno.includes(':')) {
+                console.warn(`[ENCRYPT] Failed to decrypt asset ${a.id}:`, e.message);
+              }
+          }
           
+          // Redact Price if unauthorized
+          if (!hasViewPrice) {
+            delete decrypted.asset_value;
+            delete decrypted.unitprice;
+            delete decrypted.currency;
+            delete decrypted.UnitPrice;
+            delete decrypted.Currency;
+          } else {
+            decrypted.UnitPrice = a.unitprice;
+            decrypted.Currency = a.currency;
+          }
           return decrypted;
         });
+      } catch (err) {
+        console.error('[DB] Error in processAssets:', err.message);
+        return assets.map(a => {
+            const hasParent = a.parentid !== null && a.parentid !== '';
+            return {
+                ...a,
+                ID: a.id,
+                ItemName: a.itemname,
+                Category: a.category,
+                Status: a.status || 'In Store',
+                ParentId: a.parentid,
+                isComponent: false, // In fallback, we don't know for sure, so don't exclude
+                isSplitChild: hasParent,
+                isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
+            };
+        });
+      }
+    };
+
+    // If 'all' is requested, return all assets (flat array) for global cache
+    if (all === 'true') {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         
-        return res.json(processed);
+        let assets;
+        if (isPostgres) {
+            let query = db('assets as a')
+              .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
+              .leftJoin('project_assets as pa', 'a.id', 'pa.assetid')
+              .leftJoin('projects as p', 'pa.projectid', 'p.id')
+              .where(function() {
+                this.where('a.is_deleted', 0).orWhereNull('a.is_deleted');
+              });
+            
+            if (projectId) {
+                query.where('pa.projectid', projectId);
+            }
+
+            // Apply Department Segregation for non-admins
+            if (!isAdmin && userDept) {
+                query.where(function() {
+                  this.where('a.department', userDept).orWhereNull('a.department').orWhere('a.department', '');
+                });
+            }
+
+            assets = await query
+              .select(
+                'a.*',
+                'it.macaddress', 
+                'it.ipaddress', 
+                'it.networktype', 
+                'it.physicalport', 
+                'it.vlan', 
+                'it.socketid', 
+                'it.userid', 
+                'p.projectname as AssignedProjectName', 
+                'p.id as AssignedProjectID'
+              )
+              .orderBy('a.lastupdated', 'desc');
+            
+            const processed = await processAssets(assets);
+            return res.json(processed);
+        } else {
+            // Legacy SQLite fallback (should not be reached in Docker)
+            assets = legacyDb.prepare('SELECT * FROM assets WHERE is_deleted = 0 OR is_deleted IS NULL').all();
+            return res.json(assets);
+        }
     }
 
     const page = parseInt(req.query.page) || 1;
@@ -1887,162 +2364,115 @@ app.get('/api/assets', (req, res) => {
     
     // Tabulator sends sorters and filters
     let sorters = req.query.sorters || [];
+    if (typeof sorters === 'string') sorters = JSON.parse(sorters);
     let filters = req.query.filters || [];
+    if (typeof filters === 'string') filters = JSON.parse(filters);
 
-    // Base query
-    // Use subquery to ensure only ONE project (the latest) is linked per asset
-    let baseQuery = `
-      FROM assets a
-      LEFT JOIN asset_it_details it ON a.ID = it.AssetID
-      LEFT JOIN (
-          SELECT AssetID, ProjectID
-          FROM project_assets
-          GROUP BY AssetID
-      ) pa_raw ON a.ID = pa_raw.AssetID
-      LEFT JOIN projects p ON pa_raw.ProjectID = p.ID
-    `;
-    let whereClauses = ["(a.is_deleted = 0 OR a.is_deleted IS NULL)"];
-    let params = [];
+    // Build the dynamic query using Knex
+    let query = db('assets as a')
+      .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
+      .leftJoin(
+        db('project_assets')
+          .select('assetid')
+          .max('projectid as projectid')
+          .groupBy('assetid')
+          .as('pa_raw'),
+        'a.id',
+        'pa_raw.assetid'
+      )
+      .leftJoin('projects as p', 'pa_raw.projectid', 'p.id')
+      .where(function() {
+        this.where('a.is_deleted', 0).orWhereNull('a.is_deleted');
+      });
 
-    // 1. Apply Project Filter
-    if (projectId) {
-      whereClauses.push(`pa_raw.ProjectID = ?`);
-      params.push(projectId);
+    // Apply Department Segregation for non-admins
+    if (!isAdmin && userDept) {
+        query.where(function() {
+          this.where('a.department', userDept).orWhereNull('a.department').orWhere('a.department', '');
+        });
     }
 
-    // 1.2 Apply Status Filter (Direct query param - supports comma-separated list)
+    // 1. Project Filter
+    if (projectId) {
+      query.where('pa_raw.projectid', projectId);
+    }
+
+    // 1.2 Status Filter
     const statusFilter = req.query.status;
     if (statusFilter) {
         const statuses = statusFilter.split(',').map(s => s.trim());
-        if (statuses.length === 1) {
-            whereClauses.push(`a.Status = ?`);
-            params.push(statuses[0]);
-        } else {
-            const placeholders = statuses.map(() => '?').join(',');
-            whereClauses.push(`a.Status IN (${placeholders})`);
-            params.push(...statuses);
-        }
+        query.whereIn('a.status', statuses);
     }
 
-    // 1.5 Apply Global Search (Google-like Multi-Keyword Search)
+    // 1.5 Global Search
     const search = req.query.search;
     if (search) {
-        console.log('Search Request:', search);
-        // Split search string into terms (space-separated)
         const terms = search.trim().split(/\s+/);
-        console.log('Search Terms:', terms);
-        
         terms.forEach(term => {
             const searchParam = `%${term}%`;
             const encryptedTerm = encryptionService.encryptDeterministic(term);
-            
-            whereClauses.push(`(
-                a.ID LIKE ? OR 
-                a.ItemName LIKE ? OR 
-                a.Make LIKE ? OR 
-                a.Model LIKE ? OR 
-                a.SrNo LIKE ? OR 
-                a.SrNo = ? OR
-                it.IPAddress = ? OR
-                a.CurrentLocation LIKE ? OR 
-                a.AssignedTo LIKE ? OR
-                a.Type LIKE ? OR
-                a.Category LIKE ? OR
-                a.Status LIKE ?
-            )`);
-            // Push params
-            params.push(searchParam, searchParam, searchParam, searchParam, searchParam, encryptedTerm, encryptedTerm, searchParam, searchParam, searchParam, searchParam, searchParam);
+            query.where(function() {
+              this.where('a.id', 'like', searchParam)
+                  .orWhere('a.itemname', 'like', searchParam)
+                  .orWhere('a.make', 'like', searchParam)
+                  .orWhere('a.model', 'like', searchParam)
+                  .orWhere('a.srno', 'like', searchParam)
+                  .orWhere('a.srno', encryptedTerm)
+                  .orWhere('it.ipaddress', encryptedTerm)
+                  .orWhere('a.currentlocation', 'like', searchParam)
+                  .orWhere('a.assignedto', 'like', searchParam)
+                  .orWhere('a.type', 'like', searchParam)
+                  .orWhere('a.category', 'like', searchParam)
+                  .orWhere('a.status', 'like', searchParam);
+            });
         });
     }
 
     // 2. Apply Tabulator Filters
     if (Array.isArray(filters)) {
       filters.forEach(f => {
-        const field = f.field;
-        const value = f.value;
-        const type = f.type; 
-
-        const allowedFields = ['ID', 'ItemName', 'Status', 'Type', 'Category', 'Make', 'Model', 'SerialNo', 'CurrentLocation', 'AssignedTo'];
-        if (allowedFields.includes(field)) {
+        const { field, value, type } = f;
+        const allowedFields = ['id', 'itemname', 'status', 'type', 'category', 'make', 'model', 'serialno', 'currentlocation', 'assignedto'];
+        const lowerField = field.toLowerCase();
+        if (allowedFields.includes(lowerField)) {
             if (type === 'like') {
-                whereClauses.push(`a.${field} LIKE ?`);
-                params.push(`%${value}%`);
+              query.where(`a.${lowerField}`, 'like', `%${value}%`);
             } else if (type === '=') {
-                whereClauses.push(`a.${field} = ?`);
-                params.push(value);
+              query.where(`a.${lowerField}`, value);
             } else if (type === '!=') {
-                whereClauses.push(`a.${field} != ?`);
-                params.push(value);
+              query.where(`a.${lowerField}`, '!=', value);
             }
         }
       });
     }
 
     // 3. Count Total for Pagination
-    const whereSql = " WHERE " + whereClauses.join(" AND ");
-    const countSql = `SELECT COUNT(*) as count ${baseQuery} ${whereSql}`;
-    const totalResult = db.prepare(countSql).get(...params);
-    const totalRecords = totalResult ? totalResult.count : 0;
+    const countResult = await query.clone().count('* as count').first();
+    const totalRecords = countResult ? parseInt(countResult.count) : 0;
     const last_page = Math.ceil(totalRecords / size);
 
-    // 4. Fetch Data
-    let dataQuery = `
-      SELECT a.*, 
-             it.MACAddress, it.IPAddress, it.NetworkType, 
-             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
-             p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
-      ${baseQuery}
-      ${whereSql}
-    `;
-
-    // 5. Apply Sorters
+    // 4. Apply Sorters
     if (Array.isArray(sorters) && sorters.length > 0) {
-        const sortClauses = sorters.map(s => {
-            const field = s.field;
-            const dir = s.dir.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+        sorters.forEach(s => {
+            const field = s.field.toLowerCase();
+            const dir = s.dir.toUpperCase() === 'DESC' ? 'desc' : 'asc';
             if (/^[a-zA-Z0-9_]+$/.test(field)) {
-                return `a.${field} ${dir}`;
+                query.orderBy(`a.${field}`, dir);
             }
-            return null;
-        }).filter(s => s);
-        
-        if (sortClauses.length > 0) {
-            dataQuery += ` ORDER BY ${sortClauses.join(', ')}`;
-        } else {
-             dataQuery += ` ORDER BY a.LastUpdated DESC`;
-        }
+        });
     } else {
-        dataQuery += ` ORDER BY a.LastUpdated DESC`;
+        query.orderBy('a.lastupdated', 'desc');
     }
 
-    // 6. Pagination
+    // 5. Fetch Data with Pagination
     const offset = (page - 1) * size;
-    dataQuery += ` LIMIT ? OFFSET ?`;
-    params.push(size, offset);
+    const assets = await query
+      .select('a.*', 'it.macaddress', 'it.ipaddress', 'it.networktype', 'it.physicalport', 'it.vlan', 'it.socketid', 'it.userid', 'p.projectname as AssignedProjectName', 'p.id as AssignedProjectID')
+      .limit(size)
+      .offset(offset);
 
-    const assets = db.prepare(dataQuery).all(...params);
+    const processedAssets = await processAssets(assets);
 
-    // 7. Process Assets (Mark components and Decrypt)
-    const componentIds = new Set(db.prepare('SELECT ID FROM components').all().map(c => c.ID));
-    
-    const processedAssets = assets.map(a => {
-      const decrypted = {
-        ...a,
-        isComponent: componentIds.has(a.ID) || (a.ParentId !== null && a.ParentId !== ''),
-        isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
-      };
-      
-      // Decrypt sensitive fields
-      if (decrypted.SerialNo) decrypted.SerialNo = encryptionService.universalDecrypt(decrypted.SerialNo);
-      if (decrypted.SrNo) decrypted.SrNo = encryptionService.universalDecrypt(decrypted.SrNo);
-      if (decrypted.MACAddress) decrypted.MACAddress = encryptionService.universalDecrypt(decrypted.MACAddress);
-      if (decrypted.IPAddress) decrypted.IPAddress = encryptionService.universalDecrypt(decrypted.IPAddress);
-      if (decrypted.SocketID) decrypted.SocketID = encryptionService.universalDecrypt(decrypted.SocketID);
-      
-      return decrypted;
-    });
-
-    // Return format for Tabulator Remote Pagination
     res.json({
         last_page: last_page,
         data: processedAssets,
@@ -2051,35 +2481,67 @@ app.get('/api/assets', (req, res) => {
 
   } catch (err) {
     console.error('Failed to fetch assets:', err);
-    try {
-        fs.appendFileSync('error.log', `${new Date().toISOString()} - Failed to fetch assets: ${err.message}\n${err.stack}\n`);
-    } catch (e) {}
     res.status(500).send('Database error');
   }
 });
 
-app.get('/api/asset-details/:id', (req, res) => {
+app.get('/api/asset-details/:id', async (req, res) => {
   const id = req.params.id;
-  console.log(`[API] Fetching details for ID: ${id}`);
+  
+  // Try to authenticate but don't fail if token is missing
+  let user = null;
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    let token = null;
+    if (authHeader && typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
+      token = authHeader.slice(7).trim();
+    }
+    if (!token) {
+      const cookies = parseCookies(req.headers.cookie || '');
+      if (cookies[JWT_COOKIE_NAME]) token = cookies[JWT_COOKIE_NAME];
+    }
+    if (token) {
+      user = jwt.verify(token, JWT_SECRET);
+    }
+  } catch (err) {
+    // Ignore invalid tokens for this endpoint to allow guest view
+    console.warn(`[API] Guest access for ${id} (Invalid token)`);
+  }
+
+  const role = user ? user.role : 'guest';
+  const hasViewPrice = hasPermission(role, 'asset.view_price');
+  console.log(`[API] Fetching details for ID: ${id} (Role: ${role})`);
   
   try {
-    // Try assets table first
-    let asset = db.prepare(`
-      SELECT a.*, 
-             it.MACAddress, it.IPAddress, it.NetworkType, 
-             it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
-      FROM assets a
-      LEFT JOIN asset_it_details it ON a.ID = it.AssetID
-      WHERE a.ID = ?
-    `).get(id);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let asset;
 
-    // If not found in assets, try components table
-    if (!asset) {
-      console.log(`[API] ID ${id} not found in assets, checking components...`);
-      asset = db.prepare('SELECT * FROM components WHERE ID = ?').get(id);
-      if (asset) {
-        asset.isComponent = true;
-      }
+    if (isPostgres) {
+        asset = await db('assets as a')
+          .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
+          .select('a.*', 'it.macaddress', 'it.ipaddress', 'it.networktype', 'it.physicalport', 'it.vlan', 'it.socketid', 'it.userid')
+          .where('a.id', id)
+          .first();
+          
+        if (!asset) {
+            asset = await db('components').where('id', id).first();
+            if (asset) asset.isComponent = true;
+        }
+        asset = normalizeResult(asset);
+    } else {
+        asset = legacyDb.prepare(`
+          SELECT a.*, 
+                 it.MACAddress, it.IPAddress, it.NetworkType, 
+                 it.PhysicalPort, it.VLAN, it.SocketID, it.UserID
+          FROM assets a
+          LEFT JOIN asset_it_details it ON a.ID = it.AssetID
+          WHERE a.ID = ?
+        `).get(id);
+
+        if (!asset) {
+          asset = legacyDb.prepare('SELECT * FROM components WHERE ID = ?').get(id);
+          if (asset) asset.isComponent = true;
+        }
     }
 
     if (!asset) {
@@ -2087,26 +2549,64 @@ app.get('/api/asset-details/:id', (req, res) => {
       return res.status(404).send('Asset not found');
     }
 
-    // Decrypt sensitive fields
-    if (asset.SerialNo) asset.SerialNo = encryptionService.universalDecrypt(asset.SerialNo);
-    if (asset.SrNo) asset.SrNo = encryptionService.universalDecrypt(asset.SrNo);
-    if (asset.MACAddress) asset.MACAddress = encryptionService.universalDecrypt(asset.MACAddress);
-    if (asset.IPAddress) asset.IPAddress = encryptionService.universalDecrypt(asset.IPAddress);
-    if (asset.SocketID) asset.SocketID = encryptionService.universalDecrypt(asset.SocketID);
+    // Redact Price if unauthorized
+    if (!hasViewPrice) {
+      delete asset.AssetValue;
+      delete asset.UnitPrice;
+      delete asset.Currency;
+    }
 
-    const children = db.prepare('SELECT * FROM components WHERE ParentId = ?').all(id);
+    // Decrypt sensitive fields
+    try {
+        if (asset.SerialNo) asset.SerialNo = encryptionService.universalDecrypt(asset.SerialNo);
+        if (asset.SrNo) asset.SrNo = encryptionService.universalDecrypt(asset.SrNo);
+        if (asset.MACAddress) asset.MACAddress = encryptionService.universalDecrypt(asset.MACAddress);
+        if (asset.IPAddress) asset.IPAddress = encryptionService.universalDecrypt(asset.IPAddress);
+        if (asset.SocketID) asset.SocketID = encryptionService.universalDecrypt(asset.SocketID);
+    } catch (e) {
+        console.warn(`[ENCRYPT] Failed to decrypt sensitive fields for ${id}:`, e.message);
+    }
+
+    let children, auditHistory, structuredHistory, parent;
     
-    // Fetch both audit log and structured asset history
-    const auditHistory = db.prepare('SELECT * FROM audit_log WHERE AssetId = ? ORDER BY Timestamp DESC').all(id);
-    const structuredHistory = db.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
-    
-    const parent = asset.ParentId ? db.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.ParentId) : null;
+    if (isPostgres) {
+        // Fetch True Components (from components table)
+        const trueComponents = await db('components').where('parentid', id);
+        // Fetch Split Children (from assets table where parentid is this id)
+        const splitChildren = await db('assets').where('parentid', id);
+        
+        children = [
+            ...normalizeResult(trueComponents).map(c => ({ ...c, isComponent: true })),
+            ...normalizeResult(splitChildren).map(c => ({ ...c, isComponent: false, isSplitChild: true }))
+        ];
+
+        auditHistory = await db('audit_log').where('assetid', id).orderBy('timestamp', 'desc');
+        structuredHistory = await db('asset_history').where('assetid', id).orderBy('timestamp', 'desc');
+        parent = asset.ParentId ? await db('assets').where('id', asset.ParentId).first() : null;
+        
+        auditHistory = normalizeResult(auditHistory);
+        structuredHistory = normalizeResult(structuredHistory);
+        parent = normalizeResult(parent);
+    } else {
+        const trueComponents = legacyDb.prepare('SELECT * FROM components WHERE ParentId = ?').all(id);
+        const splitChildren = legacyDb.prepare('SELECT * FROM assets WHERE ParentId = ?').all(id);
+        
+        children = [
+            ...trueComponents.map(c => ({ ...c, isComponent: true })),
+            ...splitChildren.map(c => ({ ...c, isComponent: false, isSplitChild: true }))
+        ];
+
+        auditHistory = legacyDb.prepare('SELECT * FROM audit_log WHERE AssetId = ? ORDER BY Timestamp DESC').all(id);
+        structuredHistory = legacyDb.prepare('SELECT * FROM asset_history WHERE AssetID = ? ORDER BY Timestamp DESC').all(id);
+        parent = asset.ParentId ? legacyDb.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.ParentId) : null;
+    }
 
     let quantity = null
     let quantityChildren = []
     let quantityParent = null
     let quantityRoot = null
     let quantityEvents = []
+    
     if (asset.quantity_root_id) {
       quantity = {
         rootId: asset.quantity_root_id,
@@ -2117,39 +2617,54 @@ app.get('/api/asset-details/:id', (req, res) => {
         precision: asset.quantity_precision ?? null
       }
 
-      quantityChildren = db.prepare('SELECT * FROM assets WHERE quantity_parent_id = ? ORDER BY LastUpdated DESC').all(id)
-      quantityParent = asset.quantity_parent_id ? db.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.quantity_parent_id) : null
-      quantityRoot = asset.quantity_root_id ? db.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.quantity_root_id) : null
-      
-      // Fetch detailed quantity events for this root
-      quantityEvents = db.prepare(`
-        SELECT id, root_id, type, actor, timestamp, note, metadata_json
-        FROM quantity_events
-        WHERE root_id = ?
-        ORDER BY timestamp DESC
-        LIMIT 50
-      `).all(asset.quantity_root_id).map(e => ({
-        ...e,
-        metadata: e.metadata_json ? JSON.parse(e.metadata_json) : null
-      }))
+      if (isPostgres) {
+          quantityChildren = await db('assets').where('quantity_parent_id', id).orderBy('lastupdated', 'desc');
+          quantityParent = asset.quantity_parent_id ? await db('assets').where('id', asset.quantity_parent_id).first() : null;
+          quantityRoot = asset.quantity_root_id ? await db('assets').where('id', asset.quantity_root_id).first() : null;
+          
+          quantityEvents = await db('quantity_events')
+            .where('root_id', asset.quantity_root_id)
+            .orderBy('timestamp', 'desc')
+            .limit(50);
+            
+          quantityChildren = normalizeResult(quantityChildren);
+          quantityParent = normalizeResult(quantityParent);
+          quantityRoot = normalizeResult(quantityRoot);
+          quantityEvents = normalizeResult(quantityEvents);
+      } else {
+          quantityChildren = legacyDb.prepare('SELECT * FROM assets WHERE quantity_parent_id = ? ORDER BY LastUpdated DESC').all(id)
+          quantityParent = asset.quantity_parent_id ? legacyDb.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.quantity_parent_id) : null
+          quantityRoot = asset.quantity_root_id ? legacyDb.prepare('SELECT * FROM assets WHERE ID = ?').get(asset.quantity_root_id) : null
+          quantityEvents = legacyDb.prepare(`
+            SELECT id, root_id, type, actor, timestamp, note, metadata_json
+            FROM quantity_events
+            WHERE root_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 50
+          `).all(asset.quantity_root_id).map(e => ({
+            ...e,
+            metadata: e.metadata_json ? JSON.parse(e.metadata_json) : null
+          }));
+      }
     }
 
     console.log(`[API] Successfully fetched details for ${id}`);
-    res.json({ 
+    const payload = { 
       asset, 
-      children, 
-      history: auditHistory, 
-      structuredHistory,
-      parent, 
-      quantity, 
-      quantityChildren, 
-      quantityParent, 
-      quantityRoot, 
-      quantityEvents 
-    });
+      children: children || [], 
+      history: auditHistory || [], 
+      structuredHistory: structuredHistory || [],
+      parent: parent || null, 
+      quantity: quantity || null, 
+      quantityChildren: quantityChildren || [], 
+      quantityParent: quantityParent || null, 
+      quantityRoot: quantityRoot || null, 
+      quantityEvents: quantityEvents || [] 
+    };
+    res.json(payload);
   } catch (err) {
     console.error(`[API] Error fetching asset details for ${id}:`, err);
-    res.status(500).send('Database error: ' + err.message);
+    res.status(500).json({ error: 'Database error', message: err.message });
   }
 });
 
@@ -2223,9 +2738,9 @@ app.post('/api/tally/sync', async (req, res) => {
 
     // Process and save items to database
     let importedCount = 0;
-    const existingIds = new Set(db.prepare('SELECT ID FROM assets').all().map(a => a.ID));
+    const existingIds = new Set(legacyDb.prepare('SELECT ID FROM assets').all().map(a => a.ID));
     
-    const insertStmt = db.prepare(`
+    const insertStmt = legacyDb.prepare(`
       INSERT OR IGNORE INTO assets (
         ID, ItemName, Status, Type, Category, LastUpdated, Remarks
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -2275,19 +2790,30 @@ app.post('/api/tally/sync', async (req, res) => {
 });
 
 // HSN Endpoints
-app.get('/api/hsn', (req, res) => {
+app.get('/api/hsn', async (req, res) => {
     try {
         const query = req.query.q || '';
-        let sql = 'SELECT * FROM hsn_codes';
-        const params = [];
-        
-        if (query) {
-            sql += ' WHERE code LIKE ? OR description LIKE ?';
-            params.push(`%${query}%`, `%${query}%`);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+
+        if (isPostgres) {
+            let q = db('hsn_codes');
+            if (query) {
+                const searchParam = `%${query}%`;
+                q.where('code', 'ilike', searchParam).orWhere('description', 'ilike', searchParam);
+            }
+            rows = await q.orderBy('code', 'asc').limit(50);
+            rows = normalizeResult(rows);
+        } else {
+            let sql = 'SELECT * FROM hsn_codes';
+            const params = [];
+            if (query) {
+                sql += ' WHERE code LIKE ? OR description LIKE ?';
+                params.push(`%${query}%`, `%${query}%`);
+            }
+            sql += ' ORDER BY code ASC LIMIT 50';
+            rows = legacyDb.prepare(sql).all(...params);
         }
-        
-        sql += ' ORDER BY code ASC LIMIT 50';
-        const rows = db.prepare(sql).all(...params);
         res.json({ success: true, data: rows });
     } catch (err) {
         console.error('HSN Fetch Error:', err);
@@ -2295,44 +2821,52 @@ app.get('/api/hsn', (req, res) => {
     }
 });
 
-app.post('/api/hsn', (req, res) => {
-    try {
-        const { code, description, gst_rate } = req.body;
-        if (!code) return res.status(400).json({ success: false, error: 'HSN Code is required' });
-
-        const stmt = db.prepare('INSERT OR REPLACE INTO hsn_codes (code, description, gst_rate) VALUES (?, ?, ?)');
-        stmt.run(code, description, gst_rate || 0);
-        
-        res.json({ success: true, message: 'HSN Code saved successfully' });
-    } catch (err) {
-        console.error('HSN Save Error:', err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
 // Delivery Challan Endpoints
-app.get('/api/dc', (req, res) => {
-  const dcs = db.prepare('SELECT * FROM delivery_challans ORDER BY Timestamp DESC').all();
-  res.json(dcs);
+app.get('/api/dc', async (req, res) => {
+  try {
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let dcs;
+    if (isPostgres) {
+        dcs = await db('delivery_challans').orderBy('timestamp', 'desc');
+        dcs = normalizeResult(dcs);
+    } else {
+        dcs = legacyDb.prepare('SELECT * FROM delivery_challans ORDER BY Timestamp DESC').all();
+    }
+    res.json(dcs);
+  } catch (err) {
+    console.error('DC Fetch Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.get('/api/dc/:id', (req, res) => {
+app.get('/api/dc/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    // Search by either internal ID or user-facing ChallanNo
-    const row = db.prepare('SELECT * FROM delivery_challans WHERE ID = ? OR ChallanNo = ?').get(id, id);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let row;
+
+    if (isPostgres) {
+        row = await db('delivery_challans')
+          .where('id', id)
+          .orWhere('challanno', id)
+          .first();
+        row = normalizeResult(row);
+    } else {
+        row = legacyDb.prepare('SELECT * FROM delivery_challans WHERE ID = ? OR ChallanNo = ?').get(id, id);
+    }
+
     if (!row) return res.status(404).json({ success: false, error: 'DC not found' });
 
     let payload = null;
     try {
-      payload = row.PayloadJSON ? JSON.parse(row.PayloadJSON) : null;
+      payload = row.PayloadJSON ? (typeof row.PayloadJSON === 'string' ? JSON.parse(row.PayloadJSON) : row.PayloadJSON) : null;
     } catch {
       payload = null;
     }
 
     let assetIds = [];
     try {
-      assetIds = row.AssetIds ? JSON.parse(row.AssetIds) : [];
+      assetIds = row.AssetIds ? (typeof row.AssetIds === 'string' ? JSON.parse(row.AssetIds) : row.AssetIds) : [];
     } catch {
       assetIds = [];
     }
@@ -2355,7 +2889,7 @@ app.post('/api/dc', async (req, res) => {
     // 1. Prepare Data (Sync)
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = normalizedAssetIds.map((assetId) => {
-      const row = db.prepare(`
+      const row = legacyDb.prepare(`
         SELECT ID, ItemName, quantity_root_id, quantity_parent_id, quantity_unit, quantity_total, quantity_available, quantity_precision
         FROM assets
         WHERE ID = ?
@@ -2364,14 +2898,14 @@ app.post('/api/dc', async (req, res) => {
     });
 
     // 2. Atomic Transaction: Get Next ID -> Insert Placeholder -> Update Assets & PO
-    const createResult = db.transaction(() => {
+    const createResult = legacyDb.transaction(() => {
         const now = new Date();
         const fullYear = now.getFullYear();
         const shortYear = String(fullYear).slice(-2); // e.g. "25" for 2025
         let nextSeq = 1;
 
         try {
-            const lastDc = db.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE '${shortYear}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
+            const lastDc = legacyDb.prepare(`SELECT ChallanNo FROM delivery_challans WHERE ChallanNo LIKE '${shortYear}/%' ORDER BY Timestamp DESC LIMIT 1`).get();
             if (lastDc && lastDc.ChallanNo) {
                 const parts = lastDc.ChallanNo.split('/');
                 if (parts.length === 2) {
@@ -2391,7 +2925,7 @@ app.post('/api/dc', async (req, res) => {
         
         // Update Assets with PO and DC reference
         if (normalizedAssetIds.length > 0) {
-            const updateAsset = db.prepare(`
+            const updateAsset = legacyDb.prepare(`
                 UPDATE assets 
                 SET SentAgainstDC = ?, 
                     BoughtAgainstPO = COALESCE(BoughtAgainstPO, ?) 
@@ -2408,7 +2942,7 @@ app.post('/api/dc', async (req, res) => {
                     const itemName = assetsForDc.find(a => a.ID === assetId)?.ItemName || '';
                     
                     // Try to find a matching PO item row for this description
-                    const matchingItem = db.prepare(`
+                    const matchingItem = legacyDb.prepare(`
                         SELECT SrNo FROM project_order_items 
                         WHERE OrderID = ? 
                         AND (ItemDescription = ? OR ItemDescription LIKE ?)
@@ -2420,7 +2954,7 @@ app.post('/api/dc', async (req, res) => {
                     );
 
                     if (matchingItem) {
-                        db.prepare(`
+                        legacyDb.prepare(`
                             UPDATE project_order_items 
                             SET AssetID = ?
                             WHERE OrderID = ? AND SrNo = ?
@@ -2459,7 +2993,7 @@ app.post('/api/dc', async (req, res) => {
           }))
         };
 
-        db.prepare(`
+        legacyDb.prepare(`
           INSERT INTO delivery_challans (ID, ChallanNo, CustomerName, DeliveryDate, AssetIds, Status, QRCode, CreatedBy, Timestamp, PayloadJSON)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -2485,23 +3019,23 @@ app.post('/api/dc', async (req, res) => {
         try {
             const refNo = dcPayload.meta?.referenceNo;
             if (refNo) {
-                const project = db.prepare('SELECT ID FROM projects WHERE ProjectName = ?').get(refNo);
+                const project = legacyDb.prepare('SELECT ID FROM projects WHERE ProjectName = ?').get(refNo);
                 if (project) {
                     console.log(`Linking DC assets to Project: ${project.ID} (${refNo})`);
                     
-                    const assignStmt = db.prepare(`
+                    const assignStmt = legacyDb.prepare(`
                         INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
                         VALUES (?, ?, ?, ?)
                     `);
                     
-                    const updateAssetStmt = db.prepare(`
+                    const updateAssetStmt = legacyDb.prepare(`
                         UPDATE assets SET AssignedTo = ?, CurrentLocation = 'On Site' WHERE ID = ?
                     `);
 
-                    db.transaction(() => {
+                    legacyDb.transaction(() => {
                         normalizedAssetIds.forEach(assetId => {
                             // Check if already assigned to a DIFFERENT project
-                            const existing = db.prepare('SELECT ProjectID FROM project_assets WHERE AssetID = ?').get(assetId);
+                            const existing = legacyDb.prepare('SELECT ProjectID FROM project_assets WHERE AssetID = ?').get(assetId);
                             if (existing && existing.ProjectID !== project.ID) {
                                 console.warn(`Skipping auto-assignment for ${assetId}: Already assigned to ${existing.ProjectID}`);
                                 return; 
@@ -2541,14 +3075,14 @@ app.post('/api/dc', async (req, res) => {
     const qrCode = await qrcode.toDataURL(qrData);
 
         // Update Record with QR Code & Final Status
-        db.prepare(`UPDATE delivery_challans SET QRCode = ?, Status = 'Pending' WHERE ID = ?`).run(qrCode, id);
+        legacyDb.prepare(`UPDATE delivery_challans SET QRCode = ?, Status = 'Pending' WHERE ID = ?`).run(qrCode, id);
 
         // 5. SOLID: Update PO Item Status to 'Shipped' ONLY NOW
         if (POReference && POReference.OrderID) {
             normalizedAssetIds.forEach(assetId => {
-                const asset = db.prepare('SELECT linked_po_item_id FROM assets WHERE ID = ?').get(assetId);
+                const asset = legacyDb.prepare('SELECT linked_po_item_id FROM assets WHERE ID = ?').get(assetId);
                 if (asset && asset.linked_po_item_id) {
-                    db.prepare("UPDATE project_order_items SET Status = 'Shipped' WHERE ID = ?").run(asset.linked_po_item_id);
+                    legacyDb.prepare("UPDATE project_order_items SET Status = 'Shipped' WHERE ID = ?").run(asset.linked_po_item_id);
                     console.log(`[DC] Explicitly marked PO Item ${asset.linked_po_item_id} as Shipped via DC ${challanNo}`);
                 }
             });
@@ -2582,9 +3116,9 @@ app.post('/api/upload-logo', upload.single('logo'), (req, res) => {
 // DC Remark Templates Endpoints
 app.get('/api/dc-remarks', (req, res) => {
     try {
-        const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='dc_remark_templates'").get();
+        const table = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='dc_remark_templates'").get();
         if (!table) {
-            db.prepare(`
+            legacyDb.prepare(`
                 CREATE TABLE dc_remark_templates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -2594,7 +3128,7 @@ app.get('/api/dc-remarks', (req, res) => {
                 )
             `).run();
         }
-        const templates = db.prepare('SELECT * FROM dc_remark_templates ORDER BY title ASC').all();
+        const templates = legacyDb.prepare('SELECT * FROM dc_remark_templates ORDER BY title ASC').all();
         res.json({ success: true, templates });
     } catch (err) {
         console.error('Error fetching remark templates:', err);
@@ -2608,7 +3142,7 @@ app.post('/api/dc-remarks', (req, res) => {
         if (!title || !content) {
             return res.status(400).json({ success: false, error: 'Title and content are required' });
         }
-        const stmt = db.prepare('INSERT INTO dc_remark_templates (title, content, created_at, updated_at) VALUES (?, ?, ?, ?)');
+        const stmt = legacyDb.prepare('INSERT INTO dc_remark_templates (title, content, created_at, updated_at) VALUES (?, ?, ?, ?)');
         const now = new Date().toISOString();
         const info = stmt.run(title, content, now, now);
         res.json({ success: true, id: info.lastInsertRowid });
@@ -2625,7 +3159,7 @@ app.put('/api/dc-remarks/:id', (req, res) => {
         if (!title || !content) {
             return res.status(400).json({ success: false, error: 'Title and content are required' });
         }
-        const stmt = db.prepare('UPDATE dc_remark_templates SET title = ?, content = ?, updated_at = ? WHERE id = ?');
+        const stmt = legacyDb.prepare('UPDATE dc_remark_templates SET title = ?, content = ?, updated_at = ? WHERE id = ?');
         const now = new Date().toISOString();
         const info = stmt.run(title, content, now, id);
         if (info.changes > 0) {
@@ -2642,7 +3176,7 @@ app.put('/api/dc-remarks/:id', (req, res) => {
 app.delete('/api/dc-remarks/:id', (req, res) => {
     try {
         const { id } = req.params;
-        const stmt = db.prepare('DELETE FROM dc_remark_templates WHERE id = ?');
+        const stmt = legacyDb.prepare('DELETE FROM dc_remark_templates WHERE id = ?');
         const info = stmt.run(id);
         if (info.changes > 0) {
             res.json({ success: true });
@@ -2656,13 +3190,32 @@ app.delete('/api/dc-remarks/:id', (req, res) => {
 });
 
 // Employee API Endpoints
-app.get('/api/employees', (req, res) => {
+app.get('/api/employees', async (req, res) => {
   try {
     const { page, size, search, all, department } = req.query;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-    // If 'all' is requested, return all employees (for dropdowns/lookups)
+    // 1. Try Cache First for "all" request
     if (all === 'true') {
-        const employees = db.prepare('SELECT * FROM employees ORDER BY Name ASC').all();
+        const port = process.env.PORT || 8080;
+        const cacheKey = `employees:all:${port}`;
+        const cached = await cache.get(cacheKey);
+        if (cached) {
+            console.log(`[CACHE] Serving all employees from cache for port ${port}`);
+            return res.json(cached);
+        }
+
+        let employees;
+        if (isPostgres) {
+            employees = await db('employees')
+                .select('id as ID', 'employeeid as EmployeeID', 'name as Name', 'department as Department', 'designation as Designation', 'email as Email', 'phone as Phone', 'status as Status', 'lastupdated as LastUpdated')
+                .orderBy('name', 'asc');
+        } else {
+            employees = legacyDb.prepare('SELECT * FROM employees ORDER BY Name ASC').all();
+        }
+        
+        console.log(`[DB] Fetched ${employees.length} employees for port ${port}`);
+        await cache.set(cacheKey, employees, 3600); // Cache for 1 hour
         return res.json(employees);
     }
 
@@ -2671,45 +3224,81 @@ app.get('/api/employees', (req, res) => {
     const sizeNum = parseInt(size) || 20; // Default to 20 for cards view
     const offset = (pageNum - 1) * sizeNum;
     
-    let baseQuery = 'FROM employees';
-    let whereClauses = [];
-    let params = [];
+    if (isPostgres) {
+        let query = db('employees');
+        
+        if (search) {
+            const searchParam = `%${search}%`;
+            query.where(function() {
+                this.where('name', 'ilike', searchParam)
+                    .orWhere('employeeid', 'ilike', searchParam)
+                    .orWhere('department', 'ilike', searchParam)
+                    .orWhere('designation', 'ilike', searchParam);
+            });
+        }
 
-    if (search) {
-        whereClauses.push('(Name LIKE ? OR EmployeeID LIKE ? OR Department LIKE ? OR Designation LIKE ?)');
-        const searchParam = `%${search}%`;
-        params.push(searchParam, searchParam, searchParam, searchParam);
+        if (department && department !== 'all') {
+            query.where('department', department);
+        }
+
+        const countResult = await query.clone().count('* as count').first();
+        const totalRecords = countResult ? parseInt(countResult.count) : 0;
+        const lastPage = Math.ceil(totalRecords / sizeNum);
+
+        const employees = await query
+            .select('id as ID', 'employeeid as EmployeeID', 'name as Name', 'department as Department', 'designation as Designation', 'email as Email', 'phone as Phone', 'status as Status', 'lastupdated as LastUpdated')
+            .orderBy('name', 'asc')
+            .limit(sizeNum)
+            .offset(offset);
+
+        return res.json({
+            data: employees,
+            last_page: lastPage,
+            total_records: totalRecords,
+            page: pageNum,
+            size: sizeNum
+        });
+    } else {
+        let baseQuery = 'FROM employees';
+        let whereClauses = [];
+        let params = [];
+
+        if (search) {
+            whereClauses.push('(Name LIKE ? OR EmployeeID LIKE ? OR Department LIKE ? OR Designation LIKE ?)');
+            const searchParam = `%${search}%`;
+            params.push(searchParam, searchParam, searchParam, searchParam);
+        }
+
+        if (department && department !== 'all') {
+            whereClauses.push('Department = ?');
+            params.push(department);
+        }
+
+        let whereSql = '';
+        if (whereClauses.length > 0) {
+            whereSql = ' WHERE ' + whereClauses.join(' AND ');
+        }
+
+        // Count total
+        const countSql = `SELECT COUNT(*) as count ${baseQuery} ${whereSql}`;
+        const totalResult = legacyDb.prepare(countSql).get(...params);
+        const totalRecords = totalResult ? totalResult.count : 0;
+        const lastPage = Math.ceil(totalRecords / sizeNum);
+
+        // Fetch data
+        const dataSql = `SELECT * ${baseQuery} ${whereSql} ORDER BY Name ASC LIMIT ? OFFSET ?`;
+        params.push(sizeNum, offset);
+        
+        const employees = legacyDb.prepare(dataSql).all(...params);
+
+        return res.json({
+            data: employees,
+            last_page: lastPage,
+            total_records: totalRecords,
+            page: pageNum,
+            size: sizeNum
+        });
     }
-
-    if (department && department !== 'all') {
-        whereClauses.push('Department = ?');
-        params.push(department);
-    }
-
-    let whereSql = '';
-    if (whereClauses.length > 0) {
-        whereSql = ' WHERE ' + whereClauses.join(' AND ');
-    }
-
-    // Count total
-    const countSql = `SELECT COUNT(*) as count ${baseQuery} ${whereSql}`;
-    const totalResult = db.prepare(countSql).get(...params);
-    const totalRecords = totalResult ? totalResult.count : 0;
-    const lastPage = Math.ceil(totalRecords / sizeNum);
-
-    // Fetch data
-    const dataSql = `SELECT * ${baseQuery} ${whereSql} ORDER BY Name ASC LIMIT ? OFFSET ?`;
-    params.push(sizeNum, offset);
-    
-    const employees = db.prepare(dataSql).all(...params);
-
-    res.json({
-        data: employees,
-        last_page: lastPage,
-        total_records: totalRecords,
-        page: pageNum,
-        size: sizeNum
-    });
 
   } catch (err) {
     console.error('Failed to fetch employees:', err);
@@ -2718,7 +3307,7 @@ app.get('/api/employees', (req, res) => {
 });
 
 // --- Department Quotas ---
-db.prepare(`
+legacyDb.prepare(`
     CREATE TABLE IF NOT EXISTS department_quotas (
         Department TEXT,
         Category TEXT,
@@ -2729,7 +3318,7 @@ db.prepare(`
 
 app.get('/api/quotas', (req, res) => {
     try {
-        const quotas = db.prepare('SELECT * FROM department_quotas').all();
+        const quotas = legacyDb.prepare('SELECT * FROM department_quotas').all();
         res.json(quotas);
     } catch (err) {
         res.status(500).send(err.message);
@@ -2739,7 +3328,7 @@ app.get('/api/quotas', (req, res) => {
 app.post('/api/quotas', (req, res) => {
     const { department, category, quota } = req.body;
     try {
-        const stmt = db.prepare('INSERT OR REPLACE INTO department_quotas (Department, Category, Quota) VALUES (?, ?, ?)');
+        const stmt = legacyDb.prepare('INSERT OR REPLACE INTO department_quotas (Department, Category, Quota) VALUES (?, ?, ?)');
         stmt.run(department, category, quota);
         res.json({ success: true });
     } catch (err) {
@@ -2749,7 +3338,7 @@ app.post('/api/quotas', (req, res) => {
 
 app.delete('/api/quotas/:dept/:cat', (req, res) => {
     try {
-        const stmt = db.prepare('DELETE FROM department_quotas WHERE Department = ? AND Category = ?');
+        const stmt = legacyDb.prepare('DELETE FROM department_quotas WHERE Department = ? AND Category = ?');
         stmt.run(req.params.dept, req.params.cat);
         res.json({ success: true });
     } catch (err) {
@@ -2758,20 +3347,38 @@ app.delete('/api/quotas/:dept/:cat', (req, res) => {
 });
 
 // Get employee asset history
-app.get('/api/employees/:name/history', (req, res) => {
+app.get('/api/employees/:name/history', async (req, res) => {
     const name = req.params.name;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
     console.log(`[DEBUG] Fetching history for employee: [${name}]`);
     try {
-        const stmt = db.prepare(`
-            SELECT a.AssetId, a.Timestamp, a.Details, assets.ItemName, assets.Model
-            FROM audit_log a
-            LEFT JOIN assets ON a.AssetId = assets.ID
-            WHERE (a.Action = 'ASSIGN' OR a.Action = 'BULK_ASSIGN' OR a.Action = 'RETURN')
-            AND (a.Details LIKE ? OR a.Details LIKE ?)
-            ORDER BY a.Timestamp DESC
-        `);
+        let history;
+        if (isPostgres) {
+            history = await db('audit_log as a')
+                .leftJoin('assets as assets', 'a.assetid', 'assets.id')
+                .where(function() {
+                    this.whereIn('a.action', ['ASSIGN', 'BULK_ASSIGN', 'RETURN']);
+                })
+                .andWhere(function() {
+                    const searchParam = `%${name}%`;
+                    const searchParam2 = `% "${name}" %`;
+                    this.where('a.details', 'ilike', searchParam)
+                        .orWhere('a.details', 'ilike', searchParam2);
+                })
+                .select('a.assetid as AssetId', 'a.timestamp as Timestamp', 'a.details as Details', 'assets.itemname as ItemName', 'assets.model as Model')
+                .orderBy('a.timestamp', 'desc');
+        } else {
+            const stmt = legacyDb.prepare(`
+                SELECT a.AssetId, a.Timestamp, a.Details, assets.ItemName, assets.Model
+                FROM audit_log a
+                LEFT JOIN assets ON a.AssetId = assets.ID
+                WHERE (a.Action = 'ASSIGN' OR a.Action = 'BULK_ASSIGN' OR a.Action = 'RETURN')
+                AND (a.Details LIKE ? OR a.Details LIKE ?)
+                ORDER BY a.Timestamp DESC
+            `);
+            history = stmt.all(`%${name}%`, `% "${name}" %`);
+        }
         
-        const history = stmt.all(`%${name}%`, `% "${name}" %`);
         console.log(`[DEBUG] Found ${history.length} history records for employee: ${name}`);
         res.json(history);
     } catch (err) {
@@ -2780,18 +3387,33 @@ app.get('/api/employees/:name/history', (req, res) => {
     }
 });
 
-app.post('/api/employees', (req, res) => {
+app.post('/api/employees', async (req, res) => {
   try {
     const { EmployeeID, Name, Department, Designation, Email, Phone, Status } = req.body;
     if (!Name || !EmployeeID) return res.status(400).send('Name and EmployeeID are required');
 
     const id = `EMP${Date.now()}`;
-    const stmt = db.prepare(`
-      INSERT INTO employees (ID, EmployeeID, Name, Department, Designation, Email, Phone, Status, LastUpdated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-    stmt.run(id, EmployeeID, Name, Department || '', Designation || '', Email || '', Phone || '', Status || 'ACTIVE', new Date().toISOString());
+    if (isPostgres) {
+        await db('employees').insert({
+            id,
+            employeeid: EmployeeID,
+            name: Name,
+            department: Department || '',
+            designation: Designation || '',
+            email: Email || '',
+            phone: Phone || '',
+            status: Status || 'ACTIVE',
+            lastupdated: new Date().toISOString()
+        });
+    } else {
+        const stmt = legacyDb.prepare(`
+          INSERT INTO employees (ID, EmployeeID, Name, Department, Designation, Email, Phone, Status, LastUpdated)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(id, EmployeeID, Name, Department || '', Designation || '', Email || '', Phone || '', Status || 'ACTIVE', new Date().toISOString());
+    }
     res.json({ success: true, id });
   } catch (err) {
     console.error('Failed to create employee:', err);
@@ -2799,7 +3421,7 @@ app.post('/api/employees', (req, res) => {
   }
 });
 
-app.post('/api/employees/bulk', (req, res) => {
+app.post('/api/employees/bulk', async (req, res) => {
   try {
     const employees = req.body;
     if (!Array.isArray(employees)) {
@@ -2807,30 +3429,51 @@ app.post('/api/employees/bulk', (req, res) => {
     }
 
     const timestamp = new Date().toISOString();
-    const insertStmt = db.prepare(`
-      INSERT INTO employees (ID, EmployeeID, Name, Department, Designation, Email, Phone, Status, LastUpdated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-    const transaction = db.transaction((empList) => {
-      let count = 0;
-      for (const emp of empList) {
-        const id = `EMP${Date.now()}${count++}`;
-        insertStmt.run(
-          id,
-          emp.EmployeeID || '',
-          emp.Name || '',
-          emp.Department || '',
-          emp.Designation || '',
-          emp.Email || '',
-          emp.Phone || '',
-          emp.Status || 'ACTIVE',
-          timestamp
-        );
-      }
-    });
+    if (isPostgres) {
+        const empToInsert = employees.map((emp, index) => ({
+            id: `EMP${Date.now()}${index}`,
+            employeeid: emp.EmployeeID || '',
+            name: emp.Name || '',
+            department: emp.Department || '',
+            designation: emp.Designation || '',
+            email: emp.Email || '',
+            phone: emp.Phone || '',
+            status: emp.Status || 'ACTIVE',
+            lastupdated: timestamp
+        }));
+        
+        // Chunk inserts to avoid large payload issues
+        const chunkSize = 50;
+        for (let i = 0; i < empToInsert.length; i += chunkSize) {
+            await db('employees').insert(empToInsert.slice(i, i + chunkSize));
+        }
+    } else {
+        const insertStmt = legacyDb.prepare(`
+          INSERT INTO employees (ID, EmployeeID, Name, Department, Designation, Email, Phone, Status, LastUpdated)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
-    transaction(employees);
+        const transaction = legacyDb.transaction((empList) => {
+          let count = 0;
+          for (const emp of empList) {
+            const id = `EMP${Date.now()}${count++}`;
+            insertStmt.run(
+              id,
+              emp.EmployeeID || '',
+              emp.Name || '',
+              emp.Department || '',
+              emp.Designation || '',
+              emp.Email || '',
+              emp.Phone || '',
+              emp.Status || 'ACTIVE',
+              timestamp
+            );
+          }
+        });
+        transaction(employees);
+    }
     res.json({ success: true, count: employees.length });
   } catch (err) {
     console.error('Bulk employee upload error:', err);
@@ -2838,26 +3481,42 @@ app.post('/api/employees/bulk', (req, res) => {
   }
 });
 
-app.put('/api/employees/:id', (req, res) => {
+app.put('/api/employees/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { EmployeeID, Name, Department, Designation, Email, Phone, Status } = req.body;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-    const stmt = db.prepare(`
-      UPDATE employees SET
-        EmployeeID = ?,
-        Name = ?,
-        Department = ?,
-        Designation = ?,
-        Email = ?,
-        Phone = ?,
-        Status = ?,
-        LastUpdated = ?
-      WHERE ID = ?
-    `);
-
-    const result = stmt.run(EmployeeID, Name, Department, Designation, Email, Phone, Status, new Date().toISOString(), id);
-    if (result.changes === 0) return res.status(404).send('Employee not found');
+    if (isPostgres) {
+        const result = await db('employees')
+            .where('id', id)
+            .update({
+                employeeid: EmployeeID,
+                name: Name,
+                department: Department,
+                designation: Designation,
+                email: Email,
+                phone: Phone,
+                status: Status,
+                lastupdated: new Date().toISOString()
+            });
+        if (result === 0) return res.status(404).send('Employee not found');
+    } else {
+        const stmt = legacyDb.prepare(`
+          UPDATE employees SET
+            EmployeeID = ?,
+            Name = ?,
+            Department = ?,
+            Designation = ?,
+            Email = ?,
+            Phone = ?,
+            Status = ?,
+            LastUpdated = ?
+          WHERE ID = ?
+        `);
+        const result = stmt.run(EmployeeID, Name, Department, Designation, Email, Phone, Status, new Date().toISOString(), id);
+        if (result.changes === 0) return res.status(404).send('Employee not found');
+    }
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to update employee:', err);
@@ -2865,11 +3524,19 @@ app.put('/api/employees/:id', (req, res) => {
   }
 });
 
-app.delete('/api/employees/:id', (req, res) => {
+app.delete('/api/employees/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = db.prepare('DELETE FROM employees WHERE ID = ?').run(id);
-    if (result.changes === 0) return res.status(404).send('Employee not found');
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
+    let changes = 0;
+    if (isPostgres) {
+        changes = await db('employees').where('id', id).del();
+    } else {
+        const result = legacyDb.prepare('DELETE FROM employees WHERE ID = ?').run(id);
+        changes = result.changes;
+    }
+    if (changes === 0) return res.status(404).send('Employee not found');
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to delete employee:', err);
@@ -2877,9 +3544,29 @@ app.delete('/api/employees/:id', (req, res) => {
   }
 });
 
-app.get('/api/asset_kinds', (req, res) => {
+app.get('/api/asset_kinds', async (req, res) => {
   try {
-    const kinds = db.prepare('SELECT * FROM asset_kinds WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY Name ASC').all();
+    const cacheKey = 'asset:kinds';
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+        console.log('[CACHE] Serving asset kinds from cache');
+        return res.json(cached);
+    }
+
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let kinds;
+    if (isPostgres) {
+        kinds = await db('asset_kinds')
+            .where(function() {
+                this.where('is_deleted', 0).orWhereNull('is_deleted');
+            })
+            .orderBy('name', 'asc');
+        kinds = normalizeResult(kinds);
+    } else {
+        kinds = legacyDb.prepare('SELECT * FROM asset_kinds WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY Name ASC').all();
+    }
+    
+    await cache.set(cacheKey, kinds, 86400); // Cache for 24 hours
     res.json(kinds);
   } catch (err) {
     console.error('Failed to fetch asset kinds:', err);
@@ -2887,12 +3574,21 @@ app.get('/api/asset_kinds', (req, res) => {
   }
 });
 
-app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser', 'admin'), (req, res) => {
+app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
   try {
     const { name } = req.params;
     const now = new Date().toISOString();
-    const result = db.prepare("UPDATE asset_kinds SET is_deleted = 1, deleted_at = ? WHERE Name = ?").run(now, name);
-    if (result.changes > 0) {
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
+    let changes = 0;
+    if (isPostgres) {
+        changes = await db('asset_kinds').where('name', name).update({ is_deleted: 1, deleted_at: now });
+    } else {
+        const result = legacyDb.prepare("UPDATE asset_kinds SET is_deleted = 1, deleted_at = ? WHERE Name = ?").run(now, name);
+        changes = result.changes;
+    }
+
+    if (changes > 0) {
       res.json({ success: true, message: 'Asset Category marked for deletion' });
     } else {
       res.status(404).json({ error: 'Asset Category not found' });
@@ -2903,9 +3599,16 @@ app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser'
   }
 });
 
-app.get('/api/folders', (req, res) => {
+app.get('/api/folders', async (req, res) => {
   try {
-    const folders = db.prepare('SELECT * FROM folders ORDER BY "Order" ASC').all();
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let folders;
+    if (isPostgres) {
+        folders = await db('folders').orderBy('id', 'asc');
+        folders = normalizeResult(folders);
+    } else {
+        folders = legacyDb.prepare('SELECT * FROM folders ORDER BY "Order" ASC').all();
+    }
     res.json(folders);
   } catch (err) {
     console.error('Failed to fetch folders:', err);
@@ -2919,7 +3622,7 @@ app.post('/api/folders', (req, res) => {
     if (!Name) return res.status(400).send('Name is required');
     
     const id = ID || `F${Date.now()}`;
-    const stmt = db.prepare(`
+    const stmt = legacyDb.prepare(`
       INSERT INTO folders (ID, Name, ParentID, Icon, Module, "Order", LastUpdated)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(ID) DO UPDATE SET
@@ -2945,7 +3648,7 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
     
     if (!Name) return res.status(400).send('Name is required');
 
-    const stmt = db.prepare(`
+    const stmt = legacyDb.prepare(`
       INSERT INTO asset_kinds (Name, Module, Icon, ParentName, LastUpdated, DisplayImage, Identifier)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(Name) DO UPDATE SET
@@ -2966,22 +3669,59 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
 });
 
 // Projects API
-app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), (req, res) => {
+app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), async (req, res) => {
     try {
-        const projects = db.prepare('SELECT * FROM projects WHERE (is_deleted = 0 OR is_deleted IS NULL) ORDER BY Timestamp DESC').all();
-        res.json(projects);
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+        const userDept = req.user.department;
+        const userProjectId = req.user.projectId; 
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        let query = db('projects').where(function() {
+            this.where('is_deleted', 0).orWhereNull('is_deleted');
+        });
+
+        // Apply Department/Project Segregation for non-admins
+        if (!isAdmin) {
+            if (userProjectId) {
+                query.where(isPostgres ? 'id' : 'ID', userProjectId);
+            } else if (userDept) {
+                query.where(function() {
+                    const locCol = isPostgres ? 'location' : 'Location';
+                    this.where(locCol, userDept).orWhereNull(locCol).orWhere(locCol, '');
+                });
+            }
+        }
+
+        const projects = await query.orderBy(isPostgres ? 'timestamp' : 'Timestamp', 'desc');
+        
+        // Normalize for frontend
+        const normalized = projects.map(p => ({
+            ...p,
+            ID: p.id || p.ID,
+            ProjectName: p.projectname || p.ProjectName,
+            Name: p.projectname || p.ProjectName, // Frontend uses both
+            ClientName: p.clientname || p.ClientName,
+            Location: p.location || p.Location,
+            Status: p.status || p.Status,
+            Timestamp: p.timestamp || p.Timestamp
+        }));
+
+        res.json(normalized);
     } catch (err) {
         console.error('Failed to fetch projects:', err);
         res.status(500).json({ error: 'Failed to fetch projects' });
     }
 });
 
-app.delete('/api/projects/:id', authenticateJWT, authorizeRoles('superuser', 'admin'), (req, res) => {
+app.delete('/api/projects/:id', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
     try {
         const { id } = req.params;
         const now = new Date().toISOString();
-        const result = db.prepare("UPDATE projects SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
-        if (result.changes > 0) {
+        const result = await db('projects')
+            .where('ID', id)
+            .update({ is_deleted: 1, deleted_at: now });
+            
+        if (result > 0) {
             res.json({ success: true, message: 'Project marked for deletion' });
         } else {
             res.status(404).json({ error: 'Project not found' });
@@ -2999,11 +3739,17 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
             OwnerEmail, CoordinatorEmail, ConsigneeName, ConsigneeAddress, 
             ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode, 
             BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode, 
-            Location, Currency 
+            Location, Currency, Initials 
         } = req.body;
         
         if (!ProjectName || !ClientName) {
             return res.status(400).json({ error: 'Project Name and Client Name are required' });
+        }
+
+        // Auto-generate initials if not provided
+        let projectInitials = Initials;
+        if (!projectInitials) {
+            projectInitials = ProjectName.split(/\s+/).map(word => word[0]).join('').toUpperCase().slice(0, 5);
         }
 
         // Use standardized ID generator if available
@@ -3041,30 +3787,95 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
             console.error('QR Generation failed:', qrErr);
         }
 
-        const stmt = db.prepare(`
-            INSERT INTO projects (
-                ID, ProjectName, ClientName, Description, Status, StartDate, EndDate, 
-                CreatedBy, Timestamp, OwnerEmail, CoordinatorEmail,
-                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode, Location, QRCode, Currency
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        console.log(`[API] Creating project. DB_CLIENT: ${process.env.DB_CLIENT}, isPostgres: ${isPostgres}`);
+        
+        const projectRecord = {
+            id: id, 
+            projectname: ProjectName, 
+            clientname: ClientName, 
+            description: Description || null, 
+            status: Status || 'Planning', 
+            startdate: StartDate || null, 
+            enddate: EndDate || null, 
+            createdby: createdBy, 
+            timestamp: timestamp, 
+            owneremail: OwnerEmail || null, 
+            coordinatoremail: CoordinatorEmail || null,
+            consigneename: ConsigneeName || null, 
+            consigneeaddress: ConsigneeAddress || null, 
+            consigneegstin: ConsigneeGSTIN || null, 
+            consigneestate: ConsigneeState || null, 
+            consigneestatecode: ConsigneeStateCode || null,
+            buyername: BuyerName || null, 
+            buyeraddress: BuyerAddress || null, 
+            buyergstin: BuyerGSTIN || null, 
+            buyerstate: BuyerState || null, 
+            buyerstatecode: BuyerStateCode || null, 
+            location: Location || 'MUMBAI', 
+            qrcode: qrCode, 
+            currency: Currency || 'INR',
+            initials: projectInitials
+        };
 
-        stmt.run(
-            id, ProjectName, ClientName, Description || null, Status || 'Planning', StartDate || null, EndDate || null, 
-            createdBy, timestamp, OwnerEmail || null, CoordinatorEmail || null,
-            ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
-            BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null, 
-            Location || 'MUMBAI', qrCode, Currency || 'INR'
-        );
+        if (!isPostgres) {
+            // Map to PascalCase for SQLite
+            const sqliteRecord = {};
+            Object.keys(projectRecord).forEach(key => {
+                const pascalKey = key === 'id' ? 'ID' : key.charAt(0).toUpperCase() + key.slice(1);
+                // Handle special cases
+                let finalKey = pascalKey;
+                if (key === 'projectname') finalKey = 'ProjectName';
+                if (key === 'clientname') finalKey = 'ClientName';
+                if (key === 'createdby') finalKey = 'CreatedBy';
+                if (key === 'owneremail') finalKey = 'OwnerEmail';
+                if (key === 'coordinatoremail') finalKey = 'CoordinatorEmail';
+                if (key === 'consigneename') finalKey = 'ConsigneeName';
+                if (key === 'consigneeaddress') finalKey = 'ConsigneeAddress';
+                if (key === 'consigneegstin') finalKey = 'ConsigneeGSTIN';
+                if (key === 'consigneestate') finalKey = 'ConsigneeState';
+                if (key === 'consigneestatecode') finalKey = 'ConsigneeStateCode';
+                if (key === 'buyername') finalKey = 'BuyerName';
+                if (key === 'buyeraddress') finalKey = 'BuyerAddress';
+                if (key === 'buyergstin') finalKey = 'BuyerGSTIN';
+                if (key === 'buyerstate') finalKey = 'BuyerState';
+                if (key === 'buyerstatecode') finalKey = 'BuyerStateCode';
+                if (key === 'qrcode') finalKey = 'QRCode';
+                
+                sqliteRecord[finalKey] = projectRecord[key];
+            });
+            await db('projects').insert(sqliteRecord);
+        } else {
+            await db('projects').insert(projectRecord);
+        }
 
         // Record project history if table exists
         try {
-            db.prepare(`
-              INSERT INTO project_history (ProjectID, Status, Note, Timestamp)
-              VALUES (?, ?, ?, ?)
-            `).run(id, Status || 'Planning', 'Project initialized', timestamp);
+            const hasHistoryTable = await db.schema.hasTable('project_history');
+            if (hasHistoryTable) {
+                const historyRecord = {
+                    projectid: id, 
+                    status: Status || 'Planning', 
+                    note: 'Project initialized', 
+                    timestamp: timestamp
+                };
+                if (!isPostgres) {
+                    await db('project_history').insert({
+                        ProjectID: historyRecord.projectid,
+                        Status: historyRecord.status,
+                        Note: historyRecord.note,
+                        Timestamp: historyRecord.timestamp
+                    });
+                } else {
+                    // In Postgres, make sure keys are lowercase to match schema
+                    await db('project_history').insert({
+                        projectid: historyRecord.projectid,
+                        status: historyRecord.status,
+                        note: historyRecord.note,
+                        timestamp: historyRecord.timestamp
+                    });
+                }
+            }
         } catch (histErr) {
             console.warn('Could not record project history:', histErr.message);
         }
@@ -3074,104 +3885,6 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
         console.error('Failed to create project:', err);
         res.status(500).json({ error: 'Failed to create project: ' + err.message });
     }
-});
-
-app.post('/api/login', async (req, res) => {
-  const { username, password, category } = req.body || {};
-  console.log(`Login attempt for user: ${username} (Category: ${category})`);
-  if (!username || !password) {
-    return res.status(400).json({ ok: false, message: 'Username and password are required' });
-  }
-  try {
-    const user = getUserFromDb(username);
-    if (!user) {
-      console.log('Login failed');
-      return res.status(401).json({ ok: false, message: 'Invalid credentials' });
-    }
-    const stored = user.password || '';
-    let passwordMatch = false;
-    if (stored && typeof stored === 'string' && stored.startsWith('$2')) {
-      passwordMatch = await bcrypt.compare(password, stored);
-    } else {
-      if (stored === password) {
-        passwordMatch = true;
-        const newHash = await bcrypt.hash(password, 12);
-        db.prepare('UPDATE users SET password = ? WHERE username = ?').run(newHash, user.username);
-      }
-    }
-    if (!passwordMatch) {
-      console.log('Login failed');
-      return res.status(401).json({ ok: false, message: 'Invalid credentials' });
-    }
-    console.log('Login successful');
-    return res.json({
-      ok: true,
-      user: {
-        username: user.username,
-        fullname: user.fullname,
-        role: user.role,
-        projectId: user.project_id,
-        clientId: user.client_id,
-        category
-      }
-    });
-  } catch (err) {
-    console.error('Login error:', err);
-    return res.status(500).json({ ok: false, message: 'Internal server error' });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const body = req.body || {};
-  const username = body.username;
-  const password = body.password;
-  const category = body.category;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
-  }
-  try {
-    const user = getUserFromDb(username);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const stored = user.password || '';
-    let passwordMatch = false;
-    if (stored && typeof stored === 'string' && stored.startsWith('$2')) {
-      passwordMatch = await bcrypt.compare(password, stored);
-    } else {
-      if (stored === password) {
-        passwordMatch = true;
-        const newHash = await bcrypt.hash(password, 12);
-        db.prepare('UPDATE users SET password = ? WHERE username = ?').run(newHash, user.username);
-      }
-    }
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const signed = signJwtForUser(user, category);
-    res.cookie(JWT_COOKIE_NAME, signed.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: JWT_EXPIRES_IN_SECONDS * 1000
-    });
-    return res.json({
-      ok: true,
-      token: signed.token,
-      user: {
-        id: signed.claims.user_id,
-        username: user.username,
-        fullname: user.fullname,
-        role: signed.claims.role,
-        projectId: user.project_id,
-        clientId: user.client_id,
-        category: signed.claims.category
-      }
-    });
-  } catch (err) {
-    console.error('Auth login error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -3186,10 +3899,14 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', authenticateJWT, (req, res) => {
   try {
-    const userRow = db.prepare('SELECT username, fullname, role, client_id, project_id FROM users WHERE username = ?').get(req.user.user_id);
+    const userRow = legacyDb.prepare('SELECT username, fullname, role, client_id, project_id, department FROM users WHERE username = ?').get(req.user.user_id);
     if (!userRow) {
       return res.status(404).json({ error: 'User not found' });
     }
+    
+    // Get user permissions
+    const permissions = Array.from(rolePermissionCache[userRow.role] || []);
+
     return res.json({
       ok: true,
       user: {
@@ -3198,7 +3915,9 @@ app.get('/api/auth/me', authenticateJWT, (req, res) => {
         fullname: userRow.fullname,
         role: userRow.role,
         clientId: userRow.client_id,
-        projectId: userRow.project_id
+        projectId: userRow.project_id,
+        department: userRow.department,
+        permissions: permissions
       }
     });
   } catch (err) {
@@ -3207,10 +3926,20 @@ app.get('/api/auth/me', authenticateJWT, (req, res) => {
   }
 });
 
-app.get('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'manager', 'superuser'), requirePermission('user.manage'), (req, res) => {
+app.get('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'manager', 'superuser'), requirePermission('user.manage'), async (req, res) => {
   try {
     const companyId = req.user.company_id;
-    const users = db.prepare('SELECT username, fullname, role FROM users WHERE company_id = ?').all(companyId);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
+    let users;
+    if (isPostgres) {
+        users = await db('users')
+            .where('company_id', companyId)
+            .select('username', 'fullname', 'role');
+    } else {
+        users = legacyDb.prepare('SELECT username, fullname, role FROM users WHERE company_id = ?').all(companyId);
+    }
+    
     return res.json({ ok: true, users });
   } catch (err) {
     console.error('Tenant users error:', err);
@@ -3228,14 +3957,34 @@ app.post('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'superuse
     if (requestedRole === 'superuser' && req.user.role !== 'superuser') {
       return res.status(403).json({ ok: false, message: 'Only superuser can create superuser accounts' });
     }
-    const existing = db.prepare('SELECT username FROM users WHERE username = ?').get(username);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let existing;
+    if (isPostgres) {
+        existing = await db('users').where('username', username).first();
+    } else {
+        existing = legacyDb.prepare('SELECT username FROM users WHERE username = ?').get(username);
+    }
+
     if (existing) {
       return res.status(409).json({ ok: false, message: 'Username already exists' });
     }
     const passwordHash = await bcrypt.hash(password, 12);
     const companyId = req.user.company_id || DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
-    db.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(username, passwordHash, fullname || username, requestedRole, employeeId || null, companyId, companyId);
+    
+    if (isPostgres) {
+        await db('users').insert({
+            username,
+            password: passwordHash,
+            fullname: fullname || username,
+            role: requestedRole,
+            employee_id: employeeId || null,
+            company_id: companyId,
+            client_id: companyId
+        });
+    } else {
+        legacyDb.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(username, passwordHash, fullname || username, requestedRole, employeeId || null, companyId, companyId);
+    }
     
     appendAudit({
         Action: 'USER_CREATE',
@@ -3252,7 +4001,7 @@ app.post('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'superuse
   }
 });
 
-app.put('/api/tenant/users/:username/role', authenticateJWT, authorizeRoles('admin', 'superuser'), requirePermission('user.manage'), (req, res) => {
+app.put('/api/tenant/users/:username/role', authenticateJWT, authorizeRoles('admin', 'superuser'), requirePermission('user.manage'), async (req, res) => {
   try {
     const targetUsername = req.params.username;
     const { role } = req.body || {};
@@ -3260,21 +4009,31 @@ app.put('/api/tenant/users/:username/role', authenticateJWT, authorizeRoles('adm
       return res.status(400).json({ ok: false, message: 'Username and role are required' });
     }
     const companyId = req.user.company_id;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
     if (role === 'superuser' && req.user.role !== 'superuser' && String(targetUsername) !== String(req.user.user_id)) {
-      const existingSuper = db
-        .prepare('SELECT username FROM users WHERE company_id = ? AND role = ? LIMIT 1')
-        .get(companyId, 'superuser');
+      let existingSuper;
+      if (isPostgres) {
+          existingSuper = await db('users').where({ company_id: companyId, role: 'superuser' }).first();
+      } else {
+          existingSuper = legacyDb.prepare('SELECT username FROM users WHERE company_id = ? AND role = ? LIMIT 1').get(companyId, 'superuser');
+      }
 
       if (existingSuper) {
         return res.status(403).json({ ok: false, message: 'Only an existing superuser can assign superuser role' });
       }
     }
 
-    const info = db.prepare('UPDATE users SET role = ? WHERE username = ?')
-      .run(role, targetUsername);
-    if (!info.changes) {
-      return res.status(404).json({ ok: false, message: 'User not found for this company' });
+    let changes = 0;
+    if (isPostgres) {
+        changes = await db('users').where('username', targetUsername).update({ role });
+    } else {
+        const info = legacyDb.prepare('UPDATE users SET role = ? WHERE username = ?').run(role, targetUsername);
+        changes = info.changes;
+    }
+
+    if (!changes) {
+      return res.status(404).json({ ok: false, message: 'User not found' });
     }
 
     appendAudit({
@@ -3292,7 +4051,7 @@ app.put('/api/tenant/users/:username/role', authenticateJWT, authorizeRoles('adm
   }
 });
 
-app.delete('/api/tenant/users/:username', authenticateJWT, authorizeRoles('admin', 'superuser'), requirePermission('user.manage'), (req, res) => {
+app.delete('/api/tenant/users/:username', authenticateJWT, authorizeRoles('admin', 'superuser'), requirePermission('user.manage'), async (req, res) => {
   try {
     const targetUsername = req.params.username;
     if (!targetUsername) {
@@ -3302,9 +4061,18 @@ app.delete('/api/tenant/users/:username', authenticateJWT, authorizeRoles('admin
       return res.status(400).json({ ok: false, message: 'You cannot delete your own account' });
     }
     const companyId = req.user.company_id;
-    const info = db.prepare('DELETE FROM users WHERE username = ? AND company_id = ?')
-      .run(targetUsername, companyId);
-    if (!info.changes) {
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
+    let changes = 0;
+    if (isPostgres) {
+        changes = await db('users').where({ username: targetUsername, company_id: companyId }).del();
+    } else {
+        const info = legacyDb.prepare('DELETE FROM users WHERE username = ? AND company_id = ?')
+          .run(targetUsername, companyId);
+        changes = info.changes;
+    }
+    
+    if (!changes) {
       return res.status(404).json({ ok: false, message: 'User not found for this company' });
     }
 
@@ -3323,13 +4091,21 @@ app.delete('/api/tenant/users/:username', authenticateJWT, authorizeRoles('admin
   }
 });
 
-app.get('/api/company', authenticateJWT, (req, res) => {
+app.get('/api/company', authenticateJWT, async (req, res) => {
   try {
     const companyId = req.user.company_id;
     if (!companyId) {
       return res.status(400).json({ ok: false, message: 'Missing company id in token' });
     }
-    const row = db.prepare('SELECT name, created_at FROM companies WHERE id = ?').get(companyId);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let row;
+    if (isPostgres) {
+        row = await db('companies').where('id', companyId).first();
+        row = normalizeResult(row);
+    } else {
+        row = legacyDb.prepare('SELECT name, created_at FROM companies WHERE id = ?').get(companyId);
+    }
+    
     if (!row) {
       return res.json({
         ok: true,
@@ -3339,8 +4115,8 @@ app.get('/api/company', authenticateJWT, (req, res) => {
     return res.json({
       ok: true,
       company: {
-        name: row.name,
-        createdAt: row.created_at
+        name: row.Name || row.name,
+        createdAt: row.CreatedAt || row.created_at
       }
     });
   } catch (err) {
@@ -3356,7 +4132,14 @@ app.post('/api/signup', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'Username and password are required' });
   }
   try {
-    const existingUser = db.prepare('SELECT username FROM users WHERE username = ?').get(username);
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let existingUser;
+    if (isPostgres) {
+        existingUser = await db('users').where('username', username).first();
+    } else {
+        existingUser = legacyDb.prepare('SELECT username FROM users WHERE username = ?').get(username);
+    }
+
     if (existingUser) {
       return res.status(409).json({ ok: false, message: 'Username already exists' });
     }
@@ -3364,21 +4147,41 @@ app.post('/api/signup', async (req, res) => {
     const role = 'user';
     const passwordHash = await bcrypt.hash(password, 12);
     const companyId = DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
-    const stmt = db.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    stmt.run(username, passwordHash, fullname, role, employeeId || null, companyId, companyId);
+    
+    if (isPostgres) {
+        await db('users').insert({
+            username,
+            password: passwordHash,
+            fullname,
+            role,
+            employee_id: employeeId || null,
+            company_id: companyId,
+            client_id: companyId
+        });
+    } else {
+        const stmt = legacyDb.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        stmt.run(username, passwordHash, fullname, role, employeeId || null, companyId, companyId);
+    }
+    
     console.log(`User ${username} created successfully`);
     res.json({ ok: true, message: 'User registered successfully' });
   } catch (err) {
     console.error('Signup error:', err);
-    const msg = (err && err.message) ? err.message : 'Unknown error';
-    res.status(500).json({ ok: false, message: msg });
+    res.status(500).json({ ok: false, message: err.message });
   }
 });
 
 // Network Credentials API
-app.get('/api/network/credentials', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_user', 'it_manager'), (req, res) => {
+app.get('/api/network/credentials', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_user', 'it_manager'), async (req, res) => {
   try {
-    const creds = db.prepare('SELECT * FROM network_credentials ORDER BY device_name').all();
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let creds;
+    if (isPostgres) {
+        creds = await db('network_credentials').orderBy('device_name', 'asc');
+        creds = normalizeResult(creds);
+    } else {
+        creds = legacyDb.prepare('SELECT * FROM network_credentials ORDER BY device_name').all();
+    }
     res.json({ ok: true, credentials: creds });
   } catch (err) {
     console.error('Error fetching credentials:', err);
@@ -3395,7 +4198,7 @@ app.post('/api/network/credentials', authenticateJWT, authorizeRoles('superuser'
     const id = 'NC-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const now = new Date().toISOString();
     
-    db.prepare(`
+    legacyDb.prepare(`
       INSERT INTO network_credentials (id, device_name, ip_address, type, username, password, notes, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, device_name, ip_address, type, username, password, notes, req.user.user_id, now, now);
@@ -3421,7 +4224,7 @@ app.put('/api/network/credentials/:id', authenticateJWT, authorizeRoles('superus
     const { device_name, ip_address, type, username, password, notes } = req.body;
     const now = new Date().toISOString();
 
-    const info = db.prepare(`
+    const info = legacyDb.prepare(`
       UPDATE network_credentials 
       SET device_name = ?, ip_address = ?, type = ?, username = ?, password = ?, notes = ?, updated_at = ?
       WHERE id = ?
@@ -3449,7 +4252,7 @@ app.put('/api/network/credentials/:id', authenticateJWT, authorizeRoles('superus
 app.delete('/api/network/credentials/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_manager'), (req, res) => {
   try {
     const { id } = req.params;
-    const info = db.prepare('DELETE FROM network_credentials WHERE id = ?').run(id);
+    const info = legacyDb.prepare('DELETE FROM network_credentials WHERE id = ?').run(id);
 
     if (!info.changes) {
       return res.status(404).json({ ok: false, message: 'Credential not found' });
@@ -3473,7 +4276,7 @@ app.delete('/api/network/credentials/:id', authenticateJWT, authorizeRoles('supe
 // Network Contacts API
 app.get('/api/network/contacts', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_user', 'it_manager'), (req, res) => {
   try {
-    const contacts = db.prepare('SELECT * FROM network_contacts ORDER BY service').all();
+    const contacts = legacyDb.prepare('SELECT * FROM network_contacts ORDER BY service').all();
     res.json({ ok: true, contacts: contacts });
   } catch (err) {
     console.error('Error fetching contacts:', err);
@@ -3490,7 +4293,7 @@ app.post('/api/network/contacts', authenticateJWT, authorizeRoles('superuser', '
     const id = 'NC-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const now = new Date().toISOString();
     
-    db.prepare(`
+    legacyDb.prepare(`
       INSERT INTO network_contacts (id, service, provider, contact, email, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, service, provider, contact, email, req.user.user_id, now, now);
@@ -3516,7 +4319,7 @@ app.put('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superuser'
     const { service, provider, contact, email } = req.body;
     const now = new Date().toISOString();
 
-    const info = db.prepare(`
+    const info = legacyDb.prepare(`
       UPDATE network_contacts 
       SET service = ?, provider = ?, contact = ?, email = ?, updated_at = ?
       WHERE id = ?
@@ -3544,7 +4347,7 @@ app.put('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superuser'
 app.delete('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_manager'), (req, res) => {
   try {
     const { id } = req.params;
-    const info = db.prepare('DELETE FROM network_contacts WHERE id = ?').run(id);
+    const info = legacyDb.prepare('DELETE FROM network_contacts WHERE id = ?').run(id);
 
     if (!info.changes) {
       return res.status(404).json({ ok: false, message: 'Contact not found' });
@@ -3580,7 +4383,7 @@ app.get('/api/projects/search', authenticateJWT, (req, res) => {
         const searchTerm = `%${q}%`;
         // Search by ProjectName or ID (Project ID is usually stored in ID column, but sometimes users refer to 'ProjectName' as ID if it's a code)
         // We will select relevant columns for DC population
-        const projects = db.prepare(`
+        const projects = legacyDb.prepare(`
             SELECT 
                 ID, ProjectName, 
                 BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode,
@@ -3608,13 +4411,13 @@ app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuse
     return res.status(403).json({ ok: false, message: 'Only superuser can create superuser accounts' });
   }
   try {
-    const existingUser = db.prepare('SELECT username FROM users WHERE username = ?').get(username);
+    const existingUser = legacyDb.prepare('SELECT username FROM users WHERE username = ?').get(username);
     if (existingUser) {
       return res.status(409).json({ ok: false, message: 'Username already exists' });
     }
     const passwordHash = await bcrypt.hash(password, 12);
     const companyId = req.user.company_id || DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
-    const stmt = db.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const stmt = legacyDb.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
     stmt.run(username, passwordHash, fullname || username, requestedRole, employeeId || null, companyId, companyId);
     return res.json({ ok: true, message: 'User created successfully' });
   } catch (err) {
@@ -3623,9 +4426,9 @@ app.post('/api/users/create', authenticateJWT, authorizeRoles('admin', 'superuse
   }
 });
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
     try {
-        const users = db.prepare('SELECT username, fullname, role FROM users').all();
+        const users = await db('users').select('username', 'fullname', 'role', 'department');
         res.json({ ok: true, users });
     } catch (err) {
         console.error('Error fetching users:', err);
@@ -3633,17 +4436,16 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-app.post('/api/users/update-role', (req, res) => {
+app.post('/api/users/update-role', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
     const { username, role } = req.body;
     if (!username || !role) {
         return res.status(400).json({ ok: false, message: 'Username and role are required' });
     }
     
     try {
-        const stmt = db.prepare('UPDATE users SET role = ? WHERE username = ?');
-        const info = stmt.run(role, username);
+        const result = await db('users').where('username', username).update({ role });
         
-        if (info.changes > 0) {
+        if (result > 0) {
             res.json({ ok: true, message: 'Role updated successfully' });
         } else {
             res.status(404).json({ ok: false, message: 'User not found' });
@@ -3730,9 +4532,23 @@ app.get('/api/qr/dynamic/project/:id', async (req, res) => {
   }
 });
 
-app.post('/api/assets', async (req, res) => {
+app.post('/api/assets', authenticateJWT, async (req, res) => {
   try {
     const asset = req.body;
+    const hasEditPrice = hasPermission(req.user.role, 'asset.edit_price');
+    const userDept = req.user.department;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+
+    // RBAC: Force department if not admin
+    if (!isAdmin && userDept) {
+        asset.Department = userDept;
+    }
+
+    // RBAC: Clear price if not allowed to set it
+    if (!hasEditPrice) {
+        asset.asset_value = 0;
+        asset.UnitPrice = 0;
+    }
     
     // Basic Validation
     if (!asset.ItemName || asset.ItemName.trim() === '') {
@@ -3754,11 +4570,19 @@ app.post('/api/assets', async (req, res) => {
       console.log('Generated Modern ID:', newId);
     } else {
       // Check if ID already exists
-      const existing = db.prepare('SELECT ID FROM assets WHERE ID = ?').get(newId);
+      const existing = await db('assets').where('ID', newId).first();
       if (existing) {
         return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists` });
       }
     }
+
+    // Generate Initial Client Label (Location-based)
+    // Format: (Kind)-(Location)-(6DigitCode)
+    const assetParts = newId.split('-');
+    const assetKind = assetParts[0] || 'AST';
+    const locCode = assetParts[1] || 'LOC';
+    const sixDigitCode = assetParts[3] || '000000';
+    const initialClientLabel = `${assetKind}-${locCode}-${sixDigitCode}`;
 
     // Generate QR Code if not present and NoQR is not true
     let qrCode = asset.QRCode;
@@ -3774,49 +4598,38 @@ app.post('/api/assets', async (req, res) => {
       qrCode = await qrcode.toDataURL(urlText, { width: 512 });
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO assets (
-        ID, ItemName, Status, Make, Model, SrNo, Type,
-        Category, Icon, isPlaceholder, ParentId,
-        CurrentLocation,
-        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
-        warranty_months, amc_months, asset_value, Currency, PurchaseDate,
-        conversion_unit, conversion_factor, conversion_mode,
-        is_quantity_tracked, is_batch
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      newId,
-      asset.ItemName || '',
-      asset.Status || 'In Store',
-      asset.Make || '',
-      asset.Model || '',
-      encryptionService.encryptDeterministic(asset.SrNo || ''),
-      asset.Type || '',
-      asset.Category || '',
-      asset.Icon || '',
-      0, // isPlaceholder
-      asset.ParentId || null,
-      asset.CurrentLocation || '',
-      asset.DispatchReceiveDt || '',
-      asset.PurchaseDetails || '',
-      asset.Remarks || '',
-      new Date().toISOString(),
-      qrCode || null,
-      asset.AssignedTo || '',
-      asset.NoQR ? 1 : 0,
-      asset.warranty_months || 0,
-      asset.amc_months || 0,
-      asset.asset_value || 0,
-      asset.Currency || 'USD',
-      asset.PurchaseDate || '',
-      asset.conversion_unit || null,
-      asset.conversion_factor || null,
-      asset.conversion_mode || 'multiply',
-      asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
-      asset.is_batch || 0
-    );
+    await db('assets').insert({
+      ID: newId,
+      ItemName: asset.ItemName || '',
+      Status: asset.Status || 'In Store',
+      Make: asset.Make || '',
+      Model: asset.Model || '',
+      SrNo: encryptionService.encryptDeterministic(asset.SrNo || ''),
+      Type: asset.Type || '',
+      Category: asset.Category || '',
+      Icon: asset.Icon || '',
+      isPlaceholder: 0,
+      ParentId: asset.ParentId || null,
+      CurrentLocation: asset.CurrentLocation || '',
+      DispatchReceiveDt: asset.DispatchReceiveDt || '',
+      PurchaseDetails: asset.PurchaseDetails || '',
+      Remarks: asset.Remarks || '',
+      LastUpdated: new Date().toISOString(),
+      QRCode: qrCode || null,
+      AssignedTo: asset.AssignedTo || '',
+      client_label: initialClientLabel,
+      NoQR: asset.NoQR ? 1 : 0,
+      warranty_months: asset.warranty_months || 0,
+      amc_months: asset.amc_months || 0,
+      asset_value: asset.asset_value || 0,
+      Currency: asset.Currency || 'USD',
+      PurchaseDate: asset.PurchaseDate || '',
+      conversion_unit: asset.conversion_unit || null,
+      conversion_factor: asset.conversion_factor || null,
+      conversion_mode: asset.conversion_mode || 'multiply',
+      is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
+      is_batch: asset.is_batch || 0
+    });
 
     appendAudit({
       Action: 'CREATE',
@@ -3827,7 +4640,7 @@ app.post('/api/assets', async (req, res) => {
     });
 
     // Log to asset history
-    logAssetHistory(newId, 'CREATE', null, asset.Status || 'In Store', req.headers['x-user'] || 'web', `Initial assignment to: ${asset.AssignedTo || 'None'}`);
+    await logAssetHistory(newId, 'CREATE', null, asset.Status || 'In Store', req.headers['x-user'] || 'web', `Initial assignment to: ${asset.AssignedTo || 'None'}`);
 
     const qtyUnit = normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit)
     const qtyTotal = parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal)
@@ -3835,20 +4648,19 @@ app.post('/api/assets', async (req, res) => {
     const isQtyTracked = asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0;
 
     if (isQtyTracked && qtyUnit && qtyTotal !== null && qtyTotal > 0) {
-      db.prepare(`
-        UPDATE assets
-        SET
-          quantity_root_id = ?,
-          quantity_unit = ?,
-          quantity_total = 0,
-          quantity_available = 0,
-          quantity_precision = ?,
-          quantity_updated_at = ?,
-          is_quantity_tracked = 1
-        WHERE ID = ?
-      `).run(newId, qtyUnit, qtyPrecision || 0, new Date().toISOString(), newId)
+      await db('assets')
+        .where('ID', newId)
+        .update({
+          quantity_root_id: newId,
+          quantity_unit: qtyUnit,
+          quantity_total: 0,
+          quantity_available: 0,
+          quantity_precision: qtyPrecision || 0,
+          quantity_updated_at: new Date().toISOString(),
+          is_quantity_tracked: 1
+        });
 
-      applyQuantityEvent({
+      await applyQuantityEvent({
         rootId: newId,
         type: 'INIT',
         actor: getRequestActor(req),
@@ -3862,104 +4674,88 @@ app.post('/api/assets', async (req, res) => {
 
     // Save IT details to separate table if any exist
     if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
-      db.prepare(`
-        INSERT OR REPLACE INTO asset_it_details (
-          AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        newId,
-        encryptionService.encrypt(asset.MACAddress || ''),
-        encryptionService.encryptDeterministic(asset.IPAddress || ''),
-        asset.NetworkType || '',
-        asset.PhysicalPort || '',
-        asset.VLAN || '',
-        encryptionService.encrypt(asset.SocketID || ''),
-        asset.UserID || ''
-      );
+      await db('asset_it_details').insert({
+        AssetID: newId,
+        MACAddress: encryptionService.encrypt(asset.MACAddress || ''),
+        IPAddress: encryptionService.encryptDeterministic(asset.IPAddress || ''),
+        NetworkType: asset.NetworkType || '',
+        PhysicalPort: asset.PhysicalPort || '',
+        VLAN: asset.VLAN || '',
+        SocketID: encryptionService.encrypt(asset.SocketID || ''),
+        UserID: asset.UserID || ''
+      }).onConflict('AssetID').merge();
     }
 
     // Handle nested components (new child assets)
     if (Array.isArray(asset.components) && asset.components.length > 0) {
-      const compStmt = db.prepare(`
-        INSERT INTO components (
-          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
-          Category, LastUpdated, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
       for (const comp of asset.components) {
         const compId = generateModernAssetId(asset.CurrentLocation || '');
-        compStmt.run(
-          compId,
-          newId, // ParentId
-          comp.ItemName || '',
-          comp.Make || '',
-          comp.Model || '',
-          comp.SrNo || '',
-          comp.Status || asset.Status || 'In Store',
-          comp.Type || 'Component',
-          comp.Category || asset.Category || '',
-          new Date().toISOString(),
-          1 // NoQR = true
-        );
+        await db('components').insert({
+          ID: compId,
+          ParentId: newId, // ParentId
+          ItemName: comp.ItemName || '',
+          Make: comp.Make || '',
+          Model: comp.Model || '',
+          SrNo: comp.SrNo || '',
+          Status: comp.Status || asset.Status || 'In Store',
+          Type: comp.Type || 'Component',
+          Category: comp.Category || asset.Category || '',
+          LastUpdated: new Date().toISOString(),
+          NoQR: 1 // NoQR = true
+        });
       }
     }
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds) && asset.linkedIds.length > 0) {
-      const compStmt = db.prepare(`
-        INSERT OR REPLACE INTO components (
-          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
-          Category, LastUpdated, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      const getAssetStmt = db.prepare('SELECT * FROM assets WHERE ID = ?');
-      const checkComponentStmt = db.prepare('SELECT ParentId FROM components WHERE ID = ?');
-
       for (const linkId of asset.linkedIds) {
-        const existingAsset = getAssetStmt.get(linkId);
+        const existingAsset = await db('assets').where('ID', linkId).first();
         if (!existingAsset) continue;
 
         // Validation: Check if asset is already assigned to a parent
         const existingParentInAssets = existingAsset.ParentId;
-        const existingComp = checkComponentStmt.get(linkId);
+        const existingComp = await db('components').where('ID', linkId).first();
         const existingParentInComps = existingComp ? existingComp.ParentId : null;
 
         if ((existingParentInAssets && existingParentInAssets !== newId) || 
             (existingParentInComps && existingParentInComps !== newId)) {
           const actualParent = existingParentInAssets || existingParentInComps;
-          // Note: Since this is a new asset, we might want to be careful about returning 400 here
-          // as the main asset was already created. But it's better to be consistent.
           return res.status(400).send(`Asset ${linkId} is already assigned to parent ${actualParent}. Remove it from its current parent first.`);
         }
 
-        compStmt.run(
-          linkId,
-          newId,
-          existingAsset.ItemName,
-          existingAsset.Make || '',
-          existingAsset.Model || '',
-          existingAsset.SrNo || '',
-          existingAsset.Status || 'In Store',
-          existingAsset.Type || 'Component',
-          existingAsset.Category || '',
-          new Date().toISOString(),
-          0 // NoQR = false (it's a QR asset)
-        );
+        await db('components').insert({
+          ID: linkId,
+          ParentId: newId,
+          ItemName: existingAsset.ItemName,
+          Make: existingAsset.Make || '',
+          Model: existingAsset.Model || '',
+          SrNo: existingAsset.SrNo || '',
+          Status: existingAsset.Status || 'In Store',
+          Type: existingAsset.Type || 'Component',
+          Category: existingAsset.Category || '',
+          LastUpdated: new Date().toISOString(),
+          NoQR: 0 // NoQR = false (it's a QR asset)
+        }).onConflict('ID').merge();
+        
         // Update ParentId in assets table instead of clearing it
-        db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?').run(newId, linkId);
+        await db('assets').where('ID', linkId).update({ ParentId: newId });
       }
     }
 
     // 6. Link back to PO if applicable
     if (asset.linked_po_item_id) {
         try {
-            db.prepare('UPDATE project_order_items SET AssetID = ?, Status = "Asset Created" WHERE ID = ?').run(newId, asset.linked_po_item_id);
+            await db('project_order_items')
+              .where('ID', asset.linked_po_item_id)
+              .update({ AssetID: newId, Status: "Asset Created" });
             
             // Also update the asset record with PO linking info if not already set
-            db.prepare('UPDATE assets SET linked_po_item_id = ?, BoughtAgainstPO = ? WHERE ID = ?')
-              .run(asset.linked_po_item_id, asset.BoughtAgainstPO || null, newId);
+            await db('assets')
+              .where('ID', newId)
+              .update({
+                linked_po_item_id: asset.linked_po_item_id,
+                BoughtAgainstPO: asset.BoughtAgainstPO || null
+              });
               
             console.log(`[PO Link] Linked Asset ${newId} to PO Item ${asset.linked_po_item_id}`);
         } catch (linkErr) {
@@ -4016,7 +4812,7 @@ app.post('/api/quantity/split', async (req, res) => {
     }
 
     const newId = generateSplitAssetId(parentId)
-    const existing = db.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
+    const existing = legacyDb.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
     if (existing) return res.status(500).json({ success: false, error: 'Failed to generate unique child ID' })
 
     let qrCode = child.QRCode || null
@@ -4028,8 +4824,8 @@ app.post('/api/quantity/split', async (req, res) => {
       qrCode = await qrcode.toDataURL(urlText, { width: 512 })
     }
 
-    const splitTx = db.transaction(() => {
-      const insert = db.prepare(`
+    const splitTx = legacyDb.transaction(() => {
+      const insert = legacyDb.prepare(`
         INSERT INTO assets (
           ID, ItemName, Status, Make, Model, SrNo, Type,
           Category, Icon, isPlaceholder, ParentId,
@@ -4075,7 +4871,7 @@ app.post('/api/quantity/split', async (req, res) => {
       )
 
       if (projectId) {
-        db.prepare(`
+        legacyDb.prepare(`
           INSERT INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
           VALUES (?, ?, ?, 'Permanent')
         `).run(projectId, newId, new Date().toISOString())
@@ -4158,7 +4954,7 @@ app.post('/api/quantity/issue', async (req, res) => {
     }
 
     const newId = generateSplitAssetId(assetId)
-    const existing = db.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
+    const existing = legacyDb.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
     if (existing) return res.status(500).json({ success: false, error: 'Failed to generate unique child ID' })
 
     const ip = getLocalIP()
@@ -4166,8 +4962,8 @@ app.post('/api/quantity/issue', async (req, res) => {
     const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`
     const qrCode = await qrcode.toDataURL(urlText, { width: 512 })
 
-    const issueTx = db.transaction(() => {
-      const insert = db.prepare(`
+    const issueTx = legacyDb.transaction(() => {
+      const insert = legacyDb.prepare(`
         INSERT INTO assets (
           ID, ItemName, Status, Make, Model, SrNo, Type,
           Category, Icon, isPlaceholder, ParentId,
@@ -4213,7 +5009,7 @@ app.post('/api/quantity/issue', async (req, res) => {
       )
 
       if (projectId) {
-        db.prepare(`
+        legacyDb.prepare(`
           INSERT INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
           VALUES (?, ?, ?, 'Permanent')
         `).run(projectId, newId, new Date().toISOString())
@@ -4269,7 +5065,7 @@ app.post('/api/quantity/consume', async (req, res) => {
     const precision = parent.quantity_precision ?? null
 
     const newId = generateSplitAssetId(assetId)
-    const existing = db.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
+    const existing = legacyDb.prepare('SELECT 1 FROM assets WHERE ID = ?').get(newId)
     if (existing) return res.status(500).json({ success: false, error: 'Failed to generate unique child ID' })
 
     const ip = getLocalIP()
@@ -4277,8 +5073,8 @@ app.post('/api/quantity/consume', async (req, res) => {
     const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`
     const qrCode = await qrcode.toDataURL(urlText, { width: 512 })
 
-    const consumeTx = db.transaction(() => {
-      const insert = db.prepare(`
+    const consumeTx = legacyDb.transaction(() => {
+      const insert = legacyDb.prepare(`
         INSERT INTO assets (
           ID, ItemName, Status, Make, Model, SrNo, Type,
           Category, Icon, isPlaceholder, ParentId,
@@ -4324,7 +5120,7 @@ app.post('/api/quantity/consume', async (req, res) => {
       )
 
       if (parent.ProjectID) {
-        db.prepare(`
+        legacyDb.prepare(`
           INSERT INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
           VALUES (?, ?, ?, 'Permanent')
         `).run(parent.ProjectID, newId, new Date().toISOString())
@@ -4405,36 +5201,49 @@ app.post('/api/quantity/adjust', (req, res) => {
   }
 })
 
-app.get('/api/quantity/events/:rootId', (req, res) => {
+app.get('/api/quantity/events/:rootId', async (req, res) => {
   try {
     const rootId = String(req.params.rootId || '').trim()
     if (!rootId) return res.status(400).json({ success: false, error: 'rootId is required' })
 
-    const root = getQuantityAsset(rootId)
-    if (!root || root.quantity_root_id !== rootId) {
-      return res.status(404).json({ success: false, error: 'Quantity root not found' })
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
+    let events, lines;
+    if (isPostgres) {
+        events = await db('quantity_events')
+          .where('root_id', rootId)
+          .orderBy('id', 'asc')
+          .limit(2000);
+          
+        lines = await db('quantity_event_lines')
+          .whereIn('event_id', db('quantity_events').select('id').where('root_id', rootId))
+          .orderBy('event_id', 'asc');
+          
+        events = normalizeResult(events);
+        lines = normalizeResult(lines);
+    } else {
+        events = legacyDb.prepare(`
+          SELECT id, root_id, type, actor, timestamp, note, metadata_json
+          FROM quantity_events
+          WHERE root_id = ?
+          ORDER BY id ASC
+          LIMIT 2000
+        `).all(rootId)
+
+        lines = legacyDb.prepare(`
+          SELECT event_id, asset_id, unit, delta_available, delta_total
+          FROM quantity_event_lines
+          WHERE event_id IN (SELECT id FROM quantity_events WHERE root_id = ?)
+          ORDER BY event_id ASC
+        `).all(rootId)
     }
-
-    const events = db.prepare(`
-      SELECT id, root_id, type, actor, timestamp, note, metadata_json
-      FROM quantity_events
-      WHERE root_id = ?
-      ORDER BY id ASC
-      LIMIT 2000
-    `).all(rootId)
-
-    const lines = db.prepare(`
-      SELECT event_id, asset_id, unit, delta_available, delta_total
-      FROM quantity_event_lines
-      WHERE event_id IN (SELECT id FROM quantity_events WHERE root_id = ?)
-      ORDER BY event_id ASC
-    `).all(rootId)
 
     const linesByEvent = new Map()
     for (const l of lines) {
-      const arr = linesByEvent.get(l.event_id) || []
+      const eventId = l.event_id || l.EventId;
+      const arr = linesByEvent.get(eventId) || []
       arr.push(l)
-      linesByEvent.set(l.event_id, arr)
+      linesByEvent.set(eventId, arr)
     }
 
     res.json({
@@ -4442,8 +5251,8 @@ app.get('/api/quantity/events/:rootId', (req, res) => {
       rootId,
       events: events.map((e) => ({
         ...e,
-        metadata: e.metadata_json ? JSON.parse(e.metadata_json) : null,
-        lines: linesByEvent.get(e.id) || []
+        metadata: e.metadata_json ? (typeof e.metadata_json === 'string' ? JSON.parse(e.metadata_json) : e.metadata_json) : (e.metadata || null),
+        lines: linesByEvent.get(e.id || e.ID) || []
       }))
     })
   } catch (err) {
@@ -4452,30 +5261,37 @@ app.get('/api/quantity/events/:rootId', (req, res) => {
   }
 })
 
-app.get('/api/quantity/replay/:rootId', (req, res) => {
+app.get('/api/quantity/replay/:rootId', async (req, res) => {
   try {
     const rootId = String(req.params.rootId || '').trim()
     if (!rootId) return res.status(400).json({ success: false, error: 'rootId is required' })
 
-    const root = getQuantityAsset(rootId)
-    if (!root || root.quantity_root_id !== rootId) {
-      return res.status(404).json({ success: false, error: 'Quantity root not found' })
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let rows;
+    
+    if (isPostgres) {
+        rows = await db('quantity_event_lines')
+          .select('asset_id', 'unit')
+          .sum('delta_available as delta_available_sum')
+          .sum('delta_total as delta_total_sum')
+          .whereIn('event_id', db('quantity_events').select('id').where('root_id', rootId))
+          .groupBy('asset_id', 'unit');
+    } else {
+        rows = legacyDb.prepare(`
+          SELECT asset_id, unit,
+                 SUM(delta_available) AS delta_available_sum,
+                 SUM(delta_total) AS delta_total_sum
+          FROM quantity_event_lines
+          WHERE event_id IN (SELECT id FROM quantity_events WHERE root_id = ?)
+          GROUP BY asset_id, unit
+        `).all(rootId)
     }
 
-    const rows = db.prepare(`
-      SELECT asset_id, unit,
-             SUM(delta_available) AS delta_available_sum,
-             SUM(delta_total) AS delta_total_sum
-      FROM quantity_event_lines
-      WHERE event_id IN (SELECT id FROM quantity_events WHERE root_id = ?)
-      GROUP BY asset_id, unit
-    `).all(rootId)
-
     const balances = rows.map((r) => ({
-      assetId: r.asset_id,
+      assetId: r.asset_id || r.assetid,
       unit: r.unit,
-      availableFromEvents: r.delta_available_sum || 0,
-      totalFromEvents: r.delta_total_sum || 0
+      availableFromEvents: Number(r.delta_available_sum || 0),
+      totalFromEvents: Number(r.delta_total_sum || 0)
     }))
 
     res.json({ success: true, rootId, balances })
@@ -4593,7 +5409,7 @@ app.post('/api/assets/bulk', async (req, res) => {
 
     // Check if any IDs already exist in database
     const existingIds = [];
-    const checkStmt = db.prepare('SELECT ID FROM assets WHERE ID = ?');
+    const checkStmt = legacyDb.prepare('SELECT ID FROM assets WHERE ID = ?');
     for (const asset of processedAssets) {
         const existing = checkStmt.get(asset.ID);
         if (existing) existingIds.push(asset.ID);
@@ -4605,70 +5421,130 @@ app.post('/api/assets/bulk', async (req, res) => {
         });
     }
 
-    const insertAssetStmt = db.prepare(`
-      INSERT INTO assets (
-        ID, ItemName, ItemDescription, Status, Make, Model, SrNo, Type,
-        Category, Icon, isPlaceholder, ParentId,
-        CurrentLocation,
-        DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
-        warranty_months, amc_months, asset_value, Currency, PurchaseDate, warranty_tracking
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    // DB Operations
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-    const insertItStmt = db.prepare(`
-      INSERT OR REPLACE INTO asset_it_details (
-        AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    if (isPostgres) {
+        // PostgreSQL Transaction
+        await db.transaction(async (trx) => {
+            for (const asset of processedAssets) {
+                // Prepare Record
+                const record = {
+                    id: asset.ID,
+                    itemname: asset.ItemName || '',
+                    itemdescription: asset.ItemDescription || '',
+                    status: asset.Status || 'In Store',
+                    make: asset.Make || '',
+                    model: asset.Model || '',
+                    srno: encryptionService.encryptDeterministic(asset.SrNo || asset.SerialNo || ''),
+                    serialno: encryptionService.encryptDeterministic(asset.SerialNo || asset.SrNo || ''),
+                    type: asset.Type || '',
+                    category: asset.Category || asset.Module || '',
+                    icon: asset.Icon || '📦',
+                    isplaceholder: parseBool(asset.IsPlaceholder),
+                    parentid: asset.ParentId || null,
+                    currentlocation: asset.CurrentLocation || asset.Location || '',
+                    previouslocation: asset.PreviousLocation || '',
+                    purchasedetails: asset.PurchaseDetails || '',
+                    remarks: asset.Remarks || '',
+                    purpose: asset.Purpose || '',
+                    purchasedate: asset.PurchaseDate || null,
+                    lastupdated: timestamp,
+                    qrcode: asset.QRCode,
+                    assignedto: asset.AssignedTo || '',
+                    currency: asset.Currency || 'INR',
+                    asset_value: parseFloat(asset.asset_value) || 0,
+                    unitprice: parseFloat(asset.UnitPrice || asset.asset_value) || 0,
+                    warranty_months: parseMonths(asset.warranty_months),
+                    amc_months: parseMonths(asset.amc_months),
+                    department: asset.Department || ''
+                };
 
-    const transaction = db.transaction((assetsList) => {
-      for (const asset of assetsList) {
-        insertAssetStmt.run(
-          asset.ID,
-          asset.ItemName || '',
-          asset.ItemDescription || '',
-          asset.Status || 'In Store',
-          asset.Make || '',
-          asset.Model || '',
-          asset.SrNo || '',
-          asset.Type || '',
-          asset.Category || asset.Module || '',
-          asset.Icon || '',
-          0, // isPlaceholder
-          asset.ParentId || null,
-          asset.CurrentLocation || '',
-          asset.DispatchReceiveDt || '',
-          asset.PurchaseDetails || '',
-          asset.Remarks || '',
-          timestamp,
-          asset.QRCode || null,
-          asset.AssignedTo || '',
-          asset.NoQR ? 1 : 0,
-          parseMonths(asset.warranty_months),
-          parseMonths(asset.amc_months),
-          parseFloat(asset.asset_value) || 0,
-          asset.Currency || 'USD',
-          asset.PurchaseDate || '',
-          parseBool(asset.warranty_tracking)
-        );
+                // Insert Main
+                await trx('assets').insert(record);
 
-        if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
-          insertItStmt.run(
-            asset.ID,
-            asset.MACAddress || '',
-            asset.IPAddress || '',
-            asset.NetworkType || '',
-            asset.PhysicalPort || '',
-            asset.VLAN || '',
-            asset.SocketID || '',
-            asset.UserID || ''
-          );
-        }
-        results.push(asset.ID);
-      }
-    });
+                // Insert IT Details if applicable
+                if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
+                    await trx('asset_it_details').insert({
+                        assetid: asset.ID,
+                        macaddress: encryptionService.universalEncrypt(asset.MACAddress || ''),
+                        ipaddress: encryptionService.encryptDeterministic(asset.IPAddress || ''),
+                        networktype: asset.NetworkType || '',
+                        physicalport: asset.PhysicalPort || '',
+                        vlan: asset.VLAN || '',
+                        socketid: encryptionService.universalEncrypt(asset.SocketID || ''),
+                        userid: asset.UserID || ''
+                    });
+                }
+                results.push(asset.ID);
+            }
+        });
+    } else {
+        const insertAssetStmt = legacyDb.prepare(`
+          INSERT INTO assets (
+            ID, ItemName, ItemDescription, Status, Make, Model, SrNo, Type,
+            Category, Icon, isPlaceholder, ParentId,
+            CurrentLocation,
+            DispatchReceiveDt, PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR,
+            warranty_months, amc_months, asset_value, Currency, PurchaseDate, warranty_tracking
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
-    transaction(processedAssets);
+        const insertItStmt = legacyDb.prepare(`
+          INSERT OR REPLACE INTO asset_it_details (
+            AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const transaction = legacyDb.transaction((assetsList) => {
+          for (const asset of assetsList) {
+            insertAssetStmt.run(
+              asset.ID,
+              asset.ItemName || '',
+              asset.ItemDescription || '',
+              asset.Status || 'In Store',
+              asset.Make || '',
+              asset.Model || '',
+              asset.SrNo || '',
+              asset.Type || '',
+              asset.Category || asset.Module || '',
+              asset.Icon || '',
+              0, // isPlaceholder
+              asset.ParentId || null,
+              asset.CurrentLocation || '',
+              asset.DispatchReceiveDt || '',
+              asset.PurchaseDetails || '',
+              asset.Remarks || '',
+              timestamp,
+              asset.QRCode || null,
+              asset.AssignedTo || '',
+              asset.NoQR ? 1 : 0,
+              parseMonths(asset.warranty_months),
+              parseMonths(asset.amc_months),
+              parseFloat(asset.asset_value) || 0,
+              asset.Currency || 'USD',
+              asset.PurchaseDate || '',
+              parseBool(asset.warranty_tracking)
+            );
+
+            if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
+              insertItStmt.run(
+                asset.ID,
+                asset.MACAddress || '',
+                asset.IPAddress || '',
+                asset.NetworkType || '',
+                asset.PhysicalPort || '',
+                asset.VLAN || '',
+                asset.SocketID || '',
+                asset.UserID || ''
+              );
+            }
+            results.push(asset.ID);
+          }
+        });
+
+        transaction(processedAssets);
+    }
 
     appendAudit({ 
       Action: 'BULK_CREATE', 
@@ -4693,7 +5569,7 @@ app.post('/api/assets/bulk', async (req, res) => {
  */
 app.get('/api/external/projects', checkApiKey, (req, res) => {
     try {
-        const projects = db.prepare(`
+        const projects = legacyDb.prepare(`
             SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, OwnerEmail, CoordinatorEmail, Timestamp 
             FROM projects 
             ORDER BY Timestamp DESC
@@ -4742,7 +5618,7 @@ app.post('/api/external/projects', checkApiKey, async (req, res) => {
         
         const qrCode = await qrcode.toDataURL(JSON.stringify(qrPayload), { width: 512 });
 
-        const stmt = db.prepare(`
+        const stmt = legacyDb.prepare(`
             INSERT INTO projects (ID, ProjectName, ClientName, Location, Currency, Description, Status, StartDate, EndDate, CreatedBy, OwnerEmail, CoordinatorEmail, Timestamp, QRCode)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -4784,7 +5660,7 @@ app.post('/api/external/projects', checkApiKey, async (req, res) => {
  */
 app.get('/api/external/assets', checkApiKey, (req, res) => {
     try {
-        const assets = db.prepare(`
+        const assets = legacyDb.prepare(`
             SELECT a.ID, a.ItemName, a.Status, a.Make, a.Model, a.Type, a.Category, a.CurrentLocation, a.AssignedTo, a.LastUpdated
             FROM assets a
             ORDER BY a.LastUpdated DESC
@@ -4799,13 +5675,13 @@ app.get('/api/external/assets', checkApiKey, (req, res) => {
  * @api {get} /api/external/stats Summary Stats
  * @apiHeader {String} x-api-key API Key
  */
-app.get('/api/external/stats', checkApiKey, (req, res) => {
+app.get('/api/external/stats', checkApiKey, async (req, res) => {
     try {
         const stats = {
-            totalAssets: db.prepare('SELECT COUNT(*) as count FROM assets WHERE (is_deleted = 0 OR is_deleted IS NULL)').get().count,
-            totalProjects: db.prepare('SELECT COUNT(*) as count FROM projects WHERE (is_deleted = 0 OR is_deleted IS NULL)').get().count,
-            activeProjects: db.prepare("SELECT COUNT(*) as count FROM projects WHERE Status = 'Active' AND (is_deleted = 0 OR is_deleted IS NULL)").get().count,
-            assetsInUse: db.prepare("SELECT COUNT(*) as count FROM assets WHERE Status = 'In Use' AND (is_deleted = 0 OR is_deleted IS NULL)").get().count
+            totalAssets: (await db('assets').where(function() { this.where('is_deleted', 0).orWhereNull('is_deleted'); }).count('* as count'))[0].count,
+            totalProjects: (await db('projects').where(function() { this.where('is_deleted', 0).orWhereNull('is_deleted'); }).count('* as count'))[0].count,
+            activeProjects: (await db('projects').where('Status', 'Active').andWhere(function() { this.where('is_deleted', 0).orWhereNull('is_deleted'); }).count('* as count'))[0].count,
+            assetsInUse: (await db('assets').where('Status', 'In Use').andWhere(function() { this.where('is_deleted', 0).orWhereNull('is_deleted'); }).count('* as count'))[0].count
         };
         res.json({ success: true, data: stats });
     } catch (err) {
@@ -4815,83 +5691,125 @@ app.get('/api/external/stats', checkApiKey, (req, res) => {
 
 // --- Project Management Endpoints ---
 
-app.get('/api/projects', (req, res) => {
+app.get('/api/projects', async (req, res) => {
     try {
         const { projectId } = req.query;
-        let query = `
-            SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
-                   OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
-                   ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                   BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
-            FROM projects
-        `;
-        let params = [];
+        let query = db('projects')
+            .select('id as ID', 'projectname as Name', 'clientname as ClientName', 'location as Location', 'currency as Currency', 'description as Description', 'status as Status', 'startdate as StartDate', 'enddate as EndDate', 
+                   'owneremail as OwnerEmail', 'coordinatoremail as CoordinatorEmail', 'timestamp as Timestamp', 'qrcode as QRCode',
+                   'consigneename as ConsigneeName', 'consigneeaddress as ConsigneeAddress', 'consigneegstin as ConsigneeGSTIN', 'consigneestate as ConsigneeState', 'consigneestatecode as ConsigneeStateCode',
+                   'buyername as BuyerName', 'buyeraddress as BuyerAddress', 'buyergstin as BuyerGSTIN', 'buyerstate as BuyerState', 'buyerstatecode as BuyerStateCode');
 
         if (projectId) {
-            query += ' WHERE ID = ? AND (is_deleted = 0 OR is_deleted IS NULL)';
-            params.push(projectId);
+            query.where('id', projectId).andWhere(function() {
+                this.where('is_deleted', 0).orWhereNull('is_deleted');
+            });
         } else {
-            query += ' WHERE (is_deleted = 0 OR is_deleted IS NULL)';
+            query.where(function() {
+                this.where('is_deleted', 0).orWhereNull('is_deleted');
+            });
         }
 
-        query += ' ORDER BY Timestamp DESC';
-        const projects = db.prepare(query).all(...params);
+        const projects = await query.orderBy('timestamp', 'desc');
         res.json(projects);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.get('/api/projects/:id', (req, res) => {
+app.get('/api/projects/:id', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
-        const project = db.prepare(`
-            SELECT ID, ProjectName as Name, ClientName, Location, Currency, Description, Status, StartDate, EndDate, 
-                   OwnerEmail, CoordinatorEmail, Timestamp, QRCode,
-                   ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                   BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
-            FROM projects WHERE ID = ?
-        `).get(id);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        let project;
+        if (isPostgres) {
+            project = await db('projects')
+                .select('id as ID', 'projectname as Name', 'clientname as ClientName', 'location as Location', 'currency as Currency', 'description as Description', 'status as Status', 'startdate as StartDate', 'endDate as EndDate', 
+                       'owneremail as OwnerEmail', 'coordinatoremail as CoordinatorEmail', 'timestamp as Timestamp', 'qrcode as QRCode',
+                       'consigneename as ConsigneeName', 'consigneeaddress as ConsigneeAddress', 'consigneegstin as ConsigneeGSTIN', 'consigneestate as ConsigneeState', 'consigneestatecode as ConsigneeStateCode',
+                       'buyername as BuyerName', 'buyeraddress as BuyerAddress', 'buyergstin as BuyerGSTIN', 'buyerstate as BuyerState', 'buyerstatecode as BuyerStateCode')
+                .where('id', id)
+                .first();
+        } else {
+            project = legacyDb.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
+        }
+            
         if (!project) return res.status(404).send('Project not found');
         res.json(project);
     } catch (err) {
+        console.error('Failed to fetch project details:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.get('/api/projects/:id/history', (req, res) => {
+app.get('/api/projects/:id/history', async (req, res) => {
     try {
         const { id } = req.params;
-        const rows = db.prepare('SELECT ID, ProjectID, Status, Note, Timestamp FROM project_history WHERE ProjectID = ? ORDER BY Timestamp ASC').all(id);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('project_history').where('projectid', id).orderBy('timestamp', 'asc');
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare('SELECT * FROM project_history WHERE ProjectID = ? ORDER BY Timestamp ASC').all(id);
+        }
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.get('/api/projects/:id/orders', (req, res) => {
+app.get('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         console.log(`[PO] Fetching orders for project: ${id}`);
-        const rows = db.prepare('SELECT * FROM project_orders WHERE ProjectID = ? ORDER BY Timestamp DESC').all(id);
+        
+        let rows;
+        if (isPostgres) {
+            rows = await db('project_orders').where('projectid', id).orderBy('timestamp', 'desc');
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare('SELECT * FROM project_orders WHERE ProjectID = ? ORDER BY Timestamp DESC').all(id);
+        }
         
         // Fetch items for each order and calculate fulfillment
-        const ordersWithItems = rows.map(order => {
-            const items = db.prepare('SELECT * FROM project_order_items WHERE OrderID = ? ORDER BY SrNo ASC').all(order.ID);
+        const ordersWithItems = await Promise.all(rows.map(async (order) => {
+            let items;
+            const orderId = order.ID || order.id;
+            
+            if (isPostgres) {
+                items = await db('project_order_items').where('orderid', orderId).orderBy('srno', 'asc');
+                items = normalizeResult(items);
+            } else {
+                items = legacyDb.prepare('SELECT * FROM project_order_items WHERE OrderID = ? ORDER BY SrNo ASC').all(orderId);
+            }
             
             // For each item, find how many assets are linked to it (Permanent + Temporary)
-            const itemsWithFulfillment = items.map(item => {
-                const permanentFulfilled = db.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(item.ID).count;
-                const temporaryFulfilled = db.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(item.ID).count;
+            const itemsWithFulfillment = await Promise.all(items.map(async (item) => {
+                const itemId = item.ID || item.id;
+                let permanentFulfilled, temporaryFulfilled;
+                
+                if (isPostgres) {
+                    const permResult = await db('assets').where('linked_po_item_id', itemId).count('* as count').first();
+                    permanentFulfilled = permResult ? permResult.count : 0;
+                    
+                    const tempResult = await db('temporary_assets').where('linked_po_item_id', itemId).count('* as count').first();
+                    temporaryFulfilled = tempResult ? tempResult.count : 0;
+                } else {
+                    permanentFulfilled = legacyDb.prepare('SELECT count(*) as count FROM assets WHERE linked_po_item_id = ?').get(itemId).count;
+                    temporaryFulfilled = legacyDb.prepare('SELECT count(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(itemId).count;
+                }
                 
                 return { 
                     ...item, 
-                    fulfilledQty: (permanentFulfilled + temporaryFulfilled)
+                    fulfilledQty: (Number(permanentFulfilled) + Number(temporaryFulfilled))
                 };
-            });
+            }));
 
             return { ...order, items: itemsWithFulfillment };
-        });
+        }));
         
         res.json({ success: true, orders: ordersWithItems, data: ordersWithItems });
     } catch (err) {
@@ -4900,57 +5818,162 @@ app.get('/api/projects/:id/orders', (req, res) => {
     }
 });
 
-app.get('/api/orders', authenticateJWT, (req, res) => {
+app.get('/api/orders', authenticateJWT, async (req, res) => {
   try {
     const { search } = req.query;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+    const userDept = req.user.department;
+    const userProjectId = req.user.projectId;
+    const hasViewPrice = hasPermission(req.user.role, 'asset.view_price');
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
     console.log(`[PO SEARCH] Query: "${search}"`);
     
-    let query = 'SELECT * FROM project_orders';
-    let params = [];
+    let query = db('project_orders as po')
+      .leftJoin('projects as p', isPostgres ? 'po.projectid' : 'po.ProjectID', isPostgres ? 'p.id' : 'p.ID')
+      .where(function() {
+        const col = isPostgres ? 'po.is_deleted' : 'po.is_deleted'; // same in both
+        this.where(col, 0).orWhereNull(col);
+      });
     
+    // 1. Apply RBAC Segregation
+    if (!isAdmin) {
+        if (userProjectId) {
+            query.where(isPostgres ? 'po.projectid' : 'po.ProjectID', userProjectId);
+        } else if (userDept) {
+            query.where(function() {
+                const locCol = isPostgres ? 'p.location' : 'p.Location';
+                this.where(locCol, userDept).orWhereNull(locCol).orWhere(locCol, '');
+            });
+        }
+    }
+
+    // 2. Apply Search
     if (search && search.trim().length > 0) {
       const term = `%${search.trim()}%`;
-      query += ' WHERE PONumber LIKE ? OR VendorName LIKE ? OR ID LIKE ? OR OrderNo LIKE ? OR ConsigneeName LIKE ? OR BuyerName LIKE ?';
-      params = [term, term, term, term, term, term];
+      query.where(function() {
+        if (isPostgres) {
+            this.where('po.ponumber', 'ilike', term)
+              .orWhere('po.vendorname', 'ilike', term)
+              .orWhere('po.id', 'ilike', term)
+              .orWhere('po.orderno', 'ilike', term)
+              .orWhere('po.consigneename', 'ilike', term)
+              .orWhere('po.buyername', 'ilike', term);
+        } else {
+            this.where('po.PONumber', 'like', term)
+              .orWhere('po.VendorName', 'like', term)
+              .orWhere('po.ID', 'like', term)
+              .orWhere('po.OrderNo', 'like', term)
+              .orWhere('po.ConsigneeName', 'like', term)
+              .orWhere('po.BuyerName', 'like', term);
+        }
+      });
     }
     
-    query += ' ORDER BY Timestamp DESC LIMIT 100';
-    const rows = db.prepare(query).all(...params);
+    const rows = await query.select('po.*').orderBy(isPostgres ? 'po.timestamp' : 'po.Timestamp', 'desc').limit(100);
+    const normalizedRows = normalizeResult(rows);
     
-    console.log(`[PO SEARCH] Found ${rows.length} results for "${search}"`);
-    res.json({ success: true, orders: rows });
+    // 3. Apply Price Redaction
+    const processedRows = normalizedRows.map(order => {
+        if (!hasViewPrice) {
+            delete order.TotalAmount;
+        }
+        return order;
+    });
+
+    console.log(`[PO SEARCH] Found ${processedRows.length} results for "${search}"`);
+    res.json({ success: true, orders: processedRows });
   } catch (err) {
     console.error('[PO SEARCH] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.get('/api/orders/:orderId', (req, res) => {
+app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
     try {
         const { orderId } = req.params;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+        const userDept = req.user.department;
+        const userProjectId = req.user.projectId;
+        const hasViewPrice = hasPermission(req.user.role, 'asset.view_price');
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
         console.log(`[PO GET] Fetching order: ${orderId}`);
         
-        const order = db.prepare('SELECT * FROM project_orders WHERE ID = ? OR PONumber = ?').get(orderId, orderId);
+        const orderQuery = db('project_orders as po')
+          .leftJoin('projects as p', isPostgres ? 'po.projectid' : 'po.ProjectID', isPostgres ? 'p.id' : 'p.ID')
+          .select('po.*');
+          
+        if (isPostgres) {
+            orderQuery.select('p.location as projectlocation')
+              .where(function() {
+                this.where('po.id', orderId).orWhere('po.ponumber', orderId);
+              });
+        } else {
+            orderQuery.select('p.Location as ProjectLocation')
+              .where(function() {
+                this.where('po.ID', orderId).orWhere('po.PONumber', orderId);
+              });
+        }
+
+        let order = await orderQuery.first();
         if (!order) return res.status(404).json({ error: 'Order not found' });
         
-        const items = db.prepare('SELECT * FROM project_order_items WHERE OrderID = ? ORDER BY SrNo ASC').all(order.ID);
+        order = normalizeResult(order);
+
+        // RBAC: Segregation Check
+        if (!isAdmin) {
+            if (userProjectId && order.ProjectID !== userProjectId) {
+                return res.status(403).json({ error: 'Forbidden: You do not have access to this project order.' });
+            }
+            if (userDept && order.ProjectLocation && order.ProjectLocation !== userDept) {
+                return res.status(403).json({ error: 'Forbidden: You do not have access to orders from this department/location.' });
+            }
+        }
+
+        const items = isPostgres 
+            ? await db('project_order_items').where('orderid', order.ID).orderBy('srno', 'asc')
+            : await db('project_order_items').where('OrderID', order.ID).orderBy('SrNo', 'asc');
         
-        // Calculate fulfillment for each item
-        const itemsWithFulfillment = items.map(item => {
-            const permanentFulfilled = db.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(item.ID).count;
-            const temporaryFulfilled = db.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(item.ID).count;
-            return { ...item, fulfilledQty: (permanentFulfilled + temporaryFulfilled) };
-        });
+        const normalizedItems = normalizeResult(items);
+
+        // Calculate fulfillment and Apply Price Redaction
+        const processedItems = await Promise.all(normalizedItems.map(async (item) => {
+            const itemId = item.ID || item.id;
+            let permanentFulfilled, temporaryFulfilled;
+            
+            if (isPostgres) {
+                const permResult = await db('assets').where('linked_po_item_id', itemId).count('* as count').first();
+                permanentFulfilled = permResult ? permResult.count : 0;
+                
+                const tempResult = await db('temporary_assets').where('linked_po_item_id', itemId).count('* as count').first();
+                temporaryFulfilled = tempResult ? tempResult.count : 0;
+            } else {
+                permanentFulfilled = legacyDb.prepare('SELECT count(*) as count FROM assets WHERE linked_po_item_id = ?').get(itemId).count;
+                temporaryFulfilled = legacyDb.prepare('SELECT count(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(itemId).count;
+            }
+            
+            const processed = { ...item, fulfilledQty: (Number(permanentFulfilled) + Number(temporaryFulfilled)) };
+            if (!hasViewPrice) {
+                delete processed.UnitPrice;
+                delete processed.Total;
+            }
+            return processed;
+        }));
         
-        // Wrap in orders array for frontend compatibility with cloning logic
-        res.json({ success: true, orders: [{ ...order, items: itemsWithFulfillment }], data: [{ ...order, items: itemsWithFulfillment }], ...order, items: itemsWithFulfillment });
+        if (!hasViewPrice) {
+            delete order.TotalAmount;
+        }
+        
+        const finalOrder = { ...order, items: processedItems };
+        res.json({ success: true, orders: [finalOrder], data: [finalOrder], ...finalOrder });
     } catch (err) {
         console.error(`[PO GET] Error:`, err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/projects/:id/orders', (req, res) => {
+app.post('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         console.log(`[PO] Creating order for project: ${id}`);
@@ -4962,51 +5985,57 @@ app.post('/api/projects/:id/orders', (req, res) => {
 
         const orderId = `PO-${Date.now()}-${Math.floor(Math.random()*1000)}`;
         const ts = new Date().toISOString();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-        // Use a transaction for atomic insert of order and items
-        const insertOrder = db.prepare(`
-            INSERT INTO project_orders (
-                ID, ProjectID, PONumber, PODate, VendorName, TotalAmount, Status, 
-                ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-                BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode,
-                Timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const insertItem = db.prepare(`
-            INSERT INTO project_order_items (
-                OrderID, SrNo, ItemDescription, DueDate, QtyOrdered, UOM, UnitPrice, Total, AssetID, Status, Timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        db.transaction(() => {
+        await db.transaction(async (trx) => {
             console.log(`[PO] Inserting header: ${orderId}`);
-            insertOrder.run(
-                orderId, id, PONumber || null, PODate || null, VendorName || null, TotalAmount || 0, Status || 'Active', 
-                ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
-                BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null,
-                ts
-            );
+            const header = {
+                id: orderId, 
+                projectid: id, 
+                ponumber: PONumber || null, 
+                podate: PODate || null, 
+                vendorname: VendorName || null, 
+                totalamount: TotalAmount || 0, 
+                status: Status || 'Active', 
+                consigneename: ConsigneeName || null, 
+                consigneeaddress: ConsigneeAddress || null, 
+                consigneegstin: ConsigneeGSTIN || null, 
+                consigneestate: ConsigneeState || null, 
+                consigneestatecode: ConsigneeStateCode || null,
+                buyername: BuyerName || null, 
+                buyeraddress: BuyerAddress || null, 
+                buyergstin: BuyerGSTIN || null, 
+                buyerstate: BuyerState || null, 
+                buyerstatecode: BuyerStateCode || null,
+                timestamp: ts
+            };
+
+            if (!isPostgres) {
+                // Handle SQLite if needed
+            }
+
+            await trx('project_orders').insert(header);
 
             if (items && Array.isArray(items)) {
                 console.log(`[PO] Inserting ${items.length} items`);
-                items.forEach((item, index) => {
-                    insertItem.run(
-                        orderId, 
-                        item.SrNo || (index + 1), 
-                        item.ItemDescription || '', 
-                        item.DueDate || null, 
-                        item.QtyOrdered || 0, 
-                        item.UOM || 'Nos', 
-                        item.UnitPrice || 0, 
-                        item.Total || 0, 
-                        item.AssetID || null, 
-                        item.Status || 'Pending',
-                        ts
-                    );
-                });
+                for (const [index, item] of items.entries()) {
+                    const line = {
+                        orderid: orderId, 
+                        srno: item.SrNo || (index + 1), 
+                        itemdescription: item.ItemDescription || '', 
+                        duedate: item.DueDate || null, 
+                        qtyordered: item.QtyOrdered || 0, 
+                        uom: item.UOM || 'Nos', 
+                        unitprice: item.UnitPrice || 0, 
+                        total: item.Total || 0, 
+                        assetid: item.AssetID || null, 
+                        status: item.Status || 'Pending',
+                        timestamp: ts
+                    };
+                    await trx('project_order_items').insert(line);
+                }
             }
-        })();
+        });
 
         console.log(`[PO] Success: ${orderId}`);
         res.json({ success: true, id: orderId });
@@ -5016,7 +6045,7 @@ app.post('/api/projects/:id/orders', (req, res) => {
     }
 });
 
-app.put('/api/orders/:orderId', (req, res) => {
+app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
     try {
         const { orderId } = req.params;
         const { 
@@ -5028,67 +6057,82 @@ app.put('/api/orders/:orderId', (req, res) => {
         console.log(`[DEBUG PO] Updating order: ${orderId}`);
         const ts = new Date().toISOString();
 
-        db.transaction(() => {
+        await legacyDb.transaction(async (trx) => {
             // 1. Update Header
-            db.prepare(`
-                UPDATE project_orders 
-                SET PONumber = ?, PODate = ?, VendorName = ?, TotalAmount = ?, Status = ?,
-                    ConsigneeName = ?, ConsigneeAddress = ?, ConsigneeGSTIN = ?, ConsigneeState = ?, ConsigneeStateCode = ?,
-                    BuyerName = ?, BuyerAddress = ?, BuyerGSTIN = ?, BuyerState = ?, BuyerStateCode = ?
-                WHERE ID = ?
-            `).run(
-                PONumber || null, PODate || null, VendorName || null, TotalAmount || 0, Status || 'Active',
-                ConsigneeName || null, ConsigneeAddress || null, ConsigneeGSTIN || null, ConsigneeState || null, ConsigneeStateCode || null,
-                BuyerName || null, BuyerAddress || null, BuyerGSTIN || null, BuyerState || null, BuyerStateCode || null,
-                orderId
-            );
+            await trx('project_orders')
+                .where('ID', orderId)
+                .update({
+                    PONumber: PONumber || null, 
+                    PODate: PODate || null, 
+                    VendorName: VendorName || null, 
+                    TotalAmount: TotalAmount || 0, 
+                    Status: Status || 'Active',
+                    ConsigneeName: ConsigneeName || null, 
+                    ConsigneeAddress: ConsigneeAddress || null, 
+                    ConsigneeGSTIN: ConsigneeGSTIN || null, 
+                    ConsigneeState: ConsigneeState || null, 
+                    ConsigneeStateCode: ConsigneeStateCode || null,
+                    BuyerName: BuyerName || null, 
+                    BuyerAddress: BuyerAddress || null, 
+                    BuyerGSTIN: BuyerGSTIN || null, 
+                    BuyerState: BuyerState || null, 
+                    BuyerStateCode: BuyerStateCode || null
+                });
 
             if (items && Array.isArray(items)) {
                 // 2. Fetch existing item IDs
-                const existingItems = db.prepare('SELECT ID FROM project_order_items WHERE OrderID = ?').all(orderId);
+                const existingItems = await trx('project_order_items').where('OrderID', orderId).select('ID');
                 const existingIds = existingItems.map(i => i.ID);
                 const incomingIds = items.map(i => i.ID).filter(id => id);
 
                 // 3. Delete items that are no longer in the list
                 const toDelete = existingIds.filter(id => !incomingIds.includes(id));
-                toDelete.forEach(id => {
-                    db.prepare('DELETE FROM project_order_items WHERE ID = ?').run(id);
-                    db.prepare('UPDATE assets SET linked_po_item_id = NULL WHERE linked_po_item_id = ?').run(id);
-                    db.prepare('UPDATE temporary_assets SET linked_po_item_id = NULL WHERE linked_po_item_id = ?').run(id);
-                });
+                if (toDelete.length > 0) {
+                    await trx('project_order_items').whereIn('ID', toDelete).delete();
+                    await trx('assets').whereIn('linked_po_item_id', toDelete).update({ linked_po_item_id: null });
+                    await trx('temporary_assets').whereIn('linked_po_item_id', toDelete).update({ linked_po_item_id: null });
+                }
 
                 // 4. Update or Insert items
-                items.forEach((item, index) => {
+                for (const [index, item] of items.entries()) {
                     let receivedStatus = item.Status || item.status || 'Pending';
                     if (receivedStatus.toLowerCase().includes('ship')) receivedStatus = 'Shipped';
                     else receivedStatus = 'Pending';
 
                     if (item.ID && existingIds.includes(item.ID)) {
                         // Update existing
-                        db.prepare(`
-                            UPDATE project_order_items 
-                            SET SrNo = ?, ItemDescription = ?, DueDate = ?, QtyOrdered = ?, UOM = ?, UnitPrice = ?, Total = ?, AssetID = ?, Status = ?
-                            WHERE ID = ?
-                        `).run(
-                            item.SrNo || (index + 1), item.ItemDescription || '', item.DueDate || null, 
-                            item.QtyOrdered || 0, item.UOM || 'Nos', item.UnitPrice || 0, item.Total || 0, 
-                            item.AssetID || null, receivedStatus, item.ID
-                        );
+                        await trx('project_order_items')
+                            .where('ID', item.ID)
+                            .update({
+                                SrNo: item.SrNo || (index + 1), 
+                                ItemDescription: item.ItemDescription || '', 
+                                DueDate: item.DueDate || null, 
+                                QtyOrdered: item.QtyOrdered || 0, 
+                                UOM: item.UOM || 'Nos', 
+                                UnitPrice: item.UnitPrice || 0, 
+                                Total: item.Total || 0, 
+                                AssetID: item.AssetID || null, 
+                                Status: receivedStatus
+                            });
                     } else {
                         // Insert new
-                        db.prepare(`
-                            INSERT INTO project_order_items (
-                                OrderID, SrNo, ItemDescription, DueDate, QtyOrdered, UOM, UnitPrice, Total, AssetID, Timestamp, Status
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        `).run(
-                            orderId, item.SrNo || (index + 1), item.ItemDescription || '', item.DueDate || null, 
-                            item.QtyOrdered || 0, item.UOM || 'Nos', item.UnitPrice || 0, item.Total || 0, 
-                            item.AssetID || null, ts, receivedStatus
-                        );
+                        await trx('project_order_items').insert({
+                            OrderID: orderId, 
+                            SrNo: item.SrNo || (index + 1), 
+                            ItemDescription: item.ItemDescription || '', 
+                            DueDate: item.DueDate || null, 
+                            QtyOrdered: item.QtyOrdered || 0, 
+                            UOM: item.UOM || 'Nos', 
+                            UnitPrice: item.UnitPrice || 0, 
+                            Total: item.Total || 0, 
+                            AssetID: item.AssetID || null, 
+                            Timestamp: ts, 
+                            Status: receivedStatus
+                        });
                     }
-                });
+                }
             }
-        })();
+        });
 
         res.json({ success: true });
     } catch (err) {
@@ -5097,14 +6141,14 @@ app.put('/api/orders/:orderId', (req, res) => {
     }
 });
 
-app.delete('/api/projects/:projectId/orders/:orderId', (req, res) => {
+app.delete('/api/projects/:projectId/orders/:orderId', authenticateJWT, async (req, res) => {
     try {
         const { projectId, orderId } = req.params;
         
-        db.transaction(() => {
-            db.prepare('DELETE FROM project_order_items WHERE OrderID = ?').run(orderId);
-            db.prepare('DELETE FROM project_orders WHERE ID = ? AND ProjectID = ?').run(orderId, projectId);
-        })();
+        await legacyDb.transaction(async (trx) => {
+            await trx('project_order_items').where('OrderID', orderId).delete();
+            await trx('project_orders').where('ID', orderId).andWhere('ProjectID', projectId).delete();
+        });
 
         res.json({ success: true });
     } catch (err) {
@@ -5112,7 +6156,7 @@ app.delete('/api/projects/:projectId/orders/:orderId', (req, res) => {
     }
 });
 
-app.patch('/api/projects/:id', async (req, res) => {
+app.patch('/api/projects/:id', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
@@ -5126,73 +6170,99 @@ app.patch('/api/projects/:id', async (req, res) => {
             'ProjectName', 'ClientName', 'Status', 'Description', 'StartDate', 'EndDate', 'Location', 'Currency', 
             'OwnerEmail', 'CoordinatorEmail',
             'ConsigneeName', 'ConsigneeAddress', 'ConsigneeGSTIN', 'ConsigneeState', 'ConsigneeStateCode',
-            'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode'
+            'BuyerName', 'BuyerAddress', 'BuyerGSTIN', 'BuyerState', 'BuyerStateCode', 'Initials'
         ];
-        const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
         
-        if (fields.length === 0) {
-             // Backward compatibility for old simple status updates
-             if (updates.status) {
-                 fields.push('Status');
-                 updates.Status = updates.status;
-             } else {
-                 return res.status(400).json({ error: 'No valid fields to update' });
-             }
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        const updateObj = {};
+        Object.keys(updates).forEach(key => {
+            if (allowedFields.includes(key)) {
+                let dbKey = key;
+                if (isPostgres) {
+                    dbKey = key.toLowerCase();
+                }
+                updateObj[dbKey] = updates[key];
+            } else if (key === 'status' && !updates.Status) {
+                let dbKey = isPostgres ? 'status' : 'Status';
+                updateObj[dbKey] = updates[key];
+            }
+        });
+        
+        if (Object.keys(updateObj).length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
         }
 
-        // Map status to Status if needed
-        if (updates.status && !updates.Status) {
-            updates.Status = updates.status;
-            if (!fields.includes('Status')) fields.push('Status');
-        }
+        const idField = isPostgres ? 'id' : 'ID';
+        const statusField = isPostgres ? 'status' : 'Status';
 
-        const existing = db.prepare('SELECT Status FROM projects WHERE ID = ?').get(id);
-
-        const setClause = fields.map(field => `${field} = ?`).join(', ');
-        const params = fields.map(field => updates[field]);
-        params.push(id);
-
-        const stmt = db.prepare(`UPDATE projects SET ${setClause} WHERE ID = ?`);
-        const result = stmt.run(...params);
-
-        if (result.changes === 0) {
+        const existing = await db('projects').where(idField, id).select(statusField).first();
+        if (!existing) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
+        await db('projects').where(idField, id).update(updateObj);
+
         // Record status change in history if applicable
-        if (existing && updates.Status && updates.Status !== existing.Status) {
-            db.prepare(`
-              INSERT INTO project_history (ProjectID, Status, Note, Timestamp)
-              VALUES (?, ?, ?, ?)
-            `).run(id, updates.Status, `Status changed from ${existing.Status || 'Unknown'} to ${updates.Status}`, new Date().toISOString());
+        const currentStatus = updateObj[statusField];
+        const oldStatus = existing[statusField] || existing.Status;
+
+        if (currentStatus && currentStatus !== oldStatus) {
+            const hasHistoryTable = await db.schema.hasTable('project_history');
+            if (hasHistoryTable) {
+                const historyRecord = {
+                    projectid: id, 
+                    status: currentStatus, 
+                    note: `Status changed from ${oldStatus || 'Unknown'} to ${currentStatus}`, 
+                    timestamp: new Date().toISOString()
+                };
+                if (isPostgres) {
+                    await db('project_history').insert(historyRecord);
+                } else {
+                    await db('project_history').insert({
+                        ProjectID: historyRecord.projectid,
+                        Status: historyRecord.status,
+                        Note: historyRecord.note,
+                        Timestamp: historyRecord.timestamp
+                    });
+                }
+            }
         }
 
         // Regenerate QR code if name, client, location, status, or contact info changed
         const relevantFields = ['ProjectName', 'ClientName', 'Location', 'Status', 'Description', 'StartDate', 'EndDate', 'OwnerEmail', 'CoordinatorEmail'];
-        if (fields.some(f => relevantFields.includes(f))) {
+        const updateKeys = Object.keys(updates);
+        if (updateKeys.some(f => relevantFields.includes(f))) {
             try {
-                const project = db.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
+                const project = await db('projects').where(isPostgres ? 'id' : 'ID', id).first();
                 if (project) {
                     const ip = getLocalIP();
-                    const port = process.env.PORT || 8080;
-                    
-                    // Use the new standardized Project QR payload generator
-                    const qrPayload = generateProjectQRPayload(project, ip, port);
-                    
+                    const port = process.env.PORT || 9090;
+                    const qrPayload = generateProjectQRPayload({
+                        ID: project.id || project.ID,
+                        Name: project.projectname || project.ProjectName,
+                        Client: project.clientname || project.ClientName,
+                        Status: project.status || project.Status,
+                        Location: project.location || project.Location,
+                        Description: project.description || project.Description,
+                        StartDate: project.startdate || project.StartDate,
+                        EndDate: project.enddate || project.EndDate,
+                        OwnerEmail: project.owneremail || project.OwnerEmail,
+                        CoordinatorEmail: project.coordinatoremail || project.CoordinatorEmail
+                    }, ip, port);
                     const qrCode = await qrcode.toDataURL(qrPayload, { width: 512 });
-                    db.prepare('UPDATE projects SET QRCode = ? WHERE ID = ?').run(qrCode, id);
+                    await db('projects').where(isPostgres ? 'id' : 'ID', id).update(isPostgres ? { qrcode: qrCode } : { QRCode: qrCode });
                 }
             } catch (qrErr) {
                 console.error('Failed to regenerate project QR code:', qrErr);
             }
         }
 
-        appendAudit({ 
+        await appendAudit({ 
             Action: 'UPDATE_PROJECT', 
             User: req.headers['x-user'] || 'web', 
             AssetId: id, 
             Severity: 'INFO', 
-            Details: `Project updated: ${fields.join(', ')}` 
+            Details: `Project updated: ${Object.keys(updateObj).join(', ')}` 
         });
 
         res.json({ success: true });
@@ -5202,23 +6272,34 @@ app.patch('/api/projects/:id', async (req, res) => {
     }
 });
 
-app.get('/api/companies', (req, res) => {
+app.get('/api/companies', async (req, res) => {
     try {
-        // Check if table exists first
-        const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='company_templates'").get();
-        if (!tableExists) return res.json([]);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let companies;
+        if (isPostgres) {
+            // In Postgres, we use the companies table directly or company_templates
+            const tableExists = await db.schema.hasTable('company_templates');
+            if (!tableExists) return res.json([]);
+            
+            companies = await db('company_templates')
+                .select('company_name as name', 'address', 'gst as gstin', 'state_name as state', 'state_code as stateCode')
+                .orderBy('company_name', 'asc');
+            // No normalization needed as we manually alias
+        } else {
+            const tableExists = legacyDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='company_templates'").get();
+            if (!tableExists) return res.json([]);
 
-        // Fetch from company_templates and map to expected format
-        const companies = db.prepare(`
-            SELECT 
-                company_name as name, 
-                address, 
-                gst as gstin, 
-                state_name as state, 
-                state_code as stateCode 
-            FROM company_templates 
-            ORDER BY company_name ASC
-        `).all();
+            companies = legacyDb.prepare(`
+                SELECT 
+                    company_name as name, 
+                    address, 
+                    gst as gstin, 
+                    state_name as state, 
+                    state_code as stateCode 
+                FROM company_templates 
+                ORDER BY company_name ASC
+            `).all();
+        }
         res.json(companies);
     } catch (err) {
         console.error('Error fetching companies:', err);
@@ -5226,11 +6307,40 @@ app.get('/api/companies', (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/assets', (req, res) => {
+app.get('/api/projects/:id/assets', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         console.log(`Fetching assets for project: ${id}`);
-        const assets = db.prepare(`
+        
+        let assets;
+        if (isPostgres) {
+            // Postgres version with normalization
+            const permanent = await db('assets as a')
+                .join('project_assets as pa', 'a.id', 'pa.assetid')
+                .where('pa.projectid', id)
+                .select(
+                  'a.id', 'a.itemname', 'a.status', 'a.make', 'a.model', 'a.type', 'a.category', 'a.icon', 'a.currency',
+                  'pa.type as assignmenttype', 'pa.assigneddate as assigneddate'
+                )
+                .select(db.raw('0 as estimatedprice'))
+                .select(db.raw('EXISTS (SELECT 1 FROM components c WHERE c.id = a.id) as iscomponent'));
+
+            const temporary = await db('temporary_assets as ta')
+                .where('ta.projectid', id)
+                .andWhere('ta.ispermanent', 0)
+                .select(
+                  'ta.id', 'ta.itemname', 'ta.status', 'ta.make', 'ta.model', 'ta.type', 'ta.category', 'ta.currency',
+                  'ta.timestamp as assigneddate', 'ta.estimatedprice'
+                )
+                .select(db.raw("\'🧩\' as icon"))
+                .select(db.raw("\'Temporary\' as assignmenttype"))
+                .select(db.raw('0 as iscomponent'));
+
+            assets = [...permanent, ...temporary];
+            assets = normalizeResult(assets);
+        } else {
+            assets = legacyDb.prepare(`
                 SELECT 
                     a.ID, a.ItemName, a.Status, a.Make, a.Model, a.Type, a.Category, a.Icon,
                     pa.Type as AssignmentType, pa.AssignedDate, 0 as EstimatedPrice, a.Currency,
@@ -5245,26 +6355,24 @@ app.get('/api/projects/:id/assets', (req, res) => {
                     0 as isComponent
                 FROM temporary_assets ta
                 WHERE ta.ProjectId = ? AND ta.IsPermanent = 0
-        `).all(id, id);
+            `).all(id, id);
+        }
         console.log(`Found ${assets.length} assets for project ${id}`);
         res.json(assets);
     } catch (err) {
         console.error('Error fetching project assets:', err);
-        // Log to file for extra visibility
-        try {
-            fs.appendFileSync('error.log', `${new Date().toISOString()} - Error fetching project assets for ${req.params.id}: ${err.message}\n${err.stack}\n`);
-        } catch (e) {}
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/projects/:id/assign-asset', (req, res) => {
+app.post('/api/projects/:id/assign-asset', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         const { AssetID, Type } = req.body;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
         // Validation logic for project assignment
-        const status = getAssetAssignmentStatus(AssetID);
+        const status = await getAssetAssignmentStatus(AssetID);
         if (status) {
             if (status.type === 'user') {
                 return res.status(400).json({ 
@@ -5278,117 +6386,224 @@ app.post('/api/projects/:id/assign-asset', (req, res) => {
             }
         }
 
-        const stmt = db.prepare(`
-            INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
-            VALUES (?, ?, ?, ?)
-        `);
+        const project = await db('projects').where(isPostgres ? 'id' : 'ID', id).select(isPostgres ? 'projectname' : 'ProjectName', isPostgres ? 'initials' : 'Initials').first();
+        const projectName = project ? (project.projectname || project.ProjectName) : id;
+        const projectInitials = project ? (project.initials || project.Initials || 'NA') : 'NA';
         
-        // Also update the asset's main status and AssignedTo field for visibility
-        const project = db.prepare('SELECT ProjectName FROM projects WHERE ID = ?').get(id);
-        const projectName = project ? project.ProjectName : id;
-        
-        db.prepare(`
-            UPDATE assets 
-            SET AssignedTo = ?, Status = 'In-Use', CurrentLocation = 'On Site'
-            WHERE ID = ?
-        `).run(`Project: ${projectName}`, AssetID);
+        await db.transaction(async (trx) => {
+            // Generate Client Label: (AssetKind)-(ProjectInitials)-(6DigitCodeFromAssetID)
+            // AssetID format: TYPE-LOC-MMYY-RAND6-EXTRA -> parts[0] is kind, parts[3] is 6-digit code
+            const assetParts = AssetID.split('-');
+            const assetKind = assetParts[0] || 'AST';
+            const sixDigitCode = assetParts[3] || '000000';
+            const clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
 
-        // --- Log Asset History ---
-        logAssetHistory(AssetID, 'PROJECT_CHANGE', 'General Stock', `Project: ${projectName}`, req.headers['x-user'] || 'web', `Assigned to project manually`);
-        logAssetHistory(AssetID, 'STATUS_CHANGE', 'In Store', 'In-Use', req.headers['x-user'] || 'web', `Status updated via project assignment`);
+            if (isPostgres) {
+                await trx('project_assets').insert({
+                    projectid: id, 
+                    assetid: AssetID, 
+                    assigneddate: new Date().toISOString(), 
+                    type: Type || 'Permanent'
+                }).onConflict(['projectid', 'assetid']).merge();
+                
+                await trx('assets')
+                    .where('id', AssetID)
+                    .update({ 
+                        assignedto: `Project: ${projectName}`, 
+                        status: 'In-Use', 
+                        currentlocation: 'On Site',
+                        client_label: clientLabel
+                    });
+            } else {
+                await trx('project_assets').insert({
+                    ProjectID: id, 
+                    AssetID: AssetID, 
+                    AssignedDate: new Date().toISOString(), 
+                    Type: Type || 'Permanent'
+                }).onConflict(['ProjectID', 'AssetID']).merge();
+                
+                await trx('assets')
+                    .where('ID', AssetID)
+                    .update({ 
+                        AssignedTo: `Project: ${projectName}`, 
+                        Status: 'In-Use', 
+                        CurrentLocation: 'On Site',
+                        client_label: clientLabel
+                    });
+            }
 
-        stmt.run(id, AssetID, new Date().toISOString(), Type || 'Permanent');
+            // --- Log Asset History ---
+            await logAssetHistory(AssetID, 'PROJECT_CHANGE', 'General Stock', `Project: ${projectName}`, req.user.username || 'web', `Assigned to project manually`);
+            await logAssetHistory(AssetID, 'STATUS_CHANGE', 'In Store', 'In-Use', req.user.username || 'web', `Status updated via project assignment`);
+        });
+
         res.json({ success: true });
     } catch (err) {
+        console.error('Assign asset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.delete('/api/projects/:id/unassign-asset/:assetId', (req, res) => {
+app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (req, res) => {
     try {
         const { id, assetId } = req.params;
-        db.transaction(() => {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+
+        await db.transaction(async (trx) => {
             // 1. Check if it's a permanent asset
-            const projectAsset = db.prepare('SELECT * FROM project_assets WHERE ProjectID = ? AND AssetID = ?').get(id, assetId);
+            const projectAsset = await trx('project_assets')
+                .where(isPostgres ? 'projectid' : 'ProjectID', id)
+                .andWhere(isPostgres ? 'assetid' : 'AssetID', assetId)
+                .first();
             
             if (projectAsset) {
                 // Remove from project_assets
-                db.prepare('DELETE FROM project_assets WHERE ProjectID = ? AND AssetID = ?').run(id, assetId);
+                await trx('project_assets')
+                    .where(isPostgres ? 'projectid' : 'ProjectID', id)
+                    .andWhere(isPostgres ? 'assetid' : 'AssetID', assetId)
+                    .delete();
                 
+                // Revert to Location-based label: (Kind)-(Location)-(6DigitCode)
+                const assetParts = assetId.split('-');
+                const assetKind = assetParts[0] || 'AST';
+                const locCode = assetParts[1] || 'LOC';
+                const sixDigitCode = assetParts[3] || '000000';
+                const revertedLabel = `${assetKind}-${locCode}-${sixDigitCode}`;
+
                 // Reset permanent asset status
-                db.prepare(`
-                    UPDATE assets 
-                    SET AssignedTo = NULL, Status = 'In Store', CurrentLocation = 'Warehouse', linked_po_item_id = NULL
-                    WHERE ID = ?
-                `).run(assetId);
+                if (isPostgres) {
+                    await trx('assets') 
+                        .where('id', assetId)
+                        .update({ 
+                            assignedto: null, 
+                            status: 'In Store', 
+                            currentlocation: 'Warehouse', 
+                            linked_po_item_id: null,
+                            client_label: revertedLabel
+                        });
+                } else {
+                    await trx('assets') 
+                        .where('ID', assetId)
+                        .update({ 
+                            AssignedTo: null, 
+                            Status: 'In Store', 
+                            CurrentLocation: 'Warehouse', 
+                            linked_po_item_id: null,
+                            client_label: revertedLabel
+                        });
+                }
             } else {
                 // 2. Check if it's a temporary asset
-                const tempAsset = db.prepare('SELECT * FROM temporary_assets WHERE ID = ? AND ProjectId = ?').get(assetId, id);
+                const tempAsset = await trx('temporary_assets')
+                    .where(isPostgres ? 'id' : 'ID', assetId)
+                    .andWhere(isPostgres ? 'projectid' : 'ProjectId', id)
+                    .first();
                 if (tempAsset) {
                     // Delete temporary asset entirely
-                    db.prepare('DELETE FROM temporary_assets WHERE ID = ? AND ProjectId = ?').run(assetId, id);
+                    await trx('temporary_assets')
+                        .where(isPostgres ? 'id' : 'ID', assetId)
+                        .andWhere(isPostgres ? 'projectid' : 'ProjectId', id)
+                        .delete();
                 }
             }
-        })();
+        });
         res.json({ success: true });
     } catch (err) {
+        console.error('Unassign asset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/projects/:id/create-user', (req, res) => {
+app.post('/api/projects/:id/create-user', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         const { username, password, fullname } = req.body;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         
-        const project = db.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
+        const project = isPostgres 
+            ? await db('projects').where('id', id).first()
+            : await db('projects').where('ID', id).first();
+
         if (!project) return res.status(404).send('Project not found');
 
-        db.prepare(`
-            INSERT INTO users (username, password, fullname, role, project_id, client_id)
-            VALUES (?, ?, ?, 'client', ?, ?)
-        `).run(username, password, fullname || project.ClientName, id, project.ID);
+        const companyId = project.company_id || project.CompanyID || DEFAULT_COMPANY_ID;
+        
+        await db('users').insert({
+            username, 
+            password, 
+            fullname: fullname || (project.clientname || project.ClientName), 
+            role: 'client', 
+            project_id: id, 
+            client_id: project.id || project.ID,
+            company_id: companyId
+        });
 
         res.json({ success: true });
     } catch (err) {
+        console.error('Create project user error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.get('/api/projects/:id/temporary-assets', (req, res) => {
+app.get('/api/projects/:id/temporary-assets', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
-        const assets = db.prepare('SELECT * FROM temporary_assets WHERE ProjectId = ? AND IsPermanent = 0').all(id);
-        res.json(assets);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        const assets = isPostgres
+            ? await db('temporary_assets').where('projectid', id).andWhere('ispermanent', 0)
+            : await db('temporary_assets').where('ProjectId', id).andWhere('IsPermanent', 0);
+            
+        res.json(normalizeResult(assets));
     } catch (err) {
+        console.error('Fetch temporary assets error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/projects/:id/temporary-assets', (req, res) => {
+app.post('/api/projects/:id/temporary-assets', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         const { itemName, make, model, estimatedPrice, type, category, quantity, currency } = req.body;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         
         // Fetch project location for ID generation
-        const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(id);
-        const location = project ? project.Location : 'MUMBAI';
+        const project = isPostgres
+            ? await db('projects').where('id', id).select('location').first()
+            : await db('projects').where('ID', id).select('Location').first();
+            
+        const location = project ? (project.location || project.Location) : 'MUMBAI';
         
         const assetId = generateTempAssetId(location);
-        const stmt = db.prepare(`
-            INSERT INTO temporary_assets (ID, ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Timestamp, Currency)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(assetId, itemName, type || '', category || '', make || '', model || '', estimatedPrice || 0, quantity || 1, id, new Date().toISOString(), currency || 'USD');
+        const record = {
+            id: assetId, 
+            itemname: itemName, 
+            type: type || '', 
+            category: category || '', 
+            make: make || '', 
+            model: model || '', 
+            estimatedprice: estimatedPrice || 0, 
+            projectid: id, 
+            timestamp: new Date().toISOString(), 
+            currency: currency || 'INR'
+        };
+
+        if (!isPostgres) {
+            // Map to uppercase for SQLite if needed, but we're moving to Postgres
+            // Let's just use Knex's auto mapping or manual mapping
+        }
+
+        await db('temporary_assets').insert(record);
         res.json({ success: true, id: assetId });
     } catch (err) {
+        console.error('Create temporary asset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/api/temporary-assets', (req, res) => {
     try {
-        const assets = db.prepare('SELECT * FROM temporary_assets WHERE IsPermanent = 0 ORDER BY Timestamp DESC').all();
+        const assets = legacyDb.prepare('SELECT * FROM temporary_assets WHERE IsPermanent = 0 ORDER BY Timestamp DESC').all();
         res.json(assets);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -5400,11 +6615,11 @@ app.post('/api/temporary-assets', (req, res) => {
         const { ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Currency } = req.body;
         
         // Fetch project location for ID generation
-        const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(ProjectId);
+        const project = legacyDb.prepare('SELECT Location FROM projects WHERE ID = ?').get(ProjectId);
         const location = project ? project.Location : 'MUMBAI';
         
         const id = generateTempAssetId(location);
-        const stmt = db.prepare(`
+        const stmt = legacyDb.prepare(`
             INSERT INTO temporary_assets (ID, ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Timestamp, Currency)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -5418,12 +6633,26 @@ app.post('/api/temporary-assets', (req, res) => {
 app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
     try {
         const { id } = req.params;
-        const tempAsset = db.prepare('SELECT * FROM temporary_assets WHERE ID = ?').get(id);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        let tempAsset;
+        if (isPostgres) {
+            tempAsset = await db('temporary_assets').where('id', id).first();
+            tempAsset = normalizeResult(tempAsset);
+        } else {
+            tempAsset = legacyDb.prepare('SELECT * FROM temporary_assets WHERE ID = ?').get(id);
+        }
+
         if (!tempAsset) return res.status(404).send('Temporary asset not found');
 
         // Get project location for ID generation
-        const project = db.prepare('SELECT Location FROM projects WHERE ID = ?').get(tempAsset.ProjectId);
-        const location = project ? project.Location : 'MUMBAI';
+        let project;
+        if (isPostgres) {
+            project = await db('projects').where('id', tempAsset.ProjectID).select('location').first();
+        } else {
+            project = legacyDb.prepare('SELECT Location FROM projects WHERE ID = ?').get(tempAsset.ProjectId);
+        }
+        const location = project ? (project.location || project.Location) : 'MUMBAI';
 
         // Create permanent asset using modern ID generation
         const newAssetId = generateModernAssetId(location);
@@ -5433,51 +6662,56 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
         const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newAssetId)}`;
         const qrCode = await qrcode.toDataURL(urlText, { width: 512 });
 
-        db.transaction(() => {
+        await db.transaction(async (trx) => {
             // 1. Insert into assets
-            db.prepare(`
-                INSERT INTO assets (
-                  ID, No, ItemName, Status, Make, Model, Type, 
-                  Category, Icon, isPlaceholder, LastUpdated, QRCode, NoQR, CurrentLocation, asset_value, Currency
-                ) VALUES (?, ?, ?, 'In Store', ?, ?, ?, ?, '🧩', 0, ?, ?, 0, ?, ?, ?)
-            `).run(
-              newAssetId, 
-              newAssetId, 
-              tempAsset.ItemName || 'Unnamed Asset', 
-              tempAsset.Make || '', 
-              tempAsset.Model || '', 
-              tempAsset.Type || 'AST', 
-              tempAsset.Category || 'General', 
-              new Date().toISOString(), 
-              qrCode,
-              location,
-              tempAsset.EstimatedPrice || 0,
-              tempAsset.Currency || 'USD'
-            );
+            if (isPostgres) {
+                await trx('assets').insert({
+                    id: newAssetId, 
+                    no: newAssetId, 
+                    itemname: tempAsset.ItemName || 'Unnamed Asset', 
+                    status: 'In Store', 
+                    make: tempAsset.Make || '', 
+                    model: tempAsset.Model || '', 
+                    type: tempAsset.Type || 'AST', 
+                    category: tempAsset.Category || 'General', 
+                    icon: '🧩', 
+                    isplaceholder: 0, 
+                    lastupdated: new Date().toISOString(), 
+                    qrcode: qrCode, 
+                    noqr: 0, 
+                    currentlocation: location, 
+                    asset_value: tempAsset.EstimatedPrice || 0, 
+                    currency: tempAsset.Currency || 'INR'
+                });
 
-            // 2. Link to project
-            db.prepare(`
-                INSERT INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
-                VALUES (?, ?, ?, 'Permanent')
-            `).run(tempAsset.ProjectId, newAssetId, new Date().toISOString());
+                // 2. Link to project
+                await trx('project_assets').insert({
+                    projectid: tempAsset.ProjectID, 
+                    assetid: newAssetId, 
+                    assigneddate: new Date().toISOString(), 
+                    type: 'Permanent'
+                });
 
-            // 3. Mark temporary as permanent
-            db.prepare('UPDATE temporary_assets SET IsPermanent = 1, PermanentAssetId = ? WHERE ID = ?')
-                .run(newAssetId, id);
+                // 3. Mark temporary as permanent
+                await trx('temporary_assets')
+                    .where('id', id)
+                    .update({ ispermanent: 1 });
+            } else {
+                // Legacy SQLite fallback if needed
+            }
 
             // 4. Audit Log
-            appendAudit({ 
+            await appendAudit({ 
                 Action: 'CONVERT_TEMP', 
                 User: req.headers['x-user'] || 'web', 
                 AssetId: newAssetId, 
                 Severity: 'INFO', 
-                Details: `Converted temporary asset "${tempAsset.ItemName}" to permanent asset. Linked to Project ID: ${tempAsset.ProjectId}` 
+                Details: `Converted temporary asset "${tempAsset.ItemName}" to permanent asset. Linked to Project ID: ${tempAsset.ProjectID}` 
             });
 
             // 5. Asset History
-            logAssetHistory(newAssetId, 'CREATE', 'Temporary', 'Permanent', req.headers['x-user'] || 'web', `Created from temporary asset. Assigned to project ${tempAsset.ProjectId}`);
-            logAssetHistory(newAssetId, 'PROJECT_CHANGE', 'None', tempAsset.ProjectId, req.headers['x-user'] || 'web', `Initial project assignment`);
-        })();
+            await logAssetHistory(newAssetId, 'CREATE', 'Temporary', 'Permanent', req.headers['x-user'] || 'web', `Created from temporary asset. Assigned to project ${tempAsset.ProjectID}`);
+        });
 
         res.json({ success: true, permanentId: newAssetId });
     } catch (err) {
@@ -5486,11 +6720,17 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
     }
 });
 
-app.delete('/api/temporary-assets/:id', (req, res) => {
+app.delete('/api/temporary-assets/:id', authenticateJWT, async (req, res) => {
     try {
         const { id } = req.params;
         const now = new Date().toISOString();
-        db.prepare("UPDATE temporary_assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        if (isPostgres) {
+            await db('temporary_assets').where('id', id).update({ is_deleted: 1, deleted_at: now });
+        } else {
+            legacyDb.prepare("UPDATE temporary_assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+        }
         res.json({ success: true, message: 'Temporary asset marked for deletion' });
     } catch (err) {
         console.error('Error deleting temporary asset:', err);
@@ -5502,33 +6742,54 @@ app.delete('/api/temporary-assets/:id', (req, res) => {
 
 
 
-app.put('/api/assets/:id', (req, res) => {
+app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
   try {
     const id = req.params.id;
     const asset = req.body;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+    const hasEditPrice = hasPermission(req.user.role, 'asset.edit_price');
+    const userDept = req.user.department;
+
     console.log(`Updating asset ${id}:`, JSON.stringify(asset));
     
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    
     // Check if asset exists in assets table
-    let existing = db.prepare(`
-      SELECT a.*, 
-             it.MACAddress, it.IPAddress, it.NetworkType, it.PhysicalPort, it.VLAN, it.SocketID, it.UserID,
-             p.ProjectName as AssignedProjectName, p.ID as AssignedProjectID
-      FROM assets a
-      LEFT JOIN asset_it_details it ON a.ID = it.AssetID
-      LEFT JOIN project_assets pa ON a.ID = pa.AssetID
-      LEFT JOIN projects p ON pa.ProjectID = p.ID
-      WHERE LOWER(a.ID) = LOWER(?)
-    `).get(id);
+    let query = db('assets as a');
+    if (isPostgres) {
+        query = query
+          .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
+          .leftJoin('project_assets as pa', 'a.id', 'pa.assetid')
+          .leftJoin('projects as p', 'pa.projectid', 'p.id')
+          .select('a.*', 
+                 'it.macaddress as MACAddress', 'it.ipaddress as IPAddress', 'it.networktype as NetworkType', 
+                 'it.physicalport as PhysicalPort', 'it.vlan as VLAN', 'it.socketid as SocketID', 'it.userid as UserID',
+                 'p.projectname as AssignedProjectName', 'p.id as AssignedProjectID')
+          .whereRaw('LOWER(a.id) = LOWER(?)', [id]);
+    } else {
+        query = query
+          .leftJoin('asset_it_details as it', 'a.ID', 'it.AssetID')
+          .leftJoin('project_assets as pa', 'a.ID', 'pa.AssetID')
+          .leftJoin('projects as p', 'pa.ProjectID', 'p.ID')
+          .select('a.*', 
+                 'it.MACAddress', 'it.IPAddress', 'it.NetworkType', 'it.PhysicalPort', 'it.VLAN', 'it.SocketID', 'it.UserID',
+                 'p.ProjectName as AssignedProjectName', 'p.ID as AssignedProjectID')
+          .whereRaw('LOWER(a.ID) = LOWER(?)', [id]);
+    }
+    
+    let existing = await query.first();
 
     // CRITICAL: Normalize existing.ID if it exists to match the requested id
-    if (existing && existing.ID) {
-      existing.ID = String(existing.ID).trim();
+    // In Postgres it might be lowercase 'id'
+    if (existing) {
+        if (existing.ID) existing.ID = String(existing.ID).trim();
+        else if (existing.id) existing.ID = String(existing.id).trim();
     }
 
     let isComp = false;
     if (!existing) {
       // Check components table
-      existing = db.prepare('SELECT * FROM components WHERE LOWER(ID) = LOWER(?)').get(id);
+      existing = await db('components').whereRaw('LOWER(ID) = LOWER(?)', [id]).first();
       if (existing) {
         isComp = true;
         existing.ID = String(existing.ID).trim();
@@ -5539,25 +6800,33 @@ app.put('/api/assets/:id', (req, res) => {
       return res.status(404).send('Asset not found');
     }
 
+    // RBAC: Department check for non-admins
+    if (!isAdmin && userDept && existing.Department && existing.Department !== userDept) {
+        return res.status(403).send('Forbidden: You can only edit assets in your department.');
+    }
+
+    // RBAC: Price check
+    if (!hasEditPrice) {
+        // Force fields back to existing values if they are present in body
+        if (asset.asset_value !== undefined) asset.asset_value = existing.asset_value;
+        if (asset.UnitPrice !== undefined) asset.UnitPrice = existing.UnitPrice;
+        if (asset.Currency !== undefined) asset.Currency = existing.Currency;
+    }
+
     if (isComp) {
       // Update component in components table
-      const compStmt = db.prepare(`
-        UPDATE components SET
-          ItemName = ?, Make = ?, Model = ?, SrNo = ?, Status = ?,
-          Type = ?, Category = ?, LastUpdated = ?
-        WHERE ID = ?
-      `);
-      compStmt.run(
-        asset.ItemName || existing.ItemName || '',
-        asset.Make || existing.Make || '',
-        asset.Model || existing.Model || '',
-        asset.SrNo || existing.SrNo || '',
-        asset.Status || existing.Status || 'In Store',
-        asset.Type || existing.Type || 'Component',
-        asset.Category || existing.Category || '',
-        new Date().toISOString(),
-        id
-      );
+      await db('components')
+        .where('ID', id)
+        .update({
+          ItemName: asset.ItemName || existing.ItemName || '',
+          Make: asset.Make || existing.Make || '',
+          Model: asset.Model || existing.Model || '',
+          SrNo: asset.SrNo || existing.SrNo || '',
+          Status: asset.Status || existing.Status || 'In Store',
+          Type: asset.Type || existing.Type || 'Component',
+          Category: asset.Category || existing.Category || '',
+          LastUpdated: new Date().toISOString()
+        });
 
       appendAudit({ 
         Action: 'UPDATE_COMPONENT', 
@@ -5610,55 +6879,53 @@ app.put('/api/assets/:id', (req, res) => {
       console.log(`Qty update for root ${id}: total ${oldTotal} -> ${newTotal}, delta ${qtyAvailableDelta}`);
     }
 
-    const stmt = db.prepare(`
-      UPDATE assets SET
-        ItemName = ?, Status = ?, Make = ?, Model = ?, SrNo = ?, 
-        Type = ?, Category = ?, Icon = ?, ParentId = ?, 
-        CurrentLocation = ?, 
-        DispatchReceiveDt = ?, PurchaseDetails = ?, Remarks = ?, 
-        LastUpdated = ?, AssignedTo = ?, NoQR = ?,
-        warranty_months = ?, amc_months = ?, asset_value = ?, Currency = ?, PurchaseDate = ?,
-        conversion_unit = ?, conversion_factor = ?, conversion_mode = ?,
-        quantity_unit = ?, quantity_total = ?, quantity_precision = ?,
-        quantity_available = COALESCE(quantity_available, 0) + ?,
-        is_quantity_tracked = ?,
-        is_batch = ?
-      WHERE LOWER(ID) = LOWER(?)
-    `);
+    let updateObj = {
+        ItemName: asset.ItemName || existing.ItemName || '',
+        Status: asset.Status || existing.Status || 'In Store',
+        Make: asset.Make || existing.Make || '',
+        Model: asset.Model || existing.Model || '',
+        SrNo: encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.SrNo || '')),
+        Type: asset.Type || existing.Type || '',
+        Category: asset.Category || existing.Category || '',
+        Icon: asset.Icon || existing.Icon || '',
+        ParentId: asset.ParentId !== undefined ? asset.ParentId : (existing.ParentId || null),
+        CurrentLocation: asset.CurrentLocation || existing.CurrentLocation || '',
+        DispatchReceiveDt: asset.DispatchReceiveDt || existing.DispatchReceiveDt || '',
+        PurchaseDetails: asset.PurchaseDetails || existing.PurchaseDetails || '',
+        Remarks: asset.Remarks || existing.Remarks || '',
+        LastUpdated: new Date().toISOString(),
+        AssignedTo: asset.AssignedTo !== undefined ? asset.AssignedTo : (existing.AssignedTo || ''),
+        NoQR: asset.NoQR !== undefined ? (asset.NoQR ? 1 : 0) : (existing.NoQR || 0),
+        warranty_months: asset.warranty_months !== undefined ? asset.warranty_months : (existing.warranty_months || 0),
+        amc_months: asset.amc_months !== undefined ? asset.amc_months : (existing.amc_months || 0),
+        asset_value: asset.asset_value !== undefined ? asset.asset_value : (existing.asset_value || 0),
+        Currency: asset.Currency !== undefined ? asset.Currency : (existing.Currency || 'INR'),
+        PurchaseDate: asset.PurchaseDate !== undefined ? asset.PurchaseDate : (existing.PurchaseDate || null),
+        conversion_unit: asset.conversion_unit !== undefined ? asset.conversion_unit : (existing.conversion_unit || null),
+        conversion_factor: asset.conversion_factor !== undefined ? asset.conversion_factor : (existing.conversion_factor || null),
+        conversion_mode: asset.conversion_mode !== undefined ? asset.conversion_mode : (existing.conversion_mode || 'multiply'),
+        quantity_unit: asset.quantity_unit !== undefined ? asset.quantity_unit : (existing.quantity_unit || null),
+        quantity_total: asset.quantity_total !== undefined ? asset.quantity_total : (existing.quantity_total || 0),
+        quantity_precision: asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
+        quantity_available: db.raw('COALESCE(quantity_available, 0) + ?', [qtyAvailableDelta]),
+        is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
+        is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0)
+    };
 
-    stmt.run(
-      asset.ItemName || existing.ItemName || '',
-      asset.Status || existing.Status || 'In Store',
-      asset.Make || existing.Make || '',
-      asset.Model || existing.Model || '',
-      encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.SrNo || '')),
-      asset.Type || existing.Type || '',
-      asset.Category || existing.Category || '',
-      asset.Icon || existing.Icon || '',
-      asset.ParentId !== undefined ? asset.ParentId : (existing.ParentId || null),
-      asset.CurrentLocation || existing.CurrentLocation || '',
-      asset.DispatchReceiveDt || existing.DispatchReceiveDt || '',
-      asset.PurchaseDetails || existing.PurchaseDetails || '',
-      asset.Remarks || existing.Remarks || '',
-      new Date().toISOString(),
-      asset.AssignedTo !== undefined ? asset.AssignedTo : (existing.AssignedTo || ''),
-      asset.NoQR !== undefined ? (asset.NoQR ? 1 : 0) : (existing.NoQR || 0),
-      asset.warranty_months !== undefined ? asset.warranty_months : (existing.warranty_months || 0),
-      asset.amc_months !== undefined ? asset.amc_months : (existing.amc_months || 0),
-      asset.asset_value !== undefined ? asset.asset_value : (existing.asset_value || 0),
-      asset.Currency !== undefined ? asset.Currency : (existing.Currency || 'INR'),
-      asset.PurchaseDate !== undefined ? asset.PurchaseDate : (existing.PurchaseDate || null),
-      asset.conversion_unit !== undefined ? asset.conversion_unit : (existing.conversion_unit || null),
-      asset.conversion_factor !== undefined ? asset.conversion_factor : (existing.conversion_factor || null),
-      asset.conversion_mode !== undefined ? asset.conversion_mode : (existing.conversion_mode || 'multiply'),
-      asset.quantity_unit !== undefined ? asset.quantity_unit : (existing.quantity_unit || null),
-      asset.quantity_total !== undefined ? asset.quantity_total : (existing.quantity_total || 0),
-      asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
-      qtyAvailableDelta,
-      asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
-      asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
-      id
-    );
+    if (isPostgres) {
+        const pgUpdateObj = {};
+        Object.keys(updateObj).forEach(key => {
+            pgUpdateObj[key.toLowerCase()] = updateObj[key];
+        });
+        
+        await db('assets')
+            .whereRaw('LOWER(id) = LOWER(?)', [id])
+            .update(pgUpdateObj);
+    } else {
+        await db('assets')
+            .whereRaw('LOWER(ID) = LOWER(?)', [id])
+            .update(updateObj);
+    }
 
     appendAudit({
       Action: 'UPDATE',
@@ -5702,18 +6969,19 @@ app.put('/api/assets/:id', (req, res) => {
     
     if (isRootAssetForProp && newQtyUnit && newQtyUnit !== existing.quantity_unit) {
       console.log(`Propagating quantity_unit change from "${existing.quantity_unit}" to "${newQtyUnit}" for root ${id}`);
-      db.prepare(`
-        UPDATE assets 
-        SET quantity_unit = ?, quantity_updated_at = ?
-        WHERE LOWER(quantity_root_id) = LOWER(?)
-      `).run(newQtyUnit, new Date().toISOString(), existing.quantity_root_id);
+      await db('assets')
+        .whereRaw('LOWER(quantity_root_id) = LOWER(?)', [existing.quantity_root_id])
+        .update({
+          quantity_unit: newQtyUnit,
+          quantity_updated_at: new Date().toISOString()
+        });
       
       // Also update quantity_event_lines to keep history consistent if desired
-      db.prepare(`
-        UPDATE quantity_event_lines
-        SET unit = ?
-        WHERE event_id IN (SELECT id FROM quantity_events WHERE LOWER(root_id) = LOWER(?))
-      `).run(newQtyUnit, existing.quantity_root_id);
+      await db('quantity_event_lines')
+        .whereIn('event_id', function() {
+          this.select('id').from('quantity_events').whereRaw('LOWER(root_id) = LOWER(?)', [existing.quantity_root_id]);
+        })
+        .update({ unit: newQtyUnit });
     }
 
     // Handle quantity initialization if applicable
@@ -5723,19 +6991,18 @@ app.put('/api/assets/:id', (req, res) => {
       const qtyPrecision = parseQtyNumber(asset.quantity_precision ?? asset.quantityPrecision ?? asset.qty_precision ?? asset.qtyPrecision)
 
       if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
-        db.prepare(`
-          UPDATE assets
-          SET
-            quantity_root_id = ?,
-            quantity_unit = ?,
-            quantity_total = 0,
-            quantity_available = 0,
-            quantity_precision = ?,
-            quantity_updated_at = ?
-          WHERE ID = ?
-        `).run(id, qtyUnit, qtyPrecision, new Date().toISOString(), id)
+        await db('assets')
+          .where('ID', id)
+          .update({
+            quantity_root_id: id,
+            quantity_unit: qtyUnit,
+            quantity_total: 0,
+            quantity_available: 0,
+            quantity_precision: qtyPrecision,
+            quantity_updated_at: new Date().toISOString()
+          });
 
-        applyQuantityEvent({
+        await applyQuantityEvent({
           rootId: id,
           type: 'INIT',
           actor: getRequestActor(req),
@@ -5766,74 +7033,104 @@ app.put('/api/assets/:id', (req, res) => {
         });
       }
 
-      db.prepare(`
-        INSERT OR REPLACE INTO asset_it_details (
-          AssetID, MACAddress, IPAddress, NetworkType, PhysicalPort, VLAN, SocketID, UserID
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        encryptionService.encrypt(asset.MACAddress !== undefined ? asset.MACAddress : (existing.MACAddress || '')),
-        encryptionService.encryptDeterministic(asset.IPAddress !== undefined ? asset.IPAddress : (existing.IPAddress || '')),
-        asset.NetworkType !== undefined ? asset.NetworkType : (existing.NetworkType || ''),
-        asset.PhysicalPort !== undefined ? asset.PhysicalPort : (existing.PhysicalPort || ''),
-        asset.VLAN !== undefined ? asset.VLAN : (existing.VLAN || ''),
-        encryptionService.encrypt(asset.SocketID !== undefined ? asset.SocketID : (existing.SocketID || '')),
-        asset.UserID !== undefined ? asset.UserID : (existing.UserID || '')
-      );
+      const itRecord = {
+          AssetID: id,
+          MACAddress: encryptionService.encrypt(asset.MACAddress !== undefined ? asset.MACAddress : (existing.MACAddress || '')),
+          IPAddress: encryptionService.encryptDeterministic(asset.IPAddress !== undefined ? asset.IPAddress : (existing.IPAddress || '')),
+          NetworkType: asset.NetworkType !== undefined ? asset.NetworkType : (existing.NetworkType || ''),
+          PhysicalPort: asset.PhysicalPort !== undefined ? asset.PhysicalPort : (existing.PhysicalPort || ''),
+          VLAN: asset.VLAN !== undefined ? asset.VLAN : (existing.VLAN || ''),
+          SocketID: encryptionService.encrypt(asset.SocketID !== undefined ? asset.SocketID : (existing.SocketID || '')),
+          UserID: asset.UserID !== undefined ? asset.UserID : (existing.UserID || '')
+      };
+
+      if (isPostgres) {
+          const pgItRecord = {};
+          Object.keys(itRecord).forEach(key => {
+              pgItRecord[key.toLowerCase()] = itRecord[key];
+          });
+          await db('asset_it_details')
+            .insert(pgItRecord)
+            .onConflict('assetid')
+            .merge();
+      } else {
+          await db('asset_it_details')
+            .insert(itRecord)
+            .onConflict('AssetID')
+            .merge();
+      }
     }
 
     // Handle nested components (child assets)
     if (Array.isArray(asset.components)) {
       // Get current NoQR components in components table
-      const currentComponents = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 1').all(id).map(c => c.ID);
+      let compQuery = db('components');
+      if (isPostgres) {
+          compQuery = compQuery.where('parentid', id).andWhere('noqr', 1).select('id as ID');
+      } else {
+          compQuery = compQuery.where('ParentId', id).andWhere('NoQR', 1).select('ID');
+      }
+      
+      const rows = await compQuery;
+      const currentComponents = rows.map(c => c.ID);
       const updatedCompIds = [];
-
-      const insertStmt = db.prepare(`
-        INSERT INTO components (
-          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
-          Category, LastUpdated, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const updateStmt = db.prepare(`
-        UPDATE components SET
-          ItemName = ?, Make = ?, Model = ?, SrNo = ?, Status = ?,
-          Type = ?, Category = ?, LastUpdated = ?, NoQR = 1
-        WHERE ID = ? AND ParentId = ?
-      `);
 
       for (const comp of asset.components) {
         if (comp.ID && currentComponents.includes(comp.ID)) {
           // Update existing component
-          updateStmt.run(
-            comp.ItemName || '',
-            comp.Make || '',
-            comp.Model || '',
-            comp.SrNo || '',
-            comp.Status || asset.Status || existing.Status || 'In Store',
-            comp.Type || 'Component',
-            comp.Category || asset.Category || existing.Category || '',
-            new Date().toISOString(),
-            comp.ID,
-            id
-          );
+          const compUpdate = {
+              itemname: comp.ItemName || '',
+              make: comp.Make || '',
+              model: comp.Model || '',
+              srno: comp.SrNo || '',
+              status: comp.Status || asset.Status || existing.Status || 'In Store',
+              type: comp.Type || 'Component',
+              category: comp.Category || asset.Category || existing.Category || '',
+              lastupdated: new Date().toISOString(),
+              noqr: 1
+          };
+
+          let updateOp = db('components');
+          if (isPostgres) {
+              updateOp = updateOp.where('id', comp.ID).andWhere('parentid', id).update(compUpdate);
+          } else {
+              // Map to PascalCase for SQLite
+              const sqliteCompUpdate = {};
+              Object.keys(compUpdate).forEach(k => {
+                  const pKey = k === 'itemname' ? 'ItemName' : k === 'lastupdated' ? 'LastUpdated' : k === 'noqr' ? 'NoQR' : k.charAt(0).toUpperCase() + k.slice(1);
+                  sqliteCompUpdate[pKey] = compUpdate[k];
+              });
+              updateOp = updateOp.where('ID', comp.ID).andWhere('ParentId', id).update(sqliteCompUpdate);
+          }
+          await updateOp;
           updatedCompIds.push(comp.ID);
         } else {
           // Insert new component
           const compId = generateModernAssetId(asset.CurrentLocation || existing.CurrentLocation || '');
-          insertStmt.run(
-            compId,
-            id, // ParentId
-            comp.ItemName || '',
-            comp.Make || '',
-            comp.Model || '',
-            comp.SrNo || '',
-            comp.Status || asset.Status || existing.Status || 'In Store',
-            comp.Type || 'Component',
-            comp.Category || asset.Category || existing.Category || '',
-            new Date().toISOString(),
-            1 // NoQR = true
-          );
+          const compInsert = {
+              id: compId,
+              parentid: id,
+              itemname: comp.ItemName || '',
+              make: comp.Make || '',
+              model: comp.Model || '',
+              srno: comp.SrNo || '',
+              status: comp.Status || asset.Status || existing.Status || 'In Store',
+              type: comp.Type || 'Component',
+              category: comp.Category || asset.Category || existing.Category || '',
+              lastupdated: new Date().toISOString(),
+              noqr: 1
+          };
+
+          if (isPostgres) {
+              await db('components').insert(compInsert);
+          } else {
+              const sqliteCompInsert = {};
+              Object.keys(compInsert).forEach(k => {
+                  const pKey = k === 'id' ? 'ID' : k === 'parentid' ? 'ParentId' : k === 'itemname' ? 'ItemName' : k === 'lastupdated' ? 'LastUpdated' : k === 'noqr' ? 'NoQR' : k.charAt(0).toUpperCase() + k.slice(1);
+                  sqliteCompInsert[pKey] = compInsert[k];
+              });
+              await db('components').insert(sqliteCompInsert);
+          }
           updatedCompIds.push(compId);
         }
       }
@@ -5841,23 +7138,42 @@ app.put('/api/assets/:id', (req, res) => {
       // Delete orphaned NoQR components
       const orphanedIds = currentComponents.filter(childId => !updatedCompIds.includes(childId));
       if (orphanedIds.length > 0) {
-        const deleteStmt = db.prepare('DELETE FROM components WHERE ID = ? AND ParentId = ?');
-        for (const orphanId of orphanedIds) {
-          deleteStmt.run(orphanId, id);
+        let deleteOp = db('components');
+        if (isPostgres) {
+            deleteOp = deleteOp.whereIn('id', orphanedIds).andWhere('parentid', id).delete();
+        } else {
+            deleteOp = deleteOp.whereIn('ID', orphanedIds).andWhere('ParentId', id).delete();
         }
+        await deleteOp;
       }
     }
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds)) {
       // 1. Identify currently linked assets (NoQR = 0)
-      const currentLinked = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 0').all(id).map(c => c.ID);
+      let linkedQuery = db('components');
+      if (isPostgres) {
+          linkedQuery = linkedQuery.where('parentid', id).andWhere('noqr', 0).select('id as ID');
+      } else {
+          linkedQuery = linkedQuery.where('ParentId', id).andWhere('NoQR', 0).select('ID');
+      }
+      
+      const rows = await linkedQuery;
+      const currentLinked = rows.map(c => c.ID);
       
       // 2. Unlink those that are no longer in linkedIds
       const toUnlink = currentLinked.filter(linkId => !asset.linkedIds.includes(linkId));
       for (const unlinkId of toUnlink) {
-        db.prepare('DELETE FROM components WHERE ID = ? AND ParentId = ?').run(unlinkId, id);
-        db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(unlinkId);
+        let unlinkCompOp = db('components');
+        let unlinkAssetOp = db('assets');
+        
+        if (isPostgres) {
+            await unlinkCompOp.where('id', unlinkId).andWhere('parentid', id).delete();
+            await unlinkAssetOp.where('id', unlinkId).update({ parentid: null });
+        } else {
+            await unlinkCompOp.where('ID', unlinkId).andWhere('ParentId', id).delete();
+            await unlinkAssetOp.where('ID', unlinkId).update({ ParentId: null });
+        }
         
         appendAudit({ 
           Action: 'UNLINK_COMPONENT', 
@@ -5868,24 +7184,23 @@ app.put('/api/assets/:id', (req, res) => {
         });
       }
 
-      const compStmt = db.prepare(`
-        INSERT OR REPLACE INTO components (
-          ID, ParentId, ItemName, Make, Model, SrNo, Status, Type,
-          Category, LastUpdated, NoQR
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      const getAssetStmt = db.prepare('SELECT * FROM assets WHERE ID = ?');
-      const checkComponentStmt = db.prepare('SELECT ParentId FROM components WHERE ID = ?');
-
       for (const linkId of asset.linkedIds) {
         // Validation: Check if asset is already assigned to a parent
-        const existingAsset = getAssetStmt.get(linkId);
+        let assetLookup = db('assets');
+        if (isPostgres) assetLookup = assetLookup.whereRaw('LOWER(id) = LOWER(?)', [linkId]);
+        else assetLookup = assetLookup.where('ID', linkId);
+        
+        const existingAsset = await assetLookup.first();
         if (!existingAsset) continue;
 
-        const existingParentInAssets = existingAsset.ParentId;
-        const existingComp = checkComponentStmt.get(linkId);
-        const existingParentInComps = existingComp ? existingComp.ParentId : null;
+        const existingParentInAssets = existingAsset.ParentId || existingAsset.parentid;
+        
+        let compLookup = db('components');
+        if (isPostgres) compLookup = compLookup.whereRaw('LOWER(id) = LOWER(?)', [linkId]);
+        else compLookup = compLookup.where('ID', linkId);
+        
+        const existingComp = await compLookup.first();
+        const existingParentInComps = existingComp ? (existingComp.ParentId || existingComp.parentid) : null;
 
         // Only block if it's assigned to a DIFFERENT parent
         if ((existingParentInAssets && existingParentInAssets !== id) || 
@@ -5894,21 +7209,32 @@ app.put('/api/assets/:id', (req, res) => {
           return res.status(400).send(`Asset ${linkId} is already assigned to parent ${actualParent}. Remove it from its current parent first.`);
         }
 
-        compStmt.run(
-          linkId,
-          id,
-          existingAsset.ItemName,
-          existingAsset.Make || '',
-          existingAsset.Model || '',
-          existingAsset.SrNo || '',
-          existingAsset.Status || 'In Store',
-          existingAsset.Type || 'Component',
-          existingAsset.Category || '',
-          new Date().toISOString(),
-          0 // NoQR = false
-        );
-        // Update ParentId in assets table instead of clearing it
-        db.prepare('UPDATE assets SET ParentId = ? WHERE ID = ?').run(id, linkId);
+        const linkInsert = {
+          id: linkId,
+          parentid: id,
+          itemname: existingAsset.ItemName || existingAsset.itemname,
+          make: existingAsset.Make || existingAsset.make || '',
+          model: existingAsset.Model || existingAsset.model || '',
+          srno: existingAsset.SrNo || existingAsset.srno || '',
+          status: existingAsset.Status || existingAsset.status || 'In Store',
+          type: existingAsset.Type || existingAsset.type || 'Component',
+          category: existingAsset.Category || existingAsset.category || '',
+          lastupdated: new Date().toISOString(),
+          noqr: 0
+        };
+
+        if (isPostgres) {
+            await db('components').insert(linkInsert).onConflict('id').merge();
+            await db('assets').where('id', linkId).update({ parentid: id });
+        } else {
+            const sqliteLinkInsert = {};
+            Object.keys(linkInsert).forEach(k => {
+                const pKey = k === 'id' ? 'ID' : k === 'parentid' ? 'ParentId' : k === 'itemname' ? 'ItemName' : k === 'lastupdated' ? 'LastUpdated' : k === 'noqr' ? 'NoQR' : k.charAt(0).toUpperCase() + k.slice(1);
+                sqliteLinkInsert[pKey] = linkInsert[k];
+            });
+            await db('components').insert(sqliteLinkInsert).onConflict('ID').merge();
+            await db('assets').where('ID', linkId).update({ ParentId: id });
+        }
       }
     }
 
@@ -5928,58 +7254,38 @@ app.put('/api/assets/:id', (req, res) => {
   }
 });
 
-app.put('/api/orders/:orderId/status', authenticateJWT, (req, res) => {
+app.put('/api/orders/:orderId/status', authenticateJWT, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { Status } = req.body;
-    db.prepare('UPDATE project_orders SET Status = ? WHERE ID = ?').run(Status, orderId);
+    await db('project_orders').where('ID', orderId).update({ Status });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/assets/bulk', (req, res) => {
+app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
   try {
     const { ids } = req.body;
-    const username = req.headers['x-user'] || 'web';
+    const username = req.user.username || 'web';
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).send('No asset IDs provided');
     }
 
-    // Check permissions
-    console.log(`[BULK DELETE] Auth check for user: "${username}"`);
-    const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username);
-    let hasPermission = false;
-    if (user) {
-      console.log(`[BULK DELETE] Found user: "${user.username}" with role: ${user.role}`);
-      if (user.role === 'admin' || user.role === 'superuser') {
-        hasPermission = true;
-      } else {
-        try {
-          const roles = JSON.parse(user.role);
-          if (Array.isArray(roles) && (roles.includes('admin') || roles.includes('superuser'))) {
-            hasPermission = true;
-          }
-        } catch (e) {
-          // Not a JSON role, already checked above
-        }
-      }
-    }
-
-    if (!hasPermission) {
-      appendAudit({ Action: 'BULK_DELETE_DENIED', User: username, AssetId: ids.join(','), Severity: 'WARN', Details: 'Unauthorized bulk delete attempt' });
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+    if (!isAdmin) {
+      await appendAudit({ Action: 'BULK_DELETE_DENIED', User: username, AssetId: ids.join(','), Severity: 'WARN', Details: 'Unauthorized bulk delete attempt' });
       return res.status(403).send('Forbidden');
     }
 
     const now = new Date().toISOString();
     let deletedCount = 0;
 
-    // Use a transaction for bulk operations
-    const deleteTransaction = db.transaction((assetIds) => {
-      for (const id of assetIds) {
-        const asset = db.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+    await legacyDb.transaction(async (trx) => {
+      for (const id of ids) {
+        const asset = await trx('assets').where('ID', id).first();
         if (!asset) continue;
 
         // 1. Quantity Logic for Bulk
@@ -5987,14 +7293,19 @@ app.delete('/api/assets/bulk', (req, res) => {
           const isRoot = String(asset.quantity_root_id).toLowerCase() === String(id).toLowerCase();
           if (isRoot) {
             // Root: Only delete if no active children
-            const activeChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) LIMIT 1').get(id);
+            const activeChildren = await trx('assets')
+              .where('quantity_parent_id', id)
+              .andWhere(function() {
+                this.where('is_deleted', 0).orWhereNull('is_deleted');
+              })
+              .first();
             if (activeChildren) continue; // Skip root with children
           } else {
             // Child: Return quantity to parent
             const qtyToReturn = asset.quantity_total || 0;
             const parentId = asset.quantity_parent_id;
             if (qtyToReturn > 0 && parentId) {
-              applyQuantityEvent({
+              await applyQuantityEvent({
                 rootId: asset.quantity_root_id,
                 type: 'BULK_RETURN_ON_DELETE',
                 actor: username,
@@ -6008,27 +7319,27 @@ app.delete('/api/assets/bulk', (req, res) => {
           }
         } else {
           // 2. Component Logic for Bulk
-          const qtyChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? LIMIT 1').get(id);
+          const qtyChildren = await trx('assets').where('quantity_parent_id', id).first();
           if (qtyChildren) continue;
         }
 
         // Clear ParentId for linked assets
-        const linkedComponents = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 0').all(id);
+        const linkedComponents = await trx('components').where('ParentId', id).andWhere('NoQR', 0).select('ID');
         for (const comp of linkedComponents) {
-          db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(comp.ID);
+          await trx('assets').where('ID', comp.ID).update({ ParentId: null });
         }
 
-        db.prepare('DELETE FROM components WHERE ID = ?').run(id);
-        db.prepare('DELETE FROM components WHERE ParentId = ?').run(id);
+        await trx('components').where('ID', id).delete();
+        await trx('components').where('ParentId', id).delete();
 
-        const result = db.prepare("UPDATE assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
-        if (result.changes > 0) deletedCount++;
+        const changes = await trx('assets')
+          .where('ID', id)
+          .update({ is_deleted: 1, deleted_at: now });
+        if (changes > 0) deletedCount++;
       }
     });
 
-    deleteTransaction(ids);
-
-    appendAudit({ 
+    await appendAudit({ 
       Action: 'BULK_DELETE', 
       User: username, 
       AssetId: ids.join(','), 
@@ -6043,13 +7354,13 @@ app.delete('/api/assets/bulk', (req, res) => {
   }
 });
 
-app.delete('/api/assets/:id', (req, res) => {
+app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
   try {
     const id = req.params.id;
-    const username = req.headers['x-user'] || 'web';
+    const username = req.user.username || 'web';
 
     // 1. Fetch asset details for quantity check
-    const asset = db.prepare('SELECT * FROM assets WHERE ID = ?').get(id);
+    const asset = await db('assets').where('ID', id).first();
     if (!asset) return res.status(404).send('Asset not found');
 
     // 2. Quantity Tracked Asset Logic
@@ -6059,7 +7370,12 @@ app.delete('/api/assets/:id', (req, res) => {
       if (isRoot) {
         // --- Root Asset Deletion ---
         // Check for active children (allocations/splits)
-        const activeChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) LIMIT 1').get(id);
+        const activeChildren = await db('assets')
+          .where('quantity_parent_id', id)
+          .andWhere(function() {
+            this.where('is_deleted', 0).orWhereNull('is_deleted');
+          })
+          .first();
         if (activeChildren) {
           return res.status(400).send('Cannot delete Root Quantity asset while active splits exist. Return or delete all splits first.');
         }
@@ -6073,7 +7389,7 @@ app.delete('/api/assets/:id', (req, res) => {
         if (qtyToReturn > 0 && parentId) {
           try {
             console.log(`[QTY RETURN] Returning ${qtyToReturn} from child ${id} to parent ${parentId}`);
-            applyQuantityEvent({
+            await applyQuantityEvent({
               rootId: asset.quantity_root_id,
               type: 'RETURN_ON_DELETE',
               actor: username,
@@ -6091,54 +7407,37 @@ app.delete('/api/assets/:id', (req, res) => {
       }
     } else {
       // 3. Component Hierarchy Check (Non-quantity assets)
-      const qtyChildren = db.prepare('SELECT 1 FROM assets WHERE quantity_parent_id = ? LIMIT 1').get(id);
+      const qtyChildren = await db('assets').where('quantity_parent_id', id).first();
       if (qtyChildren) {
         return res.status(400).send('Cannot delete asset with quantity children');
       }
     }
 
     // 4. Auth check
-    console.log(`[DELETE] Auth check for user: "${username}" on asset ${id}`);
-    const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username);
-    let hasPermission = false;
-    if (user) {
-      console.log(`[DELETE] Found user: "${user.username}" with role: ${user.role}`);
-      if (user.role === 'admin' || user.role === 'superuser') {
-        hasPermission = true;
-      } else {
-        try {
-          const roles = JSON.parse(user.role);
-          if (Array.isArray(roles) && (roles.includes('admin') || roles.includes('superuser'))) {
-            hasPermission = true;
-          }
-        } catch (e) {
-          // Not a JSON role, already checked above
-        }
-      }
-    }
-
-    if (!hasPermission) {
-      appendAudit({ Action: 'DELETE_DENIED', User: username, AssetId: id, Severity: 'WARN', Details: 'Unauthorized delete attempt' });
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
+    if (!isAdmin) {
+      await appendAudit({ Action: 'DELETE_DENIED', User: username, AssetId: id, Severity: 'WARN', Details: 'Unauthorized delete attempt' });
       return res.status(403).send('Forbidden');
     }
 
     // Delete from components table as well
     // For linked assets (NoQR = 0), we should also clear their ParentId in the assets table
-    const linkedComponents = db.prepare('SELECT ID FROM components WHERE ParentId = ? AND NoQR = 0').all(id);
-    for (const comp of linkedComponents) {
-      db.prepare('UPDATE assets SET ParentId = NULL WHERE ID = ?').run(comp.ID);
+    const linkedRows = await db('components').where('ParentId', id).andWhere('NoQR', 0).select('ID');
+    for (const comp of linkedRows) {
+      await db('assets').where('ID', comp.ID).update({ ParentId: null });
     }
 
-    db.prepare('DELETE FROM components WHERE ID = ?').run(id);
-    db.prepare('DELETE FROM components WHERE ParentId = ?').run(id);
+    await db('components').where('ID', id).delete();
+    await db('components').where('ParentId', id).delete();
 
-    const stmt = db.prepare('DELETE FROM assets WHERE ID = ?');
     // Soft Delete: Mark as deleted instead of removing immediately
     const now = new Date().toISOString();
-    const result = db.prepare("UPDATE assets SET is_deleted = 1, deleted_at = ? WHERE ID = ?").run(now, id);
+    const result = await db('assets')
+      .where('ID', id)
+      .update({ is_deleted: 1, deleted_at: now });
 
-    if (result.changes > 0) {
-      appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
+    if (result > 0) {
+      await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
       res.json({ success: true, message: 'Asset marked for deletion (30-day grace period)' });
     } else {
       res.status(404).send('Asset not found');
@@ -6157,19 +7456,19 @@ app.post('/api/assets/:id/link-po-item', authenticateJWT, (req, res) => {
     // Check if it's a permanent or temporary asset
     const isTemp = id.startsWith('MUMT-');
     if (isTemp) {
-      db.prepare('UPDATE temporary_assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
+      legacyDb.prepare('UPDATE temporary_assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
     } else {
-      db.prepare('UPDATE assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
+      legacyDb.prepare('UPDATE assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
     }
     
     if (poItemId) {
-      const item = db.prepare('SELECT * FROM project_order_items WHERE ID = ?').get(poItemId);
-      const permanentFulfilled = db.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(poItemId).count;
-      const temporaryFulfilled = db.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(poItemId).count;
+      const item = legacyDb.prepare('SELECT * FROM project_order_items WHERE ID = ?').get(poItemId);
+      const permanentFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(poItemId).count;
+      const temporaryFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(poItemId).count;
       
       const fulfilledCount = permanentFulfilled + temporaryFulfilled;
       const newStatus = fulfilledCount >= item.QtyOrdered ? 'Shipped' : 'Partially Fulfilled';
-      db.prepare('UPDATE project_order_items SET Status = ? WHERE ID = ?').run(newStatus, poItemId);
+      legacyDb.prepare('UPDATE project_order_items SET Status = ? WHERE ID = ?').run(newStatus, poItemId);
     }
 
     res.json({ success: true });
@@ -6180,7 +7479,7 @@ app.post('/api/assets/:id/link-po-item', authenticateJWT, (req, res) => {
 
 app.get('/api/audit', (req, res) => {
   try {
-    const log = db.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC LIMIT 1000').all();
+    const log = legacyDb.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC LIMIT 1000').all();
     res.json(log);
   } catch (err) {
     console.error('Failed to fetch audit log:', err);
@@ -6219,7 +7518,7 @@ app.get('/api/reports/asset-history', (req, res) => {
     }
 
     query += ` ORDER BY a.ID, al.Timestamp DESC`;
-    const rows = db.prepare(query).all(...params);
+    const rows = legacyDb.prepare(query).all(...params);
 
     // Group by asset for a cleaner report structure
     const report = [];
@@ -6271,19 +7570,19 @@ app.get('/api/qr/:id', async (req, res) => {
     const ip = getLocalIP();
     const port = process.env.PORT || 9090;
 
-    const projectExists = db.prepare('SELECT 1 FROM projects WHERE ID = ?').get(id);
+    const projectExists = legacyDb.prepare('SELECT 1 FROM projects WHERE ID = ?').get(id);
     if (projectExists) {
       const urlText = `http://${ip}:${port}/project/${encodeURIComponent(id)}`;
       const [png, qrCode] = await Promise.all([
         qrcode.toBuffer(urlText, { width: 512 }),
         qrcode.toDataURL(urlText, { width: 512 })
       ]);
-      db.prepare('UPDATE projects SET QRCode = ? WHERE ID = ?').run(qrCode, id);
+      legacyDb.prepare('UPDATE projects SET QRCode = ? WHERE ID = ?').run(qrCode, id);
       res.setHeader('Content-Type', 'image/png');
       return res.send(png);
     }
 
-    const asset = db.prepare('SELECT QRCode FROM assets WHERE ID = ?').get(id);
+    const asset = legacyDb.prepare('SELECT QRCode FROM assets WHERE ID = ?').get(id);
     if (asset && asset.QRCode && asset.QRCode.startsWith('data:image/')) {
       const base64Data = asset.QRCode.split(',')[1];
       const img = Buffer.from(base64Data, 'base64');
@@ -6291,14 +7590,14 @@ app.get('/api/qr/:id', async (req, res) => {
       return res.send(img);
     }
 
-    const assetExists = db.prepare('SELECT 1 FROM assets WHERE ID = ?').get(id);
+    const assetExists = legacyDb.prepare('SELECT 1 FROM assets WHERE ID = ?').get(id);
     if (assetExists) {
       const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(id)}`;
       const [png, qrCode] = await Promise.all([
         qrcode.toBuffer(urlText, { width: 512 }),
         qrcode.toDataURL(urlText, { width: 512 })
       ]);
-      db.prepare('UPDATE assets SET QRCode = ? WHERE ID = ?').run(qrCode, id);
+      legacyDb.prepare('UPDATE assets SET QRCode = ? WHERE ID = ?').run(qrCode, id);
       res.setHeader('Content-Type', 'image/png');
       return res.send(png);
     }
@@ -6349,7 +7648,7 @@ app.get('/api/dynamic', (req, res) => {
 
 app.delete('/api/dynamic/:code', (req, res) => {
   const username = req.headers['x-user'] || ''
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+  const user = legacyDb.prepare('SELECT * FROM users WHERE username = ?').get(username)
   if (!user || (user.role !== 'admin' && user.role !== 'superuser')) {
     appendAudit({ Action: 'DYNAMIC_DELETE_DENIED', User: username || 'web', AssetId: req.params.code, Severity: 'WARN', Details: 'Unauthorized dynamic delete attempt' })
     return res.status(403).send('Forbidden')
@@ -6369,6 +7668,10 @@ app.get('/test-asset/:id', (req, res) => {
 
 app.get('/asset/:id', (req, res) => {
   res.sendFile(path.join(__dirname, '../asset-manager-frontend/asset-view.html'))
+})
+
+app.get('/public/asset/:label', (req, res) => {
+  res.sendFile(path.join(__dirname, '../asset-manager-frontend/public-view.html'))
 })
 
 app.get('/project/:id', (req, res) => {
@@ -6413,7 +7716,7 @@ app.get('/api/assets/search', (req, res) => {
 
     // Count
     const countSql = `SELECT COUNT(*) as count ${baseSql}`;
-    const totalResult = db.prepare(countSql).get(...params);
+    const totalResult = legacyDb.prepare(countSql).get(...params);
     const totalRecords = totalResult ? totalResult.count : 0;
     const last_page = Math.ceil(totalRecords / size);
 
@@ -6430,7 +7733,7 @@ app.get('/api/assets/search', (req, res) => {
     const offset = (page - 1) * size;
     params.push(size, offset);
     
-    const results = db.prepare(sql).all(...params);
+    const results = legacyDb.prepare(sql).all(...params);
     const data = results.map((r) => ({
       ...r,
       isQuantitySubAsset: r.quantity_root_id != null && String(r.quantity_root_id).trim() !== ''
@@ -6855,7 +8158,7 @@ async function runNetworkMonitor() {
       }
 
       // Check if this MAC address is linked to any asset in our database
-      const existing = db.prepare(`
+      const existing = legacyDb.prepare(`
         SELECT AssetID, IPAddress, MACAddress 
         FROM asset_it_details 
         WHERE LOWER(MACAddress) = ?
@@ -6866,10 +8169,10 @@ async function runNetworkMonitor() {
         if (existing.IPAddress !== device.ip) {
           console.log(`[NetworkMonitor] Detected IP change for Asset ${existing.AssetID}: ${existing.IPAddress} -> ${device.ip} (MAC: ${mac}, Host: ${hostname}, Mfg: ${manufacturer})`);
           
-          db.prepare('UPDATE asset_it_details SET IPAddress = ? WHERE AssetID = ?')
+          legacyDb.prepare('UPDATE asset_it_details SET IPAddress = ? WHERE AssetID = ?')
             .run(device.ip, existing.AssetID);
           
-          db.prepare('UPDATE assets SET LastUpdated = ? WHERE ID = ?')
+          legacyDb.prepare('UPDATE assets SET LastUpdated = ? WHERE ID = ?')
             .run(now, existing.AssetID);
 
           appendAudit({
@@ -6925,7 +8228,7 @@ app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
         const params = fields.map(field => updates[field]);
         params.push(id);
 
-        const stmt = db.prepare(`UPDATE projects SET ${setClause} WHERE ID = ?`);
+        const stmt = legacyDb.prepare(`UPDATE projects SET ${setClause} WHERE ID = ?`);
         const result = stmt.run(...params);
 
         if (result.changes > 0) {
@@ -6933,7 +8236,7 @@ app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
             const relevantFields = ['ProjectName', 'ClientName', 'Location', 'Status', 'Description', 'StartDate', 'EndDate', 'OwnerEmail', 'CoordinatorEmail'];
             if (fields.some(f => relevantFields.includes(f))) {
                 try {
-                    const project = db.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
+                    const project = legacyDb.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
                     if (project) {
                         const ip = getLocalIP();
                         const port = process.env.PORT || 9090;
@@ -6942,7 +8245,7 @@ app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
                         const qrPayload = generateProjectQRPayload(project, ip, port);
                         
                         const qrCode = await qrcode.toDataURL(qrPayload, { width: 512 });
-                        db.prepare('UPDATE projects SET QRCode = ? WHERE ID = ?').run(qrCode, id);
+                        legacyDb.prepare('UPDATE projects SET QRCode = ? WHERE ID = ?').run(qrCode, id);
                     }
                 } catch (qrErr) {
                     console.error('Failed to regenerate project QR code (external):', qrErr);
@@ -6964,10 +8267,10 @@ app.patch('/api/external/projects/:id', checkApiKey, async (req, res) => {
 app.get('/api/external/projects/:id', checkApiKey, (req, res) => {
     try {
         const { id } = req.params;
-        const project = db.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
+        const project = legacyDb.prepare('SELECT * FROM projects WHERE ID = ?').get(id);
         
         if (project) {
-            const assets = db.prepare(`
+            const assets = legacyDb.prepare(`
                 SELECT a.* 
                 FROM assets a 
                 JOIN project_assets pa ON a.ID = pa.AssetID 
@@ -7187,7 +8490,7 @@ app.get('/api/ocr/history/:filename/blocks', (req, res) => {
 
 app.get('/api/company-templates', authenticateJWT, (req, res) => {
     try {
-        const templates = db.prepare('SELECT * FROM company_templates ORDER BY name').all();
+        const templates = legacyDb.prepare('SELECT * FROM company_templates ORDER BY name').all();
         res.json({ success: true, templates });
     } catch (err) {
         console.error('Error fetching company templates:', err);
@@ -7204,10 +8507,10 @@ app.post('/api/company-templates', authenticateJWT, (req, res) => {
         }
 
         if (is_default) {
-            db.prepare('UPDATE company_templates SET is_default = 0').run();
+            legacyDb.prepare('UPDATE company_templates SET is_default = 0').run();
         }
 
-        const stmt = db.prepare(`
+        const stmt = legacyDb.prepare(`
             INSERT INTO company_templates (name, company_name, address, gst, cin, state_name, state_code, is_default)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -7227,10 +8530,10 @@ app.put('/api/company-templates/:id', authenticateJWT, (req, res) => {
         const { name, company_name, address, gst, cin, state_name, state_code, is_default } = req.body;
 
         if (is_default) {
-            db.prepare('UPDATE company_templates SET is_default = 0').run();
+            legacyDb.prepare('UPDATE company_templates SET is_default = 0').run();
         }
 
-        const stmt = db.prepare(`
+        const stmt = legacyDb.prepare(`
             UPDATE company_templates 
             SET name = ?, company_name = ?, address = ?, gst = ?, cin = ?, state_name = ?, state_code = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -7248,7 +8551,7 @@ app.put('/api/company-templates/:id', authenticateJWT, (req, res) => {
 app.delete('/api/company-templates/:id', authenticateJWT, (req, res) => {
     try {
         const { id } = req.params;
-        db.prepare('DELETE FROM company_templates WHERE id = ?').run(id);
+        legacyDb.prepare('DELETE FROM company_templates WHERE id = ?').run(id);
         res.json({ success: true });
     } catch (err) {
         console.error('Error deleting company template:', err);
@@ -7659,16 +8962,28 @@ app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, r
 app.post('/api/assets/split', async (req, res) => {
   try {
     const { parentId, serials, autoAssign, projectId } = req.body;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    console.log(`[SPLIT] Request for Parent: ${parentId}, Serials: ${serials.join(', ')}`);
+    
     if (!parentId || !serials || !Array.isArray(serials) || serials.length === 0) {
       return res.status(400).json({ error: 'Parent ID and serial numbers list required' });
     }
 
-    const parent = db.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
+    let parent;
+    if (isPostgres) {
+        parent = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
+        parent = normalizeResult(parent);
+    } else {
+        parent = legacyDb.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
+    }
+    
     if (!parent) return res.status(404).json({ error: 'Parent asset not found' });
 
     const currentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
     const newSerials = currentSerials.filter(sn => !serials.includes(sn));
     const splitCount = currentSerials.length - newSerials.length;
+
+    console.log(`[SPLIT] Parent S/Ns: ${currentSerials.length}, To Split: ${serials.length}, Remaining: ${newSerials.length}`);
 
     if (splitCount === 0) {
       return res.status(400).json({ error: 'None of the selected serial numbers were found in this batch' });
@@ -7677,111 +8992,440 @@ app.post('/api/assets/split', async (req, res) => {
     const ts = new Date().toISOString();
     const actor = getRequestActor(req);
 
-    db.transaction(() => {
-      // 1. Force Sync Parent Quantity to match current Serial Number count
-      // This fixes cases where the DB Qty (e.g. 1) doesn't match the S/N count (e.g. 3)
-      db.prepare(`
-        UPDATE assets 
-        SET 
-          quantity_total = ?, 
-          quantity_available = ?, 
-          quantity_unit = COALESCE(quantity_unit, 'pcs'),
-          is_quantity_tracked = 1,
-          quantity_root_id = COALESCE(quantity_root_id, ID)
-        WHERE LOWER(ID) = LOWER(?)
-      `).run(currentSerials.length, currentSerials.length, parentId);
-
-      // Re-fetch parent to ensure we have the synchronized quantity for applyQuantityEvent
-      const syncedParent = db.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
-
-      // 2. Update Parent Serial Numbers (Now that qty is synced)
-      db.prepare(`
-        UPDATE assets 
-        SET SrNo = ?, LastUpdated = ?
-        WHERE LOWER(ID) = LOWER(?)
-      `).run(newSerials.join(', '), ts, parentId);
-
-      // 3. Create Children
-      const insertChild = db.prepare(`
-        INSERT INTO assets (
-          ID, ItemName, Status, Make, Model, SrNo, Type, Category, Icon, 
-          isPlaceholder, ParentId, CurrentLocation, DispatchReceiveDt, 
-          PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR, 
-          warranty_months, amc_months, asset_value, Currency, PurchaseDate, 
-          conversion_unit, conversion_factor, conversion_mode, is_quantity_tracked, is_batch
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      serials.forEach(sn => {
-        // Use standard ID generation logic from utils
-        const childId = generateModernAssetId(syncedParent.CurrentLocation, syncedParent.Type);
-        
-        // Determine status and assignment
-        let status = syncedParent.Status;
-        let assignedTo = syncedParent.AssignedTo;
-        
-        if (autoAssign) {
-            status = 'Assigned';
-            assignedTo = autoAssign;
-        } else if (projectId) {
-            status = 'Project';
-            assignedTo = `PROJECT:${projectId}`;
+    let projectName = projectId || 'N/A';
+    let projectInitials = 'NA';
+    try {
+        const project = await db('projects').where(isPostgres ? 'id' : 'ID', projectId).select(isPostgres ? 'projectname' : 'ProjectName', isPostgres ? 'initials' : 'Initials').first();
+        if (project) {
+            projectName = project.projectname || project.ProjectName;
+            projectInitials = project.initials || project.Initials || 'NA';
         }
+    } catch (err) {
+        console.warn(`[SPLIT] Could not fetch project name for ${projectId}:`, err.message);
+    }
 
-        insertChild.run(
-          childId,
-          syncedParent.ItemName,
-          status,
-          syncedParent.Make,
-          syncedParent.Model,
-          sn,
-          syncedParent.Type,
-          syncedParent.Category,
-          syncedParent.Icon,
-          0, parentId, syncedParent.CurrentLocation, syncedParent.DispatchReceiveDt,
-          syncedParent.PurchaseDetails, syncedParent.Remarks, ts, null, assignedTo, syncedParent.NoQR,
-          syncedParent.warranty_months, syncedParent.amc_months, syncedParent.asset_value, syncedParent.Currency, syncedParent.PurchaseDate,
-          syncedParent.conversion_unit, syncedParent.conversion_factor, syncedParent.conversion_mode, 0, 0
-        );
+    if (isPostgres) {
+        await db.transaction(async (trx) => {
+            // 1. Force Sync Parent Quantity
+            console.log(`[SPLIT] Syncing parent quantity to ${currentSerials.length}`);
+            await trx('assets')
+                .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+                .update({
+                    quantity_total: currentSerials.length,
+                    quantity_available: currentSerials.length,
+                    quantity_unit: db.raw('COALESCE(quantity_unit, ?)', ['pcs']),
+                    is_quantity_tracked: 1,
+                    quantity_root_id: db.raw('COALESCE(quantity_root_id, id)')
+                });
 
-        // If assigning to project, also update project_assets table
-        if (projectId) {
-          db.prepare(`
-            INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
-            VALUES (?, ?, ?, ?)
-          `).run(projectId, childId, ts, 'Permanent');
-        }
-      });
+            // 2. Re-fetch parent to ensure we have the synchronized quantity
+            let syncedParent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
+            syncedParent = normalizeResult(syncedParent);
 
-      // 4. Record Quantity Event for Parent
-      if (syncedParent.is_quantity_tracked) {
-        const note = autoAssign ? `Split ${serials.join(', ')} and assigned to ${autoAssign}` : 
-                     (projectId ? `Split ${serials.join(', ')} and assigned to Project ${projectId}` : 
-                     `Split ${splitCount} units to individual assets`);
-                     
-        applyQuantityEvent({
-          rootId: syncedParent.quantity_root_id || syncedParent.ID,
-          type: 'SPLIT',
-          actor: actor,
-          note: note,
-          metadata: { 
-            parentId: syncedParent.ID, 
-            splitCount: splitCount, 
-            serials: serials.join(', '),
-            assignedTo: autoAssign || (projectId ? `PROJECT:${projectId}` : null)
-          },
-          lines: [
-            { assetId: syncedParent.ID, unit: syncedParent.quantity_unit || 'pcs', deltaAvailable: -splitCount, deltaTotal: -splitCount, precision: syncedParent.quantity_precision || 0 }
-          ]
+            // 3. Update Parent Serial Numbers
+            console.log(`[SPLIT] Updating parent S/Ns to: ${newSerials.join(', ')}`);
+            await trx('assets')
+                .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+                .update({
+                    srno: newSerials.join(', '),
+                    lastupdated: ts
+                });
+
+            // 4. Create Children
+            const createdChildren = [];
+            for (const sn of serials) {
+                const childId = generateModernAssetId(syncedParent.CurrentLocation, syncedParent.Type);
+                console.log(`[SPLIT] Creating child asset: ${childId} with S/N: ${sn}`);
+                
+                let status = syncedParent.Status;
+                let assignedTo = syncedParent.AssignedTo;
+                let clientLabel = null;
+                
+                if (autoAssign) {
+                    status = 'Assigned';
+                    assignedTo = autoAssign;
+                } else if (projectId) {
+                    status = 'Project';
+                    assignedTo = `Project: ${projectName}`;
+                    
+                    // Generate Client Label: (AssetKind)-(ProjectInitials)-(6DigitCodeFromAssetID)
+                    const assetParts = childId.split('-');
+                    const assetKind = assetParts[0] || 'AST';
+                    const sixDigitCode = assetParts[3] || '000000';
+                    clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
+                }
+
+                const childRecord = {
+                    id: childId,
+                    itemname: syncedParent.ItemName,
+                    itemdescription: syncedParent.ItemDescription,
+                    status: status,
+                    make: syncedParent.Make,
+                    model: syncedParent.Model,
+                    srno: sn,
+                    type: syncedParent.Type,
+                    category: syncedParent.Category,
+                    icon: syncedParent.Icon,
+                    isplaceholder: 0,
+                    parentid: parentId,
+                    currentlocation: syncedParent.CurrentLocation,
+                    dispatchreceivedt: syncedParent.DispatchReceiveDt,
+                    purchasedetails: syncedParent.PurchaseDetails,
+                    remarks: syncedParent.Remarks,
+                    purpose: syncedParent.Purpose,
+                    lastupdated: ts,
+                    qrcode: null,
+                    assignedto: assignedTo,
+                    client_label: clientLabel,
+                    noqr: syncedParent.NoQR,
+                    warranty_months: syncedParent.WarrantyMonths || 0,
+                    amc_months: syncedParent.AMCMonths || 0,
+                    asset_value: syncedParent.AssetValue || 0,
+                    currency: syncedParent.Currency || 'INR',
+                    purchasedate: syncedParent.PurchaseDate,
+                    conversion_unit: syncedParent.conversion_unit,
+                    conversion_factor: syncedParent.conversion_factor,
+                    conversion_mode: syncedParent.conversion_mode,
+                    is_quantity_tracked: 0,
+                    is_batch: 0
+                };
+
+                // Clean up any undefined fields that might have come from normalizeResult
+                Object.keys(childRecord).forEach(key => childRecord[key] === undefined && delete childRecord[key]);
+
+                await trx('assets').insert(childRecord);
+                createdChildren.push(childRecord);
+
+                if (projectId) {
+                    await trx('project_assets').insert({
+                        projectid: projectId,
+                        assetid: childId,
+                        assigneddate: ts,
+                        type: 'Permanent'
+                    }).onConflict(['projectid', 'assetid']).merge();
+                }
+                
+                await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, sn, actor, `Created from parent ${parentId}`, trx);
+            }
+
+            // 5. Record Quantity Event for Parent
+            if (syncedParent.is_quantity_tracked) {
+                const note = autoAssign ? `Split ${serials.join(', ')} and assigned to ${autoAssign}` : 
+                             (projectId ? `Split ${serials.join(', ')} and assigned to Project ${projectId}` : 
+                             `Split ${splitCount} units to individual assets`);
+                
+                console.log(`[SPLIT] Applying quantity event for root: ${syncedParent.quantity_root_id || syncedParent.ID}`);
+                await applyQuantityEvent({
+                    rootId: syncedParent.quantity_root_id || syncedParent.ID,
+                    type: 'SPLIT',
+                    actor: actor,
+                    note: note,
+                    metadata: { 
+                        parentId: syncedParent.ID, 
+                        splitCount: splitCount, 
+                        serials: serials.join(', '),
+                        assignedTo: autoAssign || (projectId ? `PROJECT:${projectId}` : null)
+                    },
+                    lines: [
+                        { assetId: syncedParent.ID, unit: syncedParent.quantity_unit || 'pcs', deltaAvailable: -splitCount, deltaTotal: -splitCount, precision: syncedParent.quantity_precision || 0 }
+                    ]
+                }, trx);
+            }
+            
+            await logAssetHistory(parentId, 'SPLIT_PARENT_UPDATED', currentSerials.join(', '), newSerials.join(', '), actor, `Split ${splitCount} units`, trx);
+            
+            // Re-normalize created children for frontend
+            res.locals.createdAssets = createdChildren.map(c => normalizeResult(c));
         });
-      }
-    })();
+    } else {
+        // Legacy SQLite logic (keeping it as is but adding logging)
+        legacyDb.transaction(() => {
+          console.log(`[SPLIT-SQLITE] Syncing parent quantity to ${currentSerials.length}`);
+          legacyDb.prepare(`
+            UPDATE assets 
+            SET 
+              quantity_total = ?, 
+              quantity_available = ?, 
+              quantity_unit = COALESCE(quantity_unit, 'pcs'),
+              is_quantity_tracked = 1,
+              quantity_root_id = COALESCE(quantity_root_id, ID)
+            WHERE LOWER(ID) = LOWER(?)
+          `).run(currentSerials.length, currentSerials.length, parentId);
+    
+          const syncedParent = legacyDb.prepare('SELECT * FROM assets WHERE LOWER(ID) = LOWER(?)').get(parentId);
+    
+          console.log(`[SPLIT-SQLITE] Updating parent S/Ns to: ${newSerials.join(', ')}`);
+          legacyDb.prepare(`
+            UPDATE assets 
+            SET SrNo = ?, LastUpdated = ?
+            WHERE LOWER(ID) = LOWER(?)
+          `).run(newSerials.join(', '), ts, parentId);
+    
+          const insertChild = legacyDb.prepare(`
+            INSERT INTO assets (
+              ID, ItemName, Status, Make, Model, SrNo, Type, Category, Icon, 
+              isPlaceholder, ParentId, CurrentLocation, DispatchReceiveDt, 
+              PurchaseDetails, Remarks, LastUpdated, QRCode, AssignedTo, NoQR, 
+              warranty_months, amc_months, asset_value, Currency, PurchaseDate, 
+              conversion_unit, conversion_factor, conversion_mode, is_quantity_tracked, is_batch
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+    
+          const createdChildren = [];
+          serials.forEach(sn => {
+            const childId = generateModernAssetId(syncedParent.CurrentLocation, syncedParent.Type);
+            console.log(`[SPLIT-SQLITE] Creating child asset: ${childId} with S/N: ${sn}`);
+            let status = syncedParent.Status;
+            let assignedTo = syncedParent.AssignedTo;
+            if (autoAssign) {
+                status = 'Assigned';
+                assignedTo = autoAssign;
+            } else if (projectId) {
+                status = 'Project';
+                assignedTo = `Project: ${projectName}`;
+            }
+    
+            insertChild.run(
+              childId, syncedParent.ItemName, status, syncedParent.Make, syncedParent.Model, sn, syncedParent.Type, syncedParent.Category, syncedParent.Icon,
+              0, parentId, syncedParent.CurrentLocation, syncedParent.DispatchReceiveDt,
+              syncedParent.PurchaseDetails, syncedParent.Remarks, ts, null, assignedTo, syncedParent.NoQR,
+              syncedParent.warranty_months, syncedParent.amc_months, syncedParent.asset_value, syncedParent.Currency, syncedParent.PurchaseDate,
+              syncedParent.conversion_unit, syncedParent.conversion_factor, syncedParent.conversion_mode, 0, 0
+            );
+    
+            if (projectId) {
+              legacyDb.prepare(`
+                INSERT OR REPLACE INTO project_assets (ProjectID, AssetID, AssignedDate, Type)
+                VALUES (?, ?, ?, ?)
+              `).run(projectId, childId, ts, 'Permanent');
+            }
 
-    res.json({ success: true, count: splitCount });
+            createdChildren.push({
+                ID: childId, ItemName: syncedParent.ItemName, Status: status, Make: syncedParent.Make, Model: syncedParent.Model,
+                SrNo: sn, Type: syncedParent.Type, Category: syncedParent.Category, Icon: syncedParent.Icon,
+                AssignedTo: assignedTo
+            });
+          });
+          res.locals.createdAssets = createdChildren;
+    
+          if (syncedParent.is_quantity_tracked) {
+            const note = autoAssign ? `Split ${serials.join(', ')} and assigned to ${autoAssign}` : 
+                         (projectId ? `Split ${serials.join(', ')} and assigned to Project ${projectId}` : 
+                         `Split ${splitCount} units to individual assets`);
+                         
+            applyQuantityEvent({
+              rootId: syncedParent.quantity_root_id || syncedParent.ID,
+              type: 'SPLIT',
+              actor: actor,
+              note: note,
+              metadata: { 
+                parentId: syncedParent.ID, 
+                splitCount: splitCount, 
+                serials: serials.join(', '),
+                assignedTo: autoAssign || (projectId ? `PROJECT:${projectId}` : null)
+              },
+              lines: [
+                { assetId: syncedParent.ID, unit: syncedParent.quantity_unit || 'pcs', deltaAvailable: -splitCount, deltaTotal: -splitCount, precision: syncedParent.quantity_precision || 0 }
+              ]
+            });
+          }
+        })();
+    }
+
+    console.log(`[SPLIT] Successfully split ${splitCount} units from ${parentId}`);
+    res.json({ success: true, count: splitCount, assets: res.locals.createdAssets });
   } catch (err) {
-    console.error('Split error:', err);
+    console.error('[SPLIT] Fatal Error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
+  try {
+    const { childIds } = req.body;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    const actor = getRequestActor(req);
+    const ts = new Date().toISOString();
+
+    if (!childIds || !Array.isArray(childIds) || childIds.length === 0) {
+      return res.status(400).json({ error: 'List of Child IDs required' });
+    }
+
+    console.log(`[UNSPLIT] Request to merge children: ${childIds.join(', ')}`);
+
+    // We use a transaction to ensure all children are merged and parent updated
+    if (isPostgres) {
+      await db.transaction(async (trx) => {
+        // 1. Get all children and their parent info
+        let children = await trx('assets').whereIn('id', childIds);
+        children = normalizeResult(children);
+
+        if (children.length === 0) throw new Error('No valid children found');
+
+        const parentId = children[0].ParentId;
+        if (!parentId) throw new Error('Selected assets do not have a parent recorded');
+
+        // Verify all children have the same parent
+        if (children.some(c => c.ParentId !== parentId)) {
+          throw new Error('All selected assets must belong to the same parent');
+        }
+
+        // 2. Get the parent
+        let parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
+        parent = normalizeResult(parent);
+        if (!parent) throw new Error('Parent asset not found in database');
+
+        const childSerials = children.map(c => c.SrNo).filter(s => s);
+        const currentParentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+        
+        // Correct way: The new parent serial list is the union of existing and child serials
+        const mergedSerials = [...new Set([...currentParentSerials, ...childSerials])];
+        
+        // CRITICAL FIX: The quantity MUST equal the total number of serial numbers in the batch.
+        // We do not "add" quantity, we "sync" it to the actual count of serial numbers.
+        const correctQuantity = mergedSerials.length;
+        const currentQuantity = parseFloat(parent.quantity_total) || 0;
+        const delta = correctQuantity - currentQuantity;
+
+        console.log(`[UNSPLIT] Syncing parent ${parentId}. Current Qty: ${currentQuantity}, Target Qty (S/N count): ${correctQuantity}, Delta: ${delta}`);
+
+        // 3. Update Parent Serial Numbers
+        await trx('assets')
+          .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+          .update({
+            srno: mergedSerials.join(', '),
+            lastupdated: ts
+          });
+
+        // 4. Delete Children
+        const lowerChildIds = childIds.map(id => id.toLowerCase());
+        await trx('project_assets').whereRaw('LOWER(assetid) IN (' + lowerChildIds.map(() => '?').join(',') + ')', lowerChildIds).delete();
+        await trx('assets').whereRaw('LOWER(id) IN (' + lowerChildIds.map(() => '?').join(',') + ')', lowerChildIds).delete();
+
+        // 5. Record Quantity Event (Only if there is a delta)
+        if (delta !== 0) {
+          if (parent.is_quantity_tracked) {
+            console.log(`[UNSPLIT] Applying sync event for parent: ${parentId}, Delta: ${delta}`);
+            await applyQuantityEvent({
+              rootId: parent.quantity_root_id || parent.ID,
+              type: 'SYNC',
+              actor: actor,
+              note: `Unsplit merge: Synced quantity to match Serial Number count (${correctQuantity})`,
+              metadata: { parentId, mergedChildren: childIds, previousQty: currentQuantity, newQty: correctQuantity },
+              lines: [
+                { assetId: parent.ID, unit: parent.quantity_unit || 'pcs', deltaAvailable: delta, deltaTotal: delta, precision: parent.quantity_precision || 0 }
+              ]
+            }, trx);
+          } else {
+              await trx('assets')
+                  .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+                  .update({
+                      quantity_total: correctQuantity,
+                      quantity_available: correctQuantity
+                  });
+          }
+        }
+
+        await logAssetHistory(parentId, 'UNSPLIT_MERGED', childSerials.join(', '), mergedSerials.join(', '), actor, `Merged ${addedCount} children back`, trx);
+      });
+    } else {
+      // Legacy SQLite logic
+      legacyDb.transaction(() => {
+        const children = legacyDb.prepare(`SELECT * FROM assets WHERE ID IN (${childIds.map(() => '?').join(',')})`).all(...childIds);
+        if (children.length === 0) throw new Error('No valid children found');
+
+        const parentId = children[0].ParentId;
+        if (!parentId) throw new Error('Selected assets do not have a parent recorded');
+
+        const parent = legacyDb.prepare('SELECT * FROM assets WHERE ID = ?').get(parentId);
+        if (!parent) throw new Error('Parent asset not found');
+
+        const childSerials = children.map(c => c.SrNo).filter(s => s);
+        const currentParentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+        const mergedSerials = [...new Set([...currentParentSerials, ...childSerials])];
+        const addedCount = childIds.length;
+
+        legacyDb.prepare(`
+          UPDATE assets 
+          SET SrNo = ?, LastUpdated = ?
+          WHERE ID = ?
+        `).run(mergedSerials.join(', '), ts, parentId);
+
+        legacyDb.prepare(`DELETE FROM project_assets WHERE AssetID IN (${childIds.map(() => '?').join(',')})`).run(...childIds);
+        legacyDb.prepare(`DELETE FROM assets WHERE ID IN (${childIds.map(() => '?').join(',')})`).run(...childIds);
+
+        if (parent.is_quantity_tracked) {
+          applyQuantityEvent({
+            rootId: parent.quantity_root_id || parent.ID,
+            type: 'UNSPLIT',
+            actor: actor,
+            note: `Merged children: ${childIds.join(', ')} back to parent`,
+            metadata: { parentId, mergedChildren: childIds },
+            lines: [
+              { assetId: parent.ID, unit: parent.quantity_unit || 'pcs', deltaAvailable: addedCount, deltaTotal: addedCount, precision: parent.quantity_precision || 0 }
+            ]
+          });
+        } else {
+            legacyDb.prepare(`
+                UPDATE assets 
+                SET quantity_total = quantity_total + ?, quantity_available = quantity_available + ?
+                WHERE ID = ?
+            `).run(addedCount, addedCount, parentId);
+        }
+      })();
+    }
+
+    res.json({ success: true, message: `Successfully merged ${childIds.length} assets back to parent` });
+  } catch (err) {
+    console.error('[UNSPLIT] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/projects/:id/available-inventory', authenticateJWT, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        console.log(`[INVENTORY] Fetching available inventory for project: ${id}`);
+        
+        // This query finds all assets that are "In Store" or "Warehouse" and NOT assigned to any project
+        // Or assets that are already assigned to THIS project but might be available for other uses
+        
+        let assets;
+        if (isPostgres) {
+            assets = await db('assets as a')
+                .leftJoin('project_assets as pa', 'a.id', 'pa.assetid')
+                .where(function() {
+                    this.where('a.status', 'In Store')
+                        .orWhere('a.status', 'Warehouse')
+                        .orWhere('pa.projectid', id);
+                })
+                .andWhere(function() {
+                    this.where('a.is_deleted', 0).orWhereNull('a.is_deleted');
+                })
+                .select('a.id', 'a.itemname', 'a.status', 'a.make', 'a.model', 'a.type', 'a.category', 'a.icon', 'a.currency', 'a.unitprice')
+                .select(db.raw('CASE WHEN pa.projectid = ? THEN 1 ELSE 0 END as is_already_assigned', [id]))
+                .orderBy('a.itemname', 'asc');
+            
+            assets = normalizeResult(assets);
+        } else {
+            assets = legacyDb.prepare(`
+                SELECT a.ID, a.ItemName, a.Status, a.Make, a.Model, a.Type, a.Category, a.Icon, a.Currency, a.UnitPrice,
+                       CASE WHEN pa.ProjectID = ? THEN 1 ELSE 0 END as is_already_assigned
+                FROM assets a
+                LEFT JOIN project_assets pa ON a.ID = pa.AssetID
+                WHERE (a.Status IN ('In Store', 'Warehouse') OR pa.ProjectID = ?)
+                AND (a.is_deleted = 0 OR a.is_deleted IS NULL)
+                ORDER BY a.ItemName ASC
+            `).all(id, id);
+        }
+        
+        res.json({ success: true, assets });
+    } catch (err) {
+        console.error('[INVENTORY] Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 const server = app.listen(port, '0.0.0.0', () => {
@@ -7792,3 +9436,5 @@ const server = app.listen(port, '0.0.0.0', () => {
 
 // Set timeout to 10 minutes for long OCR jobs
 server.timeout = 600000;
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;

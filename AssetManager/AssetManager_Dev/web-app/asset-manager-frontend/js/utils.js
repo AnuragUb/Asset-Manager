@@ -68,6 +68,91 @@ export function showView(viewName) {
     }
 }
 
+/**
+ * RBAC Helper: Check if current user has a specific permission
+ * @param {string} permissionKey 
+ * @returns {boolean}
+ */
+export function hasPermission(permissionKey) {
+    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const permissions = user.permissions || [];
+    const role = user.role || '';
+    
+    // Superusers and Admins bypass all checks
+    if (role === 'superuser' || role === 'admin') return true;
+    
+    return permissions.includes(permissionKey);
+}
+
+/**
+ * RBAC Helper: Check if user can view asset pricing
+ */
+export function canViewPrice() {
+    return hasPermission('asset.view_price');
+}
+
+/**
+ * RBAC Helper: Check if user can edit asset pricing
+ */
+export function canEditPrice() {
+    return hasPermission('asset.edit_price');
+}
+
+/**
+ * Apply UI restrictions based on user permissions
+ * @param {object} user 
+ */
+export function applyRbacUiRestrictions(user) {
+    console.log('[RBAC] Applying UI restrictions for:', user.role);
+    
+    const permissions = user.permissions || [];
+    const role = user.role || '';
+    const isAdmin = role === 'admin' || role === 'superuser';
+    const canViewPrice = isAdmin || permissions.includes('asset.view_price');
+    const canEditPrice = isAdmin || permissions.includes('asset.edit_price');
+    const canManageUsers = isAdmin || permissions.includes('user.manage');
+
+    // 1. Price Visibility
+    if (!canViewPrice) {
+        document.querySelectorAll('.can-view-price').forEach(el => {
+            el.style.display = 'none';
+        });
+        console.log('[RBAC] Hidden price fields/columns');
+    }
+
+    // 2. Price Editing
+    if (!canEditPrice) {
+        const priceInputs = ['itemValue', 'itemCurrency', 'itemUnitPrice'];
+        priceInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.disabled = true;
+                el.title = 'You do not have permission to edit price information.';
+            }
+        });
+        console.log('[RBAC] Disabled price editing');
+    }
+
+    // 3. User Management
+    const navAdmin = document.getElementById('nav-admin');
+    if (navAdmin && !canManageUsers) {
+        navAdmin.style.display = 'none';
+    }
+
+    // 4. Settings Module
+    const navSettings = document.getElementById('nav-settings');
+    if (navSettings && !isAdmin && !permissions.includes('module.settings.access')) {
+        navSettings.style.display = 'none';
+    }
+
+    // 5. Category Management
+    const btnAddCategory = document.getElementById('btnAddCategory');
+    if (btnAddCategory && !isAdmin && !permissions.includes('category.create')) {
+        btnAddCategory.style.display = 'none';
+    }
+}
+window.applyRbacUiRestrictions = applyRbacUiRestrictions;
+
 export function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return; // Should allow fallback to alert if container missing?

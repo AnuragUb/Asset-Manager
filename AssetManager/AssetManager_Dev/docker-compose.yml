@@ -1,43 +1,73 @@
-version: '3.8'
-
 services:
-  # Production Environment
-  app-prod:
+  # Database: PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: asset-manager-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-asset_manager}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Cache: Redis
+  redis:
+    image: redis:7-alpine
+    container_name: asset-manager-cache
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  # Backend Application (Development - Port 8080)
+  app-dev:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: asset-manager-prod
-    restart: always
+    container_name: asset-manager-dev
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
     ports:
       - "8080:8080"
-    volumes:
-      # Map host data directory to container data directory
-      # Ensure you create these folders on your host machine: ./data/prod
-      - ./data/prod:/app/data
-      # Optionally mount uploads if they are stored in backend folder
-      - ./data/prod/uploads:/app/web-app/asset-manager-backend/uploads
     environment:
+      - NODE_ENV=development
       - PORT=8080
-      - NODE_ENV=production
-      - DATA_DIR=/app/data
-      - DB_PATH=/app/data/database_v2.db
+      - DB_CLIENT=postgresql
+      - DB_HOST=postgres
+      - DB_NAME=${DB_NAME:-asset_manager}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
 
-  # Testing Environment
+  # Backend Application (Testing - Port 9090)
   app-test:
     build: 
       context: .
       dockerfile: Dockerfile
     container_name: asset-manager-test
+    depends_on:
+      - postgres
+      - redis
     restart: unless-stopped
     ports:
       - "9090:9090"
-    volumes:
-      # Map host data directory to container data directory
-      # Ensure you create these folders on your host machine: ./data/test
-      - ./data/test:/app/data
-      - ./data/test/uploads:/app/web-app/asset-manager-backend/uploads
     environment:
-      - PORT=9090
       - NODE_ENV=development
-      - DATA_DIR=/app/data
-      - DB_PATH=/app/data/database_v2.db
+      - PORT=9090
+      - DB_CLIENT=postgresql
+      - DB_HOST=postgres
+      - DB_NAME=asset_manager_test
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+volumes:
+  postgres_data:

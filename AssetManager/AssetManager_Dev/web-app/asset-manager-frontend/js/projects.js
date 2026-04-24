@@ -1,9 +1,90 @@
-import { showView } from './utils.js?v=5.50';
+import { showView, canViewPrice, canEditPrice, showToast } from './utils.js?v=6.01';
 
-console.log('[Projects] Module loading... (v5.50)');
+console.log('[Projects] Module loading... (v6.01)');
 
 let allProjects = [];
 let currentProjectId = null;
+
+// --- Employee Search Helpers ---
+let cachedEmployees = [];
+
+async function initEmployeeSearch(inputId, resultsId) {
+    const input = document.getElementById(inputId);
+    const results = document.getElementById(resultsId);
+    if (!input || !results) return;
+
+    console.log(`[Search] Initializing for ${inputId} on ${window.location.port}`);
+
+    // Always fetch employees when opening search to ensure we have the right data for the port
+    try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/employees?all=true', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            cachedEmployees = Array.isArray(data) ? data : (data.data || []);
+            console.log(`[Search] Loaded ${cachedEmployees.length} employees from port ${window.location.port}`);
+        }
+    } catch (err) {
+        console.error('[Search] Fetch failed:', err);
+    }
+
+    input.oninput = (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        if (query.length < 1) {
+            results.style.display = 'none';
+            return;
+        }
+
+        const matches = cachedEmployees.filter(emp => 
+            (emp.Name || '').toLowerCase().includes(query) || 
+            (emp.Department || '').toLowerCase().includes(query) ||
+            (emp.Email || '').toLowerCase().includes(query)
+        ).slice(0, 15); // Show up to 15
+
+        console.log(`[Search] Query: "${query}", Matches: ${matches.length}`);
+
+        if (matches.length > 0) {
+            results.innerHTML = matches.map(emp => `
+                <div class="search-item-result" 
+                     onclick="window.selectEmployeeForProject('${inputId}', '${resultsId}', '${emp.Email || ''}', '${emp.Name.replace(/'/g, "\\'")}')">
+                    <div class="emp-name">${emp.Name}</div>
+                    <div class="emp-meta">
+                        ${emp.Department || 'N/A'} • 
+                        ${emp.Email ? `<span style="color:#0078d4">${emp.Email}</span>` : '<span class="emp-no-email">No Email Found</span>'}
+                    </div>
+                </div>
+            `).join('');
+            results.style.display = 'block';
+        } else {
+            results.innerHTML = '<div style="padding: 10px; font-size: 12px; color: #999;">No employees found</div>';
+            results.style.display = 'block';
+        }
+    };
+
+    // Prevent modal clicks from closing the search results if clicking inside the results
+    results.onclick = (e) => e.stopPropagation();
+
+    // Close results when clicking outside
+    const closeHandler = (e) => {
+        if (e.target !== input && e.target !== results) {
+            results.style.display = 'none';
+            // Clean up listener when no longer needed? No, standard practice is fine here.
+        }
+    };
+    document.addEventListener('click', closeHandler);
+}
+
+window.selectEmployeeForProject = (inputId, resultsId, email, name) => {
+    const input = document.getElementById(inputId);
+    const results = document.getElementById(resultsId);
+    if (input) input.value = email || '';
+    if (results) results.style.display = 'none';
+    if (!email) {
+        showToast(`Warning: No email found for ${name}`, 'warning');
+    }
+};
 
 // --- GLOBAL PO MANAGEMENT FUNCTIONS (TOP-LEVEL FOR RELIABLE ACCESS) ---
 
@@ -120,7 +201,7 @@ window.searchPreviousPOs = async function(query) {
                     <div><strong>Consignee:</strong> ${o.ConsigneeName || 'N/A'}</div>
                     <div style="display: flex; justify-content: space-between; margin-top: 4px; border-top: 1px dashed #e2e8f0; padding-top: 4px;">
                         <span><strong>Date:</strong> ${o.PODate || o.OrderDate || 'N/A'}</span>
-                        <span style="color: #2563eb; font-weight: 600;">₹${(o.TotalAmount || 0).toLocaleString()}</span>
+                        ${canViewPrice() ? `<span style="color: #2563eb; font-weight: 600;">₹${(o.TotalAmount || 0).toLocaleString()}</span>` : ''}
                     </div>
                 </div>
             </div>
@@ -544,6 +625,10 @@ async function showProjectDetails(id) {
         clientInfo.innerHTML = `
             <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Client</div>
             <div style="font-weight: 600; font-size: 16px; color: #0f172a;">${project.ClientName || 'N/A'}</div>
+            <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
+                <span>Initials:</span>
+                <span style="background: #f1f5f9; padding: 1px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">${project.initials || project.Initials || 'N/A'}</span>
+            </div>
             <div style="font-size: 13px; color: #334155; margin-top: 8px;">
                 ${project.Description || 'No description provided.'}
             </div>
@@ -676,6 +761,12 @@ async function unassignAssetFromProject(projectId, assetId) {
             showToast('Asset unassigned successfully', 'success');
             loadProjectAssets(projectId);
             if (window.loadAssets) window.loadAssets();
+            
+            // Also refresh workspace if active
+            const workspaceTab = document.getElementById('projectWorkspaceTab');
+            if (workspaceTab && workspaceTab.style.display !== 'none') {
+                initProjectWorkspace(projectId);
+            }
         } else {
             const err = await res.json();
             alert('Failed to unassign: ' + (err.error || 'Unknown error'));
@@ -731,6 +822,14 @@ async function loadProjectAssets(projectId) {
 // Expose to window for HTML onclick handlers
 window.showAddTempAssetModal = showAddTempAssetModal;
 
+window.showCreateProjectModal = function() {
+    const modal = document.getElementById('createProjectModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        initEmployeeSearch('sideCoordinatorEmail', 'sideEmployeeSearchResults');
+    }
+};
+
 async function showEditBillingModal(project) {
     let modal = document.getElementById('editBillingModal');
     if (!modal) {
@@ -769,15 +868,20 @@ async function showEditBillingModal(project) {
                         </div>
                     </div>
 
-                    <h4 style="margin: 15px 0 10px 0; color: #0078d4;">Project Contacts</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <h4 style="margin: 15px 0 10px 0; color: #0078d4;">Project Identity & Contacts</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label style="font-size: 11px;">Project Initials</label>
+                            <input type="text" id="editProjectInitials" placeholder="e.g. AMH" class="form-input" maxlength="5">
+                        </div>
                         <div class="form-group">
                             <label style="font-size: 11px;">Owner Email</label>
                             <input type="email" id="editOwnerEmail" placeholder="owner@client.com" class="form-input">
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" style="position: relative;">
                             <label style="font-size: 11px;">Coordinator Email</label>
-                            <input type="email" id="editCoordinatorEmail" placeholder="coord@client.com" class="form-input">
+                            <input type="email" id="editCoordinatorEmail" placeholder="Search name or type email..." class="form-input" autocomplete="off">
+                            <div id="editEmployeeSearchResults" class="search-results-floating" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; max-height: 200px; overflow-y: auto;"></div>
                         </div>
                     </div>
                 </div>
@@ -803,8 +907,12 @@ async function showEditBillingModal(project) {
     document.getElementById('editConsigneeState').value = project.ConsigneeState || '';
     document.getElementById('editConsigneeStateCode').value = project.ConsigneeStateCode || '';
     
+    document.getElementById('editProjectInitials').value = project.initials || project.Initials || '';
     document.getElementById('editOwnerEmail').value = project.OwnerEmail || '';
     document.getElementById('editCoordinatorEmail').value = project.CoordinatorEmail || '';
+
+    // Initialize Searchable Results for Edit Modal
+    initEmployeeSearch('editCoordinatorEmail', 'editEmployeeSearchResults');
 
     // Save Handler
     document.getElementById('btnSaveBillingDetails').onclick = async () => {
@@ -819,6 +927,7 @@ async function showEditBillingModal(project) {
             ConsigneeGSTIN: document.getElementById('editConsigneeGSTIN').value,
             ConsigneeState: document.getElementById('editConsigneeState').value,
             ConsigneeStateCode: document.getElementById('editConsigneeStateCode').value,
+            Initials: document.getElementById('editProjectInitials').value,
             OwnerEmail: document.getElementById('editOwnerEmail').value,
             CoordinatorEmail: document.getElementById('editCoordinatorEmail').value
         };
@@ -884,7 +993,8 @@ async function handleCreateProject(e) {
         ConsigneeState: getValue('sideConsigneeState'),
         ConsigneeStateCode: getValue('sideConsigneeStateCode'),
         OwnerEmail: getValue('sideOwnerEmail'),
-        CoordinatorEmail: getValue('sideCoordinatorEmail')
+        CoordinatorEmail: getValue('sideCoordinatorEmail'),
+        Initials: getValue('sideProjectInitials')
     };
 
     // If critical fields are missing, show inline validation instead of alert
@@ -925,6 +1035,7 @@ async function handleCreateProject(e) {
         document.getElementById('sideProjectDesc').value = '';
         document.getElementById('sideProjectStartDate').value = '';
         document.getElementById('sideProjectEndDate').value = '';
+        document.getElementById('sideProjectInitials').value = '';
         ['sideBuyerName', 'sideBuyerAddress', 'sideBuyerGSTIN', 'sideBuyerState', 'sideBuyerStateCode', 
          'sideConsigneeName', 'sideConsigneeAddress', 'sideConsigneeGSTIN', 'sideConsigneeState', 'sideConsigneeStateCode',
          'sideOwnerEmail', 'sideCoordinatorEmail'].forEach(id => {
@@ -2069,7 +2180,7 @@ async function showAssignAssetModal() {
     }
 }
 
-async function handleProjectBatchSplit(asset, projectId) {
+async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
     console.log('[Projects] Batch split for project called:', asset.ID, projectId);
     
     // Create a mini modal to pick serial numbers
@@ -2115,9 +2226,13 @@ async function handleProjectBatchSplit(asset, projectId) {
         }
 
         try {
+            const token = localStorage.getItem('token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
             const response = await fetch('/api/assets/split', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ 
                     parentId: asset.ID, 
                     serials: selected,
@@ -2129,10 +2244,18 @@ async function handleProjectBatchSplit(asset, projectId) {
                 const data = await response.json();
                 showToast(`Split & assigned ${data.count} unit(s) to project`, 'success');
                 splitModal.style.display = 'none';
-                document.getElementById('assignAssetModal_v2').style.display = 'none';
+                
+                // Close the parent assignment modal if it exists
+                const assignModal = document.getElementById('assignAssetModal_v2');
+                if (assignModal) assignModal.style.display = 'none';
                 
                 // Refresh project assets
                 loadProjectAssets(projectId);
+
+                // Call the completion callback if provided (useful for Workspace)
+                if (typeof onComplete === 'function') {
+                    onComplete(data.assets || []);
+                }
             } else {
                 const err = await response.json();
                 alert('Split failed: ' + (err.error || 'Unknown error'));
@@ -2189,9 +2312,34 @@ async function initProjectWorkspace(projectId) {
     if (btnDC) btnDC.onclick = handleWorkspaceGenerateDC;
 
     // Load Data
+    await loadExistingWorkspaceAssets(projectId);
     await loadWorkspaceInventory();
     await loadWorkspacePO(projectId);
     updateWorkspacePoProgress();
+}
+
+async function loadExistingWorkspaceAssets(projectId) {
+    try {
+        console.log('[Workspace] Loading existing project assets into staging...');
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`);
+        if (!res.ok) throw new Error('Failed to load project assets');
+        const assets = await res.json();
+        
+        // We only add assets that are "In-Use" or "Project" status 
+        // (Temporary assets also included)
+        workspaceStagedAssets = assets.map(a => ({
+            ...a,
+            ID: a.ID || a.id,
+            ItemName: a.ItemName || a.itemname,
+            Icon: a.Icon || a.icon,
+            linkedPoItemId: a.linked_po_item_id
+        }));
+        
+        console.log(`[Workspace] Pre-populated staging with ${workspaceStagedAssets.length} assets`);
+        renderStagingArea();
+    } catch (err) {
+        console.error('[Workspace] Error pre-populating staging:', err);
+    }
 }
 
 async function loadWorkspaceInventory(term = '') {
@@ -2225,18 +2373,26 @@ async function loadWorkspaceInventory(term = '') {
             return;
         }
 
-        list.innerHTML = assets.map(asset => `
-            <div class="workspace-asset-card" draggable="true" 
-                 style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; cursor: grab; user-select: none; margin-bottom: 8px;"
-                 data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}'>
-                <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${asset.ItemName}</div>
-                <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${asset.Type}</span>
-                    ${asset.is_batch ? `<span style="font-size: 10px; color: #2563eb; font-weight: 700;">📦 BATCH</span>` : ''}
+        list.innerHTML = assets.map(asset => {
+            const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+            const qtyDesc = asset.is_batch ? `${serials.length} units` : (asset.quantity_total ? `${asset.quantity_available} ${asset.quantity_unit || 'pcs'}` : '1 unit');
+            
+            return `
+                <div class="workspace-asset-card" draggable="true" 
+                     style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; cursor: grab; user-select: none; margin-bottom: 8px;"
+                     data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}'>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${asset.ItemName}</div>
+                        <div style="font-size: 10px; color: #2563eb; font-weight: 600; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">${qtyDesc}</div>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                        <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${asset.Type}</span>
+                        ${asset.is_batch ? `<span style="font-size: 10px; color: #2563eb; font-weight: 700;">📦 BATCH</span>` : ''}
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         // Add drag handlers
         list.querySelectorAll('.workspace-asset-card').forEach(card => {
@@ -2363,7 +2519,22 @@ function renderWorkspacePoChecklist() {
 async function handleWorkspaceDrop(asset) {
     // If batch, we need to split
     if (asset.is_batch) {
-        handleProjectBatchSplit(asset, currentProjectId);
+        handleProjectBatchSplit(asset, currentProjectId, (newAssets) => {
+            console.log('[Workspace] Split completed, adding child assets to staging:', newAssets);
+            
+            // Add all newly created child assets to staging
+            newAssets.forEach(child => {
+                if (!workspaceStagedAssets.some(a => a.ID === child.ID)) {
+                    workspaceStagedAssets.push(child);
+                }
+            });
+            
+            renderStagingArea();
+            updateWorkspacePoProgress();
+            
+            // Refresh inventory to remove the split serial numbers from the parent batch
+            loadWorkspaceInventory(document.getElementById('workspaceSearch').value);
+        });
         return;
     }
 
@@ -2434,9 +2605,17 @@ function renderStagingArea() {
                 <div style="font-size: 20px;">📦</div>
                 <div style="flex-grow: 1;">
                     <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${asset.ItemName}</div>
-                    <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
+                    <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID} ${asset.SrNo ? `(S/N: ${asset.SrNo})` : ''}</div>
+                    ${asset.ParentId ? `<div style="font-size: 10px; color: #2563eb; margin-top: 2px;">Child of ${asset.ParentId}</div>` : ''}
                 </div>
-                <button onclick="removeFromWorkspaceStaging(${index})" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px;">&times;</button>
+                <div style="display: flex; gap: 5px;">
+                    ${asset.ParentId ? `
+                        <button onclick="handleUnsplit('${asset.ID}', ${index})" 
+                                title="Unsplit: Merge back into parent batch"
+                                style="background: #f8fafc; border: 1px solid #e2e8f0; color: #2563eb; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 14px;">🔗</button>
+                    ` : ''}
+                    <button onclick="removeFromWorkspaceStaging(${index})" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px;">&times;</button>
+                </div>
             </div>
             
             <div style="border-top: 1px solid #f1f5f9; padding-top: 8px;">
@@ -2448,6 +2627,40 @@ function renderStagingArea() {
         </div>
     `).join('');
 }
+
+window.handleUnsplit = async (childId, index) => {
+    if (!confirm('Are you sure you want to unsplit this asset? It will be merged back into its parent batch and removed from this list.')) {
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/assets/unsplit', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ childIds: [childId] })
+        });
+
+        if (res.ok) {
+            showToast('Asset merged back into parent batch', 'success');
+            // Remove from staging
+            workspaceStagedAssets.splice(index, 1);
+            renderStagingArea();
+            updateWorkspacePoProgress();
+            // Refresh inventory to show updated parent qty
+            loadWorkspaceInventory(document.getElementById('workspaceSearch').value);
+        } else {
+            const data = await res.json();
+            alert('Unsplit failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('[Workspace] Unsplit Error:', err);
+        alert('Error processing unsplit');
+    }
+};
 
 window.tagAssetToPoItem = async (assetIndex, poItemId) => {
     const asset = workspaceStagedAssets[assetIndex];

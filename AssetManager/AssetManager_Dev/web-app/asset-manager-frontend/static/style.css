@@ -197,6 +197,55 @@ body {
 .view {
     background-color: #fff;
     padding: 20px;
+}
+
+/* Floating Search Results */
+.search-results-floating {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    z-index: 10005; /* Must be higher than modal z-index */
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.search-item-result {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.2s;
+}
+
+.search-item-result:last-child {
+    border-bottom: none;
+}
+
+.search-item-result:hover {
+    background: #f8fafc;
+}
+
+.search-item-result .emp-name {
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 13px;
+}
+
+.search-item-result .emp-meta {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.search-item-result .emp-no-email {
+    color: #ef4444;
+    font-weight: 500;
+}
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     margin-bottom: 20px;

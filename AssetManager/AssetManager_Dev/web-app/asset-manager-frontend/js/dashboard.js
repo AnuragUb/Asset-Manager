@@ -1,4 +1,4 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast } from './utils.js?v=5.50';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=5.50';
 import { HierarchyManager } from './hierarchy.js?v=5.50';
 import { DataProcessor } from './dataProcessor.js?v=5.50';
 import { initScannerView } from './networkScanner.js?v=5.50';
@@ -253,10 +253,15 @@ function toggleSelectionMode(enable) {
     
     // Also refresh asset list modal if open
     const assetListModal = document.getElementById('assetListModal');
-    if (assetListModal && assetListModal.style.display === 'flex') {
-        const title = document.getElementById('assetListTitle').textContent;
-        const kindName = title.replace(' Inventory', '');
-        showAssetList(kindName);
+    if (assetListModal && (assetListModal.style.display === 'flex' || !assetListModal.classList.contains('hidden'))) {
+        const titleEl = document.getElementById('assetListTitle');
+        if (titleEl) {
+            const title = titleEl.textContent;
+            // Handle various title formats like "Monitor Inventory" or "Search Results"
+            const kindName = title.split(' Inventory')[0].trim();
+            console.log(`[BatchPrint] Refreshing modal for kind: ${kindName}`);
+            showAssetList(kindName);
+        }
     }
 }
 
@@ -881,9 +886,22 @@ window.initDCView = initDCView;
 window.initSheetView = initSheetView;
 
 function showDCPreview(result) {
+    console.log('[DC Preview] Rendering result:', result);
     const modal = document.getElementById('dcPreviewModal');
     const printable = document.getElementById('printableDC');
-    const payload = result?.payload && typeof result.payload === 'object' ? result.payload : {};
+    
+    if (!modal || !printable) {
+        console.error('[DC Preview] Modal or printable container not found');
+        return;
+    }
+
+    // Handle both flattened and nested backend responses
+    const dcData = result.dc || result; 
+    const payload = (result.payload && typeof result.payload === 'object') ? result.payload : (dcData.PayloadJSON ? JSON.parse(dcData.PayloadJSON) : {});
+    
+    console.log('[DC Preview] Extracted DC Data:', dcData);
+    console.log('[DC Preview] Extracted Payload:', payload);
+
     const company = payload.company || {};
     const consignee = payload.consignee || {};
     const buyer = payload.buyer || {};
@@ -891,6 +909,8 @@ function showDCPreview(result) {
     const items = Array.isArray(payload.items) ? payload.items : [];
 
     if (printable) {
+        const displayStyle = showRateAmount ? '' : 'display: none;';
+        
         const itemsHtml = items.map((it, idx) => {
             const qty = it.qty ?? '';
             const rate = it.rate ?? '';
@@ -903,8 +923,8 @@ function showDCPreview(result) {
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">${escapeHtml(it.hsn || '')}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px; font-variant-numeric: tabular-nums;">${escapeHtml(qty)}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">${escapeHtml(it.per || 'NO')}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums;">${escapeHtml(rate)}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums;">${escapeHtml(amount)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums; ${displayStyle}">${escapeHtml(rate)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums; ${displayStyle}">${escapeHtml(amount)}</td>
                 </tr>
             `;
         }).join('');
@@ -914,15 +934,14 @@ function showDCPreview(result) {
             return acc + (n === null ? 0 : n);
         }, 0);
         const totalWords = formatAmountWords(round2(totalAmount));
-        const challanNo = result.challanNo || result.ChallanNo || '';
-        // const dcId = result.id || result.ID || ''; // Hidden as requested
-        const dated = meta.deliveryDate || meta.dated || result.deliveryDate || result.DeliveryDate || '';
         
-        // Order Date Logic: fetched from meta or fallback to empty
+        const challanNo = dcData.challanNo || dcData.ChallanNo || '';
+        const dated = meta.deliveryDate || meta.dated || dcData.deliveryDate || dcData.DeliveryDate || '';
         const orderDate = meta.orderDate || '';
+        const qrCode = dcData.qrCode || dcData.QRCode || '';
 
         printable.innerHTML = `
-            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif; position: relative;">
+            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif; position: relative; background: white;">
                 
                 <!-- Watermark Header -->
                 <div style="position: absolute; top: 10px; right: 14px; font-size: 12px; font-style: italic; font-weight: bold;">(ORIGINAL FOR CONSIGNEE)</div>
@@ -1001,20 +1020,20 @@ function showDCPreview(result) {
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">HSN/SAC</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px;">Qty</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">Per</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px;">Rate</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px;">Amount</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; ${displayStyle}">Rate</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; ${displayStyle}">Amount</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${itemsHtml || `<tr><td colspan="8" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
-                        <tr>
+                        ${itemsHtml || `<tr><td colspan="${showRateAmount ? 8 : 6}" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
+                        <tr style="${displayStyle}">
                             <td colspan="7" style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800;">Total</td>
                             <td style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums;">${escapeHtml(round2(totalAmount))}</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px;">
+                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px; ${displayStyle}">
                     <div style="display: grid; grid-template-columns: 190px 1fr; gap: 8px;">
                         <div style="color:#555;">Amount Chargeable (in words)</div>
                         <div style="font-weight: 700;">${escapeHtml(totalWords)}</div>
@@ -1028,7 +1047,7 @@ function showDCPreview(result) {
                     </div>
                     <div style="text-align: center;">
                         <div style="font-size: 10px; color: #666; margin-bottom: 6px;">VALIDATE</div>
-                        <img src="${result.qrCode || result.QRCode || ''}" style="width: 120px; height: 120px; border: 1px solid #eee; padding: 6px;" />
+                        <img src="${qrCode}" style="width: 120px; height: 120px; border: 1px solid #eee; padding: 6px;" />
                     </div>
                     <div style="text-align: right;">
                         <div style="height: 60px;"></div>
@@ -1140,7 +1159,7 @@ async function initSheetView() {
                 { title: "Item Name", field: "ItemName", headerFilter: "input" },
                 { title: "Project ID", field: "ProjectId", width: 120, headerFilter: "input" },
                 { title: "Quantity", field: "Quantity", width: 100, headerFilter: "number" },
-                { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number" },
+                { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number", visible: canViewPrice() },
                 { title: "Currency", field: "Currency", width: 80 },
                 { title: "Make", field: "Make", headerFilter: "input" },
                 { title: "Model", field: "Model", headerFilter: "input" },
@@ -1188,7 +1207,7 @@ async function initSheetView() {
             { title: "Item Name", field: "ItemName", headerFilter: "input" },
             { title: "Project ID", field: "ProjectId", width: 120, headerFilter: "input" },
             { title: "Quantity", field: "Quantity", width: 100, headerFilter: "number" },
-            { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number" },
+            { title: "Price", field: "EstimatedPrice", width: 100, headerFilter: "number", visible: canViewPrice() },
             { title: "Currency", field: "Currency", width: 80 },
             { title: "Make", field: "Make", headerFilter: "input" },
             { title: "Model", field: "Model", headerFilter: "input" },
@@ -1582,9 +1601,52 @@ export function setupDashboard() {
                 showToast('Please select at least one asset to print.', 'warning');
                 return;
             }
-            showBatchPrintPreview();
+            window.openPrintPreview(selectedBatchAssets);
         };
     }
+
+    // Unified QR Print Modal Handlers
+    const closeQrPrintModal = document.getElementById('closeQrPrintModal');
+    if (closeQrPrintModal) {
+        closeQrPrintModal.onclick = () => {
+            const modal = document.getElementById('qrPrintModal');
+            if (modal) modal.style.display = 'none';
+        };
+    }
+
+    const btnConfirmPrint = document.getElementById('btnConfirmPrint');
+    if (btnConfirmPrint) {
+        btnConfirmPrint.onclick = () => {
+            window.print();
+        };
+    }
+
+    // Universal Size Buttons for QR Print Modal
+    document.querySelectorAll('.qr-size-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.qr-size-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const newSize = btn.dataset.size;
+            const container = document.getElementById('qrPrintContainer');
+            if (container) {
+                container.className = `qr-print-${newSize}`;
+                const newLabelClass = newSize === '5cm' ? 'print-label-50mm' : (newSize === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
+                container.querySelectorAll('.batch-qr-item').forEach(item => {
+                    item.className = `batch-qr-item ${newLabelClass}`;
+                    // Toggle text visibility based on size
+                    const h2 = item.querySelector('h2');
+                    const id = item.querySelector('.asset-id');
+                    if (newSize === '1cm') {
+                        if (h2) h2.style.display = 'none';
+                        if (id) id.style.display = 'none';
+                    } else {
+                        if (h2) h2.style.display = 'block';
+                        if (id) id.style.display = 'block';
+                    }
+                });
+            }
+        };
+    });
 
     // Setup Search Logic
     const searchInput = document.querySelector('.sidebar-search input');
@@ -2169,7 +2231,7 @@ window.showProjectDetails = async function(projectId) {
                     <span class="stat-value">${tempAssets.length}</span>
                     <span class="stat-label">Temp Assets</span>
                 </div>
-                <div class="stat-item" style="grid-column: span 2;">
+                <div class="stat-item" style="grid-column: span 2; ${canViewPrice() ? '' : 'display: none;'}">
                     <span class="stat-value">${projectSymbol}${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                     <span class="stat-label">Total Est. Value (${currentProjectCurrency})</span>
                 </div>
@@ -2389,8 +2451,8 @@ window.showAssetDetails = async function(assetId) {
                 <p><strong>Sent Against DC:</strong> ${asset.SentAgainstDC || '-'}</p>
                 <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
                 <div style="margin-top: 15px; border: 1px solid #eee; padding: 10px; border-radius: 8px; text-align: center; background: white;">
-                    <img src="${qrSrc}" style="width: 120px; height: 120px;" onerror="this.src='/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}'">
-                    <div style="font-size: 10px; color: #999; margin-top: 5px;">QR Code</div>
+                    <canvas id="modal-dynamic-qr" style="width: 120px; height: 120px;"></canvas>
+                    <div style="font-size: 10px; color: #999; margin-top: 5px;">Internal Smart QR</div>
                 </div>
             </div>
         </div>
@@ -2409,6 +2471,16 @@ window.showAssetDetails = async function(assetId) {
     `;
 
     content.innerHTML = html;
+
+    // Initialize Modal Dynamic Smart QR
+    if (window.QRCode) {
+        const url = `${window.location.origin}/asset/${encodeURIComponent(asset.ID)}`;
+        QRCode.toCanvas(document.getElementById('modal-dynamic-qr'), url, {
+            width: 120,
+            margin: 1,
+            color: { dark: '#000000', light: '#ffffff' }
+        });
+    }
 
     // Fetch and render history
     fetchAssetHistory(asset.ID);
@@ -4158,77 +4230,38 @@ export function renderDashboard(assets, filteredAssets) {
     }
 }
 
-function showBatchPrintPreview() {
-    const batchView = document.getElementById('batchPrintView');
-    const container = document.getElementById('batchQrContainer');
-    if (!batchView || !container) return;
+window.openPrintPreview = function(assetsToPrint) {
+    const modal = document.getElementById('qrPrintModal');
+    const container = document.getElementById('qrPrintContainer');
+    if (!modal || !container) return;
 
-    console.log(`[BatchPrint] Rendering ${selectedBatchAssets.length} assets`);
+    // Close all other modals first
+    document.querySelectorAll('.modal:not(#qrPrintModal)').forEach(m => m.style.display = 'none');
 
-    const activeBtn = document.querySelector('.batch-size-btn.active');
+    console.log(`[PrintPreview] Rendering ${assetsToPrint.length} assets`);
+
+    const activeBtn = document.querySelector('.qr-size-btn.active');
     const size = activeBtn ? activeBtn.dataset.size : '5cm';
     const labelClass = size === '5cm' ? 'print-label-50mm' : (size === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
 
-    // Apply initial size class
-    batchView.className = `view qr-print-${size}`;
+    // Reset container class
+    container.className = `qr-print-${size}`;
 
-    container.innerHTML = selectedBatchAssets.map(asset => {
+    container.innerHTML = assetsToPrint.map(asset => {
         let qrUrl = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
         const title = asset.ItemName || asset.Model || 'Asset QR';
         
         return `
-            <div class="batch-qr-item ${labelClass}" style="text-align: center; background: white;">
-                ${size !== '1cm' ? `<h2 style="margin: 0;">${title}</h2>` : ''}
-                <img src="${qrUrl}" class="batch-qr-img" style="display: block; margin: 0 auto;">
-                ${size !== '1cm' ? `<div class="asset-id" style="margin-top: 5px; font-weight: bold;">${asset.ID}</div>` : ''}
+            <div class="batch-qr-item ${labelClass}" style="text-align: center; background: white; padding: 10mm; border: 1px dashed #eee; border-radius: 4px; display: inline-block; margin: 2mm;">
+                ${size !== '1cm' ? `<h2 style="margin: 0; font-size: 14pt; color: #333; font-family: sans-serif;">${title}</h2>` : ''}
+                <img src="${qrUrl}" class="batch-qr-img" style="display: block; margin: 5mm auto; max-width: 100%;">
+                ${size !== '1cm' ? `<div class="asset-id" style="margin-top: 5mm; font-weight: bold; font-family: monospace; font-size: 12pt;">${asset.ID}</div>` : ''}
             </div>
         `;
     }).join('');
 
-    showView('batchPrintView');
-    
-    // Setup batch print buttons
-    const btnConfirm = document.getElementById('btnConfirmBatchPrint');
-    if (btnConfirm) {
-        btnConfirm.onclick = () => {
-            window.print();
-        };
-    }
-
-    const btnBack = document.getElementById('btnBackFromBatch');
-    if (btnBack) {
-        btnBack.onclick = () => {
-            showView('dashboardView');
-        };
-    }
-
-    // Size buttons for batch
-    document.querySelectorAll('.batch-size-btn').forEach(btn => {
-        btn.onclick = () => {
-            document.querySelectorAll('.batch-size-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const newSize = btn.dataset.size;
-            const newLabelClass = newSize === '5cm' ? 'print-label-50mm' : (newSize === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
-            
-            batchView.className = `view qr-print-${newSize}`;
-            
-            // Re-render items with new label class
-            container.querySelectorAll('.batch-qr-item').forEach(item => {
-                item.className = `batch-qr-item ${newLabelClass}`;
-                // Toggle text visibility
-                const h2 = item.querySelector('h2');
-                const id = item.querySelector('.asset-id');
-                if (newSize === '1cm') {
-                    if (h2) h2.style.display = 'none';
-                    if (id) id.style.display = 'none';
-                } else {
-                    if (h2) h2.style.display = 'block';
-                    if (id) id.style.display = 'block';
-                }
-            });
-        };
-    });
-}
+    modal.style.display = 'flex';
+};
 
 export function openAddKindModal() {
     console.log('openAddKindModal() called');
@@ -4656,6 +4689,42 @@ export async function editAsset(asset) {
     const batchListEdit = document.getElementById('batchSnListContainer');
     const btnToggleBatchEdit = document.getElementById('btnToggleBatchMode');
     const btnSplitEdit = document.getElementById('btnSplitBatch');
+    const btnUnsplitEdit = document.getElementById('btnUnsplitBatch');
+
+    if (btnUnsplitEdit) {
+        if (asset.ParentId) {
+            btnUnsplitEdit.style.display = 'block';
+            btnUnsplitEdit.onclick = async () => {
+                if (confirm(`Are you sure you want to merge this asset back into its parent batch (${asset.ParentId})? This individual record will be deleted.`)) {
+                    try {
+                        const token = localStorage.getItem('token');
+                        const headers = { 'Content-Type': 'application/json' };
+                        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                        const response = await fetch('/api/assets/unsplit', {
+                            method: 'POST',
+                            headers: headers,
+                            body: JSON.stringify({ childIds: [asset.ID] })
+                        });
+                        
+                        if (response.ok) {
+                            alert('Asset successfully merged back to parent batch.');
+                            document.getElementById('addAssetItemModal').style.display = 'none';
+                            if (window.loadAssets) await window.loadAssets();
+                        } else {
+                            const err = await response.json();
+                            alert('Unsplit failed: ' + (err.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        console.error('Unsplit error:', err);
+                        alert('Error merging back to parent');
+                    }
+                }
+            };
+        } else {
+            btnUnsplitEdit.style.display = 'none';
+        }
+    }
 
     // Handle Split Assets display
     const splitSection = document.getElementById('splitAssetsSection');
@@ -5179,7 +5248,8 @@ function showAssetList(nodeOrKindName) {
         });
 
         const isPlaceholder = (a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true');
-        return typeMatch && !isPlaceholder;
+        const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+        return typeMatch && !isPlaceholder && !isComp;
     });
 
     // Apply search filter if present
@@ -5239,17 +5309,9 @@ function showAssetList(nodeOrKindName) {
                     </div>
                 </td>
                 <td>
-                    ${a.QRCode && a.QRCode.length > 50 ? 
-                        `<a href="${a.QRCode}" target="_blank" title="View Full QR (Stored Data)">
-                            <img src="${a.QRCode}" 
-                                 style="width: 100px; height: 100px; border: 1px solid #eee; padding: 2px; background: white; cursor: pointer;">
-                        </a>` : 
-                        `<a href="/api/qr/${encodeURIComponent(a.ID)}?v=${Date.now()}" target="_blank" title="View URL QR">
-                            <img src="/api/qr/${encodeURIComponent(a.ID)}?v=${Date.now()}" 
-                                 style="width: 100px; height: 100px; border: 1px solid #eee; padding: 2px; background: white; cursor: pointer;"
-                                 onerror="this.parentElement.innerHTML='<span style=\'color:#999;font-size:12px;\'>No QR</span>'">
-                        </a>`
-                    }
+                    <a href="/asset/${encodeURIComponent(a.ID)}" target="_blank" title="Smart Link QR - Click to View Page">
+                        <canvas class="dynamic-qr" data-id="${a.ID}" style="width: 100px; height: 100px; border: 1px solid #eee; padding: 2px; background: white; cursor: pointer;"></canvas>
+                    </a>
                 </td>
             `;
             body.appendChild(tr);
@@ -5280,21 +5342,7 @@ function showAssetList(nodeOrKindName) {
                 const id = btn.getAttribute('data-id');
                 const asset = assets.find(a => a.ID === id);
                 if (asset) {
-                    // Show the QR modal first so they can pick a size
-                    const qrModal = document.getElementById('qrModal');
-                    const qrImg = document.getElementById('qrModalImage');
-                    const qrTitle = document.getElementById('qrModalTitle');
-                    const qrId = document.getElementById('qrModalId');
-                    
-                    if (qrModal && qrImg) {
-                        qrTitle.textContent = asset.ItemName || asset.Model || 'Asset QR';
-                        qrId.textContent = asset.ID;
-                        qrImg.src = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
-                        qrModal.style.display = 'flex';
-                        
-                        // Store the full asset object on the modal for the print function to use
-                        qrModal.dataset.currentAsset = JSON.stringify(asset);
-                    }
+                    window.openPrintPreview([asset]);
                 }
             };
         });
@@ -5341,6 +5389,19 @@ function showAssetList(nodeOrKindName) {
                     editAsset(asset);
                 }
             };
+        });
+
+        // Initialize Dynamic Smart QRs for the list
+        body.querySelectorAll('.dynamic-qr').forEach(canvas => {
+            const id = canvas.getAttribute('data-id');
+            const url = `${window.location.origin}/asset/${encodeURIComponent(id)}`;
+            if (window.QRCode) {
+                QRCode.toCanvas(canvas, url, {
+                    width: 100,
+                    margin: 1,
+                    color: { dark: '#000000', light: '#ffffff' }
+                });
+            }
         });
     }
     
@@ -5792,8 +5853,8 @@ export function setupDashboardFormHandlers() {
                     // Warranty
                     warranty_months: formData.get('itemWarranty') || 0,
                     amc_months: formData.get('itemAMC') || 0,
-                    asset_value: formData.get('itemValue') || 0,
-                    Currency: formData.get('itemCurrency') || 'INR',
+                    asset_value: canEditPrice() ? (formData.get('itemValue') || 0) : undefined,
+                    Currency: canEditPrice() ? (formData.get('itemCurrency') || 'INR') : undefined,
                     PurchaseDate: formData.get('itemPurchaseDate'),
                     warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
                     is_quantity_tracked: document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0
@@ -6209,91 +6270,16 @@ window.generateKindSummaryReport = generateKindSummaryReport;
     }
 }
 
-// QR Code Modal Functions
+// Unified QR Code Modal Functions
 window.showQRModal = function(id, name) {
-    const modal = document.getElementById('qrModal');
-    const img = document.getElementById('qrModalImage');
-    const title = document.getElementById('qrModalTitle');
-    const idText = document.getElementById('qrModalId');
-    
-    if (!modal || !img) return;
-    
-    title.textContent = name || 'QR Code';
-    img.src = `/api/qr/${encodeURIComponent(id)}`;
-    idText.textContent = id;
-    
-    modal.style.display = 'flex';
-};
-
-window.printSingleAssetQR = function(asset, size = '5cm') {
-    if (!asset) return;
-    
-    const printContainer = document.getElementById('singleQrPrintContainer');
-    if (!printContainer) return;
-
-    // Use stored complex QR if available, otherwise API URL
-    const qrUrl = (asset.QRCode && asset.QRCode.length > 50) ? asset.QRCode : `/api/qr/${encodeURIComponent(asset.ID)}?v=${Date.now()}`;
-    const title = asset.ItemName || asset.Model || 'Asset QR';
-    const assetId = asset.ID;
-
-    // Apply the size class to the container
-    printContainer.className = `print-only qr-print-${size}`;
-
-    // Map size to label class
-    const labelClass = size === '5cm' ? 'print-label-50mm' : (size === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
-
-    // Populate the print-only container
-    printContainer.innerHTML = `
-        <div class="${labelClass}">
-            ${size !== '1cm' ? `<h2>${title}</h2>` : ''}
-            <img src="${qrUrl}">
-            ${size !== '1cm' ? `<div class="asset-id">${assetId}</div>` : ''}
-        </div>
-    `;
-
-    // Trigger Print with delay to ensure image is rendered
-    setTimeout(() => {
-        window.print();
-        // Cleanup after print dialog closes
-        setTimeout(() => {
-            printContainer.innerHTML = '';
-            printContainer.className = 'print-only';
-        }, 1000);
-    }, 300);
-};
-
-window.printQR = function() {
-    const qrModal = document.getElementById('qrModal');
-    if (!qrModal) return;
-
-    const activeBtn = qrModal.querySelector('.qr-modal-size-btn.active');
-    const size = activeBtn ? activeBtn.dataset.size : '5cm';
-    
-    let asset;
-    if (qrModal.dataset.currentAsset) {
-        asset = JSON.parse(qrModal.dataset.currentAsset);
+    const asset = (window.allAssets || []).find(a => a.ID === id);
+    if (asset) {
+        window.openPrintPreview([asset]);
     } else {
-        // Fallback to reading from modal elements if data attribute is missing
-        asset = {
-            ID: document.getElementById('qrModalId').textContent,
-            ItemName: document.getElementById('qrModalTitle').textContent,
-            QRCode: document.getElementById('qrModalImage').src
-        };
+        // Fallback for cases where full asset object isn't in window.allAssets
+        window.openPrintPreview([{ ID: id, ItemName: name || 'Asset QR' }]);
     }
-    
-    window.printSingleAssetQR(asset, size);
 };
-
-// Setup QR Modal Size Buttons
-document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('qr-modal-size-btn')) {
-        const modal = e.target.closest('#qrModal');
-        if (modal) {
-            modal.querySelectorAll('.qr-modal-size-btn').forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
-        }
-    }
-});
 
 // --- QR SCANNER LOGIC REMOVED ---
 

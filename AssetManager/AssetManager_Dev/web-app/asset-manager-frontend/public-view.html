@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Information | Client View</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2d3748;
+            --bg: #f7fafc;
+            --card-bg: #ffffff;
+            --text: #1a202c;
+            --border: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container { max-width: 600px; margin: 0 auto; }
+
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            background: var(--primary);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 0 0 12px 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+        }
+
+        .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: #718096;
+            margin-bottom: 4px;
+        }
+
+        .value {
+            font-size: 16px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .spec-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #a0aec0;
+        }
+
+        #loading { text-align: center; padding: 50px; }
+        .error { color: #e53e3e; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="content">
+            <div id="loading">Loading asset information...</div>
+        </div>
+        <div class="footer">
+            &copy; 2026 Asset Management System | Client Verification Portal
+        </div>
+    </div>
+
+    <script>
+        async function loadPublicAsset() {
+            const pathParts = window.location.pathname.split('/');
+            const label = pathParts[pathParts.length - 1];
+            
+            if (!label) {
+                document.getElementById('content').innerHTML = '<div class="error">Invalid Asset Label</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/public/assets/${encodeURIComponent(label)}`);
+                if (!response.ok) throw new Error('Asset not found');
+                
+                const asset = await response.json();
+                renderAsset(asset);
+            } catch (err) {
+                document.getElementById('content').innerHTML = `<div class="error">${err.message}</div>`;
+            }
+        }
+
+        function renderAsset(asset) {
+            const html = `
+                <div class="header">
+                    <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">Asset Specification</div>
+                    <h1 style="font-size: 22px;">${asset.ItemName}</h1>
+                    <div style="margin-top: 10px; font-family: monospace; font-size: 16px; background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 4px; display: inline-block;">
+                        ${asset.ClientLabel}
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="spec-grid">
+                        <div>
+                            <div class="label">Make</div>
+                            <div class="value">${asset.Make || 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div class="label">Model</div>
+                            <div class="value">${asset.Model || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <div class="label">Serial Number</div>
+                    <div class="value">${asset.SerialNo || 'N/A'}</div>
+
+                    <div class="label">Description</div>
+                    <div class="value" style="margin-bottom: 25px;">${asset.ItemDescription || 'No description provided.'}</div>
+
+                    <div class="label">Assigned Project</div>
+                    <div class="value">
+                        <span style="background: #ebf8ff; color: #2b6cb0; padding: 4px 12px; border-radius: 12px; font-size: 14px;">
+                            ${asset.AssignedProject}
+                        </span>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content').innerHTML = html;
+        }
+
+        window.onload = loadPublicAsset;
+    </script>
+</body>
+</html>

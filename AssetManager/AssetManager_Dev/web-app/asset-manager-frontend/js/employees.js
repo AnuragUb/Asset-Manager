@@ -1,5 +1,5 @@
 // Employees management module
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator } from './utils.js?v=3.4';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, canViewPrice } from './utils.js?v=5.50';
 import { DataProcessor } from './dataProcessor.js?v=4.1';
 
 let employeeTable = null;
@@ -491,7 +491,7 @@ export function renderEmployeeCards() {
                         <span class="stat-label">Assets</span>
                         <span class="stat-value">${assetCount}</span>
                     </div>
-                    <div class="stat-item">
+                    <div class="stat-item" style="${canViewPrice() ? '' : 'display: none;'}">
                         <span class="stat-label">Total Value</span>
                         <span class="stat-value">₹${totalValue.toLocaleString()}</span>
                     </div>

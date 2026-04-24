@@ -34,6 +34,16 @@ export function initWarrantyView() {
 
         populateWarrantyFilter();
         
+        // Setup event listeners for assignment filter
+        const assignmentFilter = document.getElementById('warrantyAssignmentFilter');
+        if (assignmentFilter) {
+            assignmentFilter.oninput = () => {
+                console.log('WARRANTY: Assignment filter changed, updating view');
+                updateWarrantyChart();
+                updateWarrantySummaryTable();
+            };
+        }
+        
         // Setup event listeners for range management
         const manageBtn = document.getElementById('btnManageWarrantyRanges');
         if (manageBtn) {
@@ -187,6 +197,7 @@ function populateWarrantyFilter() {
 function filterAssetsByRange(range) {
     const assets = window.allAssets || [];
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+    const assignmentSearch = (document.getElementById('warrantyAssignmentFilter')?.value || '').toLowerCase().trim();
     
     // Find the index of this range to know its boundaries
     const rangeIndex = warrantyRanges.findIndex(r => r.label === range.label);
@@ -198,6 +209,18 @@ function filterAssetsByRange(range) {
         // Skip assets where warranty tracking is explicitly disabled (0 or false)
         if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return false;
         
+        // Multi-dimensional filter: Assignment or Location
+        if (assignmentSearch) {
+            const assignedTo = (asset.AssignedTo || '').toLowerCase();
+            const projectAssigned = (asset.project_assigned_to || asset.ProjectAssignedTo || '').toLowerCase();
+            const location = (asset.CurrentLocation || '').toLowerCase();
+            if (!assignedTo.includes(assignmentSearch) && 
+                !projectAssigned.includes(assignmentSearch) && 
+                !location.includes(assignmentSearch)) {
+                return false;
+            }
+        }
+
         const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
         return months >= range.min && months < maxMonths;
     });
@@ -375,6 +398,7 @@ export function updateWarrantyChart() {
     // 1. Pie Chart
     const ctx = document.getElementById('warrantyPieChart')?.getContext('2d');
     const legendContainer = document.getElementById('warrantyLegend');
+    const assignmentSearch = (document.getElementById('warrantyAssignmentFilter')?.value || '').toLowerCase().trim();
     
     if (ctx) {
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
@@ -386,6 +410,18 @@ export function updateWarrantyChart() {
             // Skip assets where warranty tracking is explicitly disabled (0 or false)
             if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return;
             
+            // Multi-dimensional filter: Assignment or Location
+            if (assignmentSearch) {
+                const assignedTo = (asset.AssignedTo || '').toLowerCase();
+                const projectAssigned = (asset.project_assigned_to || asset.ProjectAssignedTo || '').toLowerCase();
+                const location = (asset.CurrentLocation || '').toLowerCase();
+                if (!assignedTo.includes(assignmentSearch) && 
+                    !projectAssigned.includes(assignmentSearch) && 
+                    !location.includes(assignmentSearch)) {
+                    return;
+                }
+            }
+
             const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
             
             let matchIndex = -1;
@@ -504,6 +540,7 @@ export function updateWarrantySummaryTable() {
 
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
         console.log(`WARRANTY: Filtering for category: ${category}`);
+        const assignmentSearch = (document.getElementById('warrantyAssignmentFilter')?.value || '').toLowerCase().trim();
 
         const rangesWithAssets = warrantyRanges.map((range, index) => {
             const nextRange = warrantyRanges[index + 1];
@@ -514,6 +551,18 @@ export function updateWarrantySummaryTable() {
                 // Skip assets where warranty tracking is explicitly disabled (0 or false)
                 if (asset.warranty_tracking === 0 || asset.warranty_tracking === false) return false;
                 
+                // Multi-dimensional filter: Assignment or Location
+                if (assignmentSearch) {
+                    const assignedTo = (asset.AssignedTo || '').toLowerCase();
+                    const projectAssigned = (asset.project_assigned_to || asset.ProjectAssignedTo || '').toLowerCase();
+                    const location = (asset.CurrentLocation || '').toLowerCase();
+                    if (!assignedTo.includes(assignmentSearch) && 
+                        !projectAssigned.includes(assignmentSearch) && 
+                        !location.includes(assignmentSearch)) {
+                        return false;
+                    }
+                }
+
                 const months = calculateMonthsRemaining(asset.PurchaseDate, asset.warranty_months);
                 return months >= range.min && months < maxMonths;
             });
@@ -604,12 +653,26 @@ function convertToINR(amount, currency) {
 
 export function downloadWarrantyReport() {
     const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+    const assignmentSearch = (document.getElementById('warrantyAssignmentFilter')?.value || '').toLowerCase().trim();
+    
     let assets = (window.allAssets || []).filter(a => 
         a.Category === category && 
         !a.isPlaceholder && 
         a.warranty_tracking !== 0 && 
         a.warranty_tracking !== false
     );
+
+    // Apply assignment/location filter
+    if (assignmentSearch) {
+        assets = assets.filter(asset => {
+            const assignedTo = (asset.AssignedTo || '').toLowerCase();
+            const projectAssigned = (asset.project_assigned_to || asset.ProjectAssignedTo || '').toLowerCase();
+            const location = (asset.CurrentLocation || '').toLowerCase();
+            return assignedTo.includes(assignmentSearch) || 
+                   projectAssigned.includes(assignmentSearch) || 
+                   location.includes(assignmentSearch);
+        });
+    }
 
     // Apply warranty range filter if active
     const filterSelect = document.getElementById('warrantyFilterSelect');

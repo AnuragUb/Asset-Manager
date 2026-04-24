@@ -1,37 +1,30 @@
+# Backend Application (Port 8080/9090)
 FROM node:18-alpine
 
-# Create app directory
+# Install necessary build tools for native modules
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
-# Copy package.json files first for better caching
-# We need the root package.json and the sub-folder package.json files
+# Copy package files
 COPY package.json ./
 COPY web-app/asset-manager-backend/package.json ./web-app/asset-manager-backend/
-COPY web-app/asset-manager-frontend/package.json ./web-app/asset-manager-frontend/
 
-# Install backend dependencies
+# Install dependencies (bcrypt will be compiled for Alpine/Linux here)
 WORKDIR /app/web-app/asset-manager-backend
 RUN npm install --production
 
-# Install frontend dependencies (if any needed for build)
-WORKDIR /app/web-app/asset-manager-frontend
-RUN npm install --production
-
-# Copy source code
+# Copy source code (using .dockerignore to skip local node_modules)
 WORKDIR /app
-COPY web-app/ ./web-app/
+COPY web-app/asset-manager-frontend/ ./web-app/asset-manager-frontend/
+COPY web-app/asset-manager-backend/ ./web-app/asset-manager-backend/
 
-# Create data directory
-RUN mkdir -p /app/data
-
-# Expose the port (default 8080)
+# Default port
 EXPOSE 8080
 
 # Environment variables
 ENV PORT=8080
 ENV NODE_ENV=production
-ENV DATA_DIR=/app/data
-ENV DB_PATH=/app/data/database_v2.db
 
 # Start the application
 WORKDIR /app/web-app/asset-manager-backend
