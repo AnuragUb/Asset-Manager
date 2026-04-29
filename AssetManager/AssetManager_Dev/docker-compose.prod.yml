@@ -31,6 +31,10 @@ services:
     restart: always
     ports:
       - "80:8080" # Maps standard web port 80 to internal 8080
+    volumes:
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
+      - ./input:/app/input
     environment:
       - NODE_ENV=production
       - PORT=8080

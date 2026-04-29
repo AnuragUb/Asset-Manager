@@ -2,7 +2,11 @@
 FROM node:18-alpine
 
 # Install necessary build tools for native modules
-RUN apk add --no-cache python3 make g++ gcc libc-dev linux-headers py3-pip
+RUN apk add --no-cache python3 make g++ gcc libc-dev linux-headers py3-pip \
+    && ln -sf python3 /usr/bin/python
+
+# Set Python environment variable for node-gyp
+ENV PYTHON=/usr/bin/python3
 
 WORKDIR /app
 
