@@ -2,7 +2,7 @@
 FROM node:18-alpine
 
 # Install necessary build tools for native modules
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ py3-pip
 
 WORKDIR /app
 
