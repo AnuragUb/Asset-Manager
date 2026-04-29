@@ -12,7 +12,7 @@ COPY web-app/asset-manager-backend/package.json ./web-app/asset-manager-backend/
 
 # Install dependencies (bcrypt will be compiled for Alpine/Linux here)
 WORKDIR /app/web-app/asset-manager-backend
-RUN npm install --production
+RUN npm install --production --network-timeout=100000 --registry=https://registry.npmjs.org/
 
 # Copy source code (using .dockerignore to skip local node_modules)
 WORKDIR /app
