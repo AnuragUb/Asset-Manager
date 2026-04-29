@@ -1,16 +1,19 @@
 :root {
-    --sidebar-bg: #0a0a0a;
-    --sidebar-text: #888;
-    --sidebar-text-hover: #fff;
-    --sidebar-text-active: #fff;
-    --sidebar-bubble-active: #1f1f1f;
-    --sidebar-bubble-hover: #161616;
+    --sidebar-bg: #ffffff;
+    --sidebar-text: #666;
+    --sidebar-text-hover: #111;
+    --sidebar-text-active: #ffffff;
+    --sidebar-bubble-active: #000000;
+    --sidebar-bubble-hover: #f2f2f2;
     --ease-spring: cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 /* Scoped to #app-sidebar to prevent leakage */
 #app-sidebar {
     position: relative; /* Anchor for absolute bubbles */
+    background-color: var(--sidebar-bg) !important;
+    color: var(--sidebar-text);
+    border-right: 1px solid rgba(0,0,0,0.05);
 }
 
 #app-sidebar .sidebar-menu-wrapper {
@@ -46,7 +49,6 @@
 #app-sidebar .tree-item-wrapper.active,
 #app-sidebar .menu-item-wrapper.active {
     color: var(--sidebar-text-active) !important;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
 }
 
 /* Fix for "All Assets" link getting white background from style.css */
@@ -69,11 +71,16 @@
 
 #app-sidebar .tree-toggle,
 #app-sidebar .tree-toggle-main {
-    color: #666 !important;
+    color: #999 !important;
     width: 14px;
     text-align: center;
     font-size: 10px;
     cursor: pointer;
+}
+
+#app-sidebar .tree-toggle:hover,
+#app-sidebar .tree-toggle-main:hover {
+    color: #333 !important;
 }
 
 #app-sidebar .tree-icon {
@@ -97,11 +104,23 @@
     filter: none;
 }
 
-#app-sidebar .edit-kind-btn {
-    cursor: pointer;
-    opacity: 0.5;
-    padding: 2px 5px;
+#app-sidebar .edit-kind-btn:hover,
+#app-sidebar .delete-kind-btn:hover {
+    opacity: 1;
+    filter: brightness(0.2); /* Darken icons on hover if they are emojis */
+}
+
+/* Ensure active state doesn't hide emojis */
+#app-sidebar .tree-item-wrapper.active .edit-kind-btn,
+#app-sidebar .tree-item-wrapper.active .delete-kind-btn {
+    filter: brightness(2); /* Brighten for black background */
+}
+
+#app-sidebar .no-categories {
+    padding: 10px 40px;
+    color: #666;
     font-size: 12px;
+    font-style: italic;
 }
 
 /* Bubbles */
@@ -119,12 +138,12 @@
 
 #app-sidebar .sidebar-bubble.active-bubble {
     background: var(--sidebar-bubble-active);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 #app-sidebar .sidebar-bubble.hover-bubble {
     background: var(--sidebar-bubble-hover);
+    border: 1px solid rgba(0,0,0,0.02);
 }
 
 /* Asset Health Widget - Light Theme Raul Drunk Cards */

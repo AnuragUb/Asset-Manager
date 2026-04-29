@@ -3274,18 +3274,18 @@ export function renderSidebarTree() {
 
         sidebarMenu.innerHTML = `
             <li style="list-style: none;">
-                <div class="menu-item-wrapper active" style="padding: 10px 20px;">
+                <div class="menu-item-wrapper active">
                     <span class="tree-toggle-main">▼</span>
                     <a href="#" class="menu-item toggle-submenu active" id="allAssetsLink">All Assets</a>
                 </div>
                 <div id="sidebar-hierarchy-container" style="display: block;">
                     <div class="tree-node" style="user-select: none;">
-                        <div class="tree-item-wrapper" style="padding: 6px 20px 6px 40px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <div class="tree-item-wrapper">
                             <span class="tree-icon">⏳</span>
-                            <a href="#" class="tree-link" id="tempAssetsLink" style="flex: 1; color: #555; font-size: 13px; text-decoration: none;">Temporary Assets</a>
+                            <a href="#" class="tree-link" id="tempAssetsLink">Temporary Assets</a>
                         </div>
                     </div>
-                    ${treeHTML || '<p style="padding: 10px 40px; color: #999; font-size: 12px; font-style: italic;">No categories found</p>'}
+                    ${treeHTML || '<p class="no-categories">No categories found</p>'}
                 </div>
             </li>
         `;

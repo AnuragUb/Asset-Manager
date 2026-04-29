@@ -606,6 +606,10 @@ function switchDashboardSubView(subViewName) {
         }
     });
 }
+
+// Mark modules as loaded for watchdog
+window.mainLoaded = true;
+console.log('MAIN.JS: All modules initialized and loaded.');
 window.switchDashboardSubView = switchDashboardSubView;
 
 // Handle Browser Back/Forward Navigation

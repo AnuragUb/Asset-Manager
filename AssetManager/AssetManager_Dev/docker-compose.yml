@@ -35,6 +35,8 @@ services:
       - "8080:8080"
     volumes:
       - .:/app
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
       - ./input:/app/input
     environment:
       - NODE_ENV=development
@@ -62,6 +64,8 @@ services:
       - "9090:9090"
     volumes:
       - .:/app
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
       - ./input:/app/input
     environment:
       - NODE_ENV=development

@@ -134,21 +134,21 @@ export class HierarchyManager {
             
             return `
                 <div class="tree-node" data-id="${node.ID}" style="user-select: none;">
-                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" style="padding: 6px 20px 6px ${paddingLeft}px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s;">
-                        <span class="tree-toggle" style="width: 14px; text-align: center; color: #999; font-size: 10px; visibility: ${hasChildren ? 'visible' : 'hidden'}">
+                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" style="padding-left: ${paddingLeft}px;">
+                        <span class="tree-toggle" style="visibility: ${hasChildren ? 'visible' : 'hidden'}">
                             ${hasChildren ? '▶' : ''}
                         </span>
-                        <span class="tree-icon" style="display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;">
+                        <span class="tree-icon">
                             ${(node.DisplayImage && (node.DisplayImage.startsWith('/') || node.DisplayImage.startsWith('http')))
-                                ? `<img src="${node.DisplayImage}" style="width: 16px; height: 16px; object-fit: contain;">`
+                                ? `<img src="${node.DisplayImage}">`
                                 : (node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
-                                    ? `<img src="${node.Icon}" style="width: 16px; height: 16px; object-fit: contain;">`
+                                    ? `<img src="${node.Icon}">`
                                     : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
                         </span>
-                        <span class="tree-link ${activeClass}" data-id="${node.ID}" style="flex: 1; color: #555; font-size: 13px;">${node.Name}</span>
+                        <span class="tree-link ${activeClass}" data-id="${node.ID}">${node.Name}</span>
                         ${node.type === 'kind' ? `
-                            <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">✏️</span>
-                            <span class="delete-kind-btn" data-id="${node.ID}" title="Delete Category" style="cursor: pointer; opacity: 0.5; padding: 2px 5px; font-size: 12px;">🗑️</span>
+                            <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category">✏️</span>
+                            <span class="delete-kind-btn" data-id="${node.ID}" title="Delete Category">🗑️</span>
                         ` : ''}
                     </div>
                     ${hasChildren ? `
