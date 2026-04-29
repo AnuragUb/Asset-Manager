@@ -94,13 +94,16 @@
 
     // Sync Active Bubble on Load / Tree Render
     function syncActiveBubble() {
-        const activeItem = sidebar.querySelector('.tree-item-wrapper.active, .menu-item-wrapper.active');
+        const activeItem = sidebar.querySelector('.tree-item-wrapper.active, .menu-item-wrapper.active, .nav-link.active');
         if (activeItem) {
             moveBubbleTo(activeBubble, activeItem);
         } else {
             activeBubble.style.opacity = '0';
         }
     }
+
+    // Export sync function to global scope so it can be called after tree rendering
+    window.syncSidebarBubbles = syncActiveBubble;
 
     // Observer to handle dynamic tree updates (expansion, filtering, re-rendering)
     const observer = new MutationObserver((mutations) => {

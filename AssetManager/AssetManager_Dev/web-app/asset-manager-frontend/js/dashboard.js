@@ -3397,6 +3397,9 @@ export function renderSidebarTree() {
                         childrenDiv.style.display = isHidden ? 'block' : 'none';
                         toggle.textContent = isHidden ? '▼' : '▶';
                         toggle.style.color = isHidden ? '#333' : '#999';
+
+                        // Sync bubbles after layout change
+                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
                     }
                 };
             });
@@ -3427,6 +3430,9 @@ export function renderSidebarTree() {
                         // Also activate inner link for visual consistency if needed
                         const link = wrapper.querySelector('.tree-link');
                         if (link) link.classList.add('active');
+
+                        // Sync bubbles after activation
+                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
 
                         // Navigate dashboard to this parent
                         window.currentDashboardParent = node;
@@ -3490,6 +3496,9 @@ export function renderSidebarTree() {
         
         const navGenerateCode = document.getElementById('navGenerateCode');
         if (navGenerateCode) navGenerateCode.onclick = () => window.showView && window.showView('adminView');
+
+        // Final bubble sync after render
+        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
 
     }).catch(err => {
         console.error('[Sidebar] Error rendering tree:', err);
