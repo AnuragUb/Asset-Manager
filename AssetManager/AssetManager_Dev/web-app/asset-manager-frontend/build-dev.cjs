@@ -3,6 +3,7 @@ const CleanCSS = require('clean-css');
 const htmlMinifier = require('html-minifier-terser');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 // Paths
 const jsSrcDir = path.join(__dirname, 'js');
@@ -65,6 +66,7 @@ const jsOptions = {
 
 async function build() {
     console.log('[Build] Starting Professional Obfuscation & Minification...');
+    console.log('[Build] Working Directory:', process.cwd());
     
     // 1. JS Obfuscation
     const jsFiles = fs.readdirSync(jsSrcDir).filter(f => f.endsWith('.js'));
