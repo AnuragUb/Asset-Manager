@@ -4475,18 +4475,16 @@ app.get('/api/qr/generate/:text', async (req, res) => {
   }
 });
 
-const STATIC_IP = process.env.STATIC_IP || '192.168.6.59'; // User preferred static IP
+const STATIC_IP = process.env.STATIC_IP; // User preferred static IP (optional)
 
 app.get('/api/qr/dynamic/asset/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    // Prefer STATIC_IP if configured, otherwise fallback to detected IP
-    const ip = STATIC_IP || getLocalIP();
-    const port = process.env.PORT || 8080;
+    // Prefer the current host header for dynamic links, or fallback to STATIC_IP / detected IP
+    const host = req.get('host') || STATIC_IP || `${getLocalIP()}:${process.env.PORT || 8080}`;
     
     // Generate URL-based QR code for compatibility with standard camera apps
-    // Point to the dedicated public asset view instead of the main app
-    const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(id)}`;
+    const urlText = `http://${host}/asset/${encodeURIComponent(id)}`;
     
     const size = parseInt(req.query.size) || 300;
     const qrImage = await qrcode.toDataURL(urlText, { width: size, margin: 2 });
@@ -4508,12 +4506,11 @@ app.get('/api/qr/dynamic/asset/:id', async (req, res) => {
 app.get('/api/qr/dynamic/project/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    // Prefer STATIC_IP if configured
-    const ip = STATIC_IP || getLocalIP();
-    const port = process.env.PORT || 8080;
+    // Prefer the current host header for dynamic links
+    const host = req.get('host') || STATIC_IP || `${getLocalIP()}:${process.env.PORT || 8080}`;
     
     // URL for project details (Public View)
-    const urlText = `http://${ip}:${port}/project/${encodeURIComponent(id)}`;
+    const urlText = `http://${host}/project/${encodeURIComponent(id)}`;
     
     const size = parseInt(req.query.size) || 300;
     const qrImage = await qrcode.toDataURL(urlText, { width: size, margin: 2 });

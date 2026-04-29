@@ -1,5 +1,5 @@
-// Document AI Client Integration
-// Usage: Copy this file into your internal app (192.168.6.59)
+// Asset Manager Integration Client
+// Usage: Copy this file into your internal app (e.g., 192.168.6.59 or 192.168.6.118)
 
 /**
  * Configuration for the Document AI Service

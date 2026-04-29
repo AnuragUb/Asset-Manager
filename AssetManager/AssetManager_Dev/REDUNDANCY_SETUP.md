@@ -4,40 +4,33 @@ This setup ensures maximum performance using your new NVMe SSD and provides a "F
 
 ## 1. The Infrastructure Map
 
-### **Primary Server (Different Workstation)**
-- **Role**: Handles all daily traffic.
-- **Storage**: Standard or SSD.
-- **Action**: Runs the "Primary" production container and sends database heartbeats (backups) to your NVMe machine.
+### **Primary Server (Workstation Server)**
+- **IP Address**: `192.168.6.118`
+- **Port**: `8080`
+- **Role**: Main production server for all staff.
+- **Action**: Runs [replicate_db.ps1](./replicate_db.ps1) daily to push data to the backup machine.
 
-### **Failover & Dev Machine (Your Current PC with NVMe)**
-- **Role**: Hosts the Development environment + a "Hot Standby" Production clone.
-- **Storage**: **NVMe SSD** (Mapped for maximum DB speed).
-- **Action**: Receives the Primary Server's database copies every hour. If the Primary Server dies, you "activate" this one instantly.
-
----
-
-## 2. Moving Code to the NVMe SSD
-To shift your working codebase to the faster drive:
-1. Copy the `AssetManager_Dev` folder to your new NVMe drive (e.g., `E:\AssetManager_Dev`).
-2. Update your terminal/IDE to point to this new path.
-3. In [docker-compose.prod.yml](file:///c%3A/Users/Admin/AssetManager/AssetManager_Dev/docker-compose.prod.yml), ensure the `volumes` section points to the NVMe path for the database files.
+### **Backup & Dev Machine (Current PC)**
+- **IP Address**: `192.168.6.59`
+- **Port**: `8080` (Standby Prod) / `9090` (Dev)
+- **Role**: Redundant safety instance + Development environment.
+- **Action**: Receives backups from `.118`. Runs [restore_replication.ps1](./restore_replication.ps1) if the primary server fails.
 
 ---
 
-## 3. Automation Scripts (Zero-Data-Loss Logic)
+## 2. Dynamic Smart Links (QR Codes)
+The system is now configured to generate QR codes dynamically based on the IP address used to access the app.
+- If you access via `http://192.168.6.118:8080`, the QR codes will point to `.118`.
+- If you access via `http://192.168.6.59:8080`, the QR codes will point to `.59`.
+- **Note**: For printed labels, always generate them from the **Primary Server (.118)** so they remain valid for external users.
 
-### **A. sync_to_nvme.ps1 (Run on Primary Server)**
-This is your **"Black Box"** script. It creates a local backup first, then retries the network sync every 5 minutes if your office WiFi is unstable.
-- **Local Copy**: Always exists at `C:\AssetManager_Local_Backups`.
-- **Remote Copy**: Pushed to your NVMe PC via network share.
+---
 
-### **B. health_check.ps1 (Run on NVMe PC)**
-This is your **"Heartbeat"** monitor. Run this in a background PowerShell window on your desk machine.
-- **Action**: Pings the Primary Server every minute.
-- **Alert**: If the server goes offline, it will beep and flash a critical alert on your screen.
-
-### **C. restore_failover.ps1 (Run on NVMe PC ONLY if Primary fails)**
-This script takes the absolute latest backup received from the network and injects it into your local "Standby" container.
+## 3. Synchronization (Mirroring Data)
+To ensure `.59` and `.118` have the same data:
+1. **From .118 to .59**: Run `./replicate_db.ps1` on the `.118` machine. (Set `$TARGET_IP = "192.168.6.59"`)
+2. **From .59 to .118**: Run `./replicate_db.ps1` on the `.59` machine. (Set `$TARGET_IP = "192.168.6.118"`)
+3. **Restore**: Run `./restore_replication.ps1` on the machine that needs the update.
 
 ---
 

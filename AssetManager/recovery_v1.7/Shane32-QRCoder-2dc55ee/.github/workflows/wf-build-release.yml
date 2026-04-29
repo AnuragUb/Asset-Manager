@@ -1,0 +1,72 @@
+name: Build, pack, push (Release)
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  pack-push-ci:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v5
+      name: Checkout Code
+
+    - name: Check github.ref starts with 'refs/tags/v'
+      if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      shell: bash
+      run: |
+        echo Error! github.ref does not start with 'refs/tags/v'
+        echo github.ref: ${{ github.ref }}
+        exit 1
+
+    - name: Set version number environment variable
+      env:
+        github_ref: ${{ github.ref }}
+      shell: bash
+      run: |
+        version="${github_ref:11}"
+        echo version=$version
+        echo "version=$version" >> $GITHUB_ENV
+
+    - name: Install .NET SDK
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 8.0.x
+        source-url: https://api.nuget.org/v3/index.json
+      env:
+        NUGET_AUTH_TOKEN: ${{secrets.NUGET_AUTH_TOKEN}}
+
+    - name: Build NuGet packages
+      shell: bash
+      run: dotnet pack -c Release -p:Version=$version -o out
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nuget packages
+        path: out/*
+
+    - name: Publish packages to Github packages
+      run: dotnet nuget push "out\*" -k ${{secrets.NUGET_AUTH_TOKEN}}
+
+    - name: Upload Nuget packages as release artifacts
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          console.log('environment', process.versions);
+          const fs = require('fs').promises;
+          const { repo: { owner, repo }, sha } = context;
+
+          for (let file of await fs.readdir('out')) {
+            console.log('uploading', file);
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner,
+              repo,
+              release_id: ${{ github.event.release.id }},
+              name: file,
+              data: await fs.readFile(`out/${file}`)
+            });
+          }

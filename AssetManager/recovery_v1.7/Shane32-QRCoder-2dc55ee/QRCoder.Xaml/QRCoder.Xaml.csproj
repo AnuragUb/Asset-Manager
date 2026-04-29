@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Set essential properties -->
+    <TargetFrameworks>net35;net40;net5.0-windows;net6.0-windows</TargetFrameworks>
+    <UseWPF Condition="'$(TargetFramework)' == 'net5.0-windows' OR '$(TargetFramework)' == 'net6.0-windows'">true</UseWPF>
+    <IsPackable>true</IsPackable>
+
+    <!-- Set NuGet package properties -->
+    <Description>QRCoder.Xaml is the XamlQRCode-extension for the popular QRCoder .NET library.</Description>
+    <PackageTags>c# csharp qr QRCoder.Xaml qrcode qr-generator qr-code-generator</PackageTags>
+
+    <!-- Set strong name and COM properties -->
+    <AssemblyOriginatorKeyFile>QRCoder.XamlStrongName.snk</AssemblyOriginatorKeyFile>
+    <ComVisible>true</ComVisible>
+    <Guid>f9ec6466-b807-40ae-bc05-db9f88967c0c</Guid>
+  </PropertyGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net35' OR '$(TargetFramework)' == 'net40' ">
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\QRCoder\QRCoder.csproj" />
+  </ItemGroup>
+
+  <!-- Replace readme -->
+  <ItemGroup>
+    <None Remove="../README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

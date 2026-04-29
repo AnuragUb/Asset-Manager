@@ -1,0 +1,97 @@
+name: Build, test, pack, push (CI)
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+        ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+    steps:
+    - uses: actions/checkout@v5
+      name: Checkout Code
+
+    - name: Install additional .NET SDKs
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: |
+          2.1.x
+          3.1.x
+          5.0.x
+          6.0.x
+          8.0.x
+
+    - name: Run tests
+      working-directory: QRCoderTests
+      run: dotnet test -c Debug --nologo /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+
+    - name: Upload coverage files
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-files
+        path: QRCoderTests/coverage.*.xml
+        retention-days: 1
+        overwrite: true
+
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: true
+
+  additional-tests:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      name: Checkout Code
+
+    - name: Install .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Run trim analysis
+      working-directory: QRCoderTrimAnalysis
+      run: dotnet publish -c Release -o bin/publish
+
+    - name: Build solution
+      run: dotnet build -c Release
+
+    - name: Run API approval tests
+      working-directory: QRCoderApiTests
+      run: dotnet test -c Release --nologo
+
+  pack-push-ci:
+    needs: [test, additional-tests]
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v5
+      name: Checkout Code
+
+    - name: Install .NET SDK
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 8.0.x
+        source-url: https://nuget.pkg.github.com/Shane32/index.json
+      env:
+        NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+    - name: Build NuGet packages
+      shell: bash
+      run: dotnet pack -c Release -p:VersionSuffix=$GITHUB_RUN_NUMBER -o out
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nuget packages
+        path: out/*
+
+    - name: Publish packages to Github packages
+      run: dotnet nuget push "out\*" -k ${{secrets.GITHUB_TOKEN}}
