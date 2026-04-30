@@ -49,8 +49,18 @@ async function createAdmin() {
       client_id: company.id
     });
 
+    console.log('Granting user management permissions...');
+    // 1. Ensure 'superuser' role exists
+    await db('roles').insert({ name: 'superuser', description: 'Full System Access' }).onConflict('name').ignore();
+    
+    // 2. Ensure 'user.manage' permission exists
+    await db('permissions').insert({ key: 'user.manage', description: 'Ability to create and manage users' }).onConflict('key').ignore();
+    
+    // 3. Link permission to superuser role
+    await db('role_permissions').insert({ role_name: 'superuser', permission_key: 'user.manage' }).onConflict(['role_name', 'permission_key']).ignore();
+
     console.log('-----------------------------------');
-    console.log('Admin user created successfully!');
+    console.log('Admin user and permissions setup successfully!');
     console.log(`Username: ${username}`);
     console.log(`Password: ${password}`);
     console.log('-----------------------------------');
