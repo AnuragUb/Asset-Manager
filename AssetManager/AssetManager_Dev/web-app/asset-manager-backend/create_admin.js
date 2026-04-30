@@ -40,14 +40,17 @@ async function createAdmin() {
     const passwordHash = await bcrypt.hash(password, 12);
 
     console.log('Inserting admin user...');
-    await db('users').insert({
+    const adminData = {
       username,
       password: passwordHash,
       fullname,
       role,
       company_id: company.id,
       client_id: company.id
-    });
+    };
+
+    // Use lowercase columns for Postgres
+    await db('users').insert(adminData).onConflict('username').merge();
 
     console.log('Granting user management permissions...');
     // 1. Ensure 'superuser' role exists
@@ -58,6 +61,19 @@ async function createAdmin() {
     
     // 3. Link permission to superuser role
     await db('role_permissions').insert({ role_name: 'superuser', permission_key: 'user.manage' }).onConflict(['role_name', 'permission_key']).ignore();
+
+    console.log('Checking for company_id column in assets...');
+    try {
+        const columnInfo = await db('assets').columnInfo();
+        if (columnInfo.company_id) {
+            console.log('Fixing assets company_id...');
+            await db('assets').whereNull('company_id').orWhere('company_id', '').update({ company_id: company.id });
+        } else {
+            console.log('Warning: company_id column not found in assets table. Schema might be outdated.');
+        }
+    } catch (e) {
+        console.error('Error checking assets schema:', e.message);
+    }
 
     console.log('-----------------------------------');
     console.log('Admin user and permissions setup successfully!');
