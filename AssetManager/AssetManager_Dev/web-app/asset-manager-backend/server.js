@@ -590,7 +590,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Handle Remember Me
     if (rememberMe) {
         const rememberToken = tokenService.generateToken();
-        tokenService.storeRememberToken(user.username, rememberToken, 30);      
+        await tokenService.storeRememberToken(user.username, rememberToken, 30);      
 
         res.cookie(REMEMBER_COOKIE_NAME, rememberToken, {
             httpOnly: true,
@@ -623,11 +623,11 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   // Invalidate Remember Token if present
   const cookies = parseCookies(req.headers.cookie || '');
   if (cookies[REMEMBER_COOKIE_NAME]) {
-      tokenService.invalidateRememberToken(cookies[REMEMBER_COOKIE_NAME]);
+      await tokenService.invalidateRememberToken(cookies[REMEMBER_COOKIE_NAME]);
   }
 
   // Clear Cookies
@@ -693,7 +693,7 @@ app.get('/api/auth/me', async (req, res) => {
         // 2. Try Remember Me
         const rememberToken = cookies[REMEMBER_COOKIE_NAME];
         if (rememberToken) {
-            const userId = tokenService.verifyRememberToken(rememberToken);
+            const userId = await tokenService.verifyRememberToken(rememberToken);
             if (userId) {
                 let user;
                 if (isPostgres) {

@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { db } = require('../utils');
+const { db, isPostgres } = require('../utils');
 
 class TokenService {
     /**
@@ -25,17 +25,26 @@ class TokenService {
      * @param {string} token - The raw token (will be hashed)
      * @param {number} expiresInDays - Expiration in days (default 30)
      */
-    storeRememberToken(userId, token, expiresInDays = 30) {
+    async storeRememberToken(userId, token, expiresInDays = 30) {
         console.log('[TokenService] Storing remember token for user:', userId);
         const tokenHash = this.hashToken(token);
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + expiresInDays);
 
         try {
-            db.prepare(`
-                INSERT INTO auth_tokens (user_id, token_hash, expires_at, created_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            `).run(userId, tokenHash, expiresAt.toISOString());
+            if (isPostgres) {
+                await db('auth_tokens').insert({
+                    user_id: userId,
+                    token_hash: tokenHash,
+                    expires_at: expiresAt.toISOString(),
+                    created_at: db.fn.now()
+                });
+            } else {
+                db.prepare(`
+                    INSERT INTO auth_tokens (user_id, token_hash, expires_at, created_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                `).run(userId, tokenHash, expiresAt.toISOString());
+            }
             console.log('[TokenService] Token stored successfully');
         } catch (e) {
             console.error('[TokenService] Error storing token:', e);
@@ -47,26 +56,38 @@ class TokenService {
      * @param {string} token - The raw token to verify
      * @returns {string|null} The user ID if valid, null otherwise
      */
-    verifyRememberToken(token) {
+    async verifyRememberToken(token) {
         console.log('[TokenService] Verifying remember token...');
         const tokenHash = this.hashToken(token);
         const now = new Date().toISOString();
 
-        const record = db.prepare(`
-            SELECT user_id, expires_at 
-            FROM auth_tokens 
-            WHERE token_hash = ?
-        `).get(tokenHash);
+        try {
+            let record;
+            if (isPostgres) {
+                record = await db('auth_tokens')
+                    .where('token_hash', tokenHash)
+                    .select('user_id', 'expires_at')
+                    .first();
+            } else {
+                record = db.prepare(`
+                    SELECT user_id, expires_at 
+                    FROM auth_tokens 
+                    WHERE token_hash = ?
+                `).get(tokenHash);
+            }
 
-        if (record) {
-             console.log('[TokenService] Token found. Expires at:', record.expires_at, 'Now:', now);
-             if (record.expires_at > now) {
-                return record.user_id;
-             } else {
-                 console.log('[TokenService] Token expired');
-             }
-        } else {
-            console.log('[TokenService] Token hash not found in DB');
+            if (record) {
+                 console.log('[TokenService] Token found. Expires at:', record.expires_at, 'Now:', now);
+                 if (new Date(record.expires_at) > new Date()) {
+                    return record.user_id;
+                 } else {
+                     console.log('[TokenService] Token expired');
+                 }
+            } else {
+                console.log('[TokenService] Token hash not found in DB');
+            }
+        } catch (e) {
+            console.error('[TokenService] Error verifying token:', e);
         }
 
         return null;
@@ -76,17 +97,33 @@ class TokenService {
      * Invalidate a specific "Remember Me" token (Logout)
      * @param {string} token - The raw token to invalidate
      */
-    invalidateRememberToken(token) {
+    async invalidateRememberToken(token) {
         const tokenHash = this.hashToken(token);
-        db.prepare('DELETE FROM auth_tokens WHERE token_hash = ?').run(tokenHash);
+        try {
+            if (isPostgres) {
+                await db('auth_tokens').where('token_hash', tokenHash).delete();
+            } else {
+                db.prepare('DELETE FROM auth_tokens WHERE token_hash = ?').run(tokenHash);
+            }
+        } catch (e) {
+            console.error('[TokenService] Error invalidating token:', e);
+        }
     }
 
     /**
      * Invalidate all tokens for a user (Password Change / Security Breach)
      * @param {string} userId - The user ID
      */
-    invalidateAllUserTokens(userId) {
-        db.prepare('DELETE FROM auth_tokens WHERE user_id = ?').run(userId);
+    async invalidateAllUserTokens(userId) {
+        try {
+            if (isPostgres) {
+                await db('auth_tokens').where('user_id', userId).delete();
+            } else {
+                db.prepare('DELETE FROM auth_tokens WHERE user_id = ?').run(userId);
+            }
+        } catch (e) {
+            console.error('[TokenService] Error invalidating user tokens:', e);
+        }
     }
 
     /**
@@ -95,18 +132,31 @@ class TokenService {
      * @param {string} token - The raw token (will be hashed)
      * @param {number} expiresInMinutes - Expiration in minutes (default 60)
      */
-    storeResetToken(email, token, expiresInMinutes = 60) {
+    async storeResetToken(email, token, expiresInMinutes = 60) {
         const tokenHash = this.hashToken(token);
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + expiresInMinutes);
 
-        // Delete any existing reset tokens for this email to prevent spamming
-        db.prepare('DELETE FROM password_resets WHERE email = ?').run(email);
-
-        db.prepare(`
-            INSERT INTO password_resets (email, token_hash, expires_at, created_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        `).run(email, tokenHash, expiresAt.toISOString());
+        try {
+            if (isPostgres) {
+                await db('password_resets').where('email', email).delete();
+                await db('password_resets').insert({
+                    email,
+                    token_hash: tokenHash,
+                    expires_at: expiresAt.toISOString(),
+                    created_at: db.fn.now()
+                });
+            } else {
+                // Delete any existing reset tokens for this email to prevent spamming
+                db.prepare('DELETE FROM password_resets WHERE email = ?').run(email);
+                db.prepare(`
+                    INSERT INTO password_resets (email, token_hash, expires_at, created_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                `).run(email, tokenHash, expiresAt.toISOString());
+            }
+        } catch (e) {
+            console.error('[TokenService] Error storing reset token:', e);
+        }
     }
 
     /**
@@ -114,18 +164,30 @@ class TokenService {
      * @param {string} token - The raw token to verify
      * @returns {string|null} The email if valid, null otherwise
      */
-    verifyResetToken(token) {
+    async verifyResetToken(token) {
         const tokenHash = this.hashToken(token);
         const now = new Date().toISOString();
 
-        const record = db.prepare(`
-            SELECT email, expires_at 
-            FROM password_resets 
-            WHERE token_hash = ?
-        `).get(tokenHash);
+        try {
+            let record;
+            if (isPostgres) {
+                record = await db('password_resets')
+                    .where('token_hash', tokenHash)
+                    .select('email', 'expires_at')
+                    .first();
+            } else {
+                record = db.prepare(`
+                    SELECT email, expires_at 
+                    FROM password_resets 
+                    WHERE token_hash = ?
+                `).get(tokenHash);
+            }
 
-        if (record && record.expires_at > now) {
-            return record.email;
+            if (record && new Date(record.expires_at) > new Date()) {
+                return record.email;
+            }
+        } catch (e) {
+            console.error('[TokenService] Error verifying reset token:', e);
         }
         return null;
     }
@@ -134,9 +196,17 @@ class TokenService {
      * Consume (delete) a Reset token after successful use
      * @param {string} token - The raw token
      */
-    consumeResetToken(token) {
+    async consumeResetToken(token) {
         const tokenHash = this.hashToken(token);
-        db.prepare('DELETE FROM password_resets WHERE token_hash = ?').run(tokenHash);
+        try {
+            if (isPostgres) {
+                await db('password_resets').where('token_hash', tokenHash).delete();
+            } else {
+                db.prepare('DELETE FROM password_resets WHERE token_hash = ?').run(tokenHash);
+            }
+        } catch (e) {
+            console.error('[TokenService] Error consuming reset token:', e);
+        }
     }
 }
 
