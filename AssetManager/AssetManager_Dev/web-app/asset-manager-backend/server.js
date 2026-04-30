@@ -3887,45 +3887,6 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
     }
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  res.cookie(JWT_COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    expires: new Date(0)
-  });
-  res.json({ ok: true });
-});
-
-app.get('/api/auth/me', authenticateJWT, (req, res) => {
-  try {
-    const userRow = legacyDb.prepare('SELECT username, fullname, role, client_id, project_id, department FROM users WHERE username = ?').get(req.user.user_id);
-    if (!userRow) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Get user permissions
-    const permissions = Array.from(rolePermissionCache[userRow.role] || []);
-
-    return res.json({
-      ok: true,
-      user: {
-        id: req.user.user_id,
-        username: userRow.username,
-        fullname: userRow.fullname,
-        role: userRow.role,
-        clientId: userRow.client_id,
-        projectId: userRow.project_id,
-        department: userRow.department,
-        permissions: permissions
-      }
-    });
-  } catch (err) {
-    console.error('Auth me error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 app.get('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'manager', 'superuser'), requirePermission('user.manage'), async (req, res) => {
   try {
     const companyId = req.user.company_id;

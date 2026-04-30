@@ -21,6 +21,33 @@ async function createAdmin() {
     const role = 'superuser';
     const companyName = 'CINEOM';
 
+    console.log('--- Database Schema Repair ---');
+    try {
+        // 1. Ensure auth_tokens table exists
+        const hasAuthTokens = await db.schema.hasTable('auth_tokens');
+        if (!hasAuthTokens) {
+            console.log('Creating auth_tokens table...');
+            await db.schema.createTable('auth_tokens', (table) => {
+                table.string('user_id');
+                table.string('token_hash').primary();
+                table.timestamp('expires_at');
+                table.timestamp('created_at').defaultTo(db.fn.now());
+            });
+        }
+
+        // 2. Ensure company_id column exists in assets
+        const hasCompanyId = await db.schema.hasColumn('assets', 'company_id');
+        if (!hasCompanyId) {
+            console.log('Adding company_id to assets...');
+            await db.schema.table('assets', (table) => {
+                table.string('company_id');
+            });
+        }
+        console.log('Schema repair complete.');
+    } catch (schemaErr) {
+        console.error('Schema repair failed:', schemaErr.message);
+    }
+
     console.log('Checking for existing admin user...');
     const existingUser = await db('users').where({ username }).first();
     if (existingUser) {
@@ -85,6 +112,12 @@ async function createAdmin() {
         const deletedCount = await db('assets').where('is_deleted', 1).count('* as count').first();
         console.log('Deleted Assets in DB:', deletedCount.count);
         
+        if (parseInt(deletedCount.count) > 0) {
+            console.log('Undeleting all assets for fresh start...');
+            await db('assets').update({ is_deleted: 0 });
+            console.log('All assets marked as active (is_deleted = 0).');
+        }
+
         const roles = await db('roles').select('name');
         console.log('Available Roles:', roles.map(r => r.name).join(', '));
     } catch (e) {
