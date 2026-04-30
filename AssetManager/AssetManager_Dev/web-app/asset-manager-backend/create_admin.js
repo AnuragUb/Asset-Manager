@@ -24,33 +24,34 @@ async function createAdmin() {
     console.log('Checking for existing admin user...');
     const existingUser = await db('users').where({ username }).first();
     if (existingUser) {
-      console.log('Admin user already exists.');
-      process.exit(0);
+      console.log('Admin user already exists. Updating role and company...');
+      await db('users').where({ username }).update({ role: 'superuser', company_id: 'CINEOM', client_id: 'CINEOM' });
+    } else {
+      console.log('Creating default company...');
+      let company = await db('companies').where({ name: companyName }).first();
+      if (!company) {
+        const companyId = crypto.randomUUID();
+        await db('companies').insert({ id: companyId, name: companyName });
+        company = { id: companyId };
+      }
+
+      console.log('Hashing password...');
+      const passwordHash = await bcrypt.hash(password, 12);
+
+      console.log('Inserting admin user...');
+      const adminData = {
+        username,
+        password: passwordHash,
+        fullname,
+        role,
+        company_id: company.id,
+        client_id: company.id
+      };
+      await db('users').insert(adminData).onConflict('username').merge();
     }
 
-    console.log('Creating default company...');
-    let company = await db('companies').where({ name: companyName }).first();
-    if (!company) {
-      const companyId = crypto.randomUUID();
-      await db('companies').insert({ id: companyId, name: companyName });
-      company = { id: companyId };
-    }
-
-    console.log('Hashing password...');
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    console.log('Inserting admin user...');
-    const adminData = {
-      username,
-      password: passwordHash,
-      fullname,
-      role,
-      company_id: company.id,
-      client_id: company.id
-    };
-
-    // Use lowercase columns for Postgres
-    await db('users').insert(adminData).onConflict('username').merge();
+    // Always fetch the company to ensure we have the ID for the next steps
+    const company = await db('companies').where({ name: companyName }).first();
 
     console.log('Granting user management permissions...');
     // 1. Ensure 'superuser' role exists
