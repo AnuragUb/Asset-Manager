@@ -64,19 +64,32 @@ async function createAdmin() {
 
     console.log('Checking for company_id column in assets...');
     try {
-        const columnInfo = await db('assets').columnInfo();
-        if (columnInfo.company_id) {
+        const hasCompanyId = await db.schema.hasColumn('assets', 'company_id');
+        if (hasCompanyId) {
             console.log('Fixing assets company_id...');
-            await db('assets').whereNull('company_id').orWhere('company_id', '').update({ company_id: company.id });
+            const updated = await db('assets').whereNull('company_id').orWhere('company_id', '').update({ company_id: company.id });
+            console.log(`Updated ${updated} assets with company_id: ${company.id}`);
         } else {
-            console.log('Warning: company_id column not found in assets table. Schema might be outdated.');
+            console.log('Warning: company_id column not found in assets table. Run migrations first.');
         }
     } catch (e) {
         console.error('Error checking assets schema:', e.message);
     }
 
-    console.log('-----------------------------------');
-    console.log('Admin user and permissions setup successfully!');
+    console.log('--- Diagnostic Information ---');
+    try {
+        const assetCount = await db('assets').count('* as count').first();
+        console.log('Total Assets in DB:', assetCount.count);
+        
+        const deletedCount = await db('assets').where('is_deleted', 1).count('* as count').first();
+        console.log('Deleted Assets in DB:', deletedCount.count);
+        
+        const roles = await db('roles').select('name');
+        console.log('Available Roles:', roles.map(r => r.name).join(', '));
+    } catch (e) {
+        console.error('Error running diagnostics:', e.message);
+    }
+    console.log('------------------------------');
     console.log(`Username: ${username}`);
     console.log(`Password: ${password}`);
     console.log('-----------------------------------');

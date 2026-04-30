@@ -633,14 +633,14 @@ app.post('/api/auth/logout', async (req, res) => {
   // Clear Cookies
   res.cookie(JWT_COOKIE_NAME, '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Set to false to work over plain HTTP (like on .118)
     sameSite: 'lax',
     maxAge: 0
   });
   
   res.cookie(REMEMBER_COOKIE_NAME, '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Set to false to work over plain HTTP (like on .118)
     sameSite: 'lax',
     maxAge: 0
   });
