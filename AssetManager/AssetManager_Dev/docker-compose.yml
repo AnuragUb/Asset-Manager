@@ -12,6 +12,11 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Cache: Redis
   redis:
@@ -20,6 +25,11 @@ services:
     restart: always
     ports:
       - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Backend Application (Development - Port 8080)
   app-dev:
@@ -28,8 +38,10 @@ services:
       dockerfile: Dockerfile
     container_name: asset-manager-dev
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     ports:
       - "8080:8080"
