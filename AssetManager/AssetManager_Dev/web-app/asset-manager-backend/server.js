@@ -3718,7 +3718,7 @@ app.delete('/api/projects/:id', authenticateJWT, authorizeRoles('superuser', 'ad
         const { id } = req.params;
         const now = new Date().toISOString();
         const result = await db('projects')
-            .where('ID', id)
+            .where('id', id)
             .update({ is_deleted: 1, deleted_at: now });
             
         if (result > 0) {
@@ -7241,9 +7241,9 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
     const now = new Date().toISOString();
     let deletedCount = 0;
 
-    await legacyDb.transaction(async (trx) => {
+    await db.transaction(async (trx) => {
       for (const id of ids) {
-        const asset = await trx('assets').where('ID', id).first();
+        const asset = await trx('assets').where('id', id).first();
         if (!asset) continue;
 
         // 1. Quantity Logic for Bulk
@@ -7282,16 +7282,16 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
         }
 
         // Clear ParentId for linked assets
-        const linkedComponents = await trx('components').where('ParentId', id).andWhere('NoQR', 0).select('ID');
+        const linkedComponents = await trx('components').where('parentid', id).select('id');
         for (const comp of linkedComponents) {
-          await trx('assets').where('ID', comp.ID).update({ ParentId: null });
+          await trx('assets').where('id', comp.id).update({ parentid: null });
         }
 
-        await trx('components').where('ID', id).delete();
-        await trx('components').where('ParentId', id).delete();
+        await trx('components').where('id', id).delete();
+        await trx('components').where('parentid', id).delete();
 
         const changes = await trx('assets')
-          .where('ID', id)
+          .where('id', id)
           .update({ is_deleted: 1, deleted_at: now });
         if (changes > 0) deletedCount++;
       }
@@ -7318,7 +7318,7 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
     const username = req.user.username || 'web';
 
     // 1. Fetch asset details for quantity check
-    const asset = await db('assets').where('ID', id).first();
+    const asset = await db('assets').where('id', id).first();
     if (!asset) return res.status(404).send('Asset not found');
 
     // 2. Quantity Tracked Asset Logic
@@ -7380,18 +7380,18 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     // Delete from components table as well
     // For linked assets (NoQR = 0), we should also clear their ParentId in the assets table
-    const linkedRows = await db('components').where('ParentId', id).andWhere('NoQR', 0).select('ID');
+    const linkedRows = await db('components').where('parentid', id).select('id');
     for (const comp of linkedRows) {
-      await db('assets').where('ID', comp.ID).update({ ParentId: null });
+      await db('assets').where('id', comp.id).update({ parentid: null });
     }
 
-    await db('components').where('ID', id).delete();
-    await db('components').where('ParentId', id).delete();
+    await db('components').where('id', id).delete();
+    await db('components').where('parentid', id).delete();
 
     // Soft Delete: Mark as deleted instead of removing immediately
     const now = new Date().toISOString();
     const result = await db('assets')
-      .where('ID', id)
+      .where('id', id)
       .update({ is_deleted: 1, deleted_at: now });
 
     if (result > 0) {
