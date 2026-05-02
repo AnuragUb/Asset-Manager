@@ -2479,8 +2479,10 @@ function renderWorkspacePoChecklist() {
                 const required = parseFloat(item.QtyOrdered) || 0;
                 
                 // --- ROBUST LOGIC: Use server-calculated fulfilledQty ---
-                // We add local workspaceStagedAssets that are tagged to this item but not yet in the DB
-                const localFulfilled = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID).length;
+                // We only add local workspaceStagedAssets that are NOT yet in the DB (i.e. don't have a linkedPoItemId on the server)
+                // Actually, if we just refreshed the PO data, item.fulfilledQty ALREADY includes assets linked in the DB.
+                // Staged assets that have been linked via tagAssetToPoItem should NOT be added again.
+                const localFulfilled = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID && !a.isAlreadyLinkedOnServer).length;
                 const totalFulfilled = (item.fulfilledQty || 0) + localFulfilled;
                 
                 const isDone = (totalFulfilled >= required && required > 0) || item.Status === 'Shipped';
@@ -2679,6 +2681,8 @@ window.tagAssetToPoItem = async (assetIndex, poItemId) => {
 
         if (res.ok) {
             asset.linkedPoItemId = poItemId ? parseInt(poItemId) : null;
+            // Mark as linked so we don't double count in updateWorkspacePoProgress
+            asset.isAlreadyLinkedOnServer = true;
             // IMPORTANT: Refresh PO data from server to get updated fulfilledQty
             await loadWorkspacePO(currentProjectId);
             updateWorkspacePoProgress();
@@ -2719,8 +2723,8 @@ function updateWorkspacePoProgress() {
                     const req = (parseFloat(item.QtyOrdered) || 0);
                     totalRequired += req;
                     
-                    // Sum up server-side fulfillment + local staged tagging
-                    const local = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID).length;
+                    // Sum up server-side fulfillment + local staged tagging (excluding those already in DB)
+                    const local = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID && !a.isAlreadyLinkedOnServer).length;
                     totalFulfilled += Math.min(req, (item.fulfilledQty || 0) + local);
                 });
             }
