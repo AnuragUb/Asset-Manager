@@ -1,4 +1,3 @@
-const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -11,45 +10,9 @@ const getDataDir = () => {
 };
 const dataDir = getDataDir();
 
-const getDbPath = () => {
-    return process.env.DB_PATH || path.join(__dirname, '../../data/test/database_v2.db');
-};
-
 // Database connection configuration
 const environment = process.env.NODE_ENV || 'development';
 const db = require('knex')(knexConfig[environment]);
-
-// Legacy direct connection for migration/compatibility
-let legacyDb = null;
-const isPostgres = process.env.DB_CLIENT === 'postgresql';
-
-if (!isPostgres) {
-    const dbPath = getDbPath();
-    // Ensure the directory exists before opening
-    const dbDir = path.dirname(dbPath);
-    if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-    }
-    legacyDb = new Database(dbPath);
-    console.log(`[DB] Legacy SQLite path: ${dbPath}`);
-} else {
-    console.log(`[DB] Running on PostgreSQL. Legacy SQLite disabled.`);
-    // Provide a shim for legacy code that still tries to use legacyDb
-    const noop = () => ({ 
-        all: () => [], 
-        get: () => null, 
-        run: () => ({ changes: 0 }),
-        iterate: () => ({ [Symbol.iterator]: () => ({ next: () => ({ done: true }) }) })
-    });
-    legacyDb = {
-        prepare: noop,
-        exec: () => {},
-        transaction: (callback) => {
-            console.log('[DB] Shimmed transaction called.');
-            return callback(legacyDb);
-        }
-    };
-}
 
 console.log(`[DB] Knex initialized for environment: ${environment}`);
 
@@ -58,9 +21,6 @@ console.log(`[DB] Knex initialized for environment: ${environment}`);
 const assetsFile = path.join(dataDir, 'assets.json');
 const usersFile = path.join(dataDir, 'users.json');
 const auditFile = path.join(dataDir, 'audit_log.json');
-// dynamic.json is historically in the backend folder, but let's allow it to be in DATA_DIR too if we want
-// For now, let's keep it relative to __dirname unless DATA_DIR is explicitly set distinct from default
-// Actually, for containerization, we want ALL state in /app/data.
 const dynamicFile = path.join(dataDir, 'dynamic.json');
 
 // Ensure dynamicFile exists
@@ -126,26 +86,16 @@ function normalizeDBData(data) {
 const STATIC_IP = process.env.STATIC_IP || getLocalIP();
 
 async function appendAudit(entry) {
-    // Write to database using Knex (Async)
     try {
-        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         const record = {
-            Action: entry.Action || 'UNKNOWN',
-            User: entry.User || 'System',
-            AssetId: entry.AssetId || '',
-            Severity: entry.Severity || 'INFO',
-            Details: entry.Details || '',
-            Timestamp: entry.Timestamp || new Date().toISOString()
+            action: entry.Action || 'UNKNOWN',
+            user: entry.User || 'System',
+            assetid: entry.AssetId || '',
+            severity: entry.Severity || 'INFO',
+            details: entry.Details || '',
+            timestamp: entry.Timestamp || new Date().toISOString()
         };
-
-        if (isPostgres) {
-            await db('audit_log').insert(normalizeDBData(record));
-        } else {
-            legacyDb.prepare(`
-                INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `).run(record.Action, record.User, record.AssetId, record.Severity, record.Details, record.Timestamp);
-        }
+        await db('audit_log').insert(record);
     } catch (err) {
         console.error('Failed to append audit log to DB:', err);
     }
@@ -610,8 +560,6 @@ function parseTallyXml(xml) {
 
 module.exports = {
     db,
-    legacyDb,
-    isPostgres,
     readJson,
     writeJson,
     getLocalIP,
@@ -639,6 +587,5 @@ module.exports = {
     getTallyConfig,
     normalizeDBData,
     STATIC_IP,
-    getDataDir,
-    getDbPath
+    getDataDir
 };

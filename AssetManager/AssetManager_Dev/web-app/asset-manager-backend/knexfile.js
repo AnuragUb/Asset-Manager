@@ -22,25 +22,20 @@ module.exports = {
     }
   },
 
-  // SQLite (Local fast testing or fallback)
-  sqlite: {
-    client: 'better-sqlite3',
-    connection: {
-      filename: process.env.DB_PATH || path.join(__dirname, '../../data/test/database_v2.db')
-    },
-    useNullAsDefault: true,
-    migrations: {
-      directory: './migrations'
-    }
-  },
-
-  // Test Environment
+  // Test Environment (Using Postgres)
   test: {
-    client: 'better-sqlite3',
+    client: 'postgresql',
     connection: {
-      filename: ':memory:'
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_TEST_NAME || 'asset_manager_test',
+      user:     process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'password',
+      port:     process.env.DB_PORT || 5432
     },
-    useNullAsDefault: true,
+    pool: {
+      min: 2,
+      max: 10
+    },
     migrations: {
       directory: './migrations'
     }
