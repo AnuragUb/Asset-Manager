@@ -7691,31 +7691,53 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/link-po-item', authenticateJWT, (req, res) => {
+app.post('/api/assets/:id/link-po-item', authenticateJWT, async (req, res) => {
   try {
     const { id } = req.params;
     const { poItemId } = req.body;
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
     
     // Check if it's a permanent or temporary asset
     const isTemp = id.startsWith('MUMT-');
-    if (isTemp) {
-      legacyDb.prepare('UPDATE temporary_assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
-    } else {
-      legacyDb.prepare('UPDATE assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
-    }
     
-    if (poItemId) {
-      const item = legacyDb.prepare('SELECT * FROM project_order_items WHERE ID = ?').get(poItemId);
-      const permanentFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(poItemId).count;
-      const temporaryFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(poItemId).count;
-      
-      const fulfilledCount = permanentFulfilled + temporaryFulfilled;
-      const newStatus = fulfilledCount >= item.QtyOrdered ? 'Shipped' : 'Partially Fulfilled';
-      legacyDb.prepare('UPDATE project_order_items SET Status = ? WHERE ID = ?').run(newStatus, poItemId);
+    if (isPostgres) {
+        if (isTemp) {
+            await db('temporary_assets').where('id', id).update({ linked_po_item_id: poItemId || null });
+        } else {
+            await db('assets').where('id', id).update({ linked_po_item_id: poItemId || null });
+        }
+        
+        if (poItemId) {
+            const item = await db('project_order_items').where('id', poItemId).first();
+            const permanentResult = await db('assets').where('linked_po_item_id', poItemId).count('id as count').first();
+            const temporaryResult = await db('temporary_assets').where('linked_po_item_id', poItemId).count('id as count').first();
+            
+            const fulfilledCount = parseInt(permanentResult.count || 0) + parseInt(temporaryResult.count || 0);
+            const qtyOrdered = parseFloat(item.qtyordered || item.QtyOrdered || 0);
+            const newStatus = fulfilledCount >= qtyOrdered ? 'Shipped' : 'Partially Fulfilled';
+            await db('project_order_items').where('id', poItemId).update({ status: newStatus });
+        }
+    } else {
+        if (isTemp) {
+            legacyDb.prepare('UPDATE temporary_assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
+        } else {
+            legacyDb.prepare('UPDATE assets SET linked_po_item_id = ? WHERE ID = ?').run(poItemId || null, id);
+        }
+        
+        if (poItemId) {
+            const item = legacyDb.prepare('SELECT * FROM project_order_items WHERE ID = ?').get(poItemId);
+            const permanentFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM assets WHERE linked_po_item_id = ?').get(poItemId).count;
+            const temporaryFulfilled = legacyDb.prepare('SELECT COUNT(*) as count FROM temporary_assets WHERE linked_po_item_id = ?').get(poItemId).count;
+            
+            const fulfilledCount = (permanentFulfilled || 0) + (temporaryFulfilled || 0);
+            const newStatus = fulfilledCount >= item.QtyOrdered ? 'Shipped' : 'Partially Fulfilled';
+            legacyDb.prepare('UPDATE project_order_items SET Status = ? WHERE ID = ?').run(newStatus, poItemId);
+        }
     }
 
     res.json({ success: true });
   } catch (err) {
+    console.error('Link PO item error:', err);
     res.status(500).json({ error: err.message });
   }
 });
