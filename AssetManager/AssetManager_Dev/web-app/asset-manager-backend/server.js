@@ -2299,15 +2299,18 @@ app.post('/api/settings/email/run-check', async (req, res) => {
 
 // Environment-based static file serving
 const currentPort = process.env.PORT || 8080;
-if (currentPort == 8080) {
+const distPath = path.join(__dirname, '../asset-manager-frontend/dist');
+const useDist = (currentPort == 8080 && fs.existsSync(distPath));
+
+if (useDist) {
     // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
     console.log('[ENV] Serving minified assets from DIST folder on port 8080');
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/dist/js')));
     app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 } else {
-    // Port 9090: Serve from source (Easier debugging)
-    console.log('[ENV] Serving source assets from JS/STATIC folders on port 9090');
+    // Port 9090 or Dist missing: Serve from source (Easier debugging)
+    console.log(`[ENV] Serving source assets from JS/STATIC folders on port ${currentPort}${currentPort == 8080 ? ' (DIST missing)' : ''}`);
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
     app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
@@ -2355,13 +2358,13 @@ app.post('/api/asset_kinds/upload-image', upload.single('image'), (req, res) => 
 });
 
 app.get('/', (req, res) => {
-  const rootPath = (currentPort == 8080) ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
+  const rootPath = useDist ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
   res.sendFile(path.join(__dirname, rootPath, 'index.html'));
 });
 
 // Serve Asset Details View
 app.get('/asset/:id', (req, res) => {
-    const rootPath = (currentPort == 8080) ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
+    const rootPath = useDist ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
     const filePath = path.join(__dirname, rootPath, 'asset-view.html');
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
