@@ -2300,7 +2300,8 @@ app.post('/api/settings/email/run-check', async (req, res) => {
 // Environment-based static file serving
 const currentPort = process.env.PORT || 8080;
 const distPath = path.join(__dirname, '../asset-manager-frontend/dist');
-const useDist = (currentPort == 8080 && fs.existsSync(distPath));
+const indexHtmlPath = path.join(distPath, 'index.html');
+const useDist = (currentPort == 8080 && fs.existsSync(indexHtmlPath));
 
 if (useDist) {
     // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
