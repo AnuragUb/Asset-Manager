@@ -68,6 +68,7 @@ const {
   parseTallyXml, 
   TALLY_CONFIG,
   getTallyConfig,
+  normalizeDBData,
   legacyDb
 } = require('./utils')
 const crypto = require('crypto');
@@ -382,15 +383,15 @@ async function logAssetHistory(assetId, action, oldValue, newValue, user, detail
     const timestamp = new Date().toISOString();
     
     if (isPostgres) {
-      await db('asset_history').insert({
-        assetid: assetId,
-        action: action,
-        oldvalue: oldValue,
-        newvalue: newValue,
-        user: user || 'web',
-        timestamp: timestamp,
-        details: details
-      });
+      await db('asset_history').insert(normalizeDBData({
+        AssetID: assetId,
+        Action: action,
+        OldValue: oldValue,
+        NewValue: newValue,
+        User: user || 'web',
+        Timestamp: timestamp,
+        Details: details
+      }));
     } else {
       legacyDb.prepare(`
         INSERT INTO asset_history (AssetID, Action, FromValue, ToValue, User, Timestamp, Details)
@@ -409,14 +410,14 @@ async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO
         const timestamp = new Date().toISOString();
         
         if (isPostgres) {
-            await db('audit_log').insert({
-                user: user || 'web',
-                action: action,
-                details: details,
-                assetid: assetId,
-                severity: severity,
-                timestamp: timestamp
-            });
+            await db('audit_log').insert(normalizeDBData({
+                User: user || 'web',
+                Action: action,
+                Details: details,
+                AssetId: assetId,
+                Severity: severity,
+                Timestamp: timestamp
+            }));
         } else {
             legacyDb.prepare(`
                 INSERT INTO audit_log (User, Action, Details, AssetId, Severity, Timestamp)
@@ -851,6 +852,10 @@ function authorizeRoles() {
     if (!req.user || !req.user.role) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+    // superuser bypasses all role checks
+    if (req.user.role === 'superuser') {
+      return next();
+    }
     if (allowedRoles.length && !allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -869,8 +874,8 @@ async function loadRolePermissionsIntoCache() {
       
     const map = {};
     rows.forEach(row => {
-      const roleName = row.role_name || row.role_name; // Postgres lowercase
-      const permKey = row.permission_key || row.permission_key;
+      const roleName = row.role_name; 
+      const permKey = row.permission_key;
       
       if (!map[roleName]) {
         map[roleName] = new Set();
@@ -886,6 +891,8 @@ async function loadRolePermissionsIntoCache() {
 }
 
 function hasPermission(roleName, permissionKey) {
+  // superuser always has all permissions
+  if (roleName === 'superuser') return true;
   const set = rolePermissionCache[roleName];
   return !!(set && set.has(permissionKey));
 }
@@ -1455,12 +1462,257 @@ async function getUserFromDb(username) {
   return legacyDb.prepare('SELECT * FROM users WHERE username = ?').get(username)
 }
 
+// Helper to require admin role
 async function requireAdmin(req) {
+  // Try to use req.user from JWT first
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'superuser' || req.user.role === 'it_manager')) {
+    return req.user;
+  }
+  // Fallback to DB lookup via x-user header for backward compatibility
   const username = String(req.headers['x-user'] || '')
+  if (!username) return null;
   const user = await getUserFromDb(username)
-  if (!user || (user.role !== 'admin' && user.role !== 'superuser')) return null
+  if (!user || (user.role !== 'admin' && user.role !== 'superuser' && user.role !== 'it_manager')) return null
   return user
 }
+
+// Helper to require superuser role
+async function requireSuperuser(req) {
+  // Try to use req.user from JWT first
+  if (req.user && req.user.role === 'superuser') {
+    return req.user;
+  }
+  // Fallback to DB lookup via x-user header
+  const username = String(req.headers['x-user'] || '')
+  if (!username) return null;
+  const user = await getUserFromDb(username)
+  if (!user || user.role !== 'superuser') return null
+  return user
+}
+
+// User Management Endpoints
+app.get('/api/users', authenticateJWT, async (req, res) => {
+    try {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let users;
+        if (isPostgres) {
+            users = await db('users').select('id', 'username', 'fullname', 'role', 'company_id', 'client_id', 'project_id', 'department', 'designation');
+            users = normalizeResult(users);
+        } else {
+            users = legacyDb.prepare('SELECT id, username, fullname, role, company_id, client_id, project_id, department, designation FROM users').all();
+        }
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/users', authenticateJWT, async (req, res) => {
+    try {
+        const admin = await requireAdmin(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+
+        const { username, password, fullname, role, company_id, client_id, project_id, department, designation } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        
+        // Check if user already exists
+        let existing;
+        if (isPostgres) {
+            existing = await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
+        } else {
+            existing = legacyDb.prepare('SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)').get(username);
+        }
+        if (existing) return res.status(400).json({ error: 'Username already exists' });
+
+        const passwordHash = await bcrypt.hash(password, 12);
+        const userData = {
+            username,
+            password: passwordHash,
+            fullname: fullname || username,
+            role: role || 'user',
+            company_id: company_id || admin.company_id || DEFAULT_COMPANY_ID,
+            client_id: client_id || null,
+            project_id: project_id || null,
+            department: department || null,
+            designation: designation || null
+        };
+
+        if (isPostgres) {
+            await db('users').insert(normalizeDBData(userData));
+        } else {
+            const stmt = legacyDb.prepare(`
+                INSERT INTO users (username, password, fullname, role, company_id, client_id, project_id, department, designation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            stmt.run(userData.username, userData.password, userData.fullname, userData.role, userData.company_id, userData.client_id, userData.project_id, userData.department, userData.designation);
+        }
+
+        res.json({ success: true, message: 'User created successfully' });
+    } catch (err) {
+        console.error('Create user error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/users/:username', authenticateJWT, async (req, res) => {
+    try {
+        const admin = await requireAdmin(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+
+        const { username } = req.params;
+        const { password, fullname, role, company_id, client_id, project_id, department, designation } = req.body;
+
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        const updateData = {
+            fullname,
+            role,
+            company_id,
+            client_id,
+            project_id,
+            department,
+            designation
+        };
+
+        // Clean undefined
+        Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 12);
+        }
+
+        if (isPostgres) {
+            await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).update(normalizeDBData(updateData));
+        } else {
+            // Build dynamic SQLite update
+            const fields = Object.keys(updateData);
+            if (fields.length > 0) {
+                const setClause = fields.map(f => `${f} = ?`).join(', ');
+                const params = fields.map(f => updateData[f]);
+                params.push(username);
+                legacyDb.prepare(`UPDATE users SET ${setClause} WHERE username = ?`).run(...params);
+            }
+        }
+
+        res.json({ success: true, message: 'User updated successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/users/:username', authenticateJWT, async (req, res) => {
+    try {
+        const admin = await requireSuperuser(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Superuser access required' });
+
+        const { username } = req.params;
+        if (username === admin.username) return res.status(400).json({ error: 'Cannot delete yourself' });
+
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+            await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).delete();
+        } else {
+            legacyDb.prepare('DELETE FROM users WHERE username = ?').run(username);
+        }
+
+        res.json({ success: true, message: 'User deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/roles', authenticateJWT, async (req, res) => {
+    try {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let roles;
+        if (isPostgres) {
+            roles = await db('roles').select('*');
+            roles = normalizeResult(roles);
+        } else {
+            roles = legacyDb.prepare('SELECT * FROM roles').all();
+        }
+        res.json(roles);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/permissions', authenticateJWT, async (req, res) => {
+    try {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let perms;
+        if (isPostgres) {
+            perms = await db('permissions').select('*');
+            perms = normalizeResult(perms);
+        } else {
+            perms = legacyDb.prepare('SELECT * FROM permissions').all();
+        }
+        res.json(perms);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/role-permissions', authenticateJWT, async (req, res) => {
+    try {
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let rows;
+        if (isPostgres) {
+            rows = await db('role_permissions').select('*');
+            rows = normalizeResult(rows);
+        } else {
+            rows = legacyDb.prepare('SELECT * FROM role_permissions').all();
+        }
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/role-permissions', authenticateJWT, async (req, res) => {
+    try {
+        const admin = await requireSuperuser(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Superuser access required' });
+
+        const { role_name, permission_key } = req.body;
+        if (!role_name || !permission_key) return res.status(400).json({ error: 'role_name and permission_key required' });
+
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+            await db('role_permissions').insert({ role_name, permission_key }).onConflict(['role_name', 'permission_key']).ignore();
+        } else {
+            legacyDb.prepare('INSERT OR IGNORE INTO role_permissions (role_name, permission_key) VALUES (?, ?)').run(role_name, permission_key);
+        }
+
+        await loadRolePermissionsIntoCache();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/role-permissions', authenticateJWT, async (req, res) => {
+    try {
+        const admin = await requireSuperuser(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Superuser access required' });
+
+        const { role_name, permission_key } = req.body;
+        if (!role_name || !permission_key) return res.status(400).json({ error: 'role_name and permission_key required' });
+
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        if (isPostgres) {
+            await db('role_permissions').where({ role_name, permission_key }).delete();
+        } else {
+            legacyDb.prepare('DELETE FROM role_permissions WHERE role_name = ? AND permission_key = ?').run(role_name, permission_key);
+        }
+
+        await loadRolePermissionsIntoCache();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Helper to get quantity-tracked asset (Async)
 async function getQuantityAsset(id) {
@@ -3396,17 +3648,17 @@ app.post('/api/employees', async (req, res) => {
     const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
     if (isPostgres) {
-        await db('employees').insert({
-            id,
-            employeeid: EmployeeID,
-            name: Name,
-            department: Department || '',
-            designation: Designation || '',
-            email: Email || '',
-            phone: Phone || '',
-            status: Status || 'ACTIVE',
-            lastupdated: new Date().toISOString()
-        });
+        await db('employees').insert(normalizeDBData({
+            ID: id,
+            EmployeeID,
+            Name,
+            Department: Department || '',
+            Designation: Designation || '',
+            Email: Email || '',
+            Phone: Phone || '',
+            Status: Status || 'ACTIVE',
+            LastUpdated: new Date().toISOString()
+        }));
     } else {
         const stmt = legacyDb.prepare(`
           INSERT INTO employees (ID, EmployeeID, Name, Department, Designation, Email, Phone, Status, LastUpdated)
@@ -3432,16 +3684,16 @@ app.post('/api/employees/bulk', async (req, res) => {
     const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
     if (isPostgres) {
-        const empToInsert = employees.map((emp, index) => ({
-            id: `EMP${Date.now()}${index}`,
-            employeeid: emp.EmployeeID || '',
-            name: emp.Name || '',
-            department: emp.Department || '',
-            designation: emp.Designation || '',
-            email: emp.Email || '',
-            phone: emp.Phone || '',
-            status: emp.Status || 'ACTIVE',
-            lastupdated: timestamp
+        const empToInsert = employees.map((emp, index) => normalizeDBData({
+            ID: `EMP${Date.now()}${index}`,
+            EmployeeID: emp.EmployeeID || '',
+            Name: emp.Name || '',
+            Department: emp.Department || '',
+            Designation: emp.Designation || '',
+            Email: emp.Email || '',
+            Phone: emp.Phone || '',
+            Status: emp.Status || 'ACTIVE',
+            LastUpdated: timestamp
         }));
         
         // Chunk inserts to avoid large payload issues
@@ -3490,16 +3742,16 @@ app.put('/api/employees/:id', async (req, res) => {
     if (isPostgres) {
         const result = await db('employees')
             .where('id', id)
-            .update({
-                employeeid: EmployeeID,
-                name: Name,
-                department: Department,
-                designation: Designation,
-                email: Email,
-                phone: Phone,
-                status: Status,
-                lastupdated: new Date().toISOString()
-            });
+            .update(normalizeDBData({
+                EmployeeID,
+                Name,
+                Department,
+                Designation,
+                Email,
+                Phone,
+                Status,
+                LastUpdated: new Date().toISOString()
+            }));
         if (result === 0) return res.status(404).send('Employee not found');
     } else {
         const stmt = legacyDb.prepare(`
@@ -3846,7 +4098,7 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
             });
             await db('projects').insert(sqliteRecord);
         } else {
-            await db('projects').insert(projectRecord);
+            await db('projects').insert(normalizeDBData(projectRecord));
         }
 
         // Record project history if table exists
@@ -3859,22 +4111,7 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
                     note: 'Project initialized', 
                     timestamp: timestamp
                 };
-                if (!isPostgres) {
-                    await db('project_history').insert({
-                        ProjectID: historyRecord.projectid,
-                        Status: historyRecord.status,
-                        Note: historyRecord.note,
-                        Timestamp: historyRecord.timestamp
-                    });
-                } else {
-                    // In Postgres, make sure keys are lowercase to match schema
-                    await db('project_history').insert({
-                        projectid: historyRecord.projectid,
-                        status: historyRecord.status,
-                        note: historyRecord.note,
-                        timestamp: historyRecord.timestamp
-                    });
-                }
+                await db('project_history').insert(normalizeDBData(historyRecord));
             }
         } catch (histErr) {
             console.warn('Could not record project history:', histErr.message);
@@ -3933,7 +4170,7 @@ app.post('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'superuse
     const companyId = req.user.company_id || DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
     
     if (isPostgres) {
-        await db('users').insert({
+        await db('users').insert(normalizeDBData({
             username,
             password: passwordHash,
             fullname: fullname || username,
@@ -3941,7 +4178,7 @@ app.post('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'superuse
             employee_id: employeeId || null,
             company_id: companyId,
             client_id: companyId
-        });
+        }));
     } else {
         legacyDb.prepare('INSERT INTO users (username, password, fullname, role, employee_id, company_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(username, passwordHash, fullname || username, requestedRole, employeeId || null, companyId, companyId);
@@ -4528,7 +4765,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       console.log('Generated Modern ID:', newId);
     } else {
       // Check if ID already exists
-      const existing = await db('assets').where('ID', newId).first();
+      const existing = await db('assets').where(isPostgres ? 'id' : 'ID', newId).first();
       if (existing) {
         return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists` });
       }
@@ -4556,7 +4793,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       qrCode = await qrcode.toDataURL(urlText, { width: 512 });
     }
 
-    await db('assets').insert({
+    await db('assets').insert(normalizeDBData({
       ID: newId,
       ItemName: asset.ItemName || '',
       Status: asset.Status || 'In Store',
@@ -4587,7 +4824,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       conversion_mode: asset.conversion_mode || 'multiply',
       is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
       is_batch: asset.is_batch || 0
-    });
+    }));
 
     appendAudit({
       Action: 'CREATE',
@@ -4632,7 +4869,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
 
     // Save IT details to separate table if any exist
     if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
-      await db('asset_it_details').insert({
+      await db('asset_it_details').insert(normalizeDBData({
         AssetID: newId,
         MACAddress: encryptionService.encrypt(asset.MACAddress || ''),
         IPAddress: encryptionService.encryptDeterministic(asset.IPAddress || ''),
@@ -4641,14 +4878,14 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
         VLAN: asset.VLAN || '',
         SocketID: encryptionService.encrypt(asset.SocketID || ''),
         UserID: asset.UserID || ''
-      }).onConflict('AssetID').merge();
+      })).onConflict('assetid').merge();
     }
 
     // Handle nested components (new child assets)
     if (Array.isArray(asset.components) && asset.components.length > 0) {
       for (const comp of asset.components) {
         const compId = generateModernAssetId(asset.CurrentLocation || '');
-        await db('components').insert({
+        await db('components').insert(normalizeDBData({
           ID: compId,
           ParentId: newId, // ParentId
           ItemName: comp.ItemName || '',
@@ -4660,20 +4897,20 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
           Category: comp.Category || asset.Category || '',
           LastUpdated: new Date().toISOString(),
           NoQR: 1 // NoQR = true
-        });
+        }));
       }
     }
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds) && asset.linkedIds.length > 0) {
       for (const linkId of asset.linkedIds) {
-        const existingAsset = await db('assets').where('ID', linkId).first();
+        const existingAsset = await db('assets').where(isPostgres ? 'id' : 'ID', linkId).first();
         if (!existingAsset) continue;
 
         // Validation: Check if asset is already assigned to a parent
-        const existingParentInAssets = existingAsset.ParentId;
-        const existingComp = await db('components').where('ID', linkId).first();
-        const existingParentInComps = existingComp ? existingComp.ParentId : null;
+        const existingParentInAssets = existingAsset.ParentId || existingAsset.parentid;
+        const existingComp = await db('components').where(isPostgres ? 'id' : 'ID', linkId).first();
+        const existingParentInComps = existingComp ? (existingComp.ParentId || existingComp.parentid) : null;
 
         if ((existingParentInAssets && existingParentInAssets !== newId) || 
             (existingParentInComps && existingParentInComps !== newId)) {
@@ -4681,22 +4918,22 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
           return res.status(400).send(`Asset ${linkId} is already assigned to parent ${actualParent}. Remove it from its current parent first.`);
         }
 
-        await db('components').insert({
+        await db('components').insert(normalizeDBData({
           ID: linkId,
           ParentId: newId,
-          ItemName: existingAsset.ItemName,
-          Make: existingAsset.Make || '',
-          Model: existingAsset.Model || '',
-          SrNo: existingAsset.SrNo || '',
-          Status: existingAsset.Status || 'In Store',
-          Type: existingAsset.Type || 'Component',
-          Category: existingAsset.Category || '',
+          ItemName: existingAsset.ItemName || existingAsset.itemname,
+          Make: existingAsset.Make || existingAsset.make || '',
+          Model: existingAsset.Model || existingAsset.model || '',
+          SrNo: existingAsset.SrNo || existingAsset.srno || '',
+          Status: existingAsset.Status || existingAsset.status || 'In Store',
+          Type: existingAsset.Type || existingAsset.type || 'Component',
+          Category: existingAsset.Category || existingAsset.category || '',
           LastUpdated: new Date().toISOString(),
           NoQR: 0 // NoQR = false (it's a QR asset)
-        }).onConflict('ID').merge();
+        })).onConflict(isPostgres ? 'id' : 'ID').merge();
         
         // Update ParentId in assets table instead of clearing it
-        await db('assets').where('ID', linkId).update({ ParentId: newId });
+        await db('assets').where(isPostgres ? 'id' : 'ID', linkId).update(normalizeDBData({ ParentId: newId }));
       }
     }
 
@@ -4704,16 +4941,16 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
     if (asset.linked_po_item_id) {
         try {
             await db('project_order_items')
-              .where('ID', asset.linked_po_item_id)
-              .update({ AssetID: newId, Status: "Asset Created" });
+              .where(isPostgres ? 'id' : 'ID', asset.linked_po_item_id)
+              .update(normalizeDBData({ AssetID: newId, Status: "Asset Created" }));
             
             // Also update the asset record with PO linking info if not already set
             await db('assets')
-              .where('ID', newId)
-              .update({
+              .where(isPostgres ? 'id' : 'ID', newId)
+              .update(normalizeDBData({
                 linked_po_item_id: asset.linked_po_item_id,
                 BoughtAgainstPO: asset.BoughtAgainstPO || null
-              });
+              }));
               
             console.log(`[PO Link] Linked Asset ${newId} to PO Item ${asset.linked_po_item_id}`);
         } catch (linkErr) {
@@ -5933,6 +6170,9 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 
 app.post('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
     try {
+        const admin = await requireAdmin(req);
+        if (!admin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+        
         const { id } = req.params;
         console.log(`[PO] Creating order for project: ${id}`);
         const { 
@@ -6014,41 +6254,46 @@ app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
         
         console.log(`[DEBUG PO] Updating order: ${orderId}`);
         const ts = new Date().toISOString();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
 
-        await legacyDb.transaction(async (trx) => {
+        const runTransaction = async (trx) => {
             // 1. Update Header
+            const orderUpdate = {
+                PONumber: PONumber || null, 
+                PODate: PODate || null, 
+                VendorName: VendorName || null, 
+                TotalAmount: TotalAmount || 0, 
+                Status: Status || 'Active',
+                ConsigneeName: ConsigneeName || null, 
+                ConsigneeAddress: ConsigneeAddress || null, 
+                ConsigneeGSTIN: ConsigneeGSTIN || null, 
+                ConsigneeState: ConsigneeState || null, 
+                ConsigneeStateCode: ConsigneeStateCode || null,
+                BuyerName: BuyerName || null, 
+                BuyerAddress: BuyerAddress || null, 
+                BuyerGSTIN: BuyerGSTIN || null, 
+                BuyerState: BuyerState || null, 
+                BuyerStateCode: BuyerStateCode || null
+            };
+
             await trx('project_orders')
-                .where('ID', orderId)
-                .update({
-                    PONumber: PONumber || null, 
-                    PODate: PODate || null, 
-                    VendorName: VendorName || null, 
-                    TotalAmount: TotalAmount || 0, 
-                    Status: Status || 'Active',
-                    ConsigneeName: ConsigneeName || null, 
-                    ConsigneeAddress: ConsigneeAddress || null, 
-                    ConsigneeGSTIN: ConsigneeGSTIN || null, 
-                    ConsigneeState: ConsigneeState || null, 
-                    ConsigneeStateCode: ConsigneeStateCode || null,
-                    BuyerName: BuyerName || null, 
-                    BuyerAddress: BuyerAddress || null, 
-                    BuyerGSTIN: BuyerGSTIN || null, 
-                    BuyerState: BuyerState || null, 
-                    BuyerStateCode: BuyerStateCode || null
-                });
+                .where(isPostgres ? 'id' : 'ID', orderId)
+                .update(isPostgres ? normalizeDBData(orderUpdate) : orderUpdate);
 
             if (items && Array.isArray(items)) {
                 // 2. Fetch existing item IDs
-                const existingItems = await trx('project_order_items').where('OrderID', orderId).select('ID');
+                const existingItems = await trx('project_order_items')
+                    .where(isPostgres ? 'orderid' : 'OrderID', orderId)
+                    .select(isPostgres ? 'id as ID' : 'ID');
                 const existingIds = existingItems.map(i => i.ID);
-                const incomingIds = items.map(i => i.ID).filter(id => id);
+                const incomingIds = items.map(i => i.ID || i.id).filter(id => id);
 
                 // 3. Delete items that are no longer in the list
                 const toDelete = existingIds.filter(id => !incomingIds.includes(id));
                 if (toDelete.length > 0) {
-                    await trx('project_order_items').whereIn('ID', toDelete).delete();
-                    await trx('assets').whereIn('linked_po_item_id', toDelete).update({ linked_po_item_id: null });
-                    await trx('temporary_assets').whereIn('linked_po_item_id', toDelete).update({ linked_po_item_id: null });
+                    await trx('project_order_items').whereIn(isPostgres ? 'id' : 'ID', toDelete).delete();
+                    await trx('assets').whereIn(isPostgres ? 'linked_po_item_id' : 'linked_po_item_id', toDelete).update({ linked_po_item_id: null });
+                    await trx('temporary_assets').whereIn(isPostgres ? 'linked_po_item_id' : 'linked_po_item_id', toDelete).update({ linked_po_item_id: null });
                 }
 
                 // 4. Update or Insert items
@@ -6057,40 +6302,42 @@ app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
                     if (receivedStatus.toLowerCase().includes('ship')) receivedStatus = 'Shipped';
                     else receivedStatus = 'Pending';
 
-                    if (item.ID && existingIds.includes(item.ID)) {
+                    const itemId = item.ID || item.id;
+                    const itemData = {
+                        SrNo: item.SrNo || (index + 1), 
+                        ItemDescription: item.ItemDescription || '', 
+                        DueDate: item.DueDate || null, 
+                        QtyOrdered: item.QtyOrdered || 0, 
+                        UOM: item.UOM || 'Nos', 
+                        UnitPrice: item.UnitPrice || 0, 
+                        Total: item.Total || 0, 
+                        AssetID: item.AssetID || item.assetid || null, 
+                        Status: receivedStatus
+                    };
+
+                    if (itemId && existingIds.includes(itemId)) {
                         // Update existing
                         await trx('project_order_items')
-                            .where('ID', item.ID)
-                            .update({
-                                SrNo: item.SrNo || (index + 1), 
-                                ItemDescription: item.ItemDescription || '', 
-                                DueDate: item.DueDate || null, 
-                                QtyOrdered: item.QtyOrdered || 0, 
-                                UOM: item.UOM || 'Nos', 
-                                UnitPrice: item.UnitPrice || 0, 
-                                Total: item.Total || 0, 
-                                AssetID: item.AssetID || null, 
-                                Status: receivedStatus
-                            });
+                            .where(isPostgres ? 'id' : 'ID', itemId)
+                            .update(isPostgres ? normalizeDBData(itemData) : itemData);
                     } else {
                         // Insert new
-                        await trx('project_order_items').insert({
-                            OrderID: orderId, 
-                            SrNo: item.SrNo || (index + 1), 
-                            ItemDescription: item.ItemDescription || '', 
-                            DueDate: item.DueDate || null, 
-                            QtyOrdered: item.QtyOrdered || 0, 
-                            UOM: item.UOM || 'Nos', 
-                            UnitPrice: item.UnitPrice || 0, 
-                            Total: item.Total || 0, 
-                            AssetID: item.AssetID || null, 
-                            Timestamp: ts, 
-                            Status: receivedStatus
-                        });
+                        const insertData = {
+                            OrderID: orderId,
+                            ...itemData,
+                            Timestamp: ts
+                        };
+                        await trx('project_order_items').insert(isPostgres ? normalizeDBData(insertData) : insertData);
                     }
                 }
             }
-        });
+        };
+
+        if (isPostgres) {
+            await db.transaction(runTransaction);
+        } else {
+            await legacyDb.transaction(runTransaction);
+        }
 
         res.json({ success: true });
     } catch (err) {
@@ -6102,11 +6349,18 @@ app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 app.delete('/api/projects/:projectId/orders/:orderId', authenticateJWT, async (req, res) => {
     try {
         const { projectId, orderId } = req.params;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         
-        await legacyDb.transaction(async (trx) => {
-            await trx('project_order_items').where('OrderID', orderId).delete();
-            await trx('project_orders').where('ID', orderId).andWhere('ProjectID', projectId).delete();
-        });
+        const runDeleteTransaction = async (trx) => {
+            await trx('project_order_items').where(isPostgres ? 'orderid' : 'OrderID', orderId).delete();
+            await trx('project_orders').where(isPostgres ? 'id' : 'ID', orderId).andWhere(isPostgres ? 'projectid' : 'ProjectID', projectId).delete();
+        };
+
+        if (isPostgres) {
+            await db.transaction(runDeleteTransaction);
+        } else {
+            await legacyDb.transaction(runDeleteTransaction);
+        }
 
         res.json({ success: true });
     } catch (err) {
@@ -6546,12 +6800,11 @@ app.post('/api/projects/:id/temporary-assets', authenticateJWT, async (req, res)
             currency: currency || 'INR'
         };
 
-        if (!isPostgres) {
-            // Map to uppercase for SQLite if needed, but we're moving to Postgres
-            // Let's just use Knex's auto mapping or manual mapping
+        if (isPostgres) {
+            await db('temporary_assets').insert(normalizeDBData(record));
+        } else {
+            await db('temporary_assets').insert(record);
         }
-
-        await db('temporary_assets').insert(record);
         res.json({ success: true, id: assetId });
     } catch (err) {
         console.error('Create temporary asset error:', err);
@@ -6559,29 +6812,62 @@ app.post('/api/projects/:id/temporary-assets', authenticateJWT, async (req, res)
     }
 });
 
-app.get('/api/temporary-assets', (req, res) => {
+app.get('/api/temporary-assets', authenticateJWT, async (req, res) => {
     try {
-        const assets = legacyDb.prepare('SELECT * FROM temporary_assets WHERE IsPermanent = 0 ORDER BY Timestamp DESC').all();
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        let assets;
+        if (isPostgres) {
+            assets = await db('temporary_assets').where('ispermanent', 0).orderBy('timestamp', 'desc');
+            assets = normalizeResult(assets);
+        } else {
+            assets = legacyDb.prepare('SELECT * FROM temporary_assets WHERE IsPermanent = 0 ORDER BY Timestamp DESC').all();
+        }
         res.json(assets);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.post('/api/temporary-assets', (req, res) => {
+app.post('/api/temporary-assets', authenticateJWT, async (req, res) => {
     try {
         const { ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Currency } = req.body;
+        const isPostgres = process.env.DB_CLIENT === 'postgresql';
         
-        // Fetch project location for ID generation
-        const project = legacyDb.prepare('SELECT Location FROM projects WHERE ID = ?').get(ProjectId);
-        const location = project ? project.Location : 'MUMBAI';
+        let location = 'MUMBAI';
+        if (ProjectId) {
+            let project;
+            if (isPostgres) {
+                project = await db('projects').where('id', ProjectId).select('location').first();
+            } else {
+                project = legacyDb.prepare('SELECT Location FROM projects WHERE ID = ?').get(ProjectId);
+            }
+            location = project ? (project.location || project.Location) : 'MUMBAI';
+        }
         
         const id = generateTempAssetId(location);
-        const stmt = legacyDb.prepare(`
-            INSERT INTO temporary_assets (ID, ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Timestamp, Currency)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        stmt.run(id, ItemName, Type || '', Category || '', Make || '', Model || '', EstimatedPrice || 0, Quantity || 1, ProjectId, new Date().toISOString(), Currency || 'USD');
+        const record = {
+            id,
+            itemname: ItemName,
+            type: Type || '',
+            category: Category || '',
+            make: Make || '',
+            model: Model || '',
+            estimatedprice: EstimatedPrice || 0,
+            quantity: Quantity || 1,
+            projectid: ProjectId || null,
+            timestamp: new Date().toISOString(),
+            currency: Currency || 'USD'
+        };
+
+        if (isPostgres) {
+            await db('temporary_assets').insert(normalizeDBData(record));
+        } else {
+            const stmt = legacyDb.prepare(`
+                INSERT INTO temporary_assets (ID, ItemName, Type, Category, Make, Model, EstimatedPrice, Quantity, ProjectId, Timestamp, Currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            stmt.run(id, ItemName, Type || '', Category || '', Make || '', Model || '', EstimatedPrice || 0, Quantity || 1, ProjectId, record.timestamp, Currency || 'USD');
+        }
         res.json({ success: true, id });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -6747,10 +7033,10 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     let isComp = false;
     if (!existing) {
       // Check components table
-      existing = await db('components').whereRaw('LOWER(ID) = LOWER(?)', [id]).first();
+      existing = await db('components').whereRaw(isPostgres ? 'LOWER(id) = LOWER(?)' : 'LOWER(ID) = LOWER(?)', [id]).first();
       if (existing) {
         isComp = true;
-        existing.ID = String(existing.ID).trim();
+        existing.ID = String(existing.ID || existing.id).trim();
       }
     }
 
@@ -6774,8 +7060,8 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     if (isComp) {
       // Update component in components table
       await db('components')
-        .where('ID', id)
-        .update({
+        .where('id', id)
+        .update(normalizeDBData({
           ItemName: asset.ItemName || existing.ItemName || '',
           Make: asset.Make || existing.Make || '',
           Model: asset.Model || existing.Model || '',
@@ -6784,7 +7070,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
           Type: asset.Type || existing.Type || 'Component',
           Category: asset.Category || existing.Category || '',
           LastUpdated: new Date().toISOString()
-        });
+        }));
 
       appendAudit({ 
         Action: 'UPDATE_COMPONENT', 
@@ -6871,14 +7157,9 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     };
 
     if (isPostgres) {
-        const pgUpdateObj = {};
-        Object.keys(updateObj).forEach(key => {
-            pgUpdateObj[key.toLowerCase()] = updateObj[key];
-        });
-        
         await db('assets')
             .whereRaw('LOWER(id) = LOWER(?)', [id])
-            .update(pgUpdateObj);
+            .update(normalizeDBData(updateObj));
     } else {
         await db('assets')
             .whereRaw('LOWER(ID) = LOWER(?)', [id])
@@ -6950,7 +7231,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
 
       if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
         await db('assets')
-          .where('ID', id)
+          .where(isPostgres ? 'id' : 'ID', id)
           .update({
             quantity_root_id: id,
             quantity_unit: qtyUnit,
@@ -7003,12 +7284,8 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
       };
 
       if (isPostgres) {
-          const pgItRecord = {};
-          Object.keys(itRecord).forEach(key => {
-              pgItRecord[key.toLowerCase()] = itRecord[key];
-          });
           await db('asset_it_details')
-            .insert(pgItRecord)
+            .insert(normalizeDBData(itRecord))
             .onConflict('assetid')
             .merge();
       } else {
@@ -7128,10 +7405,10 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         if (isPostgres) {
             await unlinkCompOp.where('id', unlinkId).andWhere('parentid', id).delete();
             await unlinkAssetOp.where('id', unlinkId).update({ parentid: null });
-        } else {
+          } else {
             await unlinkCompOp.where('ID', unlinkId).andWhere('ParentId', id).delete();
             await unlinkAssetOp.where('ID', unlinkId).update({ ParentId: null });
-        }
+          }
         
         appendAudit({ 
           Action: 'UNLINK_COMPONENT', 
@@ -7216,7 +7493,10 @@ app.put('/api/orders/:orderId/status', authenticateJWT, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { Status } = req.body;
-    await db('project_orders').where('ID', orderId).update({ Status });
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    await db('project_orders')
+      .where(isPostgres ? 'id' : 'ID', orderId)
+      .update(isPostgres ? { status: Status } : { Status });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -7371,7 +7651,7 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
       }
     }
 
-    // 4. Auth check
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
     const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
     if (!isAdmin) {
       await appendAudit({ Action: 'DELETE_DENIED', User: username, AssetId: id, Severity: 'WARN', Details: 'Unauthorized delete attempt' });
@@ -7380,19 +7660,20 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     // Delete from components table as well
     // For linked assets (NoQR = 0), we should also clear their ParentId in the assets table
-    const linkedRows = await db('components').where('parentid', id).select('id');
+    const linkedRows = await db('components').where(isPostgres ? 'parentid' : 'ParentId', id).select(isPostgres ? 'id' : 'ID');
     for (const comp of linkedRows) {
-      await db('assets').where('id', comp.id).update({ parentid: null });
+      const compId = comp.id || comp.ID;
+      await db('assets').where(isPostgres ? 'id' : 'ID', compId).update(isPostgres ? { parentid: null } : { ParentId: null });
     }
 
-    await db('components').where('id', id).delete();
-    await db('components').where('parentid', id).delete();
+    await db('components').where(isPostgres ? 'id' : 'ID', id).delete();
+    await db('components').where(isPostgres ? 'parentid' : 'ParentId', id).delete();
 
     // Soft Delete: Mark as deleted instead of removing immediately
     const now = new Date().toISOString();
     const result = await db('assets')
-      .where('id', id)
-      .update({ is_deleted: 1, deleted_at: now });
+      .where(isPostgres ? 'id' : 'ID', id)
+      .update(isPostgres ? { is_deleted: 1, deleted_at: now } : { is_deleted: 1, deleted_at: now });
 
     if (result > 0) {
       await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
@@ -7435,9 +7716,16 @@ app.post('/api/assets/:id/link-po-item', authenticateJWT, (req, res) => {
   }
 });
 
-app.get('/api/audit', (req, res) => {
+app.get('/api/audit', authenticateJWT, async (req, res) => {
   try {
-    const log = legacyDb.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC LIMIT 1000').all();
+    const isPostgres = process.env.DB_CLIENT === 'postgresql';
+    let log;
+    if (isPostgres) {
+        log = await db('audit_log').orderBy('timestamp', 'desc').limit(1000);
+        log = normalizeResult(log);
+    } else {
+        log = legacyDb.prepare('SELECT * FROM audit_log ORDER BY Timestamp DESC LIMIT 1000').all();
+    }
     res.json(log);
   } catch (err) {
     console.error('Failed to fetch audit log:', err);

@@ -59,6 +59,8 @@ services:
       - DB_PORT=5432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-a-very-secret-key-32-chars-long!!!}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
 
 volumes:
   postgres_prod_data:

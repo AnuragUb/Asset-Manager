@@ -104,31 +104,47 @@ function getLocalIP() {
     return '127.0.0.1';
 }
 
+/**
+ * Normalizes database objects by converting all keys to lowercase.
+ * This is crucial for PostgreSQL compatibility when keys are in PascalCase or CamelCase.
+ * @param {Object|Array} data - The data object or array to normalize
+ * @returns {Object|Array} The normalized data
+ */
+function normalizeDBData(data) {
+    if (!data || typeof data !== 'object') return data;
+    if (Array.isArray(data)) return data.map(normalizeDBData);
+    
+    const normalized = {};
+    for (const key of Object.keys(data)) {
+        // Skip null values if needed, but for now just lowercase keys
+        normalized[key.toLowerCase()] = data[key];
+    }
+    return normalized;
+}
+
+// Global STATIC_IP from .env or detected IP
+const STATIC_IP = process.env.STATIC_IP || getLocalIP();
+
 async function appendAudit(entry) {
     // Write to database using Knex (Async)
     try {
         const isPostgres = process.env.DB_CLIENT === 'postgresql';
+        const record = {
+            Action: entry.Action || 'UNKNOWN',
+            User: entry.User || 'System',
+            AssetId: entry.AssetId || '',
+            Severity: entry.Severity || 'INFO',
+            Details: entry.Details || '',
+            Timestamp: entry.Timestamp || new Date().toISOString()
+        };
+
         if (isPostgres) {
-            await db('audit_log').insert({
-                action: entry.Action || 'UNKNOWN',
-                user: entry.User || 'System',
-                assetid: entry.AssetId || '',
-                severity: entry.Severity || 'INFO',
-                details: entry.Details || '',
-                timestamp: entry.Timestamp || new Date().toISOString()
-            });
+            await db('audit_log').insert(normalizeDBData(record));
         } else {
             legacyDb.prepare(`
                 INSERT INTO audit_log (Action, User, AssetId, Severity, Details, Timestamp)
                 VALUES (?, ?, ?, ?, ?, ?)
-            `).run(
-                entry.Action || 'UNKNOWN',
-                entry.User || 'System',
-                entry.AssetId || '',
-                entry.Severity || 'INFO',
-                entry.Details || '',
-                entry.Timestamp || new Date().toISOString()
-            );
+            `).run(record.Action, record.User, record.AssetId, record.Severity, record.Details, record.Timestamp);
         }
     } catch (err) {
         console.error('Failed to append audit log to DB:', err);
@@ -595,30 +611,34 @@ function parseTallyXml(xml) {
 module.exports = {
     db,
     legacyDb,
-    readJson, 
-  writeJson, 
-  getLocalIP, 
-  appendAudit, 
-  readDynamic, 
-  writeDynamic, 
-  genCode, 
-  typeCode, 
-  locCode, 
-  purposeCode, 
-  dateCode, 
-  generateModernAssetId,
-  generateSplitAssetId,
-  generateProjectId,
-  generateProjectQRPayload,
-  generateTempAssetId,
-  makeIdForAsset,
-  assetsFile, 
-  usersFile, 
-  auditFile, 
-  dynamicFile,
-  sendTallyRequest,
-  parseTallyXml,
-  TALLY_CONFIG,
-  getTallyConfig,
-  legacyDb
+    isPostgres,
+    readJson,
+    writeJson,
+    getLocalIP,
+    appendAudit,
+    readDynamic,
+    writeDynamic,
+    genCode,
+    typeCode,
+    locCode,
+    purposeCode,
+    dateCode,
+    generateModernAssetId,
+    generateSplitAssetId,
+    generateProjectId,
+    generateProjectQRPayload,
+    generateTempAssetId,
+    makeIdForAsset,
+    assetsFile,
+    usersFile,
+    auditFile,
+    dynamicFile,
+    sendTallyRequest,
+    parseTallyXml,
+    TALLY_CONFIG,
+    getTallyConfig,
+    normalizeDBData,
+    STATIC_IP,
+    getDataDir,
+    getDbPath
 };

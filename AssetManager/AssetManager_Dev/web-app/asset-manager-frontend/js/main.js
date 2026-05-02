@@ -884,8 +884,15 @@ function setupNavigation() {
                                 html += '<td>' + fullname + '</td>';
                                 html += '<td>';
                                 html += '<select class="admin-role-select raul-role-select" data-username="' + username + '">';
-                                ['user', 'manager', 'admin', 'superuser'].forEach(r => {
-                                    html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + r + '</option>';
+                                const roleMap = {
+                                    'user': 'User',
+                                    'manager': 'Manager',
+                                    'admin': 'Admin',
+                                    'it_manager': 'IT Admin',
+                                    'superuser': 'Superuser'
+                                };
+                                Object.keys(roleMap).forEach(r => {
+                                    html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + roleMap[r] + '</option>';
                                 });
                                 html += '</select>';
                                 html += '</td>';
