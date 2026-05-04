@@ -1805,11 +1805,31 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
           
           // Decrypt sensitive fields
           try {
-              if (a.serialno) decrypted.SerialNo = encryptionService.universalDecrypt(a.serialno);
-              if (a.srno) decrypted.SrNo = encryptionService.universalDecrypt(a.srno);
-              if (a.macaddress) decrypted.MACAddress = encryptionService.universalDecrypt(a.macaddress);
-              if (a.ipaddress) decrypted.IPAddress = encryptionService.universalDecrypt(a.ipaddress);
-              if (a.socketid) decrypted.SocketID = encryptionService.universalDecrypt(a.socketid);
+              if (a.serialno) {
+                const val = encryptionService.universalDecrypt(a.serialno);
+                decrypted.serialno = val;
+                decrypted.SerialNo = val;
+              }
+              if (a.srno) {
+                const val = encryptionService.universalDecrypt(a.srno);
+                decrypted.srno = val;
+                decrypted.SrNo = val;
+              }
+              if (a.macaddress) {
+                const val = encryptionService.universalDecrypt(a.macaddress);
+                decrypted.macaddress = val;
+                decrypted.MACAddress = val;
+              }
+              if (a.ipaddress) {
+                const val = encryptionService.universalDecrypt(a.ipaddress);
+                decrypted.ipaddress = val;
+                decrypted.IPAddress = val;
+              }
+              if (a.socketid) {
+                const val = encryptionService.universalDecrypt(a.socketid);
+                decrypted.socketid = val;
+                decrypted.SocketID = val;
+              }
           } catch (e) {
               // Only log if it looks like it should have been encrypted but failed
               if (a.serialno && a.serialno.includes(':')) {
@@ -2077,11 +2097,31 @@ app.get('/api/asset-details/:id', async (req, res) => {
 
     // Decrypt sensitive fields
     try {
-        if (normalizedAsset.serialno) normalizedAsset.serialno = encryptionService.universalDecrypt(normalizedAsset.serialno);
-        if (normalizedAsset.srno) normalizedAsset.srno = encryptionService.universalDecrypt(normalizedAsset.srno);
-        if (normalizedAsset.macaddress) normalizedAsset.macaddress = encryptionService.universalDecrypt(normalizedAsset.macaddress);
-        if (normalizedAsset.ipaddress) normalizedAsset.ipaddress = encryptionService.universalDecrypt(normalizedAsset.ipaddress);
-        if (normalizedAsset.socketid) normalizedAsset.socketid = encryptionService.universalDecrypt(normalizedAsset.socketid);
+        if (normalizedAsset.serialno) {
+            const val = encryptionService.universalDecrypt(normalizedAsset.serialno);
+            normalizedAsset.serialno = val;
+            normalizedAsset.SerialNo = val;
+        }
+        if (normalizedAsset.srno) {
+            const val = encryptionService.universalDecrypt(normalizedAsset.srno);
+            normalizedAsset.srno = val;
+            normalizedAsset.SrNo = val;
+        }
+        if (normalizedAsset.macaddress) {
+            const val = encryptionService.universalDecrypt(normalizedAsset.macaddress);
+            normalizedAsset.macaddress = val;
+            normalizedAsset.MACAddress = val;
+        }
+        if (normalizedAsset.ipaddress) {
+            const val = encryptionService.universalDecrypt(normalizedAsset.ipaddress);
+            normalizedAsset.ipaddress = val;
+            normalizedAsset.IPAddress = val;
+        }
+        if (normalizedAsset.socketid) {
+            const val = encryptionService.universalDecrypt(normalizedAsset.socketid);
+            normalizedAsset.socketid = val;
+            normalizedAsset.SocketID = val;
+        }
     } catch (e) {
         console.warn(`[ENCRYPT] Failed to decrypt sensitive fields for ${id}:`, e.message);
     }
