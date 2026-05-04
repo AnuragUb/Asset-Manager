@@ -2305,6 +2305,17 @@
     </div>
 </div>
 
+<!-- Batch Print Overlay (Floating) -->
+<div id="batchPrintOverlay" class="batch-print-overlay" style="display: none;">
+    <div>
+        <span id="selectedCount" style="font-weight: bold; color: #007bff;">0</span> items selected
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <button id="btnCancelSelection" class="size-btn" style="background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px; padding: 5px 15px; cursor: pointer;">Cancel</button>
+        <button id="btnProceedBatchPrint" class="login-button" style="width: auto; padding: 5px 20px; background: #17a2b8; font-size: 14px;">Print Selected</button>
+    </div>
+</div>
+
 <!-- Toast Container -->
 <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;"></div>
 
@@ -2324,6 +2335,28 @@
     .qr-print-1cm img { width: 10mm !important; height: 10mm !important; }
     .qr-print-2cm img { width: 20mm !important; height: 20mm !important; }
     .qr-print-5cm img { width: 40mm !important; height: 40mm !important; }
+
+    .batch-print-overlay {
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: white;
+        padding: 12px 30px;
+        border-radius: 50px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        gap: 25px;
+        z-index: 9999;
+        border: 1px solid #e2e8f0;
+        animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes slideUp {
+        from { transform: translate(-50%, 100px); opacity: 0; }
+        to { transform: translate(-50%, 0); opacity: 1; }
+    }
     
     .print-label-1cm { width: 10mm; height: 10mm; display: flex; align-items: center; justify-content: center; }
     .print-label-2cm { width: 20mm; text-align: center; }
