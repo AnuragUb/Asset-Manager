@@ -43,6 +43,7 @@ const upload = multer({ storage: storage });
 const ocrUpload = multer({ storage: multer.memoryStorage() });
 const { 
   db, 
+  appendAudit,
   readJson, 
   writeJson, 
   getLocalIP, 
