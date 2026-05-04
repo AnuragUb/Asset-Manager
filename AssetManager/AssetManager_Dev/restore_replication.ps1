@@ -1,47 +1,34 @@
-# --- Asset Manager DB Restore Script ---
-# Use this script to restore the LATEST replication file received from another machine.
+# --- Asset Manager DB Restore Script (Apply Replication) ---
+# RUN THIS ON THE .59 SERVER
 
 # CONFIGURATION
 $DB_CONTAINER = "asset-manager-db"
-$DB_NAME = "asset_manager"
+$DB_NAME = "asset_manager" # or "asset_manager_test" if applying to dev
 $DB_USER = "postgres"
-$BACKUP_RECEIVE_PATH = "C:\AssetManager_Backups" # Where replication files are received (Shared Folder)
+$BACKUP_PATH = "C:\AssetManager_Backups"
 
-Write-Host "[CHECK] Looking for latest replication file in $BACKUP_RECEIVE_PATH..." -ForegroundColor Cyan
+# Find the latest replication file
+$latestFile = Get-ChildItem $BACKUP_PATH -Filter "replication_*.sql" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-if (!(Test-Path $BACKUP_RECEIVE_PATH)) {
-    Write-Host "[ERROR] Backup path $BACKUP_RECEIVE_PATH does not exist." -ForegroundColor Red
+if ($latestFile -eq $null) {
+    Write-Host "[ERROR] No replication files found in $BACKUP_PATH" -ForegroundColor Red
     exit
 }
 
-$latestBackup = Get-ChildItem $BACKUP_RECEIVE_PATH -Filter "*.sql" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Write-Host "[STEP 1] Stopping Application Containers..." -ForegroundColor Yellow
+docker stop asset-manager-dev asset-manager-test
 
-if ($null -eq $latestBackup) {
-    Write-Host "[ERROR] No SQL backup files found in $BACKUP_RECEIVE_PATH." -ForegroundColor Red
-    exit
-}
+Write-Host "[STEP 2] Applying Snapshot: $($latestFile.Name)..." -ForegroundColor Cyan
+# Clear existing DB and restore
+docker exec $DB_CONTAINER dropdb -U $DB_USER --if-exists $DB_NAME
+docker exec $DB_CONTAINER createdb -U $DB_USER $DB_NAME
+Get-Content $latestFile.FullName | docker exec -i $DB_CONTAINER psql -U $DB_USER $DB_NAME
 
-Write-Host "[RESTORE] Using latest backup: $($latestBackup.Name)" -ForegroundColor Yellow
-
-# Confirm before destructive action
-$confirmation = Read-Host "Are you sure you want to RESTORE this backup? This will OVERWRITE the current database on THIS machine (y/n)"
-if ($confirmation -ne 'y') {
-    Write-Host "Restore cancelled."
-    exit
-}
-
-# 1. Stop app container to prevent locks (optional but safer)
-# docker stop asset-manager-app-prod
-
-# 2. Restore
-Write-Host "[RESTORE] Injecting SQL into $DB_CONTAINER..." -ForegroundColor Yellow
-Get-Content $latestBackup.FullName | docker exec -i $DB_CONTAINER psql -U $DB_USER -d $DB_NAME
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "[SUCCESS] Database restored successfully from $($latestBackup.Name)" -ForegroundColor Green
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Restore failed." -ForegroundColor Red
 } else {
-    Write-Host "[ERROR] Database restore failed." -ForegroundColor Red
+    Write-Host "[SUCCESS] Database updated to latest production snapshot." -ForegroundColor Green
 }
 
-# 3. Start app container again
-# docker start asset-manager-app-prod
+Write-Host "[STEP 3] Restarting Application Containers..." -ForegroundColor Yellow
+docker start asset-manager-dev asset-manager-test

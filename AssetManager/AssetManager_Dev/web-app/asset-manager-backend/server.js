@@ -242,14 +242,6 @@ function performDatabaseBackup() {
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data', isProd ? 'prod' : 'test', 'database_v2.db');
-    
-    // Check if source DB exists
-    if (!fs.existsSync(dbPath)) {
-      console.error(`[BACKUP] Source database not found at: ${dbPath}`);
-      return;
-    }
-
     const now = new Date();
     const ts = now.getFullYear() + 
                String(now.getMonth() + 1).padStart(2, '0') + 
@@ -257,14 +249,29 @@ function performDatabaseBackup() {
                String(now.getHours()).padStart(2, '0') + 
                String(now.getMinutes()).padStart(2, '0');
     
-    const backupPath = path.join(targetDir, `database_v2_${ts}.db`);
+    const filename = `pg_backup_${ts}.sql`;
+    const backupPath = path.join(targetDir, filename);
     
-    fs.copyFileSync(dbPath, backupPath);
-    console.log(`[BACKUP] Success! Saved to: ${backupPath}`);
+    // Use pg_dump via Docker
+    const dbName = process.env.DB_NAME || 'asset_manager';
+    const dbUser = process.env.DB_USER || 'postgres';
+    const containerName = 'asset-manager-db';
+
+    console.log(`[BACKUP] Starting PostgreSQL backup for ${dbName}...`);
+    
+    // Command: docker exec asset-manager-db pg_dump -U postgres asset_manager > path/to/backup.sql
+    // Note: We use execSync to wait for completion. On Windows, we might need to handle the redirection carefully.
+    try {
+      execSync(`docker exec ${containerName} pg_dump -U ${dbUser} ${dbName} > "${backupPath}"`);
+      console.log(`[BACKUP] Success! Saved to: ${backupPath}`);
+    } catch (dumpErr) {
+      console.error('[BACKUP] pg_dump failed:', dumpErr.message);
+      return;
+    }
     
     // Cleanup: Keep only last 30 backups
     const files = fs.readdirSync(targetDir)
-      .filter(f => f.startsWith('database_v2_') && f.endsWith('.db'))
+      .filter(f => f.startsWith('pg_backup_') && f.endsWith('.sql'))
       .map(f => ({ name: f, time: fs.statSync(path.join(targetDir, f)).mtime.getTime() }))
       .sort((a, b) => b.time - a.time);
 
@@ -275,7 +282,7 @@ function performDatabaseBackup() {
       });
     }
   } catch (err) {
-    console.error('[BACKUP] Failed:', err);
+    console.error('[BACKUP] Global Backup Error:', err);
   }
 }
 
