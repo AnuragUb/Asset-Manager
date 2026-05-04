@@ -1,4 +1,4 @@
-console.log('MAIN.JS: Entry point (v6.01)');
+console.log('MAIN.JS: Entry point (v6.02)');
 import { showView } from './utils.js?v=6.01';
 import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.01';
 // import { initScannerView } from './networkScanner.js?v=5.50';
