@@ -4524,12 +4524,12 @@ app.post('/api/assets/bulk', async (req, res) => {
             if (asset.MACAddress || asset.IPAddress || asset.NetworkType || asset.PhysicalPort || asset.VLAN || asset.SocketID || asset.UserID) {
                 await trx('asset_it_details').insert({
                     assetid: asset.ID,
-                    macaddress: encryptionService.universalEncrypt(asset.MACAddress || ''),
+                    macaddress: encryptionService.encrypt(asset.MACAddress || ''),
                     ipaddress: encryptionService.encryptDeterministic(asset.IPAddress || ''),
                     networktype: asset.NetworkType || '',
                     physicalport: asset.PhysicalPort || '',
                     vlan: asset.VLAN || '',
-                    socketid: encryptionService.universalEncrypt(asset.SocketID || ''),
+                    socketid: encryptionService.encrypt(asset.SocketID || ''),
                     userid: asset.UserID || ''
                 }).onConflict('assetid').merge();
             }
@@ -7677,6 +7677,14 @@ app.post('/api/assets/split', async (req, res) => {
     
     if (!parent) return res.status(404).json({ error: 'Parent asset not found' });
 
+    // Decrypt Parent Serial Numbers for comparison
+    if (parent.SrNo) {
+        parent.SrNo = encryptionService.universalDecrypt(parent.SrNo);
+    }
+    if (parent.srno) {
+        parent.srno = encryptionService.universalDecrypt(parent.srno);
+    }
+
     const currentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
     const newSerials = currentSerials.filter(sn => !serials.includes(sn));
     const splitCount = currentSerials.length - newSerials.length;
@@ -7724,7 +7732,7 @@ app.post('/api/assets/split', async (req, res) => {
         await trx('assets')
             .whereRaw('LOWER(id) = LOWER(?)', [parentId])
             .update({
-                srno: newSerials.join(', '),
+                srno: encryptionService.encryptDeterministic(newSerials.join(', ')),
                 lastupdated: ts
             });
 
@@ -7759,7 +7767,7 @@ app.post('/api/assets/split', async (req, res) => {
                 status: status,
                 make: syncedParent.Make,
                 model: syncedParent.Model,
-                srno: sn,
+                srno: encryptionService.encryptDeterministic(sn),
                 type: syncedParent.Type,
                 category: syncedParent.Category,
                 icon: syncedParent.Icon,
@@ -7872,6 +7880,15 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
         parent = normalizeResult(parent);
         if (!parent) throw new Error('Parent asset not found in database');
 
+        // Decrypt parent and children serials for merging
+        if (parent.SrNo) parent.SrNo = encryptionService.universalDecrypt(parent.SrNo);
+        if (parent.srno) parent.srno = encryptionService.universalDecrypt(parent.srno);
+
+        children.forEach(c => {
+            if (c.SrNo) c.SrNo = encryptionService.universalDecrypt(c.SrNo);
+            if (c.srno) c.srno = encryptionService.universalDecrypt(c.srno);
+        });
+
         const childSerials = children.map(c => c.SrNo).filter(s => s);
         const currentParentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s);
         
@@ -7888,7 +7905,7 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
         await trx('assets')
           .whereRaw('LOWER(id) = LOWER(?)', [parentId])
           .update({
-            srno: mergedSerials.join(', '),
+            srno: encryptionService.encryptDeterministic(mergedSerials.join(', ')),
             lastupdated: ts
           });
 
