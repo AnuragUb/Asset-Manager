@@ -212,6 +212,23 @@ async function executeQuery(tableName, callback) {
   }
 }
 
+// --- CACHE INVALIDATION HELPERS ---
+
+async function invalidateAssetKindsCache() {
+  console.log('[CACHE] Invalidating asset kinds cache');
+  await cache.delPattern('asset:kinds:*');
+}
+
+async function invalidateEmployeesCache() {
+  console.log('[CACHE] Invalidating employees cache');
+  await cache.delPattern('employees:all:*');
+}
+
+async function invalidateAssetsCache() {
+  console.log('[CACHE] Invalidating assets cache');
+  await cache.delPattern('assets:list:*');
+}
+
 // --- Automated Backup System ---
 function performDatabaseBackup() {
   try {
@@ -1743,7 +1760,8 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     const userDept = req.user.department;
 
     // 1. Try Cache First
-    const cacheKey = `assets:list:${hasViewPrice}:${projectId || 'all'}`;
+    const port = process.env.PORT || 8080;
+    const cacheKey = `assets:list:${port}:${hasViewPrice}:${projectId || 'all'}`;
     const cachedData = await cache.get(cacheKey);
     if (cachedData) {
         console.log(`[CACHE] Serving assets from cache for key: ${cacheKey}`);
@@ -1986,11 +2004,18 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
 
     const processedAssets = await processAssets(assets);
 
-    res.json({
+    const response = {
         last_page: last_page,
         data: processedAssets,
         total_records: totalRecords
-    });
+    };
+
+    // Only cache the first page of "all" or "project" requests to keep cache size manageable
+    if (page === 1 && !req.query.search && !req.query.filters) {
+        await cache.set(cacheKey, response, 300); // Cache for 5 mins
+    }
+
+    res.json(response);
 
   } catch (err) {
     console.error('Failed to fetch assets:', err);
@@ -2748,6 +2773,7 @@ app.post('/api/employees', async (req, res) => {
         Status: Status || 'ACTIVE',
         LastUpdated: new Date().toISOString()
     }));
+    await invalidateEmployeesCache();
     res.json({ success: true, id });
   } catch (err) {
     console.error('Failed to create employee:', err);
@@ -2780,6 +2806,7 @@ app.post('/api/employees/bulk', async (req, res) => {
     for (let i = 0; i < empToInsert.length; i += chunkSize) {
         await db('employees').insert(empToInsert.slice(i, i + chunkSize));
     }
+    await invalidateEmployeesCache();
     res.json({ success: true, count: employees.length });
   } catch (err) {
     console.error('Bulk employee upload error:', err);
@@ -2805,6 +2832,7 @@ app.put('/api/employees/:id', async (req, res) => {
             LastUpdated: new Date().toISOString()
         }));
     if (result === 0) return res.status(404).send('Employee not found');
+    await invalidateEmployeesCache();
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to update employee:', err);
@@ -2817,6 +2845,7 @@ app.delete('/api/employees/:id', async (req, res) => {
     const { id } = req.params;
     const changes = await db('employees').where('id', id).del();
     if (changes === 0) return res.status(404).send('Employee not found');
+    await invalidateEmployeesCache();
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to delete employee:', err);
@@ -2826,7 +2855,8 @@ app.delete('/api/employees/:id', async (req, res) => {
 
 app.get('/api/asset_kinds', async (req, res) => {
   try {
-    const cacheKey = 'asset:kinds';
+    const port = process.env.PORT || 8080;
+    const cacheKey = `asset:kinds:${port}`;
     const cached = await cache.get(cacheKey);
     if (cached) {
         console.log('[CACHE] Serving asset kinds from cache');
@@ -2856,6 +2886,7 @@ app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser'
     const changes = await db('asset_kinds').where('name', name).update({ is_deleted: 1, deleted_at: now });
 
     if (changes > 0) {
+      await invalidateAssetKindsCache();
       res.json({ success: true, message: 'Asset Category marked for deletion' });
     } else {
       res.status(404).json({ error: 'Asset Category not found' });
@@ -2920,7 +2951,8 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
         }))
         .onConflict('name')
         .merge();
-        
+    
+    await invalidateAssetKindsCache();
     res.json({ ok: true });
   } catch (err) {
     console.error('Failed to save asset kind:', err);
@@ -3814,6 +3846,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       Details: `Asset created: ${itemName}` 
     });
 
+    await invalidateAssetsCache();
     res.json({ success: true, ID: newId });
   } catch (err) {
     console.error('Failed to create asset:', err);
@@ -4472,6 +4505,7 @@ app.post('/api/assets/bulk', async (req, res) => {
       Details: `Bulk created ${assets.length} assets` 
     });
 
+    await invalidateAssetsCache();
     res.json({ success: true, count: assets.length, ids: results });
   } catch (err) {
     console.error('Failed to bulk create assets:', err);
@@ -5853,6 +5887,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
       }
     }
 
+    await invalidateAssetsCache();
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to update asset:', err);
@@ -6045,6 +6080,7 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     if (result > 0) {
       await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
+      await invalidateAssetsCache();
       res.json({ success: true, message: 'Asset marked for deletion (30-day grace period)' });
     } else {
       res.status(404).send('Asset not found');

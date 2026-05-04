@@ -83,6 +83,25 @@ const cache = {
       // ignore
     }
   },
+
+  delPattern: async (pattern) => {
+    if (useMemoryFallback || !redis) {
+      for (const key of memoryStore.keys()) {
+        if (key.includes(pattern.replace(/\*/g, ''))) {
+          memoryStore.delete(key);
+        }
+      }
+      return;
+    }
+    try {
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        await redis.del(keys);
+      }
+    } catch (err) {
+      // ignore
+    }
+  },
   
   flush: async () => {
     if (useMemoryFallback || !redis) {
