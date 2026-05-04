@@ -7711,17 +7711,17 @@ app.post('/api/assets/split', async (req, res) => {
     }
 
     await db.transaction(async (trx) => {
-        // 1. Force Sync Parent Quantity
-        console.log(`[SPLIT] Syncing parent quantity to ${currentSerials.length}`);
-        await trx('assets')
-            .whereRaw('LOWER(id) = LOWER(?)', [parentId])
-            .update({
-                quantity_total: currentSerials.length,
-                quantity_available: currentSerials.length,
-                quantity_unit: db.raw('COALESCE(quantity_unit, ?)', ['pcs']),
-                is_quantity_tracked: 1,
-                quantity_root_id: db.raw('COALESCE(quantity_root_id, id)')
-            });
+    // 1. Force Sync Parent Quantity
+    console.log(`[SPLIT] Syncing parent quantity to ${currentSerials.length}`);
+    await trx('assets')
+        .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+        .update({
+            quantity_total: currentSerials.length,
+            quantity_available: currentSerials.length,
+            quantity_unit: db.raw('COALESCE(quantity_unit, ?)', ['pcs']),
+            is_quantity_tracked: 1,
+            quantity_root_id: parentId // Force set to itself if it's the root of the split
+        });
 
         // 2. Re-fetch parent to ensure we have the synchronized quantity
         let syncedParent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
