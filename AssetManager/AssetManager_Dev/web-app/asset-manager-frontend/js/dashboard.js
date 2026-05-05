@@ -3908,6 +3908,7 @@ export function renderDashboard(assets, filteredAssets) {
 
     let displayNodes = [];
     let recursiveAssets = [];
+    let directAssets = []; // Assets belonging specifically to this node
     let overviewTitle = '';
 
     if (!parentNode) {
@@ -3915,10 +3916,8 @@ export function renderDashboard(assets, filteredAssets) {
         displayNodes = manager.getModuleTree(category);
         console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
         
-        // In "All Assets" view, we want to show the overview for the entire category
-        // We filter manually to ensure we get the full breakdown, ignoring any grid-specific status filters
         recursiveAssets = assets.filter(a => a.Category === category);
-        console.log(`[Dashboard] All Assets view - recursiveAssets count: ${recursiveAssets.length}`);
+        directAssets = []; // Root has no "direct" assets, they all belong to a Kind
         overviewTitle = `${category} Assets`;
         
         if (displayNodes.length === 0) {
@@ -3932,51 +3931,37 @@ export function renderDashboard(assets, filteredAssets) {
             return;
         }
     } else {
-        // Specific Folder/Kind view: Show children as cards
+        // Specific Folder/Kind view
         displayNodes = parentNode.children || [];
-        document.getElementById('dashboard-title').textContent = parentNode.Name;
         
-        // If it's a "Kind", show its specific assets + children's assets
-        // If it's a "Folder", show all assets under its children
         const descendants = manager.getDescendants(parentNode.ID, true);
-        // Include both kinds and folders in the match list
-        // This ensures that if an asset has a Type matching a Folder name (e.g. 'Hardware'), it still shows up
         const descendantKindNames = descendants.map(d => d.Name);
             
         console.log(`[Dashboard] Selected Node: ${parentNode.Name} (${parentNode.type})`);
-        console.log(`[Dashboard] Descendant Kinds:`, descendantKindNames);
         
-        recursiveAssets = assets.filter(a => {
+        // Filter assets for this hierarchy branch
+        const filteredByBranch = assets.filter(a => {
             if (a.Category !== category) return false;
-            
             const assetType = (a.Type || '').toLowerCase().trim();
             const assetName = (a.Name || '').toLowerCase().trim();
             
             return descendantKindNames.some(kindName => {
                 const k = kindName.toLowerCase().trim();
-                const t = assetType;
-                
-                // 1. Exact match
-                if (t === k) return true;
-                
-                // 2. Standard plural 's' (Laptop <-> Laptops)
-                if (t === k + 's' || t + 's' === k) return true;
-                
-                // 3. Plural 'es' (Box <-> Boxes)
-                if (t === k + 'es' || t + 'es' === k) return true;
-                
-                // 4. Plural 'ies' <-> 'y' (Battery <-> Batteries)
-                if (k.endsWith('y') && t === k.slice(0, -1) + 'ies') return true;
-                if (t.endsWith('y') && k === t.slice(0, -1) + 'ies') return true;
-
-                // 5. Name fallback
-                if (assetName === k) return true;
-                
-                return false;
+                return assetType === k || assetName === k || assetType === k + 's' || assetType === k + 'es';
             });
         });
-        console.log(`[Dashboard] Filtered recursiveAssets: ${recursiveAssets.length}`);
+
+        recursiveAssets = filteredByBranch;
         
+        // Direct assets: match the current node's name exactly
+        const pName = parentNode.Name.toLowerCase().trim();
+        directAssets = filteredByBranch.filter(a => {
+            const t = (a.Type || '').toLowerCase().trim();
+            const n = (a.Name || '').toLowerCase().trim();
+            return t === pName || n === pName;
+        });
+
+        console.log(`[Dashboard] Branch Assets: ${recursiveAssets.length}, Direct Assets: ${directAssets.length}`);
         overviewTitle = `${parentNode.Name} Assets`;
     }
 
@@ -4257,6 +4242,45 @@ export function renderDashboard(assets, filteredAssets) {
 
         assetGrid.appendChild(assetCard);
     });
+
+    // If there are direct assets in this category (not just sub-categories), show them too
+    if (directAssets.length > 0 && parentNode) {
+        // Add a small header for direct items
+        if (displayNodes.length > 0) {
+            const header = document.createElement('div');
+            header.style = 'grid-column: 1 / -1; margin: 20px 0 10px 0; font-weight: bold; color: #666; font-size: 14px; display: flex; align-items: center; gap: 10px;';
+            header.innerHTML = `<span>Items directly in ${parentNode.Name}</span> <span style="font-weight: normal; font-size: 12px; color: #999;">(${directAssets.length})</span>`;
+            assetGrid.appendChild(header);
+        }
+
+        directAssets.forEach(asset => {
+            const card = document.createElement('div');
+            card.classList.add('asset-card');
+            card.style.borderLeft = `4px solid ${getStatusColor(asset.Status)}`;
+            card.onclick = () => {
+                if (typeof editAsset === 'function') {
+                    editAsset(asset);
+                }
+            };
+
+            const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
+            
+            card.innerHTML = `
+                <div class="asset-card-icon" style="font-size: 24px;">
+                    ${(asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'))) 
+                        ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
+                        : (asset.Icon || '📦')}
+                </div>
+                <div class="asset-card-header">
+                    <span class="asset-card-title">${asset.ItemName}</span>
+                    <div style="font-size: 10px; color: #666; margin-top: 2px;">
+                        ${asset.ID} • ${asset.Status}
+                    </div>
+                </div>
+            `;
+            assetGrid.appendChild(card);
+        });
+    }
 
     // Ensure Kanban is handled separately and correctly
     if (isAssetKanbanActive) {

@@ -3046,17 +3046,58 @@ app.delete('/api/projects/:id', authenticateJWT, authorizeRoles('superuser', 'ad
     try {
         const { id } = req.params;
         const now = new Date().toISOString();
-        const result = await db('projects')
-            .where('id', id)
-            .update({ is_deleted: 1, deleted_at: now });
+        
+        await db.transaction(async (trx) => {
+            // 1. Mark Project as Deleted
+            await trx('projects')
+                .where('id', id)
+                .update({ is_deleted: 1, deleted_at: now });
+
+            // 2. Identify linked Regular Assets
+            const linkedAssets = await trx('project_assets')
+                .whereRaw('LOWER(projectid) = LOWER(?)', [id])
+                .select('assetid');
             
-        if (result > 0) {
-            res.json({ success: true, message: 'Project marked for deletion' });
-        } else {
-            res.status(404).json({ error: 'Project not found' });
-        }
+            const assetIds = linkedAssets.map(a => a.assetid);
+
+            if (assetIds.length > 0) {
+                // 3. Reset Asset Status to "In-Stock" and remove project link
+                // We only reset if they are currently "In-Use" or "Project Assigned"
+                await trx('assets')
+                    .whereIn('id', assetIds)
+                    .whereIn('status', ['In-Use', 'Project Assigned', 'Shipped'])
+                    .update({ 
+                        status: 'In-Stock', 
+                        lastupdated: now 
+                    });
+
+                // 4. Remove project_assets entries
+                await trx('project_assets')
+                    .whereRaw('LOWER(projectid) = LOWER(?)', [id])
+                    .delete();
+            }
+
+            // 5. Handle Temporary Assets linked to this project
+            await trx('temporary_assets')
+                .whereRaw('LOWER(projectid) = LOWER(?)', [id])
+                .update({ 
+                    is_deleted: 1, 
+                    deleted_at: now 
+                });
+
+            // 6. Log the action
+            await appendAudit({
+                Action: 'PROJECT_DELETED',
+                User: req.user ? req.user.fullname || req.user.username : 'Admin',
+                AssetId: id,
+                Severity: 'WARNING',
+                Details: `Project ${id} deleted. ${assetIds.length} regular assets unassigned and returned to stock. Linked temporary assets marked as deleted.`
+            });
+        });
+
+        res.json({ success: true, message: 'Project deleted and assets unassigned successfully' });
     } catch (err) {
-        console.error('Failed to delete project:', err);
+        console.error('Failed to delete project and cleanup assets:', err);
         res.status(500).json({ error: err.message });
     }
 });
