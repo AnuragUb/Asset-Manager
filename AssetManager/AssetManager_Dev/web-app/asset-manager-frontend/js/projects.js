@@ -2273,10 +2273,10 @@ let workspaceProjectPOs = [];
 
 async function initProjectWorkspace(projectId) {
     console.log('[Workspace] Initializing for:', projectId);
-    workspaceStagedAssets = [];
+    workspaceStagedAssets = []; // Reset staging area
     const stagingArea = document.getElementById('workspaceStagingArea');
     if (stagingArea) {
-        stagingArea.innerHTML = '<div class="empty-state" style="text-align: center; color: #94a3b8; margin-top: 100px;"><div style="font-size: 40px; margin-bottom: 10px;">📥</div><div>Drop assets here to stage for shipping</div></div>';
+        renderStagingArea(); // Clear the UI
         
         // Setup Drop Zone
         stagingArea.ondragover = (e) => {
@@ -2312,7 +2312,7 @@ async function initProjectWorkspace(projectId) {
     if (btnDC) btnDC.onclick = handleWorkspaceGenerateDC;
 
     // Load Data
-    await loadExistingWorkspaceAssets(projectId);
+    // await loadExistingWorkspaceAssets(projectId); // DISABLED: Staging area should be empty initially
     await loadWorkspaceInventory();
     await loadWorkspacePO(projectId);
     updateWorkspacePoProgress();
@@ -2847,6 +2847,12 @@ async function handleWorkspaceGenerateDC() {
         
         // Remove the automatic Mark as Shipped call here
         // The status will now be updated ONLY when the DC is actually saved in the backend.
+
+        // --- CLEAR STAGING AREA AFTER GENERATING DC ---
+        workspaceStagedAssets = [];
+        renderStagingArea();
+        updateWorkspacePoProgress();
+        console.log('[Workspace] Staging area cleared after generating DC');
 
         if (typeof showToast === 'function') {
             showToast('DC Form pre-filled from Workspace', 'success');

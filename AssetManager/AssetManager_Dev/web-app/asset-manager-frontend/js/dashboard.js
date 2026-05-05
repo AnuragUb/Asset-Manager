@@ -5415,52 +5415,17 @@ function showAssetList(nodeOrKindName) {
             };
         });
 
-        // 1. One-Click DC (Directly from staging area)
-    const btnWorkspaceGenerateDC = document.getElementById('btnWorkspaceGenerateDC');
-    if (btnWorkspaceGenerateDC) {
-        btnWorkspaceGenerateDC.onclick = async () => {
-            const stagingArea = document.getElementById('shipping-staging-area');
-            if (!stagingArea) return;
-
-            const assetElements = stagingArea.querySelectorAll('.asset-card');
-            if (assetElements.length === 0) {
-                showToast('Please drag assets to the staging area first!', 'error');
-                return;
-            }
-
-            const assetIds = Array.from(assetElements).map(el => el.dataset.id);
-            console.log('[STAGING] Generating DC for assets:', assetIds);
-
-            try {
-                // Fetch full asset data for these IDs
-                const assetsData = [];
-                for (const id of assetIds) {
-                    const res = await fetch(`/api/assets/${id}`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
-                    if (res.ok) assetsData.push(await res.json());
+        // Add click events for "Edit Asset" buttons
+        body.querySelectorAll('.edit-asset-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const assetId = btn.getAttribute('data-id');
+                const asset = (window.allAssets || []).find(a => a.ID === assetId);
+                if (asset) {
+                    editAsset(asset);
                 }
-
-                if (assetsData.length === 0) throw new Error('Failed to fetch asset details');
-
-                // Prepare DC state
-                selectedAssetsForDC = assetsData;
-                
-                // Clear the staging area after grabbing items (to keep it transient)
-                stagingArea.innerHTML = '<div class="staging-placeholder">Drag assets here to prepare for DC</div>';
-                
-                // Open DC Modal
-                const dcModal = document.getElementById('dcModal');
-                if (dcModal) {
-                    dcModal.style.display = 'block';
-                    renderSelectedAssets();
-                }
-            } catch (err) {
-                console.error('[STAGING] One-Click DC Failed:', err);
-                showToast('Failed to prepare DC: ' + err.message, 'error');
-            }
-        };
-    }
+            };
+        });
 
         // Initialize Dynamic Smart QRs for the list
         body.querySelectorAll('.dynamic-qr').forEach(canvas => {
