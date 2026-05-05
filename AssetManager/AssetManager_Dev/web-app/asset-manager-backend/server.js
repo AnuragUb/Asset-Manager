@@ -5645,6 +5645,14 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         if (asset.Currency !== undefined) asset.Currency = existing.Currency;
     }
 
+    // Mandatory Field Validation: Category and Type (Kind)
+    if (asset.Category !== undefined && (!asset.Category || String(asset.Category).trim() === '')) {
+        return res.status(400).send('Category is mandatory for all assets.');
+    }
+    if (asset.Type !== undefined && (!asset.Type || String(asset.Type).trim() === '')) {
+        return res.status(400).send('Type (Kind) is mandatory for all assets.');
+    }
+
     if (isComp) {
       // Update component in components table
       await db('components')
@@ -6095,11 +6103,24 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
     const id = req.params.id;
     const username = req.user.username || 'web';
 
-    // 1. Fetch asset details for quantity check
+    // 1. Fetch asset details for assignment and mandatory field checks
     const asset = await db('assets').where('id', id).first();
     if (!asset) return res.status(404).send('Asset not found');
 
-    // 2. Quantity Tracked Asset Logic
+    // 2. Assignment Guard: Check if assigned to project or employee
+    // Check project assignment
+    const projectLink = await db('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id]).first();
+    if (projectLink) {
+        return res.status(400).send(`Cannot delete asset: It is currently assigned to project ${projectLink.projectid}. Unassign it first.`);
+    }
+
+    // Check employee assignment
+    const isAssignedToEmployee = asset.assignedto && !asset.assignedto.startsWith('Project:') && asset.assignedto !== 'General Stock';
+    if (isAssignedToEmployee) {
+        return res.status(400).send(`Cannot delete asset: It is currently assigned to ${asset.assignedto}. Unassign it first.`);
+    }
+
+    // 3. Quantity Tracked Asset Logic
     if (asset.quantity_root_id) {
       const isRoot = String(asset.quantity_root_id).toLowerCase() === String(id).toLowerCase();
       
