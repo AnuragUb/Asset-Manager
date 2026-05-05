@@ -4321,8 +4321,8 @@ export function openAddKindModal() {
             const allFolders = window.allFolders || [];
             
             // Only show kinds/folders that belong to the current module (category)
-            const filteredKinds = allKinds.filter(k => k.Module === currentCategory);
-            const filteredFolders = allFolders.filter(f => f.Module === currentCategory);
+            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory);
+            const filteredFolders = allFolders.filter(f => (f.Module || f.module) === currentCategory);
             
             console.log(`Populating Parent Kind dropdown with ${filteredKinds.length} kinds and ${filteredFolders.length} folders`);
             
@@ -4333,10 +4333,12 @@ export function openAddKindModal() {
                 const group = document.createElement('optgroup');
                 group.label = 'Folders';
                 filteredFolders.forEach(f => {
+                    const fName = f.Name || f.name;
+                    const fIcon = f.Icon || f.icon;
                     const opt = document.createElement('option');
-                    opt.value = f.Name;
-                    const icon = (f.Icon && (f.Icon.startsWith('/') || f.Icon.startsWith('http'))) ? '📁' : (f.Icon || '📁');
-                    opt.textContent = `${icon} ${f.Name}`;
+                    opt.value = fName;
+                    const icon = (fIcon && (fIcon.startsWith('/') || fIcon.startsWith('http'))) ? '📁' : (fIcon || '📁');
+                    opt.textContent = `${icon} ${fName}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -4347,10 +4349,12 @@ export function openAddKindModal() {
                 const group = document.createElement('optgroup');
                 group.label = 'Existing Categories';
                 filteredKinds.forEach(k => {
+                    const kName = k.Name || k.name;
+                    const kIcon = k.Icon || k.icon;
                     const opt = document.createElement('option');
-                    opt.value = k.Name;
-                    const icon = (k.Icon && (k.Icon.startsWith('/') || k.Icon.startsWith('http'))) ? '📦' : (k.Icon || '📦');
-                    opt.textContent = `${icon} ${k.Name}`;
+                    opt.value = kName;
+                    const icon = (kIcon && (kIcon.startsWith('/') || kIcon.startsWith('http'))) ? '📦' : (kIcon || '📦');
+                    opt.textContent = `${icon} ${kName}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -4389,8 +4393,8 @@ export function openEditKindModal(node) {
             const allKinds = window.allAssetKinds || [];
             const allFolders = window.allFolders || [];
             
-            const filteredKinds = allKinds.filter(k => k.Module === currentCategory && k.Name !== node.Name);
-            const filteredFolders = allFolders.filter(f => f.Module === currentCategory);
+            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory && (k.Name || k.name) !== (node.Name || node.name));
+            const filteredFolders = allFolders.filter(f => (f.Module || f.module) === currentCategory);
             
             parentSelect.innerHTML = '<option value="">None (Top Level)</option>';
             
@@ -4398,9 +4402,11 @@ export function openEditKindModal(node) {
                 const group = document.createElement('optgroup');
                 group.label = 'Folders';
                 filteredFolders.forEach(f => {
+                    const fName = f.Name || f.name;
+                    const fIcon = f.Icon || f.icon;
                     const opt = document.createElement('option');
-                    opt.value = f.Name;
-                    opt.textContent = `${(f.Icon && f.Icon.startsWith('/') ? '📁' : (f.Icon || '📁'))} ${f.Name}`;
+                    opt.value = fName;
+                    opt.textContent = `${(fIcon && fIcon.startsWith('/') ? '📁' : (fIcon || '📁'))} ${fName}`;
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
@@ -4517,15 +4523,16 @@ export function openAddItemModal(kind, prefillData = null) {
             const allKinds = window.allAssetKinds || [];
             
             // Only show kinds that belong to the current module (category)
-            const filteredKinds = allKinds.filter(k => k.Module === currentCategory);
+            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory);
             
             console.log(`Populating Kind dropdown with ${filteredKinds.length} options for ${currentCategory}`);
             
             kindSelect.innerHTML = '<option value="" disabled selected>Select Kind...</option>';
             filteredKinds.forEach(k => {
+                const kName = k.Name || k.name;
                 const opt = document.createElement('option');
-                opt.value = k.Name;
-                opt.textContent = k.Name;
+                opt.value = kName;
+                opt.textContent = kName;
                 kindSelect.appendChild(opt);
             });
             
@@ -4536,7 +4543,7 @@ export function openAddItemModal(kind, prefillData = null) {
                 }
                 
                 // Update identifier display
-                const selectedKind = allKinds.find(k => k.Name === kindSelect.value);
+                const selectedKind = allKinds.find(k => (k.Name || k.name) === kindSelect.value);
                 const idDisplay = document.getElementById('kindIdentifierDisplay');
                 const idValue = document.getElementById('kindIdentifierValue');
                 if (idDisplay && idValue) {

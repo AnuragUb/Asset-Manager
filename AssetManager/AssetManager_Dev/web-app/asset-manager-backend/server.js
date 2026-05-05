@@ -2984,16 +2984,19 @@ app.post('/api/folders', async (req, res) => {
 
 app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
   try {
-    const { Name, Module, Icon, ParentName, DisplayImage, Identifier } = req.body;
+    const { Name, Module, Icon, ParentName, ParentID, DisplayImage, Identifier } = req.body;
     
     if (!Name) return res.status(400).send('Name is required');
+
+    // Accept both ParentName or ParentID for hierarchy flexibility
+    const actualParent = ParentID || ParentName || null;
 
     await db('asset_kinds')
         .insert(normalizeDBData({
             Name,
             Module: Module || '',
             Icon: Icon || '📦',
-            ParentName: ParentName || null,
+            ParentName: actualParent,
             LastUpdated: new Date().toISOString(),
             DisplayImage: DisplayImage || null,
             Identifier: Identifier || null

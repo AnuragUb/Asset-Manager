@@ -17,14 +17,22 @@ export class HierarchyManager {
         return [
             ...folders.map(f => ({ 
                 ...f, 
-                ID: f.ID, 
-                ParentID: f.ParentID,
+                ID: f.ID || f.id, 
+                Name: f.Name || f.name,
+                ParentID: f.ParentID || f.parentid,
+                Module: f.Module || f.module,
+                Icon: f.Icon || f.icon,
+                DisplayImage: f.DisplayImage || f.displayimage,
                 type: 'folder' 
             })),
             ...kinds.map(k => ({ 
                 ...k, 
-                ID: k.ID || k.Name, 
-                ParentID: k.ParentID || k.ParentName,
+                ID: k.ID || k.id || k.Name || k.name, 
+                Name: k.Name || k.name,
+                ParentID: k.ParentID || k.parentid || k.ParentName || k.parentname,
+                Module: k.Module || k.module,
+                Icon: k.Icon || k.icon,
+                DisplayImage: k.DisplayImage || k.displayimage,
                 type: 'kind' 
             }))
         ];
@@ -37,11 +45,16 @@ export class HierarchyManager {
         const nodes = {};
         const tree = [];
 
-        // Create node map - ensure every node has an ID
+        // Create node map - ensure every node has an ID and consistent properties
         flatData.forEach(item => {
             const id = item.ID || item.Name;
             if (id) {
-                const node = { ...item, ID: id, children: [] };
+                const node = { 
+                    ...item, 
+                    ID: id, 
+                    Name: item.Name || id,
+                    children: [] 
+                };
                 nodes[id] = node;
                 // Also map by name if it's different from ID to allow name-based parent lookups
                 if (item.Name && item.Name !== id) {
@@ -50,8 +63,7 @@ export class HierarchyManager {
             }
         });
 
-        // Link children to parents - Use a Set to track which nodes have been added to the tree
-        // to avoid duplicates if flatData itself has duplicates or if multiple IDs map to the same node
+        // Link children to parents
         const addedToHierarchy = new Set();
 
         flatData.forEach(item => {
@@ -59,14 +71,17 @@ export class HierarchyManager {
             const node = nodes[id];
             if (!node || addedToHierarchy.has(node.ID)) return;
 
-            const parentId = item.ParentID || item.ParentName;
-            if (parentId && nodes[parentId]) {
+            const parentId = item.ParentID;
+            
+            // Check if parent exists in our map (case-insensitive check could be added if needed)
+            if (parentId && nodes[parentId] && parentId !== id) {
                 // Check if already a child to avoid duplication
                 if (!nodes[parentId].children.some(c => c.ID === node.ID)) {
                     nodes[parentId].children.push(node);
                     addedToHierarchy.add(node.ID);
                 }
             } else {
+                // No parent found, this is a root node
                 tree.push(node);
                 addedToHierarchy.add(node.ID);
             }
