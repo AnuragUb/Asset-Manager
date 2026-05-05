@@ -260,10 +260,12 @@ function performDatabaseBackup() {
     console.log(`[BACKUP] Starting PostgreSQL backup for ${dbName}...`);
     
     // Command: docker exec asset-manager-db pg_dump -U postgres asset_manager > path/to/backup.sql
-    // Note: We use execSync to wait for completion. On Windows, we might need to handle the redirection carefully.
     try {
-      execSync(`docker exec ${containerName} pg_dump -U ${dbUser} ${dbName} > "${backupPath}"`);
-      console.log(`[BACKUP] Success! Saved to: ${backupPath}`);
+      // FIX: Use absolute path without the c: special character issues in some environments
+      // We use a simpler path joining for the execSync command
+      const absoluteBackupPath = path.resolve(backupPath);
+      execSync(`docker exec ${containerName} pg_dump -U ${dbUser} ${dbName} > "${absoluteBackupPath}"`);
+      console.log(`[BACKUP] Success! Saved to: ${absoluteBackupPath}`);
     } catch (dumpErr) {
       console.error('[BACKUP] pg_dump failed:', dumpErr.message);
       return;
