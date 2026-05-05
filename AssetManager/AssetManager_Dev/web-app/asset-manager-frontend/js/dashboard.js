@@ -14,6 +14,7 @@ let selectedBatchAssets = [];
 let isSelectionMode = false;
 let dcItemsByAssetId = {};
 let showRateAmount = true;
+let showTotalPrice = true;
 
 function toNumber(value) {
     const n = Number(String(value ?? '').replace(/,/g, '').trim());
@@ -464,6 +465,7 @@ function initDCView() {
     const dcOpenId = document.getElementById('dcOpenId');
     const btnOpenDC = document.getElementById('btnOpenDC');
     const btnToggleRateAmount = document.getElementById('btnToggleRateAmount');
+    const btnToggleTotalPrice = document.getElementById('btnToggleTotalPrice');
     
     // Set default date
     const dateInput = document.getElementById('dcDate');
@@ -487,6 +489,16 @@ function initDCView() {
             // Update button text/icon
             const span = btnToggleRateAmount.querySelector('span');
             if (span) span.textContent = showRateAmount ? '👁️' : '🚫';
+        };
+    }
+
+    if (btnToggleTotalPrice) {
+        btnToggleTotalPrice.onclick = () => {
+            showTotalPrice = !showTotalPrice;
+            
+            // Update button text/icon
+            const span = btnToggleTotalPrice.querySelector('span');
+            if (span) span.textContent = showTotalPrice ? '👁️' : '🚫';
         };
     }
 
@@ -719,6 +731,9 @@ function initDCView() {
                     dispatchedThrough: document.getElementById('dcDispatchedThrough')?.value || '',
                     destination: document.getElementById('dcDestination')?.value || '',
                     termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || '',
+                    remarks: document.getElementById('dcRemarks')?.value || '', // Ensure remarks are captured
+                    showRateAmount, // Pass toggle state
+                    showTotalPrice, // Pass toggle state
                     orderDate: window.tempDCOrderDate || '', // Pass order date
                     logoUrl: document.getElementById('dcLogoSelect')?.value || '' // Pass selected logo
                 },
@@ -908,8 +923,13 @@ function showDCPreview(result) {
     const meta = payload.meta || {};
     const items = Array.isArray(payload.items) ? payload.items : [];
 
+    // Extract visibility toggles from meta
+    const finalShowRateAmount = meta.showRateAmount ?? showRateAmount;
+    const finalShowTotalPrice = meta.showTotalPrice ?? showTotalPrice;
+
     if (printable) {
-        const displayStyle = showRateAmount ? '' : 'display: none;';
+        const rateAmountStyle = finalShowRateAmount ? '' : 'display: none;';
+        const totalFooterStyle = finalShowTotalPrice ? '' : 'display: none;';
         
         const itemsHtml = items.map((it, idx) => {
             const qty = it.qty ?? '';
@@ -923,8 +943,8 @@ function showDCPreview(result) {
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">${escapeHtml(it.hsn || '')}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px; font-variant-numeric: tabular-nums;">${escapeHtml(qty)}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">${escapeHtml(it.per || 'NO')}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums; ${displayStyle}">${escapeHtml(rate)}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums; ${displayStyle}">${escapeHtml(amount)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums; ${rateAmountStyle}">${escapeHtml(rate)}</td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums; ${rateAmountStyle}">${escapeHtml(amount)}</td>
                 </tr>
             `;
         }).join('');
@@ -1020,25 +1040,32 @@ function showDCPreview(result) {
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">HSN/SAC</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px;">Qty</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">Per</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; ${displayStyle}">Rate</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; ${displayStyle}">Amount</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; ${rateAmountStyle}">Rate</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; ${rateAmountStyle}">Amount</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${itemsHtml || `<tr><td colspan="${showRateAmount ? 8 : 6}" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
-                        <tr style="${displayStyle}">
+                        ${itemsHtml || `<tr><td colspan="${finalShowRateAmount ? 8 : 6}" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
+                        <tr style="${totalFooterStyle}">
                             <td colspan="7" style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800;">Total</td>
                             <td style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums;">${escapeHtml(round2(totalAmount))}</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px; ${displayStyle}">
+                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px; ${totalFooterStyle}">
                     <div style="display: grid; grid-template-columns: 190px 1fr; gap: 8px;">
                         <div style="color:#555;">Amount Chargeable (in words)</div>
                         <div style="font-weight: 700;">${escapeHtml(totalWords)}</div>
                     </div>
                 </div>
+
+                <!-- Remarks Section -->
+                ${(meta.remarks || '').trim() ? `
+                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px;">
+                    <div style="font-weight: 700; color: #555; margin-bottom: 4px;">Remarks:</div>
+                    <div style="white-space: pre-wrap;">${escapeHtml(meta.remarks)}</div>
+                </div>` : ''}
 
                 <div style="display: grid; grid-template-columns: 1fr 160px 1fr; gap: 12px; margin-top: 14px; align-items: end;">
                     <div>
@@ -5388,17 +5415,52 @@ function showAssetList(nodeOrKindName) {
             };
         });
 
-        // Add click events for "Edit Asset" buttons
-        body.querySelectorAll('.edit-asset-btn').forEach(btn => {
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                const assetId = btn.getAttribute('data-id');
-                const asset = (window.allAssets || []).find(a => a.ID === assetId);
-                if (asset) {
-                    editAsset(asset);
+        // 1. One-Click DC (Directly from staging area)
+    const btnWorkspaceGenerateDC = document.getElementById('btnWorkspaceGenerateDC');
+    if (btnWorkspaceGenerateDC) {
+        btnWorkspaceGenerateDC.onclick = async () => {
+            const stagingArea = document.getElementById('shipping-staging-area');
+            if (!stagingArea) return;
+
+            const assetElements = stagingArea.querySelectorAll('.asset-card');
+            if (assetElements.length === 0) {
+                showToast('Please drag assets to the staging area first!', 'error');
+                return;
+            }
+
+            const assetIds = Array.from(assetElements).map(el => el.dataset.id);
+            console.log('[STAGING] Generating DC for assets:', assetIds);
+
+            try {
+                // Fetch full asset data for these IDs
+                const assetsData = [];
+                for (const id of assetIds) {
+                    const res = await fetch(`/api/assets/${id}`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    if (res.ok) assetsData.push(await res.json());
                 }
-            };
-        });
+
+                if (assetsData.length === 0) throw new Error('Failed to fetch asset details');
+
+                // Prepare DC state
+                selectedAssetsForDC = assetsData;
+                
+                // Clear the staging area after grabbing items (to keep it transient)
+                stagingArea.innerHTML = '<div class="staging-placeholder">Drag assets here to prepare for DC</div>';
+                
+                // Open DC Modal
+                const dcModal = document.getElementById('dcModal');
+                if (dcModal) {
+                    dcModal.style.display = 'block';
+                    renderSelectedAssets();
+                }
+            } catch (err) {
+                console.error('[STAGING] One-Click DC Failed:', err);
+                showToast('Failed to prepare DC: ' + err.message, 'error');
+            }
+        };
+    }
 
         // Initialize Dynamic Smart QRs for the list
         body.querySelectorAll('.dynamic-qr').forEach(canvas => {

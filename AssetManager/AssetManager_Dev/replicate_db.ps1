@@ -41,11 +41,12 @@ Write-Host "✅ Container is running." -ForegroundColor Green
 Write-Host "[STEP 2/3] Creating PostgreSQL snapshot (pg_dump)..." -ForegroundColor Cyan
 try {
     # Using cmd /c to ensure clean redirection without PowerShell encoding issues
-    cmd /c "docker exec $DB_CONTAINER pg_dump -U $DB_USER $DB_NAME > ""$localFile"""
+    # Use -O to omit ownership for easier restore on different servers
+    cmd /c "docker exec $DB_CONTAINER pg_dump -U $DB_USER -O $DB_NAME > ""$localFile"""
     
     if (Test-Path $localFile) {
         $size = (Get-Item $localFile).Length / 1KB
-        Write-Host "✅ Snapshot created successfully ($([math]::Round($size, 2)) KB)." -ForegroundColor Green
+        Write-Host "SUCCESS: Snapshot created successfully ($([math]::Round($size, 2)) KB)." -ForegroundColor Green
     } else {
         throw "Snapshot file was not created."
     }
@@ -58,23 +59,31 @@ try {
 Write-Host "[STEP 3/3] Pushing to .59 Machine ($TARGET_IP)..." -ForegroundColor Cyan
 Write-Host "Checking connectivity to $TARGET_SHARE..." -ForegroundColor Gray
 
-# Set a shorter timeout for network path check
-$networkReady = Test-Path $TARGET_SHARE -ErrorAction SilentlyContinue
-if ($networkReady) {
+# RETRY LOGIC (Automated Sync)
+$maxRetries = 12 # Try every 5 mins for 1 hour
+$retryCount = 0
+$synced = $false
+
+while (-not $synced -and $retryCount -lt $maxRetries) {
     try {
-        Copy-Item -Path $localFile -Destination $remoteFile -Force -ErrorAction Stop
-        Write-Host "✅ Data successfully replicated to .59 shared folder." -ForegroundColor Green
-        Write-Host "   Target: $remoteFile" -ForegroundColor Gray
-        Write-Host "`nNext Step: Run 'restore_replication.ps1' on the .59 server." -ForegroundColor Yellow
+        if (Test-Path $TARGET_SHARE) {
+            Copy-Item -Path $localFile -Destination $remoteFile -Force -ErrorAction Stop
+            Write-Host "✅ Data successfully replicated to .59 shared folder." -ForegroundColor Green
+            Write-Host "   Target: $remoteFile" -ForegroundColor Gray
+            Write-Host "`nNext Step: Run 'restore_replication.ps1' on the .59 server." -ForegroundColor Yellow
+            $synced = $true
+        } else {
+            throw "Target share $TARGET_SHARE is not reachable."
+        }
     } catch {
-        Write-Host "[ERROR] Copy failed: $_" -ForegroundColor Red
+        $retryCount++
+        if ($retryCount -lt $maxRetries) {
+            Write-Host "[WARNING] .59 Server Unreachable. Attempt $retryCount of $maxRetries. Retrying in 5 minutes..." -ForegroundColor DarkYellow
+            Start-Sleep -Seconds 300 # Wait 5 minutes
+        } else {
+            Write-Host "[ERROR] Max retries reached. Replication failed: $_" -ForegroundColor Red
+        }
     }
-} else {
-    Write-Host "[ERROR] Target share $TARGET_SHARE is not reachable." -ForegroundColor Red
-    Write-Host "Possible causes:" -ForegroundColor Yellow
-    Write-Host " 1. .59 machine is offline." -ForegroundColor Yellow
-    Write-Host " 2. Folder 'C:\AssetManager_Backups' is not shared on .59." -ForegroundColor Yellow
-    Write-Host " 3. Network credentials/permissions issue." -ForegroundColor Yellow
 }
 
 # Cleanup old local backups (keep last 5)
