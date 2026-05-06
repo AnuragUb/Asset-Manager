@@ -4564,7 +4564,6 @@ app.post('/api/assets/bulk', async (req, res) => {
                 assignedto: asset.AssignedTo || '',
                 currency: asset.Currency || 'INR',
                 asset_value: parseFloat(asset.asset_value) || 0,
-                unitprice: parseFloat(asset.UnitPrice || asset.asset_value) || 0,
                 warranty_months: parseMonths(asset.warranty_months),
                 amc_months: parseMonths(asset.amc_months),
                 department: asset.Department || ''
@@ -8019,6 +8018,109 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
     console.error('[UNSPLIT] Error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- Google Sheets Sync Endpoint ---
+app.post('/api/external/sheets-sync', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    const { 
+        ItemDescription, 
+        Make, 
+        Model, 
+        SrNo, 
+        CurrentLocation, 
+        Category, // The mandatory Category column we discussed
+        DispatchReceiveDt,
+        PurchaseDetails,
+        QuantityTotal
+    } = req.body;
+
+    console.log(`[SHEETS-SYNC] Received sync request for: ${Make} ${Model} (${SrNo})`);
+
+    if (!Make || !SrNo || !Category) {
+        return res.status(400).json({ error: 'Make, SrNo, and Category are mandatory for sync.' });
+    }
+
+    try {
+        await db.transaction(async (trx) => {
+            // 1. Ensure the Parent Category exists (e.g., 'Monitor')
+            let parentKind = await trx('asset_kinds')
+                .whereRaw('LOWER(name) = LOWER(?)', [Category])
+                .first();
+            
+            if (!parentKind) {
+                console.log(`[SHEETS-SYNC] Creating missing base category: ${Category}`);
+                await trx('asset_kinds').insert({
+                    name: Category,
+                    module: 'IT',
+                    icon: '📦',
+                    lastupdated: new Date().toISOString()
+                });
+            }
+
+            // 2. Ensure the Brand Sub-Category exists (e.g., 'Konvision' inside 'Monitor')
+            const brandSubCatName = Make;
+            let brandSubCat = await trx('asset_kinds')
+                .whereRaw('LOWER(name) = LOWER(?) AND LOWER(parentname) = LOWER(?)', [brandSubCatName, Category])
+                .first();
+
+            if (!brandSubCat) {
+                console.log(`[SHEETS-SYNC] Creating brand sub-category: ${brandSubCatName} under ${Category}`);
+                await trx('asset_kinds').insert({
+                    name: brandSubCatName,
+                    parentname: Category,
+                    module: 'IT',
+                    icon: '🏷️',
+                    lastupdated: new Date().toISOString()
+                });
+            }
+
+            // 3. Create or Update the Asset
+            const itemName = ItemDescription || `${Make} ${Model}`;
+            const assetId = generateModernAssetId(CurrentLocation || 'In Store', brandSubCatName);
+            
+            // Check for existing Serial Number to prevent duplicates
+            const encryptedSrNo = encryptionService.encryptDeterministic(SrNo);
+            const existingAsset = await trx('assets').where('srno', encryptedSrNo).first();
+
+            if (existingAsset) {
+                console.log(`[SHEETS-SYNC] Asset with S/N ${SrNo} already exists. Updating existing record.`);
+                await trx('assets').where('id', existingAsset.id).update({
+                    itemname: itemName,
+                    model: Model,
+                    currentlocation: CurrentLocation || 'In Store',
+                    purchasedetails: PurchaseDetails || '',
+                    dispatchreceivedt: DispatchReceiveDt || '',
+                    lastupdated: new Date().toISOString()
+                });
+            } else {
+                await trx('assets').insert(normalizeDBData({
+                    ID: assetId,
+                    ItemName: itemName,
+                    Status: 'In Store',
+                    Make: Make,
+                    Model: Model,
+                    SrNo: encryptedSrNo,
+                    Type: brandSubCatName, // The Kind is the Brand Sub-Category
+                    Category: 'IT', 
+                    CurrentLocation: CurrentLocation || 'In Store',
+                    DispatchReceiveDt: DispatchReceiveDt || '',
+                    PurchaseDetails: PurchaseDetails || '',
+                    LastUpdated: new Date().toISOString(),
+                    quantity_total: QuantityTotal || 1,
+                    quantity_available: QuantityTotal || 1
+                }));
+                console.log(`[SHEETS-SYNC] Created new asset: ${assetId}`);
+            }
+        });
+
+        await invalidateAssetsCache();
+        await invalidateAssetKindsCache();
+        res.json({ success: true, message: 'Data synced successfully' });
+
+    } catch (err) {
+        console.error('[SHEETS-SYNC] Failed:', err);
+        res.status(500).json({ error: 'Sync failed: ' + err.message });
+    }
 });
 
 app.get('/api/projects/:id/available-inventory', authenticateJWT, async (req, res) => {
