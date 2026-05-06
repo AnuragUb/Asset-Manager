@@ -4485,11 +4485,79 @@ app.post('/api/assets/bulk', async (req, res) => {
         return (s === 'yes' || s === 'true' || s === '1') ? 1 : 0;
     };
 
+    // Fetch current kinds and folders for dynamic mapping
+    const [allKinds, allFolders] = await Promise.all([
+        db('asset_kinds').select('name', 'module', 'icon', 'parentname'),
+        db('folders').select('id', 'name', 'module', 'parentid')
+    ]);
+
+    const kindModuleMap = {};
+    const kindIconMap = {};
+    const folderModuleMap = {};
+
+    allKinds.forEach(k => {
+        kindModuleMap[k.name.toLowerCase()] = k.module;
+        kindIconMap[k.name.toLowerCase()] = k.icon;
+    });
+    allFolders.forEach(f => {
+        folderModuleMap[f.name.toLowerCase()] = f.module;
+    });
+
     // Pre-generate IDs and QR codes to keep the transaction fast and handle async qrcode
     const processedAssets = await Promise.all(assets.map(async (asset) => {
+      // --- Dynamic Translation Layer ---
+      let finalType = asset.Type || '';
+      let providedCategory = asset.Category || asset.Module || ''; 
+
+      // 1. Smart Type Guessing if missing or generic
+      if (finalType.toUpperCase() === 'AST' || !finalType) {
+          const name = (asset.ItemName || '').toLowerCase();
+          if (name.includes('monitor') || name.includes('lcd') || name.includes('display')) finalType = 'Monitor';
+          else if (name.includes('laptop')) finalType = 'Laptop';
+          else if (name.includes('desktop') || name.includes('workstation')) finalType = 'Desktop';
+          else if (name.includes('server')) finalType = 'Server';
+          else if (name.includes('router')) finalType = 'Router';
+          else if (name.includes('switch')) finalType = 'Switch';
+          else if (name.includes('cable')) finalType = 'Video Cables';
+          else if (name.includes('camera')) finalType = 'Camera';
+          else if (name.includes('lens')) finalType = 'Cinema Lens';
+          else if (name.includes('keyboard')) finalType = 'Keyboard';
+          else if (name.includes('mouse')) finalType = 'Mouse';
+          else finalType = 'General Asset';
+      }
+
+      // 2. Dynamic Category/Module Resolution
+      // If the providedCategory is a known Module (IT, In-House, etc.), use it.
+      // Otherwise, look up which module the finalType belongs to.
+      let finalModule = 'IT'; // Default
+      const normalizedProvided = providedCategory.toUpperCase();
+      if (['IT', 'IN-HOUSE', 'LOGISTICS', 'OPERATIONS'].includes(normalizedProvided)) {
+          finalModule = normalizedProvided;
+      } else {
+          finalModule = kindModuleMap[finalType.toLowerCase()] || folderModuleMap[finalType.toLowerCase()] || 'IT';
+      }
+
+      // 3. Automated Sub-category creation (Kind/Brand)
+      let kindToCreate = null;
+      let recordType = finalType;
+
+      if (asset.Make && finalType && finalType !== 'General Asset') {
+          // Rule: Create a sub-category named after the Brand (Make) under the Kind (finalType)
+          kindToCreate = {
+              name: asset.Make,
+              parentname: finalType,
+              module: finalModule,
+              icon: kindIconMap[finalType.toLowerCase()] || '📦'
+          };
+          // The asset itself is classified by the Brand for grouping
+          recordType = asset.Make;
+      }
+      // ---------------------------
+
       let newId = asset.ID || asset.Id;
       if (!newId) {
-        newId = generateModernAssetId(asset.CurrentLocation || asset.Location || '');
+        // Use the base Kind (finalType) for ID prefix generation (e.g. MON, SRV)
+        newId = generateModernAssetId(asset.CurrentLocation || asset.Location || '', finalType);
       }
 
       let qrCode = asset.QRCode;
@@ -4503,7 +4571,7 @@ app.post('/api/assets/bulk', async (req, res) => {
         }
       }
 
-      return { ...asset, ID: newId, QRCode: qrCode || null };
+      return { ...asset, ID: newId, QRCode: qrCode || null, finalType: recordType, finalModule, kindToCreate };
     }));
 
     // Check for duplicate IDs in the batch
@@ -4538,6 +4606,25 @@ app.post('/api/assets/bulk', async (req, res) => {
     // DB Operations
     await db.transaction(async (trx) => {
         for (const asset of processedAssets) {
+            // Ensure Dynamic Kind exists
+            if (asset.kindToCreate) {
+                const exists = await trx('asset_kinds').where('name', asset.kindToCreate.name).first();
+                if (!exists) {
+                    await trx('asset_kinds').insert({
+                        name: asset.kindToCreate.name,
+                        module: asset.kindToCreate.module,
+                        parentname: asset.kindToCreate.parentname,
+                        icon: asset.kindToCreate.icon,
+                        lastupdated: new Date().toISOString()
+                    });
+                } else if (exists.parentname !== asset.kindToCreate.parentname) {
+                    // If it exists but has a different parent (e.g. a brand used for both Monitors and Laptops)
+                    // we might need a more complex naming strategy, but for now we'll update the parent
+                    // or keep it if it's already structured.
+                    console.log(`[Import] Kind '${asset.kindToCreate.name}' already exists under '${exists.parentname}'. Skipping reparenting to '${asset.kindToCreate.parentname}'.`);
+                }
+            }
+
             // Prepare Record
             const record = {
                 id: asset.ID,
@@ -4548,8 +4635,8 @@ app.post('/api/assets/bulk', async (req, res) => {
                 model: asset.Model || '',
                 srno: encryptionService.encryptDeterministic(asset.SrNo || asset.SerialNo || ''),
                 serialno: encryptionService.encryptDeterministic(asset.SerialNo || asset.SrNo || ''),
-                type: asset.Type || '',
-                category: asset.Category || asset.Module || '',
+                type: asset.finalType,
+                category: asset.finalModule,
                 icon: asset.Icon || '📦',
                 isplaceholder: parseBool(asset.IsPlaceholder),
                 parentid: asset.ParentId || null,

@@ -151,6 +151,8 @@ const typeCode = {
 
 const locCode = {
     'Mumbai': 'MUM',
+    'Cineom': 'CNM',
+    'Cineom Mumbai': 'CNM',
     'Delhi': 'DEL',
     'Bangalore': 'BLR',
     'Chennai': 'CHN',

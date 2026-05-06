@@ -1,5 +1,5 @@
 # Backend Application (Port 8080/9090)
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Install necessary build tools for native modules
 RUN apk add --no-cache python3 make g++ gcc libc-dev linux-headers py3-pip \
