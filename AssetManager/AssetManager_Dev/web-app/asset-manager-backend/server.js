@@ -515,6 +515,14 @@ function parseCookies(header) {
 
 // --- DB Migrations for Auth ---
 async function initializeAuthTables() {
+    // Force cache flush on startup to ensure consistency after rebuilds/migrations
+    try {
+        console.log('[STARTUP] Flushing Redis/Memory cache...');
+        await cache.delPattern('*');
+    } catch (e) {
+        console.warn('[STARTUP] Cache flush failed (non-critical):', e.message);
+    }
+
     try {
         const hasTokens = await db.schema.hasTable('auth_tokens');
         if (!hasTokens) {

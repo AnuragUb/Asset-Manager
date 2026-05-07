@@ -115,9 +115,10 @@ window.hierarchyManager = new HierarchyManager();
 async function loadAssetKinds() {
     console.log('loadAssetKinds() called');
     try {
+        const t = Date.now();
         const [kindsRes, foldersRes] = await Promise.all([
-            fetch('/api/asset_kinds'),
-            fetch('/api/folders')
+            fetch(`/api/asset_kinds?t=${t}`),
+            fetch(`/api/folders?t=${t}`)
         ]);
 
         if (kindsRes.ok) {
@@ -215,7 +216,7 @@ async function loadAssets() {
             loadEmployees()
         ]);
         
-        let url = '/api/assets?all=true';
+        let url = `/api/assets?all=true&t=${Date.now()}`;
         if (currentUser && currentUser.role === 'client' && currentUser.projectId) {
             url += `&projectId=${currentUser.projectId}`;
         }

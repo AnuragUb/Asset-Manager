@@ -3937,6 +3937,15 @@ export function renderDashboard(assets, filteredAssets) {
         displayNodes = manager.getModuleTree(category);
         console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
         
+        // --- AUTO-PROMOTION LOGIC ---
+        // If there is only ONE root node and it's a folder, skip it and show its children directly
+        // This prevents "IT Assets" from being an extra click to get to "Hardware"
+        if (displayNodes.length === 1 && displayNodes[0].type === 'folder' && displayNodes[0].children?.length > 0) {
+            console.log(`[Dashboard] Auto-promoting children of root node: ${displayNodes[0].Name}`);
+            displayNodes = displayNodes[0].children;
+        }
+        // ---------------------------
+        
         recursiveAssets = assets.filter(a => a.Category === category);
         directAssets = []; // Root has no "direct" assets, they all belong to a Kind
         overviewTitle = `${category} Assets`;
