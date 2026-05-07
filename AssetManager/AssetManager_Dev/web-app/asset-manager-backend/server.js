@@ -435,6 +435,32 @@ function formatDisplayDate(val) {
     return `${d}-${m}-${y}`;
 }
 
+// Helper to normalize Excel date numbers or various date formats to YYYY-MM-DD for DB
+const normalizeDate = (val) => {
+    if (!val) return null;
+    
+    let date;
+    if (val instanceof Date) {
+        date = val;
+    } else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
+        // If it's a number (Excel serial date format)
+        const num = parseFloat(val);
+        // Excel dates start from 1900-01-01. 
+        // 25569 is the number of days between 1900-01-01 and 1970-01-01 (Unix Epoch)
+        date = new Date((num - 25569) * 86400 * 1000);
+        console.log(`[DATE] Converted Excel serial ${num} to ${date.toISOString().split('T')[0]}`);
+    } else {
+        date = new Date(val);
+    }
+
+    if (date && !isNaN(date.getTime())) {
+        const iso = date.toISOString().split('T')[0];
+        return iso;
+    }
+    console.warn(`[DATE] Failed to normalize date value: "${val}"`);
+    return null;
+};
+
 // QA Test Route
 app.get('/api/test-ping', (req, res) => res.json({ pong: true, time: new Date().toISOString() }));
 
@@ -1828,24 +1854,8 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     const userDept = req.user.department;
 
     // 1. Try Cache First
-    // --- Date Normalization Helper ---
-const normalizeDate = (val) => {
-    if (!val) return null;
-    let date;
-    if (val instanceof Date) date = val;
-    else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
-        const num = parseFloat(val);
-        date = new Date((num - 25569) * 86400 * 1000);
-    } else date = new Date(val);
-
-    if (date && !isNaN(date.getTime())) {
-        return date.toISOString().split('T')[0];
-    }
-    return null;
-};
-
-const port = process.env.PORT || 8080;
-    const cacheKey = `assets:list:${port}:${hasViewPrice}:${projectId || 'all'}`;
+    const currentPort = process.env.PORT || 8080;
+    const cacheKey = `assets:list:${currentPort}:${hasViewPrice}:${projectId || 'all'}`;
     const cachedData = await cache.get(cacheKey);
     if (cachedData) {
         console.log(`[CACHE] Serving assets from cache for key: ${cacheKey}`);
