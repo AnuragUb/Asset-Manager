@@ -4485,25 +4485,31 @@ app.post('/api/assets/bulk', async (req, res) => {
         return (s === 'yes' || s === 'true' || s === '1') ? 1 : 0;
     };
 
-    // Helper to normalize Excel date numbers or various date formats
+    // Helper to normalize Excel date numbers or various date formats to DD-MM-YYYY
     const normalizeDate = (val) => {
         if (!val) return null;
         
+        let date;
         // If it's already a JS Date object
-        if (val instanceof Date) return val.toISOString();
-
-        // If it's a number (Excel serial date format)
-        if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
+        if (val instanceof Date) {
+            date = val;
+        } else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
+            // If it's a number (Excel serial date format)
             const num = parseFloat(val);
             // Excel dates start from 1900-01-01. 
             // 25569 is the number of days between 1900-01-01 and 1970-01-01 (Unix Epoch)
-            const date = new Date((num - 25569) * 86400 * 1000);
-            if (!isNaN(date.getTime())) return date.toISOString();
+            date = new Date((num - 25569) * 86400 * 1000);
+        } else {
+            // Try parsing as a string
+            date = new Date(val);
         }
 
-        // Try parsing as a string
-        const date = new Date(val);
-        if (!isNaN(date.getTime())) return date.toISOString();
+        if (date && !isNaN(date.getTime())) {
+            const d = String(date.getDate()).padStart(2, '0');
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const y = date.getFullYear();
+            return `${d}-${m}-${y}`;
+        }
 
         return null;
     };
