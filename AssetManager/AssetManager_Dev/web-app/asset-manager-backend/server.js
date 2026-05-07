@@ -415,6 +415,26 @@ async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO
     }
 }
 
+function formatDisplayDate(val) {
+    if (!val) return '-';
+    
+    let date;
+    if (val instanceof Date) {
+        date = val;
+    } else if (typeof val === 'string') {
+        date = new Date(val);
+    } else {
+        return val;
+    }
+
+    if (isNaN(date.getTime())) return val;
+
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+}
+
 // QA Test Route
 app.get('/api/test-ping', (req, res) => res.json({ pong: true, time: new Date().toISOString() }));
 
@@ -529,6 +549,37 @@ async function initializeAuthTables() {
     }
 }
 initializeAuthTables();
+
+async function initializeHierarchyFolders() {
+    try {
+        const itRoot = await db('folders').where('name', 'IT Assets').first();
+        if (!itRoot) return;
+
+        const foldersToEnsure = [
+            { id: 'Hardware', name: 'Hardware', parentid: itRoot.id, module: 'IT', icon: '💻' },
+            { id: 'Networking', name: 'Networking', parentid: itRoot.id, module: 'IT', icon: '🌐' },
+            { id: 'Media & Others', name: 'Media & Others', parentid: itRoot.id, module: 'IT', icon: '📁' }
+        ];
+
+        for (const f of foldersToEnsure) {
+            const exists = await db('folders').where('id', f.id).first();
+            if (!exists) {
+                console.log(`[STARTUP] Creating hierarchy folder: ${f.name}`);
+                await db('folders').insert({
+                    id: f.id,
+                    name: f.name,
+                    parentid: f.parentid,
+                    module: f.module,
+                    icon: f.icon,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Hierarchy initialization error:', err);
+    }
+}
+initializeHierarchyFolders();
 
 // --- Auth Endpoints ---
 
@@ -1350,7 +1401,7 @@ async function sendWarrantyEmail(asset, daysLeft, settings, recipientEmail = nul
                 <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Model:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.model || asset.Model || '-'}</td></tr>
                 <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Serial No:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.serialno || asset.SerialNo || asset.srno || asset.SrNo || '-'}</td></tr>
                 ${projectContext}
-                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Purchase Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.purchasedate || asset.PurchaseDate || '-'}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Purchase Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDisplayDate(asset.purchasedate || asset.PurchaseDate) || '-'}</td></tr>
                 <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Warranty:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${asset.warranty_months} months</td></tr>
                 <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Days Remaining:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${Math.round(daysLeft)} days</td></tr>
             </table>
@@ -4505,10 +4556,8 @@ app.post('/api/assets/bulk', async (req, res) => {
         }
 
         if (date && !isNaN(date.getTime())) {
-            const d = String(date.getDate()).padStart(2, '0');
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const y = date.getFullYear();
-            return `${d}-${m}-${y}`;
+            // Return YYYY-MM-DD for PostgreSQL DATE type
+            return date.toISOString().split('T')[0];
         }
 
         return null;
@@ -4572,6 +4621,7 @@ app.post('/api/assets/bulk', async (req, res) => {
 
       if (asset.Make && finalType && finalType !== 'General Asset') {
           // Rule: Create a sub-category named after the Brand (Make) under the Kind (finalType)
+          // We must ensure finalType (e.g. Monitor) itself is properly parented in the hierarchy
           kindToCreate = {
               name: asset.Make,
               parentname: finalType,
@@ -4580,6 +4630,33 @@ app.post('/api/assets/bulk', async (req, res) => {
           };
           // The asset itself is classified by the Brand for grouping
           recordType = asset.Make;
+      }
+
+      // 4. Ensure Parent Hierarchy is consistent for standard IT categories
+      // If finalType is a known base kind (Monitor, Laptop, etc.), ensure its parent is correct
+      const standardHierarchy = {
+          'monitor': 'Hardware',
+          'laptop': 'Hardware',
+          'desktop': 'Hardware',
+          'server': 'Hardware',
+          'router': 'Networking',
+          'switch': 'Networking',
+          'cables': 'Networking',
+          'video cables': 'Networking',
+          'accessory': 'Media & Others',
+          'data drives': 'Media & Others',
+          'printer': 'Media & Others'
+      };
+
+      const baseParent = standardHierarchy[finalType.toLowerCase()];
+      let baseKindToEnsure = null;
+      if (baseParent) {
+          baseKindToEnsure = {
+              name: finalType,
+              parentname: baseParent,
+              module: finalModule,
+              icon: kindIconMap[finalType.toLowerCase()] || '📦'
+          };
       }
       // ---------------------------
 
@@ -4600,7 +4677,7 @@ app.post('/api/assets/bulk', async (req, res) => {
         }
       }
 
-      return { ...asset, ID: newId, QRCode: qrCode || null, finalType: recordType, finalModule, kindToCreate };
+      return { ...asset, ID: newId, QRCode: qrCode || null, finalType: recordType, finalModule, kindToCreate, baseKindToEnsure };
     }));
 
     // Check for duplicate IDs in the batch
@@ -4635,7 +4712,49 @@ app.post('/api/assets/bulk', async (req, res) => {
     // DB Operations
     await db.transaction(async (trx) => {
         for (const asset of processedAssets) {
-            // Ensure Dynamic Kind exists
+            // Ensure Parent Folder (Hardware/Networking/etc.) exists if it's one of our standard roots
+            if (asset.baseKindToEnsure && asset.baseKindToEnsure.parentname) {
+                const parentName = asset.baseKindToEnsure.parentname;
+                // Only auto-create if it's one of our standard top-level IT categories
+                if (['Hardware', 'Networking', 'Media & Others'].includes(parentName)) {
+                    const folderExists = await trx('folders').where('id', parentName).first();
+                    if (!folderExists) {
+                        const itRoot = await trx('folders').where('name', 'IT Assets').first();
+                        const parentId = itRoot ? itRoot.id : 'IT_ROOT';
+                        const iconMap = { 'Hardware': '💻', 'Networking': '🌐', 'Media & Others': '📁' };
+                        await trx('folders').insert({
+                            id: parentName,
+                            name: parentName,
+                            parentid: parentId,
+                            module: asset.baseKindToEnsure.module || 'IT',
+                            icon: iconMap[parentName] || '📁',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
+            }
+
+            // Ensure Base Kind exists and is correctly parented
+            if (asset.baseKindToEnsure) {
+                const exists = await trx('asset_kinds').where('name', asset.baseKindToEnsure.name).first();
+                if (!exists) {
+                    await trx('asset_kinds').insert({
+                        name: asset.baseKindToEnsure.name,
+                        module: asset.baseKindToEnsure.module,
+                        parentname: asset.baseKindToEnsure.parentname,
+                        icon: asset.baseKindToEnsure.icon,
+                        lastupdated: new Date().toISOString()
+                    });
+                } else if (exists.parentname === 'IT Assets' || !exists.parentname) {
+                    // Fix old generic parenting to follow the Hardware/Networking/Media structure
+                    await trx('asset_kinds').where('name', asset.baseKindToEnsure.name).update({
+                        parentname: asset.baseKindToEnsure.parentname,
+                        lastupdated: new Date().toISOString()
+                    });
+                }
+            }
+
+            // Ensure Dynamic Kind (Brand) exists
             if (asset.kindToCreate) {
                 const exists = await trx('asset_kinds').where('name', asset.kindToCreate.name).first();
                 if (!exists) {
@@ -4646,11 +4765,6 @@ app.post('/api/assets/bulk', async (req, res) => {
                         icon: asset.kindToCreate.icon,
                         lastupdated: new Date().toISOString()
                     });
-                } else if (exists.parentname !== asset.kindToCreate.parentname) {
-                    // If it exists but has a different parent (e.g. a brand used for both Monitors and Laptops)
-                    // we might need a more complex naming strategy, but for now we'll update the parent
-                    // or keep it if it's already structured.
-                    console.log(`[Import] Kind '${asset.kindToCreate.name}' already exists under '${exists.parentname}'. Skipping reparenting to '${asset.kindToCreate.parentname}'.`);
                 }
             }
 

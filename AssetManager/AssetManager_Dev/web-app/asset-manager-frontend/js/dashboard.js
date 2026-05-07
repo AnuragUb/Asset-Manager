@@ -34,6 +34,27 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function formatDisplayDate(val) {
+    if (!val) return '-';
+    
+    let date;
+    if (val instanceof Date) {
+        date = val;
+    } else if (typeof val === 'string') {
+        // Handle ISO strings or YYYY-MM-DD
+        date = new Date(val);
+    } else {
+        return val;
+    }
+
+    if (isNaN(date.getTime())) return val;
+
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+}
+
 function matchesQuery(asset, query) {
     if (!query) return true;
     const lowerQuery = query.toLowerCase().trim();
@@ -2472,7 +2493,7 @@ window.showAssetDetails = async function(assetId) {
                 <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
                 <p><strong>Project Assigned To:</strong> ${asset.AssignedProjectName || '-'}</p>
                 <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
-                <p><strong>Purchase Date:</strong> ${asset.PurchaseDate || '-'}</p>
+                <p><strong>Purchase Date:</strong> ${formatDisplayDate(asset.PurchaseDate) || '-'}</p>
                 <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
                 <p><strong>Bought Against PO:</strong> ${asset.BoughtAgainstPO || '-'}</p>
                 <p><strong>Sent Against DC:</strong> ${asset.SentAgainstDC || '-'}</p>
@@ -4695,7 +4716,12 @@ export function openAddItemModal(kind, prefillData = null) {
             setVal('itemPurchase', prefillData.PurchaseDetails);
             setVal('itemValue', prefillData.AssetValue);
             setVal('itemCurrency', prefillData.Currency || 'INR');
-            setVal('itemPurchaseDate', prefillData.PurchaseDate);
+            
+            // Ensure date is in YYYY-MM-DD for native input
+            let pDate = prefillData.PurchaseDate || '';
+            if (pDate && pDate.includes('T')) pDate = pDate.split('T')[0];
+            setVal('itemPurchaseDate', pDate);
+            
             setVal('itemRemarks', prefillData.Remarks);
             setVal('itemQtyUnit', prefillData.UOM);
             setVal('itemQtyTotal', prefillData.QtyOrdered);
@@ -5157,7 +5183,11 @@ export async function editAsset(asset) {
     if (amcField) amcField.value = asset.amc_months || 0;
     if (valueField) valueField.value = asset.asset_value || 0;
     if (currencyField) currencyField.value = asset.Currency || 'INR';
-    if (purchaseDateField) purchaseDateField.value = asset.PurchaseDate || '';
+    
+    // Ensure date is in YYYY-MM-DD for native input
+    let pDate = asset.PurchaseDate || '';
+    if (pDate && typeof pDate === 'string' && pDate.includes('T')) pDate = pDate.split('T')[0];
+    if (purchaseDateField) purchaseDateField.value = pDate;
 
     const warrantyTrackingToggle = document.getElementById('itemWarrantyTracking');
     if (warrantyTrackingToggle) {
@@ -6232,7 +6262,7 @@ export function setupDashboardFormHandlers() {
                     'Current Location': a.CurrentLocation || '',
                     'Assigned To': a.AssignedTo || '',
                     'Purchase Details': a.PurchaseDetails || '',
-                    'Purchase Date': a.PurchaseDate || '',
+                    'Purchase Date': formatDisplayDate(a.PurchaseDate) || '',
                     'Warranty (Months)': a.warranty_months || 0,
                     'AMC (Months)': a.amc_months || 0,
                     'Asset Value': a.asset_value || 0,

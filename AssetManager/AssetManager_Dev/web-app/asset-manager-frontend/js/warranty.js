@@ -14,6 +14,26 @@ const defaultRanges = [
     { label: '2+ Years', min: 24, color: '#006400' }
 ];
 
+function formatDisplayDate(val) {
+    if (!val) return '-';
+    
+    let date;
+    if (val instanceof Date) {
+        date = val;
+    } else if (typeof val === 'string') {
+        date = new Date(val);
+    } else {
+        return val;
+    }
+
+    if (isNaN(date.getTime())) return val;
+
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+}
+
 export function initWarrantyView() {
     console.log('WARRANTY: initWarrantyView() called');
     const summaryBody = document.getElementById('warrantySummaryBody');
@@ -156,7 +176,7 @@ window.downloadWarrantyReport = function() {
             'Serial No': a.SrNo || '',
             'Current Location': a.CurrentLocation || '',
             'Purchase Details': a.PurchaseDetails || '',
-            'Purchase Date': a.PurchaseDate || '',
+            'Purchase Date': formatDisplayDate(a.PurchaseDate) || '',
             'Warranty (Months)': a.warranty_months || 0,
             'Warranty Status': warrantyStatus,
             'AMC (Months)': a.amc_months || 0,
