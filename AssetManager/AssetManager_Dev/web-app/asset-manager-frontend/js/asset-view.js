@@ -163,7 +163,17 @@ async function renderAsset(data) {
                 ${renderField('Type', asset.Type)}
                 ${renderField('Location', asset.CurrentLocation)}
                 ${renderField('Category', asset.Category)}
+                ${renderField('Purchase Date', formatDisplayDate(asset.PurchaseDate))}
+                ${renderField('Warranty', asset.WarrantyMonths ? `${asset.WarrantyMonths} Months` : 'N/A')}
+                ${renderField('Value', asset.AssetValue ? `${asset.AssetValue} ${asset.Currency || 'INR'}` : 'N/A')}
+                ${renderField('Department', asset.Department)}
             </div>
+            ${asset.Remarks ? `
+                <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
+                    <div style="font-size: 11px; color: #666; font-weight: bold; text-transform: uppercase;">Remarks</div>
+                    <div style="font-size: 14px; margin-top: 4px;">${safe(asset.Remarks)}</div>
+                </div>
+            ` : ''}
             ${asset.ItemDescription ? `
                 <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
                     <div style="font-size: 11px; color: #666; font-weight: bold; text-transform: uppercase;">Description</div>
@@ -646,6 +656,20 @@ async function renderAsset(data) {
             printWindow.document.close();
         };
     }
+}
+
+// --- UTILS ---
+function formatDisplayDate(val) {
+    if (!val) return '-';
+    let date;
+    if (val instanceof Date) date = val;
+    else if (typeof val === 'string') date = new Date(val);
+    else return val;
+    if (isNaN(date.getTime())) return val;
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
 }
 
 // Helper: Safe String Rendering

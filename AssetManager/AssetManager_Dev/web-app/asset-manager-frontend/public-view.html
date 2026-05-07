@@ -128,6 +128,17 @@
                     <div class="label">Serial Number</div>
                     <div class="value">${asset.SerialNo || 'N/A'}</div>
 
+                    <div class="spec-grid">
+                        <div>
+                            <div class="label">Purchase Date</div>
+                            <div class="value">${asset.PurchaseDate ? new Date(asset.PurchaseDate).toLocaleDateString('en-GB') : 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div class="label">Warranty</div>
+                            <div class="value">${asset.WarrantyMonths ? `${asset.WarrantyMonths} Months` : 'N/A'}</div>
+                        </div>
+                    </div>
+
                     <div class="label">Description</div>
                     <div class="value" style="margin-bottom: 25px;">${asset.ItemDescription || 'No description provided.'}</div>
 

@@ -5396,6 +5396,7 @@ function showAssetList(nodeOrKindName) {
                         </div>
                     ` : '-'}
                 </td>
+                <td style="font-size: 11px;">${formatDisplayDate(a.PurchaseDate)}</td>
                 <td>${a.warranty_months ? `${a.warranty_months}m` : '-'}</td>
                 <td>
                     <div style="font-size: 11px;">

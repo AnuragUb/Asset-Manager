@@ -6,6 +6,19 @@
 
 import { showView } from './utils.js?v=3.8';
 
+function formatDisplayDate(val) {
+    if (!val) return '-';
+    let date;
+    if (val instanceof Date) date = val;
+    else if (typeof val === 'string') date = new Date(val);
+    else return val;
+    if (isNaN(date.getTime())) return val;
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+}
+
 export function renderItAssets() {
     console.log('Rendering IT Assets View...');
     const container = document.getElementById('itAssetsView');
@@ -58,6 +71,7 @@ function renderItAssetsTable(assets) {
                 </td>
                 <td>${asset.IPAddress || '-'}</td>
                 <td>${asset.MACAddress || '-'}</td>
+                <td>${formatDisplayDate(asset.PurchaseDate)}</td>
                 <td>${asset.AssignedTo || 'Unassigned'}</td>
             </tr>
         `;

@@ -1828,7 +1828,23 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     const userDept = req.user.department;
 
     // 1. Try Cache First
-    const port = process.env.PORT || 8080;
+    // --- Date Normalization Helper ---
+const normalizeDate = (val) => {
+    if (!val) return null;
+    let date;
+    if (val instanceof Date) date = val;
+    else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
+        const num = parseFloat(val);
+        date = new Date((num - 25569) * 86400 * 1000);
+    } else date = new Date(val);
+
+    if (date && !isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+    }
+    return null;
+};
+
+const port = process.env.PORT || 8080;
     const cacheKey = `assets:list:${port}:${hasViewPrice}:${projectId || 'all'}`;
     const cachedData = await cache.get(cacheKey);
     if (cachedData) {
@@ -1864,6 +1880,12 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
             CurrentLocation: a.currentlocation,
             AssignedTo: a.assignedto,
             ProjectID: a.projectid,
+            PurchaseDate: a.purchasedate,
+            BoughtAgainstPO: a.boughtagainstpo,
+            SentAgainstDC: a.sentagainstdc,
+            Remarks: a.remarks,
+            WarrantyMonths: a.warranty_months,
+            AssetValue: a.asset_value,
             // isComponent should ONLY be true for items in the components table
             // Items with a parentid but NOT in the components table are "Split Assets" or "Sub-Assets"
             // which should be counted as real assets in the dashboard.
@@ -1930,6 +1952,10 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
                 Category: a.category,
                 Status: a.status || 'In Store',
                 ParentId: a.parentid,
+                PurchaseDate: a.purchasedate,
+                BoughtAgainstPO: a.boughtagainstpo,
+                SentAgainstDC: a.sentagainstdc,
+                Remarks: a.remarks,
                 isComponent: false, // In fallback, we don't know for sure, so don't exclude
                 isSplitChild: hasParent,
                 isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
@@ -4544,33 +4570,6 @@ app.post('/api/assets/bulk', async (req, res) => {
         return (s === 'yes' || s === 'true' || s === '1') ? 1 : 0;
     };
 
-    // Helper to normalize Excel date numbers or various date formats to DD-MM-YYYY
-    const normalizeDate = (val) => {
-        if (!val) return null;
-        
-        let date;
-        // If it's already a JS Date object
-        if (val instanceof Date) {
-            date = val;
-        } else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
-            // If it's a number (Excel serial date format)
-            const num = parseFloat(val);
-            // Excel dates start from 1900-01-01. 
-            // 25569 is the number of days between 1900-01-01 and 1970-01-01 (Unix Epoch)
-            date = new Date((num - 25569) * 86400 * 1000);
-        } else {
-            // Try parsing as a string
-            date = new Date(val);
-        }
-
-        if (date && !isNaN(date.getTime())) {
-            // Return YYYY-MM-DD for PostgreSQL DATE type
-            return date.toISOString().split('T')[0];
-        }
-
-        return null;
-    };
-
     // Fetch current kinds and folders for dynamic mapping
     const [allKinds, allFolders] = await Promise.all([
         db('asset_kinds').select('name', 'module', 'icon', 'parentname'),
@@ -5977,7 +5976,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         amc_months: asset.amc_months !== undefined ? asset.amc_months : (existing.amc_months || 0),
         asset_value: asset.asset_value !== undefined ? asset.asset_value : (existing.asset_value || 0),
         Currency: asset.Currency !== undefined ? asset.Currency : (existing.currency || 'INR'),
-        PurchaseDate: asset.PurchaseDate !== undefined ? asset.PurchaseDate : (existing.purchasedate || null),
+        PurchaseDate: asset.PurchaseDate !== undefined ? normalizeDate(asset.PurchaseDate) : (existing.purchasedate || null),
         conversion_unit: asset.conversion_unit !== undefined ? asset.conversion_unit : (existing.conversion_unit || null),
         conversion_factor: asset.conversion_factor !== undefined ? asset.conversion_factor : (existing.conversion_factor || null),
         conversion_mode: asset.conversion_mode !== undefined ? asset.conversion_mode : (existing.conversion_mode || 'multiply'),
