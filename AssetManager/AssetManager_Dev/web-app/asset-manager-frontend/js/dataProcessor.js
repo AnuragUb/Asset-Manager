@@ -79,7 +79,12 @@ export class DataProcessor {
                 if (targetField !== 'skip') {
                     const val = row[colIndex];
                     if (val !== undefined && val !== null && val !== '') {
-                        obj[targetField] = val.toString().trim();
+                        // Keep raw values for special fields like dates, let backend normalize
+                        if (targetField === 'PurchaseDate') {
+                            obj[targetField] = val;
+                        } else {
+                            obj[targetField] = val.toString().trim();
+                        }
                         hasData = true;
                     }
                 }
