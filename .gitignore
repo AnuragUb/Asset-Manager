@@ -1,0 +1,40 @@
+# Dependency folders
+node_modules/
+dist/
+build/
+bin/
+obj/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Databases
+*.db
+*.sqlite
+
+# Large binaries (Electron, etc.)
+*.exe
+*.dll
+*.so
+*.dylib
+*.zip
+*.tar.gz
+
+# Environment files
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Uploads and temporary files
+web-app/asset-manager-backend/uploads/
+web-app/asset-manager-backend/temp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

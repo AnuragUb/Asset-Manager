@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Asset View</title>
+</head>
+<body>
+    <h1>Test Asset View</h1>
+    <div id="output">Loading...</div>
+    <script>
+        async function runTest() {
+            const output = document.getElementById('output');
+            const pathParts = window.location.pathname.split('/').filter(p => p);
+            const assetId = pathParts[pathParts.length - 1];
+            
+            output.innerHTML += `<br>Detected ID: ${assetId}`;
+            
+            try {
+                const url = `/api/asset-details/${encodeURIComponent(assetId)}`;
+                output.innerHTML += `<br>Fetching: ${url}`;
+                
+                const res = await fetch(url);
+                output.innerHTML += `<br>Status: ${res.status}`;
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    output.innerHTML += `<br>Data received: <pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    const text = await res.text();
+                    output.innerHTML += `<br>Error: ${text}`;
+                }
+            } catch (err) {
+                output.innerHTML += `<br>Fetch error: ${err.message}`;
+            }
+        }
+        runTest();
+    </script>
+</body>
+</html>

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Details | Asset Manager</title>
+    <meta name="description" content="View detailed information about project, its status, and associated assets.">
+    <meta property="og:title" content="Project Details | Asset Manager">
+    <meta property="og:description" content="Detailed information about project and its associated assets.">
+    <meta property="og:type" content="website">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #007bff;
+            --primary-dark: #0056b3;
+            --bg: #f4f7f6;
+            --card-bg: #ffffff;
+            --text: #333;
+            --text-muted: #666;
+            --border: #e2e8f0;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header-card {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .header-icon {
+            font-size: 48px;
+            background: rgba(255,255,255,0.2);
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-info h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.25);
+            backdrop-filter: blur(5px);
+            text-transform: uppercase;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text);
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 18px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 700;
+        }
+
+        .info-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .client-section {
+            background: #f0f7ff;
+            border: 1px solid #d0e7ff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .client-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .asset-item {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .asset-item:hover {
+            border-color: var(--primary);
+            background: #f1f5f9;
+            transform: translateY(-2px);
+        }
+
+        .qr-card {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #e2e8f0;
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -1px;
+            top: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #22c55e;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+        }
+
+        .timeline-content {
+            margin-left: 20px;
+        }
+
+        .timeline-status {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .timeline-note {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .timeline-time {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        .qr-image {
+            width: 180px;
+            height: 180px;
+            padding: 10px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-action:hover {
+            background: var(--primary-dark);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .header-card { padding: 20px; flex-direction: column; text-align: center; }
+            .grid { grid-template-columns: 1fr; gap: 16px; }
+        }
+
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #cbd5e1;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-screen">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container" id="app" style="display: none;">
+        <!-- Content will be injected here -->
+    </div>
+
+    <!-- Assign Asset Modal -->
+    <div id="assignAssetModal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Assign Asset to Project</h2>
+                <button class="close-modal" onclick="document.getElementById('assignAssetModal').style.display='none'">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Asset</label>
+                    <input type="text" id="assignAssetInput" placeholder="Enter Asset ID or Scan..." class="form-input">
+                    <div style="margin-top: 5px; font-size: 12px; color: #666;">Enter the Asset ID manually or scan its QR code.</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-button" onclick="document.getElementById('assignAssetModal').style.display='none'">Cancel</button>
+                <button id="btnConfirmAssignAsset" class="action-button blue">Assign</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadProjectDetails() {
+            console.log('[ProjectView] Initializing loadProjectDetails...');
+            const pathParts = window.location.pathname.split('/').filter(p => p);
+            const projectId = pathParts[pathParts.length - 1];
+            
+            console.log('[ProjectView] URL Path:', window.location.pathname);
+            console.log('[ProjectView] Detected ID from URL:', projectId);
+            
+            if (!projectId || projectId === 'project') {
+                renderError('Invalid or missing Project ID in URL. Expected format: /project/ID');
+                return;
+            }
+
+            try {
+                // Fetch Project Details
+                const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+                if (!response.ok) throw new Error(`Project not found (${response.status})`);
+                const project = await response.json();
+
+                // Fetch Project Assets
+                const assetsResponse = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`);
+                const assets = assetsResponse.ok ? await assetsResponse.json() : [];
+
+                // Fetch Project History
+                const historyResponse = await fetch(`/api/projects/${encodeURIComponent(projectId)}/history`);
+                const history = historyResponse.ok ? await historyResponse.json() : [];
+
+                console.log('[ProjectView] Received Project:', project);
+                renderProject(project, assets, history);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+            } catch (err) {
+                console.error('[ProjectView] Error:', err);
+                renderError(err.message);
+            }
+        }
+
+        function renderError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            document.getElementById('app').innerHTML = `
+                <div class="card" style="text-align: center; padding: 40px;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+                    <h2>Error</h2>
+                    <p style="color: var(--text-muted); margin-bottom: 20px;">${msg}</p>
+                    <div style="display: flex; gap: 10px; justify-content: center;">
+                        <a href="/" class="btn-action">Return to Dashboard</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderProject(project, assets, history) {
+            const app = document.getElementById('app');
+            const isLoggedIn = !!localStorage.getItem('currentUser');
+            const initial = (project.ClientName || '?').charAt(0).toUpperCase();
+
+            const timelineHtml = history && history.length ? `
+                <div class="card">
+                    <div class="section-title">Project Timeline</div>
+                    <div class="timeline">
+                        ${history.map(h => `
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content">
+                                    <div class="timeline-status">${h.Status || ''}</div>
+                                    <div class="timeline-note">${h.Note || ''}</div>
+                                    <div class="timeline-time">${new Date(h.Timestamp).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : '';
+
+            app.innerHTML = `
+                <div class="header-card">
+                    <div class="header-icon">🏗️</div>
+                    <div class="header-info" style="flex: 1;">
+                        <div class="status-pill" style="background: ${getStatusColor(project.Status)}">${project.Status || 'Active'}</div>
+                        <h1>${project.Name || project.ProjectName || project.ID}</h1>
+                        <div style="font-size: 14px; opacity: 0.9;">Project ID: ${project.ID}</div>
+                    </div>
+                    ${isLoggedIn ? `
+                        <a href="/#projects-view?id=${project.ID}" class="btn-action" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);">
+                            ✏️ Edit in Dashboard
+                        </a>
+                    ` : ''}
+                </div>
+
+                <div class="card">
+                    <div class="section-title">Client Information</div>
+                    <div class="client-section">
+                        <div class="client-avatar">${initial}</div>
+                        <div>
+                            <div style="font-weight: 700; color: var(--primary); font-size: 1.1rem;">${project.ClientName || 'N/A'}</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">Primary Client</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="section-title">Project Details</div>
+                    <div class="grid">
+                        <div class="info-item">
+                            <div class="info-label">Location</div>
+                            <div class="info-value">${project.Location || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Start Date</div>
+                            <div class="info-value">${project.StartDate || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">End Date</div>
+                            <div class="info-value">${project.EndDate || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Currency</div>
+                            <div class="info-value">${project.Currency || 'INR'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Project Owner</div>
+                            <div class="info-value">${project.OwnerEmail || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Coordinator</div>
+                            <div class="info-value">${project.CoordinatorEmail || 'N/A'}</div>
+                        </div>
+                    </div>
+                    ${project.Description ? `
+                        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border);">
+                            <div class="info-label">Description</div>
+                            <div style="font-size: 14px; margin-top: 4px; color: var(--text);">${project.Description}</div>
+                        </div>
+                    ` : ''}
+                </div>
+
+                ${assets.length > 0 ? `
+                    <div class="card">
+                        <div class="section-title">Assigned Assets (${assets.length})</div>
+                        <div style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
+                            ${assets.map(asset => `
+                                <div class="asset-item-container" style="display: flex; align-items: center; gap: 8px;">
+                                    <a href="/asset/${asset.ID}" class="asset-item" style="flex: 1;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <span style="font-size: 20px;">${asset.Icon || '📦'}</span>
+                                            <div>
+                                                <div style="font-weight: 600;">${asset.ItemName}</div>
+                                                <div style="font-size: 11px; color: var(--text-muted);">${asset.ID} | ${asset.Status}</div>
+                                            </div>
+                                        </div>
+                                        <span style="font-size: 18px; color: var(--text-muted);">→</span>
+                                    </a>
+                                    <a href="/api/quantity/events/${encodeURIComponent(asset.ID)}" target="_blank" onclick="event.stopPropagation()" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 4px 8px; border-radius: 6px; border: 1px solid #b3d7ff; font-size: 10px; display: inline-flex; align-items: center; gap: 4px; height: fit-content;" title="View Quantity API">🔗 Qty API</a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${timelineHtml}
+
+                <div class="card qr-card">
+                    <div class="section-title" style="justify-content: center;">Project QR Code</div>
+                    <img src="/api/qr/${encodeURIComponent(project.ID)}?v=${Date.now()}" class="qr-image" alt="Project QR">
+                    <p style="font-size: 12px; color: var(--text-muted);">Scan this code to quickly access project details</p>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 40px;">
+                    <a href="/" class="btn-action btn-secondary">
+                        🏠 Back to Dashboard
+                    </a>
+                </div>
+            `;
+        }
+
+        function getStatusColor(status) {
+            status = (status || '').toLowerCase();
+            if (status.includes('active') || status.includes('open')) return '#22c55e';
+            if (status.includes('closed') || status.includes('completed')) return '#64748b';
+            if (status.includes('pending') || status.includes('hold')) return '#f59e0b';
+            return 'rgba(255,255,255,0.25)';
+        }
+
+        // Initialize
+        loadProjectDetails();
+    </script>
+</body>
+</html>

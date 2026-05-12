@@ -1,0 +1,99 @@
+services:
+  # Database: PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: asset-manager-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-asset_manager}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Cache: Redis
+  redis:
+    image: redis:7-alpine
+    container_name: asset-manager-cache
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Application (Development - Port 8080)
+  app-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
+      - ./input:/app/input
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - DB_CLIENT=postgresql
+      - DB_HOST=postgres
+      - DB_NAME=${DB_NAME:-asset_manager}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-a-very-secret-key-32-chars-long!!!}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+
+  # Backend Application (Testing - Port 9090)
+  app-test:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager-test
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - .:/app
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
+      - ./input:/app/input
+    environment:
+      - NODE_ENV=development
+      - PORT=9090
+      - DB_CLIENT=postgresql
+      - DB_HOST=postgres
+      - DB_NAME=asset_manager_test
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-a-very-secret-key-32-chars-long!!!}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+
+volumes:
+  postgres_data:

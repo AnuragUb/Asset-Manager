@@ -1,0 +1,66 @@
+services:
+  # Database: PostgreSQL (Production)
+  postgres:
+    image: postgres:15-alpine
+    container_name: asset-manager-db-prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-asset_manager}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    ports:
+      - "5432:5432" # Exposed for DBeaver access
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Cache: Redis (Production)
+  redis:
+    image: redis:7-alpine
+    container_name: asset-manager-cache-prod
+    restart: always
+    # No ports exposed to host for security
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Application (Production - Port 80)
+  app-prod:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    ports:
+      - "${PORT:-8080}:8080" # Maps host port (default 8080) to internal 8080
+    volumes:
+      - /app/web-app/asset-manager-backend/node_modules
+      - /app/web-app/asset-manager-frontend/node_modules
+      - ./input:/app/input
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - DB_CLIENT=postgresql
+      - DB_HOST=postgres
+      - DB_NAME=${DB_NAME:-asset_manager}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_ENCRYPTION_KEY=${DB_ENCRYPTION_KEY:-a-very-secret-key-32-chars-long!!!}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+
+volumes:
+  postgres_prod_data:

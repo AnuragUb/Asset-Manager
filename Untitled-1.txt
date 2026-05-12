@@ -1,0 +1,4 @@
+I need to create a batch file that will:
+Install programs i say and give thier credentials according to the profile i set
+Have a GUI that allows me to select the programs to install and the profile to use
+Have a log file that will log the actions taken

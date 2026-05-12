@@ -1,0 +1,9 @@
+node_modules
+web-app/asset-manager-backend/node_modules
+web-app/asset-manager-frontend/node_modules
+.git
+.env
+data
+*.db
+error.log
+npm-debug.log
