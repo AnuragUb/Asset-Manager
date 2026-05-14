@@ -13,8 +13,8 @@ const iconMap = {
     'Software': '/static/icons/software.svg',
     
     // Emojis (Fallbacks)
-    'Printer': '🖨️',
-    'Router': '📶',
+    'Printer': '�️',
+    'Router': '�',
     'NVR': '📹',
     'Phone': '📱',
     'Tablet': '📱',
@@ -43,21 +43,22 @@ async function fixIcons() {
         const kinds = await db('asset_kinds').select('name', 'icon');
         let fixedKinds = 0;
         for (const kind of kinds) {
-            // FIX: Use a more robust check for broken icons (question marks or missing SVG path)
-            const isBroken = !kind.icon || 
-                            kind.icon.includes('?') || 
-                            kind.icon.includes('�') ||
-                            (iconMap[kind.name] && iconMap[kind.name].endsWith('.svg') && !kind.icon.endsWith('.svg'));
+            // Fix if it's question marks OR if it's an emoji that we now have an SVG for
+            const shouldFix = (kind.icon && kind.icon.includes('?')) || 
+                             (iconMap[kind.name] && iconMap[kind.name].endsWith('.svg') && !kind.icon.endsWith('.svg'));
             
-            if (isBroken) {
+            if (shouldFix) {
                 const newIcon = iconMap[kind.name];
                 if (newIcon) {
                     console.log(`Fixing Kind ${kind.name}: ${kind.icon} -> ${newIcon}`);
                     await db('asset_kinds').where('name', kind.name).update({ icon: newIcon });
                     fixedKinds++;
-                } else if (!kind.icon || kind.icon.includes('?')) {
-                    await db('asset_kinds').where('name', kind.name).update({ icon: '📦' });
-                    fixedKinds++;
+                } else {
+                    // Only default to box if it's actually broken (question marks)
+                    if (kind.icon && kind.icon.includes('?')) {
+                        await db('asset_kinds').where('name', kind.name).update({ icon: '📦' });
+                        fixedKinds++;
+                    }
                 }
             }
         }
@@ -68,12 +69,10 @@ async function fixIcons() {
         for (const folder of folders) {
             // Use ID or Name for lookup
             const lookupName = folder.name || folder.id;
-            const isBroken = !folder.icon || 
-                            folder.icon.includes('?') || 
-                            folder.icon.includes('�') ||
-                            (iconMap[lookupName] && iconMap[lookupName].endsWith('.svg') && !folder.icon.endsWith('.svg'));
+            const shouldFix = (folder.icon && folder.icon.includes('?')) || 
+                             (iconMap[lookupName] && iconMap[lookupName].endsWith('.svg') && !folder.icon.endsWith('.svg'));
 
-            if (isBroken) {
+            if (shouldFix) {
                 const newIcon = iconMap[lookupName] || iconMap[folder.id] || '📁';
                 console.log(`Fixing Folder ${lookupName}: ${folder.icon} -> ${newIcon}`);
                 await db('folders').where('id', folder.id).update({ icon: newIcon });

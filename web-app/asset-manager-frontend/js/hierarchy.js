@@ -177,5 +177,15 @@ export class HierarchyManager {
             `;
         }).join('');
     }
+
+    /**
+     * STABILITY FIX: Synchronize UI with UX Bubbles
+     */
+    syncUX() {
+        if (typeof window.syncSidebarBubbles === 'function') {
+            console.log('[HIERARCHY] Syncing UX Bubbles...');
+            window.syncSidebarBubbles();
+        }
+    }
 }
 

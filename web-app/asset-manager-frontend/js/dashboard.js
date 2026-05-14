@@ -3338,6 +3338,9 @@ export function renderSidebarTree() {
             </li>
         `;
 
+        // Bridge UI and UX Bubbles
+        if (manager.syncUX) manager.syncUX();
+
         // Add toggle functionality for the main "All Assets" group
         const mainToggle = sidebarMenu.querySelector('.tree-toggle-main');
         const hierarchyContainer = document.getElementById('sidebar-hierarchy-container');

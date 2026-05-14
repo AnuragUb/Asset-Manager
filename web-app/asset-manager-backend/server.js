@@ -3400,10 +3400,14 @@ app.post('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 
 app.get('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'manager', 'superuser'), requirePermission('user.manage'), async (req, res) => {
   try {
     const companyId = req.user.company_id;
-    const users = await db('users')
-            .where('company_id', companyId)
-            .select('username', 'fullname', 'role');
+    let query = db('users').select('username', 'fullname', 'role');
     
+    // Superusers can see all users, others only their company
+    if (req.user.role !== 'superuser') {
+        query = query.where('company_id', companyId);
+    }
+    
+    const users = await query;
     return res.json({ ok: true, users: normalizeResult(users) });
   } catch (err) {
     console.error('Tenant users error:', err);
