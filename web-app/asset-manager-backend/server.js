@@ -178,7 +178,8 @@ function normalizeResult(data) {
     'module': 'Module',
     'parentname': 'ParentName',
     'displayimage': 'DisplayImage',
-    'identifier': 'Identifier'
+    'identifier': 'Identifier',
+    'description': 'Description'
   };
 
   Object.keys(data).forEach(key => {
@@ -876,10 +877,12 @@ function authenticateJWT(req, res, next) {
       }
     }
     if (!token) {
+      console.log(`[AUTH] No token found for request to ${req.path}`);
       return res.status(401).json({ error: 'Authentication required' });
     }
     const decoded = jwt.verify(token, JWT_SECRET);
     if (!decoded || !decoded.user_id || !decoded.role || !decoded.company_id) {
+      console.log(`[AUTH] Invalid token payload for ${req.path}`);
       return res.status(401).json({ error: 'Invalid token payload' });
     }
     req.user = {
@@ -890,6 +893,7 @@ function authenticateJWT(req, res, next) {
     };
     return next();
   } catch (err) {
+    console.log(`[AUTH] Token verification failed for ${req.path}: ${err.message}`);
     if (err && err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }
@@ -901,6 +905,7 @@ function authorizeRoles() {
   const allowedRoles = Array.from(arguments);
   return function (req, res, next) {
     if (!req.user || !req.user.role) {
+      console.log(`[AUTH] authorizeRoles: No user/role for ${req.path}`);
       return res.status(401).json({ error: 'Authentication required' });
     }
     // superuser bypasses all role checks
@@ -908,6 +913,7 @@ function authorizeRoles() {
       return next();
     }
     if (allowedRoles.length && !allowedRoles.includes(req.user.role)) {
+      console.log(`[AUTH] authorizeRoles: Access denied for ${req.user.user_id}. Role: ${req.user.role}. Allowed: ${allowedRoles}`);
       return res.status(403).json({ error: 'Forbidden' });
     }
     return next();
@@ -1168,6 +1174,92 @@ app.delete('/api/role-permissions', authenticateJWT, async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Enhanced RBAC Management Endpoints ---
+
+// Get all roles with their permissions
+app.get('/api/rbac/roles', authenticateJWT, authorizeRoles('superuser'), async (req, res) => {
+    try {
+        console.log(`[RBAC] Fetching roles for user: ${req.user.user_id} (${req.user.role})`);
+        const roles = await db('roles').select('*');
+        const rolePermissions = await db('role_permissions').select('*');
+        
+        console.log(`[RBAC] Found ${roles.length} roles and ${rolePermissions.length} mappings`);
+
+        const rolesWithPerms = roles.map(role => {
+            try {
+                const normalized = normalizeResult(role);
+                return {
+                    ...normalized,
+                    permissions: rolePermissions
+                        .filter(rp => rp.role_name === role.name)
+                        .map(rp => rp.permission_key)
+                };
+            } catch (e) {
+                console.error('[RBAC] Error normalizing role:', role, e);
+                return null;
+            }
+        }).filter(r => r !== null);
+        
+        res.json({ success: true, roles: rolesWithPerms });
+    } catch (err) {
+        console.error('[RBAC] Critical Error in GET /api/rbac/roles:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Create or Update a Role with Permissions
+app.post('/api/rbac/roles', authenticateJWT, authorizeRoles('superuser'), async (req, res) => {
+    const { name, description, permissions } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: 'Role name is required' });
+
+    try {
+        await db.transaction(async (trx) => {
+            // 1. Upsert Role
+            await trx('roles')
+                .insert({ name, description })
+                .onConflict('name')
+                .merge();
+
+            // 2. Update Permissions
+            if (Array.isArray(permissions)) {
+                // Remove existing
+                await trx('role_permissions').where('role_name', name).delete();
+                
+                // Add new
+                if (permissions.length > 0) {
+                    const toInsert = permissions.map(pk => ({
+                        role_name: name,
+                        permission_key: pk
+                    }));
+                    await trx('role_permissions').insert(toInsert);
+                }
+            }
+        });
+
+        await loadRolePermissionsIntoCache();
+        res.json({ success: true, message: `Role '${name}' updated successfully` });
+    } catch (err) {
+        console.error('RBAC Role Update Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Delete a Role
+app.delete('/api/rbac/roles/:name', authenticateJWT, authorizeRoles('superuser'), async (req, res) => {
+    const { name } = req.params;
+    if (['superuser', 'admin', 'user'].includes(name.toLowerCase())) {
+        return res.status(400).json({ success: false, error: 'Cannot delete system-critical roles' });
+    }
+
+    try {
+        await db('roles').where('name', name).delete();
+        await loadRolePermissionsIntoCache();
+        res.json({ success: true, message: `Role '${name}' deleted successfully` });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -4601,7 +4693,7 @@ app.post('/api/assets/bulk', async (req, res) => {
     // Pre-generate IDs and QR codes to keep the transaction fast and handle async qrcode
     const processedAssets = await Promise.all(assets.map(async (asset) => {
       // --- Dynamic Translation Layer ---
-      let finalType = asset.Type || '';
+      let finalType = asset.Type || asset.Category || ''; // Use Category as fallback for Type
       let providedCategory = asset.Category || asset.Module || ''; 
 
       // 1. Smart Type Guessing if missing or generic
@@ -4632,21 +4724,30 @@ app.post('/api/assets/bulk', async (req, res) => {
           finalModule = kindModuleMap[finalType.toLowerCase()] || folderModuleMap[finalType.toLowerCase()] || 'IT';
       }
 
-      // 3. Automated Sub-category creation (Kind/Brand)
+      // 3. Automated Sub-category creation (Kind/Brand) - ONLY if Parent exists
       let kindToCreate = null;
       let recordType = finalType;
 
-      if (asset.Make && finalType && finalType !== 'General Asset') {
-          // Rule: Create a sub-category named after the Brand (Make) under the Kind (finalType)
-          // We must ensure finalType (e.g. Monitor) itself is properly parented in the hierarchy
+      // Find if the parent category (finalType) exists in DB as either a Kind or a Folder (case-insensitive)
+      const existingParent = allKinds.find(k => k.name.toLowerCase() === finalType.toLowerCase()) ||
+                             allFolders.find(f => f.name.toLowerCase() === finalType.toLowerCase());
+
+      if (asset.Make && existingParent) {
+          // Rule: Only create sub-category (Brand) if the parent exists
+          const parentName = existingParent.name || existingParent.id; // Use ID as fallback for folders
           kindToCreate = {
               name: asset.Make,
-              parentname: finalType,
+              parentname: parentName,
               module: finalModule,
-              icon: kindIconMap[finalType.toLowerCase()] || '📦'
+              icon: existingParent.icon || '📦'
           };
           // The asset itself is classified by the Brand for grouping
           recordType = asset.Make;
+          finalType = parentName; // Normalize casing
+      } else if (!existingParent) {
+          // If parent doesn't exist, we don't create sub-folders. 
+          // We also don't auto-create the parent to avoid user errors like "Laptops" vs "Laptop"
+          console.log(`[BULK] Category/Parent "${finalType}" not found in system for asset ${asset.ItemName}. Skipping auto-sub-categorization.`);
       }
 
       // 4. Ensure Parent Hierarchy is consistent for standard IT categories
@@ -4773,8 +4874,10 @@ app.post('/api/assets/bulk', async (req, res) => {
 
             // Ensure Dynamic Kind (Brand) exists
             if (asset.kindToCreate) {
+                console.log(`[BULK] Ensuring Dynamic Kind: ${asset.kindToCreate.name} under parent ${asset.kindToCreate.parentname}`);
                 const exists = await trx('asset_kinds').where('name', asset.kindToCreate.name).first();
                 if (!exists) {
+                    console.log(`[BULK] Creating NEW category: ${asset.kindToCreate.name}`);
                     await trx('asset_kinds').insert({
                         name: asset.kindToCreate.name,
                         module: asset.kindToCreate.module,
@@ -4782,8 +4885,18 @@ app.post('/api/assets/bulk', async (req, res) => {
                         icon: asset.kindToCreate.icon,
                         lastupdated: new Date().toISOString()
                     });
+                } else {
+                    console.log(`[BULK] Category ${asset.kindToCreate.name} already exists. Updating parent to ${asset.kindToCreate.parentname}`);
+                    await trx('asset_kinds').where('name', asset.kindToCreate.name).update({
+                        parentname: asset.kindToCreate.parentname,
+                        lastupdated: new Date().toISOString(),
+                        is_deleted: 0 // Ensure it's not hidden if it was previously deleted
+                    });
                 }
             }
+
+            // Invalidate Cache after changes
+            await invalidateAssetKindsCache();
 
             // Prepare Record
             const record = {

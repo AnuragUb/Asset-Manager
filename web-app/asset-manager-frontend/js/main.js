@@ -755,6 +755,43 @@ function setupNavigation() {
             view: 'dashboardView',
             subView: 'admin-view',
             init: () => {
+                // Initialize Admin Sub-Tabs
+                const tabButtons = document.querySelectorAll('.admin-tab-btn');
+                const tabContents = document.querySelectorAll('.admin-tab-content');
+
+                tabButtons.forEach(btn => {
+                    if (btn.dataset.bound) return;
+                    btn.addEventListener('click', () => {
+                        const targetId = btn.dataset.target;
+
+                        // Update Buttons
+                        tabButtons.forEach(b => {
+                            b.classList.remove('active');
+                            b.style.background = '#f1f5f9';
+                            b.style.color = '#475569';
+                        });
+                        btn.classList.add('active');
+                        btn.style.background = '#3b82f6';
+                        btn.style.color = 'white';
+
+                        // Update Contents
+                        tabContents.forEach(content => {
+                            if (content.id === targetId) {
+                                content.classList.remove('hidden');
+                                // Special init for RBAC
+                                if (targetId === 'admin-rbac-tab') {
+                                    import('./rbac.js').then(module => {
+                                        module.renderRBAC();
+                                    });
+                                }
+                            } else {
+                                content.classList.add('hidden');
+                            }
+                        });
+                    });
+                    btn.dataset.bound = 'true';
+                });
+
                 const container = document.getElementById('admin-users-container');
                 if (!container) return;
 

@@ -989,42 +989,130 @@
 
                     <div id="admin-view" class="view hidden admin-view-root" style="flex: 1; padding: 20px; overflow-y: auto;">
                         <div class="view-toolbar" style="margin-bottom: 20px;">
-                            <h2 class="view-title">Admin</h2>
+                            <h2 class="view-title">Admin Control Panel</h2>
                         </div>
-                        <div class="card-panel admin-panel">
-                            <h3 class="admin-panel-title">Company Users</h3>
-                            <p class="admin-panel-subtitle">Users for your company based on your login.</p>
-                            <form id="admin-create-user-form" class="admin-create-user-form">
-                                <div class="admin-field">
-                                    <label for="adminNewUsername">Username</label>
-                                    <input id="adminNewUsername" type="text" class="form-input" placeholder="e.g. john">
+
+                        <!-- Admin Sub-Tabs -->
+                        <div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                            <button class="admin-tab-btn active" data-target="admin-users-tab" style="padding: 8px 20px; border-radius: 8px; border: none; background: #3b82f6; color: white; cursor: pointer; font-weight: 600; transition: all 0.2s;">User Management</button>
+                            <button class="admin-tab-btn" data-target="admin-rbac-tab" style="padding: 8px 20px; border-radius: 8px; border: none; background: #f1f5f9; color: #475569; cursor: pointer; font-weight: 600; transition: all 0.2s;">RBAC Policies</button>
+                        </div>
+
+                        <!-- User Management Tab -->
+                        <div id="admin-users-tab" class="admin-tab-content">
+                            <div class="card-panel admin-panel">
+                                <h3 class="admin-panel-title">Company Users</h3>
+                                <p class="admin-panel-subtitle">Users for your company based on your login.</p>
+                                <form id="admin-create-user-form" class="admin-create-user-form">
+                                    <div class="admin-field">
+                                        <label for="adminNewUsername">Username</label>
+                                        <input id="adminNewUsername" type="text" class="form-input" placeholder="e.g. john">
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="adminNewFullname">Full Name</label>
+                                        <input id="adminNewFullname" type="text" class="form-input" placeholder="Full name">
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="adminNewPassword">Password</label>
+                                        <input id="adminNewPassword" type="password" class="form-input" placeholder="Password">
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="adminNewRole">Role</label>
+                                        <select id="adminNewRole" class="form-input raul-role-select">
+                                            <option value="user">User</option>
+                                            <option value="manager">Manager</option>
+                                            <option value="admin">Admin</option>
+                                            <option value="it_manager">IT Admin</option>
+                                            <option value="superuser">Superuser</option>
+                                        </select>
+                                    </div>
+                                    <div class="admin-field">
+                                        <label for="adminNewEmployeeId">Employee ID</label>
+                                        <input id="adminNewEmployeeId" type="text" class="form-input" placeholder="Optional">
+                                    </div>
+                                    <button id="adminCreateUserBtn" type="submit" class="action-button green admin-create-user-btn">Create User</button>
+                                </form>
+                                <div id="admin-users-container">
+                                    <div style="padding: 20px; text-align: center; color: #999;">Loading users...</div>
                                 </div>
-                                <div class="admin-field">
-                                    <label for="adminNewFullname">Full Name</label>
-                                    <input id="adminNewFullname" type="text" class="form-input" placeholder="Full name">
+                            </div>
+                        </div>
+
+                        <!-- RBAC Policies Tab -->
+                        <div id="admin-rbac-tab" class="admin-tab-content hidden">
+                            <div class="view-toolbar" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                                <h3 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: #1e293b;">RBAC Policy Management</h3>
+                                <button id="btnCreateRole" class="action-button green">+ Create New Role</button>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 350px 1fr; gap: 20px; align-items: start;">
+                                <!-- Roles List -->
+                                <div class="card-panel" style="padding: 0; overflow: hidden;">
+                                    <div style="padding: 15px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-weight: 600;">Roles</div>
+                                    <div id="rbac-roles-list" style="max-height: 600px; overflow-y: auto;">
+                                        <div style="padding: 20px; text-align: center; color: #94a3b8;">Loading roles...</div>
+                                    </div>
                                 </div>
-                                <div class="admin-field">
-                                    <label for="adminNewPassword">Password</label>
-                                    <input id="adminNewPassword" type="password" class="form-input" placeholder="Password">
+
+                                <!-- Role Permissions Editor -->
+                                <div id="rbac-editor-container" class="card-panel hidden" style="padding: 0; overflow: hidden;">
+                                    <div style="padding: 15px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                                        <span id="rbac-editor-title" style="font-weight: 600;">Edit Role: Admin</span>
+                                        <div style="display: flex; gap: 10px;">
+                                            <button id="btnCancelRoleEdit" class="action-button gray" style="font-size: 12px; padding: 4px 12px;">Cancel</button>
+                                            <button id="btnSaveRole" class="action-button blue" style="font-size: 12px; padding: 4px 12px;">Save Policy</button>
+                                        </div>
+                                    </div>
+                                    <div style="padding: 20px;">
+                                        <div class="form-group" style="margin-bottom: 20px;">
+                                            <label>Role Name</label>
+                                            <input type="text" id="rbac-role-name" class="form-input" placeholder="e.g. Asset Auditor">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 20px;">
+                                            <label>Description</label>
+                                            <input type="text" id="rbac-role-desc" class="form-input" placeholder="What can this role do?">
+                                        </div>
+                                        
+                                        <label style="font-weight: 600; display: block; margin-bottom: 15px; font-size: 14px; color: #1e293b;">Select Permissions</label>
+                                        <div id="rbac-permissions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px;">
+                                            <!-- Permissions checkboxes will be inserted here -->
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="admin-field">
-                                    <label for="adminNewRole">Role</label>
-                                    <select id="adminNewRole" class="form-input raul-role-select">
-                                        <option value="user">User</option>
-                                        <option value="manager">Manager</option>
-                                        <option value="admin">Admin</option>
-                                        <option value="it_manager">IT Admin</option>
-                                        <option value="superuser">Superuser</option>
-                                    </select>
+
+                                <!-- Empty State -->
+                                <div id="rbac-empty-state" class="card-panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px; color: #94a3b8; text-align: center;">
+                                    <span class="material-icons" style="font-size: 48px; margin-bottom: 15px;">security</span>
+                                    <p>Select a role from the list to view and edit its security policy, or create a new custom role.</p>
                                 </div>
-                                <div class="admin-field">
-                                    <label for="adminNewEmployeeId">Employee ID</label>
-                                    <input id="adminNewEmployeeId" type="text" class="form-input" placeholder="Optional">
+                            </div>
+
+                            <!-- User Assignment Section -->
+                            <div class="card-panel" style="margin-top: 30px;">
+                                <h3 style="margin-bottom: 20px; font-size: 18px;">Assign Roles to Users</h3>
+                                <div id="rbac-users-assignment-table">
+                                    <!-- Users table with role selector -->
                                 </div>
-                                <button id="adminCreateUserBtn" type="submit" class="action-button green admin-create-user-btn">Create User</button>
-                            </form>
-                            <div id="admin-users-container">
-                                <div style="padding: 20px; text-align: center; color: #999;">Loading users...</div>
+                            </div>
+                        </div>
+
+                        <!-- Role Creation Modal -->
+                        <div id="rbacRoleModal" class="modal">
+                            <div class="modal-content" style="max-width: 400px;">
+                                <span class="close-modal" onclick="document.getElementById('rbacRoleModal').style.display='none'">&times;</span>
+                                <h3>Create New Custom Role</h3>
+                                <div class="form-group">
+                                    <label>Role ID / Name</label>
+                                    <input type="text" id="newRoleName" class="form-input" placeholder="e.g. site_manager">
+                                </div>
+                                <div class="form-group">
+                                    <label>Display Description</label>
+                                    <input type="text" id="newRoleDesc" class="form-input" placeholder="e.g. Can manage site assets and categories">
+                                </div>
+                                <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                                    <button class="action-button gray" onclick="document.getElementById('rbacRoleModal').style.display='none'">Cancel</button>
+                                    <button id="btnSubmitNewRole" class="action-button green">Create Role</button>
+                                </div>
                             </div>
                         </div>
                     </div>
