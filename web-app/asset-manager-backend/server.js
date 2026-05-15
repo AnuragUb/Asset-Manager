@@ -5733,11 +5733,14 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .andWhere('projectid', id)
                     .first();
                 if (tempAsset) {
-                    // Delete temporary asset entirely
+                    // Soft-delete temporary asset
                     await trx('temporary_assets')
                         .where('id', assetId)
                         .andWhere('projectid', id)
-                        .delete();
+                        .update({
+                            is_deleted: 1,
+                            deleted_at: new Date().toISOString()
+                        });
                 }
             }
         });
@@ -8102,35 +8105,17 @@ app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, r
 
 app.post('/api/assets/split', async (req, res) => {
   try {
-    const { parentId, serials, autoAssign, projectId } = req.body;
-    console.log(`[SPLIT] Request for Parent: ${parentId}, Serials: ${serials.join(', ')}`);
+    const { parentId, serials, quantity, autoAssign, projectId } = req.body;
+    console.log(`[SPLIT] Request for Parent: ${parentId}, Serials: ${serials ? serials.join(', ') : 'None'}, Qty: ${quantity || 'None'}`);
     
-    if (!parentId || !serials || !Array.isArray(serials) || serials.length === 0) {
-      return res.status(400).json({ error: 'Parent ID and serial numbers list required' });
+    if (!parentId || (!serials && !quantity)) {
+      return res.status(400).json({ error: 'Parent ID and either serial numbers or quantity required' });
     }
 
     let parent = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
     parent = normalizeResult(parent);
     
     if (!parent) return res.status(404).json({ error: 'Parent asset not found' });
-
-    // Decrypt Parent Serial Numbers for comparison
-    if (parent.SrNo) {
-        parent.SrNo = encryptionService.universalDecrypt(parent.SrNo);
-    }
-    if (parent.srno) {
-        parent.srno = encryptionService.universalDecrypt(parent.srno);
-    }
-
-    const currentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
-    const newSerials = currentSerials.filter(sn => !serials.includes(sn));
-    const splitCount = currentSerials.length - newSerials.length;
-
-    console.log(`[SPLIT] Parent S/Ns: ${currentSerials.length}, To Split: ${serials.length}, Remaining: ${newSerials.length}`);
-
-    if (splitCount === 0) {
-      return res.status(400).json({ error: 'None of the selected serial numbers were found in this batch' });
-    }
 
     const ts = new Date().toISOString();
     const actor = getRequestActor(req);
@@ -8148,39 +8133,33 @@ app.post('/api/assets/split', async (req, res) => {
     }
 
     await db.transaction(async (trx) => {
-    // 1. Force Sync Parent Quantity
-    console.log(`[SPLIT] Syncing parent quantity to ${currentSerials.length}`);
-    await trx('assets')
-        .whereRaw('LOWER(id) = LOWER(?)', [parentId])
-        .update({
-            quantity_total: currentSerials.length,
-            quantity_available: currentSerials.length,
-            quantity_unit: db.raw('COALESCE(quantity_unit, ?)', ['pcs']),
-            is_quantity_tracked: 1,
-            quantity_root_id: parentId // Force set to itself if it's the root of the split
-        });
-
-        // 2. Re-fetch parent to ensure we have the synchronized quantity
-        let syncedParent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
-        syncedParent = normalizeResult(syncedParent);
-
-        // 3. Update Parent Serial Numbers
-        console.log(`[SPLIT] Updating parent S/Ns to: ${newSerials.join(', ')}`);
-        await trx('assets')
-            .whereRaw('LOWER(id) = LOWER(?)', [parentId])
-            .update({
-                srno: encryptionService.encryptDeterministic(newSerials.join(', ')),
-                lastupdated: ts
-            });
-
-        // 4. Create Children
         const createdChildren = [];
-        for (const sn of serials) {
-            const childId = generateModernAssetId(syncedParent.CurrentLocation, syncedParent.Type);
-            console.log(`[SPLIT] Creating child asset: ${childId} with S/N: ${sn}`);
+        let splitCount = 0;
+        
+        if (quantity && (!serials || serials.length === 0)) {
+            // --- QUANTITY-BASED SPLIT (Global Standard for Bulk Items) ---
+            const qtyToSplit = parseFloat(quantity);
+            const currentQty = parseFloat(parent.quantity_available || 0);
             
-            let status = syncedParent.Status;
-            let assignedTo = syncedParent.AssignedTo;
+            if (qtyToSplit <= 0 || qtyToSplit > currentQty) {
+                throw new Error(`Invalid quantity. Available: ${currentQty}, Requested: ${qtyToSplit}`);
+            }
+            splitCount = qtyToSplit;
+
+            // 1. Update Parent Quantity
+            await trx('assets')
+                .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+                .update({
+                    quantity_total: (parent.quantity_total || 0) - qtyToSplit,
+                    quantity_available: (parent.quantity_available || 0) - qtyToSplit,
+                    lastupdated: ts
+                });
+
+            // 2. Create One Child Asset with the split quantity
+            const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
+            
+            let status = parent.Status;
+            let assignedTo = parent.AssignedTo;
             let clientLabel = null;
             
             if (autoAssign) {
@@ -8189,8 +8168,6 @@ app.post('/api/assets/split', async (req, res) => {
             } else if (projectId) {
                 status = 'Project';
                 assignedTo = `Project: ${projectName}`;
-                
-                // Generate Client Label: (AssetKind)-(ProjectInitials)-(6DigitCodeFromAssetID)
                 const assetParts = childId.split('-');
                 const assetKind = assetParts[0] || 'AST';
                 const sixDigitCode = assetParts[3] || '000000';
@@ -8199,36 +8176,36 @@ app.post('/api/assets/split', async (req, res) => {
 
             const childRecord = normalizeDBData({
                 id: childId,
-                itemname: syncedParent.ItemName,
-                itemdescription: syncedParent.ItemDescription,
+                itemname: parent.ItemName,
+                itemdescription: parent.ItemDescription,
                 status: status,
-                make: syncedParent.Make,
-                model: syncedParent.Model,
-                srno: encryptionService.encryptDeterministic(sn),
-                type: syncedParent.Type,
-                category: syncedParent.Category,
-                icon: syncedParent.Icon,
+                make: parent.Make,
+                model: parent.Model,
+                srno: parent.SrNo, 
+                type: parent.Type,
+                category: parent.Category,
+                icon: parent.Icon,
                 isplaceholder: 0,
                 parentid: parentId,
-                currentlocation: syncedParent.CurrentLocation,
-                dispatchreceivedt: syncedParent.DispatchReceiveDt,
-                purchasedetails: syncedParent.PurchaseDetails,
-                remarks: syncedParent.Remarks,
-                purpose: syncedParent.Purpose,
+                currentlocation: parent.CurrentLocation,
+                dispatchreceivedt: parent.DispatchReceiveDt,
+                purchasedetails: parent.PurchaseDetails,
+                remarks: parent.Remarks,
+                purpose: parent.Purpose,
                 lastupdated: ts,
                 qrcode: null,
                 assignedto: assignedTo,
                 client_label: clientLabel,
-                noqr: syncedParent.NoQR,
-                warranty_months: syncedParent.WarrantyMonths || 0,
-                amc_months: syncedParent.AMCMonths || 0,
-                asset_value: syncedParent.AssetValue || 0,
-                currency: syncedParent.Currency || 'INR',
-                purchasedate: syncedParent.PurchaseDate,
-                conversion_unit: syncedParent.conversion_unit,
-                conversion_factor: syncedParent.conversion_factor,
-                conversion_mode: syncedParent.conversion_mode,
-                is_quantity_tracked: 0,
+                noqr: parent.NoQR,
+                warranty_months: parent.WarrantyMonths || 0,
+                amc_months: parent.AMCMonths || 0,
+                asset_value: (parent.AssetValue || 0) * (qtyToSplit / (parent.quantity_total || 1)),
+                currency: parent.Currency || 'INR',
+                purchasedate: parent.PurchaseDate,
+                is_quantity_tracked: 1,
+                quantity_total: qtyToSplit,
+                quantity_available: qtyToSplit,
+                quantity_unit: parent.quantity_unit || 'pcs',
                 is_batch: 0
             });
 
@@ -8243,42 +8220,109 @@ app.post('/api/assets/split', async (req, res) => {
                     type: 'Permanent'
                 }).onConflict(['projectid', 'assetid']).merge();
             }
-            
-            await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, sn, actor, `Created from parent ${parentId}`, trx);
+
+            await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, null, actor, `Split ${qtyToSplit} ${parent.quantity_unit} from parent ${parentId}`, trx);
+            await logAssetHistory(parentId, 'QUANTITY_REDUCED', parent.quantity_available, parent.quantity_available - qtyToSplit, actor, `Split ${qtyToSplit} ${parent.quantity_unit} to ${childId}`, trx);
+
+        } else {
+            // --- SERIAL-BASED SPLIT (Existing Logic for Serialized Items) ---
+            let parentSrNo = parent.SrNo || parent.srno;
+            if (parentSrNo) {
+                parentSrNo = encryptionService.universalDecrypt(parentSrNo);
+            }
+
+            const currentSerials = (parentSrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+            const newSerials = currentSerials.filter(sn => !serials.includes(sn));
+            splitCount = currentSerials.length - newSerials.length;
+
+            if (splitCount === 0) {
+                throw new Error('None of the selected serial numbers were found in this batch');
+            }
+
+            // 1. Force Sync Parent Quantity
+            await trx('assets')
+                .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+                .update({
+                    quantity_total: newSerials.length,
+                    quantity_available: newSerials.length,
+                    srno: encryptionService.encryptDeterministic(newSerials.join(', ')),
+                    lastupdated: ts
+                });
+
+            // 2. Create Children
+            for (const sn of serials) {
+                const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
+                
+                let status = parent.Status;
+                let assignedTo = parent.AssignedTo;
+                let clientLabel = null;
+                
+                if (autoAssign) {
+                    status = 'Assigned';
+                    assignedTo = autoAssign;
+                } else if (projectId) {
+                    status = 'Project';
+                    assignedTo = `Project: ${projectName}`;
+                    const assetParts = childId.split('-');
+                    const assetKind = assetParts[0] || 'AST';
+                    const sixDigitCode = assetParts[3] || '000000';
+                    clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
+                }
+
+                const childRecord = normalizeDBData({
+                    id: childId,
+                    itemname: parent.ItemName,
+                    itemdescription: parent.ItemDescription,
+                    status: status,
+                    make: parent.Make,
+                    model: parent.Model,
+                    srno: encryptionService.encryptDeterministic(sn),
+                    type: parent.Type,
+                    category: parent.Category,
+                    icon: parent.Icon,
+                    isplaceholder: 0,
+                    parentid: parentId,
+                    currentlocation: parent.CurrentLocation,
+                    dispatchreceivedt: parent.DispatchReceiveDt,
+                    purchasedetails: parent.PurchaseDetails,
+                    remarks: parent.Remarks,
+                    purpose: parent.Purpose,
+                    lastupdated: ts,
+                    qrcode: null,
+                    assignedto: assignedTo,
+                    client_label: clientLabel,
+                    noqr: parent.NoQR,
+                    warranty_months: parent.WarrantyMonths || 0,
+                    amc_months: parent.AMCMonths || 0,
+                    asset_value: (parent.AssetValue || 0) / (currentSerials.length || 1),
+                    currency: parent.Currency || 'INR',
+                    purchasedate: parent.PurchaseDate,
+                    is_quantity_tracked: 0,
+                    is_batch: 0
+                });
+
+                await trx('assets').insert(childRecord);
+                createdChildren.push(childRecord);
+
+                if (projectId) {
+                    await trx('project_assets').insert({
+                        projectid: projectId,
+                        assetid: childId,
+                        assigneddate: ts,
+                        type: 'Permanent'
+                    }).onConflict(['projectid', 'assetid']).merge();
+                }
+                
+                await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, sn, actor, `Created from parent ${parentId}`, trx);
+            }
+            await logAssetHistory(parentId, 'SPLIT_PARENT_UPDATED', currentSerials.join(', '), newSerials.join(', '), actor, `Split ${splitCount} units`, trx);
         }
 
-        // 5. Record Quantity Event for Parent
-        if (syncedParent.is_quantity_tracked) {
-            const note = autoAssign ? `Split ${serials.join(', ')} and assigned to ${autoAssign}` : 
-                         (projectId ? `Split ${serials.join(', ')} and assigned to Project ${projectId}` : 
-                         `Split ${splitCount} units to individual assets`);
-            
-            console.log(`[SPLIT] Applying quantity event for root: ${syncedParent.quantity_root_id || syncedParent.ID}`);
-            await applyQuantityEvent({
-                rootId: syncedParent.quantity_root_id || syncedParent.ID,
-                type: 'SPLIT',
-                actor: actor,
-                note: note,
-                metadata: { 
-                    parentId: syncedParent.ID, 
-                    splitCount: splitCount, 
-                    serials: serials.join(', '),
-                    assignedTo: autoAssign || (projectId ? `PROJECT:${projectId}` : null)
-                },
-                lines: [
-                    { assetId: syncedParent.ID, unit: syncedParent.quantity_unit || 'pcs', deltaAvailable: -splitCount, deltaTotal: -splitCount, precision: syncedParent.quantity_precision || 0 }
-                ]
-            }, trx);
-        }
-        
-        await logAssetHistory(parentId, 'SPLIT_PARENT_UPDATED', currentSerials.join(', '), newSerials.join(', '), actor, `Split ${splitCount} units`, trx);
-        
-        // Re-normalize created children for frontend
         res.locals.createdAssets = createdChildren.map(c => normalizeResult(c));
+        res.locals.splitCount = splitCount;
     });
 
-    console.log(`[SPLIT] Successfully split ${splitCount} units from ${parentId}`);
-    res.json({ success: true, count: splitCount, assets: res.locals.createdAssets });
+    res.json({ success: true, count: res.locals.splitCount, assets: res.locals.createdAssets });
   } catch (err) {
     console.error('[SPLIT] Fatal Error:', err);
     res.status(500).json({ error: err.message });

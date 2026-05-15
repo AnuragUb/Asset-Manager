@@ -507,7 +507,7 @@ function generateSplitAssetId(parentId, index) {
 }
 
 // Project ID Generator
-function generateProjectId(clientName, location) {
+function generateProjectId(location) {
     const loc = (location || 'LOC').substring(0, 3).toUpperCase();
     return IdGenerator.generateProjectId(loc);
 }

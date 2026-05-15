@@ -2054,12 +2054,12 @@ async function showAssignAssetModal() {
                             <div style="flex-grow: 1;">
                                 <div style="font-weight: bold; color: #333;">${asset.ItemName || 'Unknown Item'}</div>
                                 <div style="font-size: 0.85em; color: #666;">ID: ${asset.ID}</div>
-                                ${asset.is_batch ? `<div style="font-size: 0.75em; color: #2563eb; font-weight: 600; margin-top: 2px;">📦 BATCH (Qty: ${asset.quantity_available || 0})</div>` : ''}
+                                ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<div style="font-size: 0.75em; color: #2563eb; font-weight: 600; margin-top: 2px;">📦 BULK (Qty: ${asset.quantity_available || 0})</div>` : ''}
                             </div>
                             <div style="text-align: right; font-size: 0.85em; color: #888; min-width: 100px;">
                                 <div>${asset.Model || ''}</div>
                                 <div>${asset.Status || ''}</div>
-                                ${asset.is_batch ? `<button class="split-assign-btn" style="margin-top: 5px; padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 10px; cursor: pointer;">Split & Assign</button>` : ''}
+                                ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<button class="split-assign-btn" style="margin-top: 5px; padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 10px; cursor: pointer;">Split & Assign</button>` : ''}
                             </div>
                         `;
                         
@@ -2208,21 +2208,56 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
 
     const snContainer = document.getElementById('projectBatchSnList');
     const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+    const hasSerials = serials.length > 0;
     
-    snContainer.innerHTML = serials.map(sn => `
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #edf2f7;">
-            <input type="checkbox" class="proj-batch-sn-cb" value="${sn}" style="width: 16px; height: 16px;">
-            <span style="font-family: monospace; font-size: 13px;">${sn}</span>
-        </div>
-    `).join('');
+    if (hasSerials) {
+        snContainer.innerHTML = serials.map(sn => `
+            <div style="display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #edf2f7;">
+                <input type="checkbox" class="proj-batch-sn-cb" value="${sn}" style="width: 16px; height: 16px;">
+                <span style="font-family: monospace; font-size: 13px;">${sn}</span>
+            </div>
+        `).join('');
+    } else {
+        // Bulk quantity split (Global Standard)
+        const qtyAvailable = asset.quantity_available || 0;
+        const unit = asset.quantity_unit || 'Units';
+        
+        snContainer.innerHTML = `
+            <div style="padding: 10px;">
+                <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">
+                    This is a bulk asset with no serial numbers. Enter the quantity you wish to split and assign to this project.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label style="font-size: 11px; font-weight: bold; color: #475569;">Quantity to Assign (Max: ${qtyAvailable} ${unit})</label>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="number" id="projSplitQty" min="1" max="${qtyAvailable}" value="1" 
+                               style="flex: 1; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 16px;">
+                        <span style="font-size: 14px; font-weight: 600; color: #1e293b;">${unit}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
     splitModal.style.display = 'flex';
 
     document.getElementById('btnConfirmProjectSplit').onclick = async () => {
-        const selected = Array.from(snContainer.querySelectorAll('.proj-batch-sn-cb:checked')).map(cb => cb.value);
-        if (selected.length === 0) {
-            alert('Please select at least one Serial Number');
-            return;
+        let payload = { parentId: asset.ID, projectId: projectId };
+        
+        if (hasSerials) {
+            const selected = Array.from(snContainer.querySelectorAll('.proj-batch-sn-cb:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                alert('Please select at least one Serial Number');
+                return;
+            }
+            payload.serials = selected;
+        } else {
+            const qty = parseFloat(document.getElementById('projSplitQty').value);
+            if (isNaN(qty) || qty <= 0 || qty > (asset.quantity_available || 0)) {
+                alert('Please enter a valid quantity');
+                return;
+            }
+            payload.quantity = qty;
         }
 
         try {
@@ -2233,11 +2268,7 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
             const response = await fetch('/api/assets/split', {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify({ 
-                    parentId: asset.ID, 
-                    serials: selected,
-                    projectId: projectId 
-                })
+                body: JSON.stringify(payload)
             });
 
             if (response.ok) {
@@ -2270,6 +2301,7 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
 // --- PROJECT WORKSPACE LOGIC ---
 let workspaceStagedAssets = [];
 let workspaceProjectPOs = [];
+let workspaceSelectedPoId = null;
 
 async function initProjectWorkspace(projectId) {
     console.log('[Workspace] Initializing for:', projectId);
@@ -2388,7 +2420,7 @@ async function loadWorkspaceInventory(term = '') {
                     <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
                         <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${asset.Type}</span>
-                        ${asset.is_batch ? `<span style="font-size: 10px; color: #2563eb; font-weight: 700;">📦 BATCH</span>` : ''}
+                        ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<button class="split-assign-btn" style="padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 10px; cursor: pointer;">Split & Assign</button>` : ''}
                     </div>
                 </div>
             `;
@@ -2461,19 +2493,31 @@ function renderWorkspacePoChecklist() {
 
     if (workspaceProjectPOs.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 100px; font-size: 13px;">No active PO found for this project.</div>';
+        workspaceSelectedPoId = null;
         return;
+    }
+
+    // Auto-select first PO if none selected or if selected PO no longer exists
+    if (!workspaceSelectedPoId || !workspaceProjectPOs.some(po => po.ID === workspaceSelectedPoId)) {
+        workspaceSelectedPoId = workspaceProjectPOs[0].ID;
     }
 
     let html = '';
     workspaceProjectPOs.forEach(po => {
+        const isSelected = po.ID === workspaceSelectedPoId;
         if (po.items && Array.isArray(po.items)) {
-            html += `<div style="margin-bottom: 15px;">
-                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>PO: ${po.PONumber || po.OrderNo}</span>
+            html += `<div style="margin-bottom: 15px; border: 2px solid ${isSelected ? '#3b82f6' : 'transparent'}; border-radius: 12px; transition: all 0.2s ease;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding: 8px; display: flex; justify-content: space-between; align-items: center; background: ${isSelected ? '#eff6ff' : '#f8fafc'}; border-top-left-radius: 10px; border-top-right-radius: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="radio" name="workspaceSelectedPo" value="${po.ID}" ${isSelected ? 'checked' : ''} 
+                               onchange="window.selectWorkspacePo('${po.ID}')" style="cursor: pointer;">
+                        <span>PO: ${po.PONumber || po.OrderNo}</span>
+                    </div>
                     <span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: ${po.Status === 'Shipped' ? '#f0fdf4' : '#fff7ed'}; color: ${po.Status === 'Shipped' ? '#166534' : '#9a3412'}; border: 1px solid ${po.Status === 'Shipped' ? '#bbf7d0' : '#ffedd5'};">
                         ${po.Status || 'Active'}
                     </span>
-                </div>`;
+                </div>
+                <div style="padding: 0 8px 8px 8px;">`;
             
             po.items.forEach(item => {
                 const required = parseFloat(item.QtyOrdered) || 0;
@@ -2507,7 +2551,7 @@ function renderWorkspacePoChecklist() {
                     </div>
                 `;
             });
-            html += '</div>';
+            html += '</div></div>';
         }
     });
 
@@ -2519,8 +2563,8 @@ function renderWorkspacePoChecklist() {
 }
 
 async function handleWorkspaceDrop(asset) {
-    // If batch, we need to split
-    if (asset.is_batch) {
+    // If batch OR quantity-tracked with multiple units, we need to split
+    if (asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) {
         handleProjectBatchSplit(asset, currentProjectId, (newAssets) => {
             console.log('[Workspace] Split completed, adding child assets to staging:', newAssets);
             
@@ -2698,10 +2742,49 @@ window.tagAssetToPoItem = async (assetIndex, poItemId) => {
     }
 };
 
-window.removeFromWorkspaceStaging = (index) => {
-    workspaceStagedAssets.splice(index, 1);
-    renderStagingArea();
-    updateWorkspacePoProgress();
+window.removeFromWorkspaceStaging = async (index) => {
+    const asset = workspaceStagedAssets[index];
+    if (!asset) return;
+
+    // Use currentProjectId from the outer scope
+    if (!currentProjectId) {
+        console.error('[Workspace] Cannot unassign: currentProjectId is missing');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to unassign "${asset.ItemName || asset.ID}" from this project and return it to inventory?`)) {
+        return;
+    }
+
+    try {
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/unassign-asset/${encodeURIComponent(asset.ID)}`, {
+            method: 'DELETE',
+            headers: headers
+        });
+
+        if (res.ok) {
+            workspaceStagedAssets.splice(index, 1);
+            renderStagingArea();
+            updateWorkspacePoProgress();
+            showToast('Asset unassigned and returned to inventory', 'success');
+            
+            // Refresh inventory to show it back
+            loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');
+            
+            // Also refresh project assets table if it exists
+            if (typeof loadProjectAssets === 'function') loadProjectAssets(currentProjectId);
+        } else {
+            const err = await res.json();
+            alert('Failed to unassign: ' + (err.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('[Workspace] Unassign error:', err);
+        alert('Error unassigning asset');
+    }
 };
 
 function updateWorkspacePoProgress() {
@@ -2749,6 +2832,12 @@ function updateWorkspacePoProgress() {
         if (summary) summary.innerHTML = '0 / 0 items fulfilled';
     }
 }
+
+window.selectWorkspacePo = (poId) => {
+    workspaceSelectedPoId = poId;
+    renderWorkspacePoChecklist();
+    console.log('[Workspace] Selected PO changed to:', poId);
+};
 
 async function handleWorkspaceGenerateDC() {
     if (workspaceStagedAssets.length === 0) {
@@ -2803,7 +2892,8 @@ async function handleWorkspaceGenerateDC() {
         
         // If a PO exists, link it and override fields with PO data
         if (workspaceProjectPOs.length > 0) {
-            const po = workspaceProjectPOs[0];
+            // Use the selected PO instead of just the first one
+            const po = workspaceProjectPOs.find(p => p.ID === workspaceSelectedPoId) || workspaceProjectPOs[0];
             
             // Customer Name is Consignee Name from PO
             setVal('dcCustomerName', po.ConsigneeName);
