@@ -179,7 +179,16 @@ function normalizeResult(data) {
     'parentname': 'ParentName',
     'displayimage': 'DisplayImage',
     'identifier': 'Identifier',
-    'description': 'Description'
+    'description': 'Description',
+    'qtyordered': 'QtyOrdered',
+    'uom': 'UOM',
+    'fulfilledqty': 'fulfilledQty',
+    'vendoraddress': 'VendorAddress',
+    'vendorcontact': 'VendorContact',
+    'vendoremail': 'VendorEmail',
+    'vendorgst': 'VendorGST',
+    'is_deleted': 'IsDeleted',
+    'is_batch': 'IsBatch'
   };
 
   Object.keys(data).forEach(key => {
@@ -5357,19 +5366,19 @@ app.post('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
             if (items && Array.isArray(items)) {
                 console.log(`[PO] Inserting ${items.length} items`);
                 for (const [index, item] of items.entries()) {
-                    const line = normalizeDBData({
+                    const line = {
                         orderid: orderId, 
                         srno: item.SrNo || (index + 1), 
                         itemdescription: item.ItemDescription || '', 
                         duedate: item.DueDate || null, 
-                        qtyordered: item.QtyOrdered || 0, 
-                        uom: item.UOM || 'Nos', 
-                        unitprice: item.UnitPrice || 0, 
-                        total: item.Total || 0, 
-                        assetid: item.AssetID || null, 
-                        status: item.Status || 'Pending',
+                        qtyordered: parseFloat(item.QtyOrdered || item.qtyordered) || 0, 
+                        uom: item.UOM || item.uom || 'Nos', 
+                        unitprice: parseFloat(item.UnitPrice || item.unitprice) || 0, 
+                        total: parseFloat(item.Total || item.total) || 0, 
+                        assetid: item.AssetID || item.assetid || null, 
+                        status: item.Status || item.status || 'Pending',
                         timestamp: ts
-                    });
+                    };
                     await trx('project_order_items').insert(line);
                 }
             }
@@ -5442,17 +5451,17 @@ app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
                     else receivedStatus = 'Pending';
 
                     const itemId = item.ID || item.id;
-                    const itemData = normalizeDBData({
-                        SrNo: item.SrNo || (index + 1), 
-                        ItemDescription: item.ItemDescription || '', 
-                        DueDate: item.DueDate || null, 
-                        QtyOrdered: item.QtyOrdered || 0, 
-                        UOM: item.UOM || 'Nos', 
-                        UnitPrice: item.UnitPrice || 0, 
-                        Total: item.Total || 0, 
-                        AssetID: item.AssetID || item.assetid || null, 
-                        Status: receivedStatus
-                    });
+                    const itemData = {
+                        srno: item.SrNo || (index + 1), 
+                        itemdescription: item.ItemDescription || '', 
+                        duedate: item.DueDate || null, 
+                        qtyordered: parseFloat(item.QtyOrdered || item.qtyordered) || 0, 
+                        uom: item.UOM || item.uom || 'Nos', 
+                        unitprice: parseFloat(item.UnitPrice || item.unitprice) || 0, 
+                        total: parseFloat(item.Total || item.total) || 0, 
+                        assetid: item.AssetID || item.assetid || null, 
+                        status: receivedStatus
+                    };
 
                     if (itemId && existingIds.includes(itemId)) {
                         // Update existing
@@ -5732,8 +5741,22 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .where('id', assetId)
                     .andWhere('projectid', id)
                     .first();
+                
                 if (tempAsset) {
-                    // Soft-delete temporary asset
+                    // Check if it's converted to permanent
+                    if (tempAsset.ispermanent || tempAsset.is_permanent) {
+                        // Return to general inventory as 'In Store'
+                        await trx('assets')
+                            .where('id', assetId)
+                            .update({
+                                assignedto: null,
+                                status: 'In Store',
+                                currentlocation: 'Warehouse',
+                                linked_po_item_id: null
+                            });
+                    }
+                    
+                    // Soft-delete temporary asset record for this project
                     await trx('temporary_assets')
                         .where('id', assetId)
                         .andWhere('projectid', id)

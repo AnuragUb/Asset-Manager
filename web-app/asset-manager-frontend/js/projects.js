@@ -1659,26 +1659,38 @@ window.showAddOrderModal = function(projectId, projectData) {
         console.log(`[PO] Collecting items from ${itemRows.length} rows`);
         
         itemRows.forEach((row, index) => {
-            const desc = row.querySelector('.item-desc').value;
+            const descInput = row.querySelector('.item-desc');
+            const qtyInput = row.querySelector('.item-qty');
+            const uomInput = row.querySelector('.item-uom');
+            const priceInput = row.querySelector('.item-price');
             const checkbox = row.querySelector('.item-checklist-toggle');
-            
-            // DIRECT READ: Force exactly 'Shipped' or 'Pending' string
+
+            if (!descInput || !qtyInput) {
+                console.error(`[PO SAVE] Missing inputs in row ${index + 1}`);
+                return;
+            }
+
+            const desc = descInput.value;
             const status = (checkbox && checkbox.checked) ? 'Shipped' : 'Pending';
-            
-            console.log(`[PO SAVE] Row ${index + 1}: desc="${desc}", checkbox_checked=${checkbox ? checkbox.checked : 'N/A'} -> SAVING STATUS: "${status}"`);
             
             if (desc.trim()) {
                 const itemData = {
                     SrNo: index + 1,
                     ItemDescription: desc,
-                    Status: status, // Uppercase S to match backend expectations
-                    status: status, // Lowercase s as a fallback
+                    Status: status,
+                    status: status,
                     DueDate: row.querySelector('.item-due').value,
-                    QtyOrdered: parseFloat(row.querySelector('.item-qty').value) || 0,
-                    UOM: row.querySelector('.item-uom').value,
-                    UnitPrice: parseFloat(row.querySelector('.item-price').value) || 0,
+                    QtyOrdered: parseFloat(qtyInput.value) || 0,
+                    UOM: uomInput.value,
+                    UnitPrice: parseFloat(priceInput.value) || 0,
                     Total: parseFloat(row.querySelector('.item-total').textContent.replace(/,/g, '')) || 0
                 };
+
+                // Add existing item ID if it exists (CRITICAL FOR UPDATES)
+                if (row.dataset.poItemId) {
+                    itemData.ID = row.dataset.poItemId;
+                    itemData.id = row.dataset.poItemId;
+                }
                 
                 // Add AssetID if it exists in the row's data
                 const linkedAssetEl = row.querySelector('div[style*="color: #0078d4"]');
@@ -1766,7 +1778,7 @@ window.addPOLineItem = function(data = null) {
     row.innerHTML = `
         <td class="item-sr" style="text-align: center; vertical-align: middle;">${sr}</td>
         <td>
-            <input type="text" class="form-input item-desc" value="${data ? data.ItemDescription : ''}" 
+            <input type="text" class="form-input item-desc" value="${data ? (data.ItemDescription || '') : ''}" 
                    style="width: 100%; border: none; background: transparent; padding: 8px; 
                    ${isShipped ? 'text-decoration: line-through; color: #94a3b8;' : ''}"
                    placeholder="Item Description">
@@ -1783,10 +1795,10 @@ window.addPOLineItem = function(data = null) {
                 </span>
             </div>
         </td>
-        <td><input type="date" class="form-input item-due" value="${data ? data.DueDate : ''}" style="width: 100%; border: none; background: transparent; padding: 8px;"></td>
-        <td><input type="number" class="form-input item-qty" value="${data ? data.QtyOrdered : '1'}" oninput="window.calculatePOTotals()" style="width: 100%; border: none; background: transparent; text-align: center; padding: 8px;"></td>
-        <td><input type="text" class="form-input item-uom" value="${data ? data.UOM : 'Nos'}" style="width: 100%; border: none; background: transparent; text-align: center; padding: 8px;"></td>
-        <td><input type="number" class="form-input item-price" value="${data ? data.UnitPrice : '0'}" oninput="window.calculatePOTotals()" style="width: 100%; border: none; background: transparent; text-align: right; padding: 8px;"></td>
+        <td><input type="date" class="form-input item-due" value="${data ? (data.DueDate || '') : ''}" style="width: 100%; border: none; background: transparent; padding: 8px;"></td>
+        <td><input type="number" class="form-input item-qty" value="${data ? (data.QtyOrdered || '1') : '1'}" oninput="window.calculatePOTotals()" style="width: 100%; border: none; background: transparent; text-align: center; padding: 8px;"></td>
+        <td><input type="text" class="form-input item-uom" value="${data ? (data.UOM || 'Nos') : 'Nos'}" style="width: 100%; border: none; background: transparent; text-align: center; padding: 8px;"></td>
+        <td><input type="number" class="form-input item-price" value="${data ? (data.UnitPrice || '0') : '0'}" oninput="window.calculatePOTotals()" style="width: 100%; border: none; background: transparent; text-align: right; padding: 8px;"></td>
         <td class="item-total" style="text-align: right; padding: 8px;">${data ? (data.Total || 0).toFixed(2) : '0.00'}</td>
         <td style="text-align: center; vertical-align: middle;">
             <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
@@ -2523,9 +2535,6 @@ function renderWorkspacePoChecklist() {
                 const required = parseFloat(item.QtyOrdered) || 0;
                 
                 // --- ROBUST LOGIC: Use server-calculated fulfilledQty ---
-                // We only add local workspaceStagedAssets that are NOT yet in the DB (i.e. don't have a linkedPoItemId on the server)
-                // Actually, if we just refreshed the PO data, item.fulfilledQty ALREADY includes assets linked in the DB.
-                // Staged assets that have been linked via tagAssetToPoItem should NOT be added again.
                 const localFulfilled = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID && !a.isAlreadyLinkedOnServer).length;
                 const totalFulfilled = (item.fulfilledQty || 0) + localFulfilled;
                 

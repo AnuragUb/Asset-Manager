@@ -1,4 +1,4 @@
-const { db } = require('./web-app/asset-manager-backend/utils');
+const { db } = require('../web-app/asset-manager-backend/utils');
 
 const iconMap = {
     // SVGs
@@ -11,10 +11,14 @@ const iconMap = {
     'Camera': '/static/icons/camera.svg',
     'Switch': '/static/icons/switch.svg',
     'Software': '/static/icons/software.svg',
+    'Cables': '🔌',
+    'Cable': '🔌',
+    'Data Drives': '💾',
+    'Hard Drive': '💾',
     
     // Emojis (Fallbacks)
-    'Printer': '�️',
-    'Router': '�',
+    'Printer': '🖨️',
+    'Router': '📶',
     'NVR': '📹',
     'Phone': '📱',
     'Tablet': '📱',
@@ -26,12 +30,9 @@ const iconMap = {
     'Furniture': '🪑',
     'Vehicle': '🚗',
     'Machinery': '⚙️',
-    'Data Drives': '💾',
     'Gaming Laptop': '🎮',
     'Access Point': '📡',
     'Accessory': '⌨️',
-    'Cable': '🔌',
-    'Cables': '🔌',
     'Firewall': '🧱',
     'IT Assets': '💻'
 };
@@ -44,8 +45,9 @@ async function fixIcons() {
         let fixedKinds = 0;
         for (const kind of kinds) {
             // Fix if it's question marks OR if it's an emoji that we now have an SVG for
-            const shouldFix = (kind.icon && kind.icon.includes('?')) || 
-                             (iconMap[kind.name] && iconMap[kind.name].endsWith('.svg') && !kind.icon.endsWith('.svg'));
+            const isBroken = kind.icon && kind.icon.includes('?');
+            const hasBetterIcon = iconMap[kind.name] && iconMap[kind.name].endsWith('.svg') && !kind.icon.endsWith('.svg');
+            const shouldFix = isBroken || hasBetterIcon || (kind.name === 'Cables') || (kind.name === 'Data Drives');
             
             if (shouldFix) {
                 const newIcon = iconMap[kind.name];
