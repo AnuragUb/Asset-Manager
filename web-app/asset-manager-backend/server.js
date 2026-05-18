@@ -184,6 +184,7 @@ function normalizeResult(data) {
     'displayimage': 'DisplayImage',
     'identifier': 'Identifier',
     'description': 'Description',
+    'hsn_code': 'HSNCode',
     'is_deleted': 'IsDeleted',
     'is_batch': 'IsBatch',
     'vendoraddress': 'VendorAddress',
@@ -5722,7 +5723,33 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .andWhere('assetid', assetId)
                     .delete();
                 
-                // Revert to Location-based label: (Kind)-(Location)-(6DigitCode)
+                const asset = await trx('assets').where('id', assetId).first();
+                if (asset && asset.parentid) {
+                    // 1.1 Check if it's a split child (has parentid)
+                    const parent = await trx('assets').where('id', asset.parentid).first();
+                    if (parent) {
+                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent ${asset.parentid}`);
+                        
+                        // Increase parent quantity
+                        const qtyToRestore = parseFloat(asset.quantity_total) || 1;
+                        await trx('assets')
+                            .where('id', asset.parentid)
+                            .update({
+                                quantity_available: (parent.quantity_available || 0) + qtyToRestore,
+                                quantity_total: (parent.quantity_total || 0) + qtyToRestore,
+                                lastupdated: new Date().toISOString()
+                            });
+                        
+                        // Delete the child asset record
+                        await trx('assets').where('id', assetId).delete();
+                        await logAssetHistory(asset.parentid, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
+                        
+                        // We are done with this asset
+                        return;
+                    }
+                }
+
+                // Determine loc code from ID (e.g. AST-MUM-...)
                 const assetParts = assetId.split('-');
                 const assetKind = assetParts[0] || 'AST';
                 const locCode = assetParts[1] || 'LOC';
@@ -5736,6 +5763,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                         assignedto: null, 
                         status: 'In Store', 
                         currentlocation: 'Warehouse', 
+                        purpose: 'Owned',
                         linked_po_item_id: null,
                         client_label: revertedLabel,
                         is_deleted: 0,
@@ -5758,6 +5786,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                                 assignedto: null,
                                 status: 'In Store',
                                 currentlocation: 'Warehouse',
+                                purpose: 'Owned',
                                 linked_po_item_id: null,
                                 is_deleted: 0,
                                 deleted_at: null
@@ -5922,6 +5951,7 @@ app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
                 no: newAssetId, 
                 itemname: tempAsset.ItemName || 'Unnamed Asset', 
                 status: 'In Store', 
+                purpose: 'Owned',
                 make: tempAsset.Make || '', 
                 model: tempAsset.Model || '', 
                 type: tempAsset.Type || 'AST', 

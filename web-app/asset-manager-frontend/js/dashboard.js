@@ -4802,7 +4802,9 @@ export async function editAsset(asset) {
     document.getElementById('itemMake').value = asset.Make || '';
     document.getElementById('itemModel').value = asset.Model || '';
     document.getElementById('itemSrNo').value = asset.SrNo || '';
+    document.getElementById('itemHsnCode').value = asset.HSNCode || '';
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
+    document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
 
     // Handle Batch UI in Edit Modal
     const srNoInputEdit = document.getElementById('itemSrNo');
@@ -5965,8 +5967,10 @@ export function setupDashboardFormHandlers() {
                     SrNo: srNoValue,
                     is_batch: isBatchValue,
                     CurrentLocation: formData.get('itemLocation'),
+                    Purpose: formData.get('itemPurpose') || 'Owned',
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
+                    HSNCode: formData.get('itemHsnCode'),
                     Remarks: formData.get('itemRemarks'),
                     AssignedTo: formData.get('itemAssignedTo'),
                     ParentId: formData.get('itemParentId'),

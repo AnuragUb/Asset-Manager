@@ -1408,9 +1408,15 @@
                                 <label for="itemDate">Dispatch / Receive Dt.</label>
                                 <input type="date" id="itemDate" name="itemDate">
                             </div>
-                            <div class="form-group">
-                                <label for="itemPurchase">Purchase Details</label>
-                                <input type="text" id="itemPurchase" name="itemPurchase">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                <div class="form-group">
+                                    <label for="itemPurchase">Purchase Details</label>
+                                    <input type="text" id="itemPurchase" name="itemPurchase">
+                                </div>
+                                <div class="form-group">
+                                    <label for="itemHsnCode">HSN / SAC Code</label>
+                                    <input type="text" id="itemHsnCode" name="itemHsnCode" placeholder="e.g. 8471, 9983">
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="itemRemarks">Remarks</label>
@@ -1444,6 +1450,16 @@
                             <div class="form-group" style="grid-column: span 2; background: #f0fdf4; padding: 10px; border-radius: 8px; border: 1px solid #dcfce7; margin-bottom: 5px; display: flex; align-items: center; gap: 10px;">
                                 <input type="checkbox" id="itemWarrantyTracking" name="itemWarrantyTracking" style="width: 20px; height: 20px; cursor: pointer;" checked>
                                 <label for="itemWarrantyTracking" style="font-weight: 700; color: #166534; cursor: pointer; margin-bottom: 0;">Enable Warranty Tracking for this Asset</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="itemPurpose">Purpose / Flag</label>
+                                <select id="itemPurpose" name="itemPurpose">
+                                    <option value="Owned">Owned</option>
+                                    <option value="Rental">Rental</option>
+                                    <option value="Demo">Demo</option>
+                                    <option value="Project">Project</option>
+                                    <option value="Stand By">Stand By</option>
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="itemAssignedTo">Assigned To</label>
