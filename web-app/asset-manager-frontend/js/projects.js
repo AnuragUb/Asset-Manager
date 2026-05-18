@@ -2533,9 +2533,10 @@ function renderWorkspacePoChecklist() {
             
             po.items.forEach(item => {
                 const required = parseFloat(item.QtyOrdered) || 0;
+                const itemId = item.ID || item.id;
                 
                 // --- ROBUST LOGIC: Use server-calculated fulfilledQty ---
-                const localFulfilled = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID && !a.isAlreadyLinkedOnServer).length;
+                const localFulfilled = workspaceStagedAssets.filter(a => a.linkedPoItemId == itemId && !a.isAlreadyLinkedOnServer).length;
                 const totalFulfilled = (item.fulfilledQty || 0) + localFulfilled;
                 
                 const isDone = (totalFulfilled >= required && required > 0) || item.Status === 'Shipped';
@@ -2815,8 +2816,9 @@ function updateWorkspacePoProgress() {
                     const req = (parseFloat(item.QtyOrdered) || 0);
                     totalRequired += req;
                     
+                    const itemId = item.ID || item.id;
                     // Sum up server-side fulfillment + local staged tagging (excluding those already in DB)
-                    const local = workspaceStagedAssets.filter(a => a.linkedPoItemId === item.ID && !a.isAlreadyLinkedOnServer).length;
+                    const local = workspaceStagedAssets.filter(a => a.linkedPoItemId == itemId && !a.isAlreadyLinkedOnServer).length;
                     totalFulfilled += Math.min(req, (item.fulfilledQty || 0) + local);
                 });
             }

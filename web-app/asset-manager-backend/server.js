@@ -135,7 +135,6 @@ function normalizeResult(data) {
     'noqr': 'NoQR',
     'currency': 'Currency',
     'asset_value': 'AssetValue',
-    'unitprice': 'UnitPrice',
     'warranty_months': 'WarrantyMonths',
     'amc_months': 'AMCMonths',
     'employeeid': 'EmployeeID',
@@ -169,6 +168,11 @@ function normalizeResult(data) {
     'totalamount': 'TotalAmount',
     'orderno': 'OrderNo',
     'orderdate': 'OrderDate',
+    'qtyordered': 'QtyOrdered',
+    'uom': 'UOM',
+    'unitprice': 'UnitPrice',
+    'total': 'Total',
+    'fulfilledqty': 'fulfilledQty',
     'challanno': 'ChallanNo',
     'customername': 'CustomerName',
     'deliverydate': 'DeliveryDate',
@@ -180,15 +184,12 @@ function normalizeResult(data) {
     'displayimage': 'DisplayImage',
     'identifier': 'Identifier',
     'description': 'Description',
-    'qtyordered': 'QtyOrdered',
-    'uom': 'UOM',
-    'fulfilledqty': 'fulfilledQty',
+    'is_deleted': 'IsDeleted',
+    'is_batch': 'IsBatch',
     'vendoraddress': 'VendorAddress',
     'vendorcontact': 'VendorContact',
     'vendoremail': 'VendorEmail',
-    'vendorgst': 'VendorGST',
-    'is_deleted': 'IsDeleted',
-    'is_batch': 'IsBatch'
+    'vendorgst': 'VendorGST'
   };
 
   Object.keys(data).forEach(key => {
@@ -205,9 +206,6 @@ function normalizeResult(data) {
   if (result.metadata_json && typeof result.metadata_json === 'string') {
       try { result.metadata = JSON.parse(result.metadata_json); } catch(e) {}
   }
-
-  return result;
-}
 
 /**
  * Executes a query against the active database (Knex).
@@ -5182,9 +5180,12 @@ app.get('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
                 const tempResult = await db('temporary_assets').where('linked_po_item_id', itemId).count('* as count').first();
                 const temporaryFulfilled = tempResult ? tempResult.count : 0;
                 
+                const total = (Number(permanentFulfilled) + Number(temporaryFulfilled));
+                console.log(`[PO FULFILLMENT] Item ${itemId} (${item.ItemDescription}): Perm=${permanentFulfilled}, Temp=${temporaryFulfilled}, Total=${total}`);
+                
                 return { 
                     ...item, 
-                    fulfilledQty: (Number(permanentFulfilled) + Number(temporaryFulfilled))
+                    fulfilledQty: total
                 };
             }));
 
