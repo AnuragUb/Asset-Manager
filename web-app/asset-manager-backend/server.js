@@ -207,6 +207,9 @@ function normalizeResult(data) {
       try { result.metadata = JSON.parse(result.metadata_json); } catch(e) {}
   }
 
+  return result;
+}
+
 /**
  * Executes a query against the active database (Knex).
  * Automatically normalizes results.
@@ -5734,7 +5737,9 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                         status: 'In Store', 
                         currentlocation: 'Warehouse', 
                         linked_po_item_id: null,
-                        client_label: revertedLabel
+                        client_label: revertedLabel,
+                        is_deleted: 0,
+                        deleted_at: null
                     });
             } else {
                 // 2. Check if it's a temporary asset
@@ -5753,7 +5758,9 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                                 assignedto: null,
                                 status: 'In Store',
                                 currentlocation: 'Warehouse',
-                                linked_po_item_id: null
+                                linked_po_item_id: null,
+                                is_deleted: 0,
+                                deleted_at: null
                             });
                     }
                     
