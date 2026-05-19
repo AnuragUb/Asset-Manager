@@ -158,9 +158,11 @@ export class HierarchyManager {
                                 ? `<img src="${node.DisplayImage}">`
                                 : (node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
                                     ? `<img src="${node.Icon}">`
-                                    : (node.Icon && !node.Icon.match(/\p{Emoji}/u))
-                                        ? `<i class="material-icons" style="font-size: 16px;">${node.Icon}</i>`
-                                        : (node.Icon || (node.type === 'folder' ? '📁' : '📦'))}
+                                    : (node.Icon && /[^\x00-\x7F]/.test(node.Icon))
+                                        ? `<span class="emoji-icon">${node.Icon}</span>`
+                                        : (node.Icon 
+                                            ? `<i class="material-icons" style="font-size: 16px;">${node.Icon}</i>`
+                                            : (node.type === 'folder' ? '📁' : '📦'))}
                         </span>
                         <span class="tree-link ${activeClass}" data-id="${node.ID}">${node.Name}</span>
                         ${node.type === 'kind' ? `

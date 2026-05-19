@@ -19,6 +19,7 @@ const iconMap = {
     // Emojis (Fallbacks)
     'Printer': '🖨️',
     'Router': '📶',
+    'IT Assets': '💻',
     'NVR': '📹',
     'Phone': '📱',
     'Tablet': '📱',
@@ -33,8 +34,7 @@ const iconMap = {
     'Gaming Laptop': '🎮',
     'Access Point': '📡',
     'Accessory': '⌨️',
-    'Firewall': '🧱',
-    'IT Assets': '💻'
+    'Firewall': '🧱'
 };
 
 async function fixIcons() {

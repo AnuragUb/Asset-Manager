@@ -4251,19 +4251,19 @@ export function renderDashboard(assets, filteredAssets) {
 
         const displayImg = node.DisplayImage || node.Icon;
         const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
-        // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
         const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
-        // Material icons are usually single words or snake_case strings
-        const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
+        const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
             <div class="asset-card-icon">
                 ${isUrl 
                     ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
-                    : isMaterialIcon
-                        ? `<i class="material-icons" style="font-size: 48px; color: #007bff;">${displayImg}</i>`
-                        : `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${displayImg || (isKind ? '📦' : '📂')}</span>`}
+                    : isEmoji
+                        ? `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${displayImg}</span>`
+                        : isMaterialIcon && displayImg
+                            ? `<i class="material-icons" style="font-size: 48px; color: #007bff;">${displayImg}</i>`
+                            : `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${isKind ? '📦' : '📂'}</span>`}
             </div>
             <div class="asset-card-header">
                 <span class="asset-card-title">${nodeName} (${total})</span>
