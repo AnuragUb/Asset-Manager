@@ -759,6 +759,12 @@ async function unassignAssetFromProject(projectId, assetId) {
 
         if (res.ok) {
             showToast('Asset unassigned successfully', 'success');
+            
+            // Show Inspection Modal
+            if (typeof window.showInspectionModal === 'function') {
+                window.showInspectionModal(assetId, projectId);
+            }
+            
             loadProjectAssets(projectId);
             if (window.loadAssets) window.loadAssets();
             
@@ -2780,7 +2786,17 @@ window.removeFromWorkspaceStaging = async (index) => {
             workspaceStagedAssets.splice(index, 1);
             renderStagingArea();
             updateWorkspacePoProgress();
-            showToast('Asset unassigned and returned to inventory', 'success');
+            
+            console.log('[Workspace] Unassign successful for:', asset.ID);
+            
+            // Show Inspection Modal instead of just a toast
+            if (typeof window.showInspectionModal === 'function') {
+                console.log('[Workspace] Triggering showInspectionModal for:', asset.ID);
+                window.showInspectionModal(asset.ID, currentProjectId);
+            } else {
+                console.warn('[Workspace] window.showInspectionModal not found!');
+                showToast('Asset unassigned. Awaiting inspection.', 'info');
+            }
             
             // Refresh inventory to show it back
             loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');

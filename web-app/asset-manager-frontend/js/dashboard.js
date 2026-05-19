@@ -16,6 +16,123 @@ let dcItemsByAssetId = {};
 let showRateAmount = true;
 let showTotalPrice = true;
 
+// Asset Lifecycle UI Functions
+window.showSaleModal = function(assetId, assetData = null) {
+    const modal = document.getElementById('saleModal');
+    if (!modal) return;
+    
+    document.getElementById('saleAssetId').value = assetId;
+    document.getElementById('saleBuyer').value = '';
+    document.getElementById('saleDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('salePrice').value = '';
+    document.getElementById('saleInvoice').value = '';
+    document.getElementById('saleRemarks').value = '';
+    
+    modal.style.display = 'flex';
+};
+
+window.showInspectionModal = function(assetId, projectId) {
+    const modal = document.getElementById('inspectionModal');
+    if (!modal) return;
+    
+    document.getElementById('inspectionAssetId').value = assetId;
+    document.getElementById('inspectionProjectId').value = projectId || '';
+    document.getElementById('inspectionCondition').value = 'Good';
+    document.getElementById('inspectionRemarks').value = '';
+    
+    modal.style.display = 'flex';
+};
+
+function setupLifecycleFormHandlers() {
+    // Inspection Form
+    const inspectionForm = document.getElementById('inspectionForm');
+    if (inspectionForm) {
+        inspectionForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(inspectionForm);
+            const assetId = document.getElementById('inspectionAssetId').value;
+            
+            try {
+                const response = await fetch(`/api/assets/${assetId}/release-to-store`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        condition: formData.get('condition'),
+                        remarks: formData.get('remarks')
+                    })
+                });
+                
+                if (response.status === 401) {
+                    alert('Your session has expired. Please refresh the page and log in again.');
+                    return;
+                }
+                
+                if (response.ok) {
+                    showToast('Asset released to store successfully', 'success');
+                    document.getElementById('inspectionModal').style.display = 'none';
+                    if (window.loadAssets) await window.loadAssets();
+                } else {
+                    const err = await response.text();
+                    throw new Error(err);
+                }
+            } catch (err) {
+                alert('Failed to release asset: ' + err.message);
+            }
+        };
+    }
+
+    // Sale Form
+    const saleForm = document.getElementById('saleForm');
+    if (saleForm) {
+        saleForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(saleForm);
+            const assetId = document.getElementById('saleAssetId').value;
+            
+            try {
+                const response = await fetch(`/api/assets/${assetId}/sell`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        buyerName: formData.get('buyerName'),
+                        saleDate: formData.get('saleDate'),
+                        salePrice: formData.get('salePrice'),
+                        invoiceNo: formData.get('invoiceNo'),
+                        remarks: formData.get('remarks')
+                    })
+                });
+                
+                if (response.status === 401) {
+                    alert('Your session has expired. Please refresh the page and log in again.');
+                    return;
+                }
+                
+                if (response.ok) {
+                    showToast('Asset marked as Sold', 'success');
+                    document.getElementById('saleModal').style.display = 'none';
+                    document.getElementById('addAssetItemModal').style.display = 'none';
+                    if (window.loadAssets) await window.loadAssets();
+                } else {
+                    const err = await response.text();
+                    throw new Error(err);
+                }
+            } catch (err) {
+                alert('Failed to sell asset: ' + err.message);
+            }
+        };
+    }
+
+    // Close buttons
+    ['inspection', 'sale'].forEach(prefix => {
+        const close = document.getElementById(`close${prefix.charAt(0).toUpperCase() + prefix.slice(1)}Modal`);
+        const cancel = document.getElementById(`cancel${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`);
+        const modal = document.getElementById(`${prefix}Modal`);
+        
+        if (close) close.onclick = () => modal.style.display = 'none';
+        if (cancel) cancel.onclick = () => modal.style.display = 'none';
+    });
+}
+
 function toNumber(value) {
     const n = Number(String(value ?? '').replace(/,/g, '').trim());
     return Number.isFinite(n) ? n : null;
@@ -3098,7 +3215,13 @@ window.unassignAsset = async function(assetId) {
         });
         const data = await response.json();
         if (data.success) {
-            alert('Asset unassigned successfully');
+            showToast('Asset unassigned. Awaiting inspection.', 'success');
+            
+            // Show Inspection Modal
+            if (typeof window.showInspectionModal === 'function') {
+                window.showInspectionModal(assetId, currentProjectId);
+            }
+            
             loadProjectAssets(currentProjectId);
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));
@@ -6119,6 +6242,18 @@ export function setupDashboardFormHandlers() {
                 }
                 asset.linkedIds = linkedIds;
 
+                // Handle Sale Logic if status is 'Sold'
+                if (asset.Status === 'Sold') {
+                    console.log('[Lifecycle] Status changed to Sold, opening Sale Modal');
+                    if (typeof window.showSaleModal === 'function') {
+                        window.showSaleModal(asset.ID, asset);
+                    } else {
+                        console.error('[Lifecycle] window.showSaleModal not found!');
+                        alert('Sale modal system not ready.');
+                    }
+                    return;
+                }
+
                 console.log('Saving asset via window.saveAsset:', asset);
                 const result = await window.saveAsset(asset);
                 
@@ -6211,6 +6346,47 @@ export function setupDashboardFormHandlers() {
         };
     }
 
+    setupLifecycleFormHandlers();
+    console.log('DASHBOARD.JS: Lifecycle handlers initialized');
+
+    const btnShowRetired = document.getElementById('btnShowRetired');
+    if (btnShowRetired) {
+        btnShowRetired.onclick = async () => {
+            console.log('[Lifecycle] Retired button clicked');
+            try {
+                const response = await fetch('/api/assets/retired');
+                if (response.ok) {
+                    const retiredAssets = await response.json();
+                    console.log('[Lifecycle] Retired assets loaded:', retiredAssets.length);
+                    
+                    // Show Dashboard first if it's hidden
+                    if (window.showView) {
+                        console.log('[Lifecycle] Switching to itAssetsView');
+                        window.showView('itAssetsView');
+                    }
+                    
+                    if (retiredAssets.length === 0) {
+                        alert('No retired or sold assets found.');
+                        return;
+                    }
+                    
+                    // Use Hierarchy Manager to show a "Ghost" folder for retired assets
+                    window.currentDashboardParent = { ID: 'RETIRED_VIEW', Name: 'Retired Assets' };
+                    window.currentRetiredAssets = retiredAssets;
+                    
+                    if (typeof renderDashboard === 'function') {
+                        console.log('[Lifecycle] Rendering Retired Assets');
+                        renderDashboard(window.allAssets, retiredAssets);
+                    } else {
+                        console.error('[Lifecycle] renderDashboard not found!');
+                    }
+                }
+            } catch (err) {
+                console.error('Retired fetch error:', err);
+            }
+        };
+    }
+
     // Unified Reporting System Handlers
     const btnReportDashboard = document.getElementById('btnReportDashboard');
 
@@ -6261,9 +6437,9 @@ export function setupDashboardFormHandlers() {
                 link.click();
                 document.body.removeChild(link);
                 return;
-            }
-
-            if (reportType === 'kind') {
+            } else if (parent && parent.ID === 'RETIRED_VIEW') {
+                assetsToReport = window.currentRetiredAssets || [];
+            } else if (reportType === 'kind') {
                 generateKindSummaryReport(category);
                 return;
             }

@@ -541,6 +541,9 @@
                                 <button class="action-button green" id="btnAddAssetItem">
                                     <span>➕ Add Asset</span>
                                 </button>
+                                <button class="action-button grey" id="btnShowRetired" title="View Sold/Retired Assets">
+                                    <span>🗑️ Retired</span>
+                                </button>
                             </div>
                         </div>
                         <div id="assetGridWrapper" class="asset-grid-scroll-wrapper" style="flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%;">
@@ -2247,7 +2250,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=6.03"></script>
+<script type="module" src="/js/main.js?v=6.05"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {
@@ -2516,6 +2519,89 @@
     
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 </style>
+
+<!-- Inward Inspection Modal -->
+<div id="inspectionModal" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+            <h2>Inward Inspection</h2>
+            <span class="close" id="closeInspectionModal">&times;</span>
+        </div>
+        <form id="inspectionForm">
+            <div class="modal-body">
+                <input type="hidden" id="inspectionAssetId">
+                <input type="hidden" id="inspectionProjectId">
+                
+                <p style="margin-bottom: 20px; color: #666; font-size: 14px;">Please assess the condition of the asset before releasing it back to the main inventory.</p>
+                
+                <div class="form-group">
+                    <label for="inspectionCondition">Asset Condition</label>
+                    <select id="inspectionCondition" name="condition" required>
+                        <option value="Excellent">Excellent (Like New)</option>
+                        <option value="Good" selected>Good (Normal Wear)</option>
+                        <option value="Average">Average (Visible Wear)</option>
+                        <option value="Damaged">Damaged (Needs Repair)</option>
+                        <option value="Broken">Broken (Non-Functional)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="inspectionRemarks">Inspection Notes</label>
+                    <textarea id="inspectionRemarks" name="remarks" placeholder="Optional notes about physical state..." rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cancelInspection">Cancel</button>
+                <button type="submit" class="btn-primary">Release to Store</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Asset Sale Modal -->
+<div id="saleModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h2>Sell Asset</h2>
+            <span class="close" id="closeSaleModal">&times;</span>
+        </div>
+        <form id="saleForm">
+            <div class="modal-body">
+                <input type="hidden" id="saleAssetId">
+                
+                <div class="form-group">
+                    <label for="saleBuyer">Buyer Name</label>
+                    <input type="text" id="saleBuyer" name="buyerName" required placeholder="Who bought the asset?">
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="saleDate">Sale Date</label>
+                        <input type="date" id="saleDate" name="saleDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="salePrice">Sale Price</label>
+                        <input type="number" id="salePrice" name="salePrice" required placeholder="Price in INR">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="saleInvoice">Invoice Number</label>
+                    <input type="text" id="saleInvoice" name="invoiceNo" placeholder="Sales Invoice #">
+                </div>
+                
+                <div class="form-group">
+                    <label for="saleRemarks">Remarks</label>
+                    <textarea id="saleRemarks" name="remarks" rows="2" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cancelSale">Cancel</button>
+                <button type="submit" class="btn-primary" style="background-color: #dc3545; border-color: #dc3545;">Confirm Sale</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 </body>
 </html>

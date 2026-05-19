@@ -185,6 +185,9 @@ function normalizeResult(data) {
     'identifier': 'Identifier',
     'description': 'Description',
     'hsn_code': 'HSNCode',
+    'condition': 'Condition',
+    'is_retired': 'IsRetired',
+    'sale_details': 'SaleDetails',
     'is_deleted': 'IsDeleted',
     'is_batch': 'IsBatch',
     'vendoraddress': 'VendorAddress',
@@ -522,6 +525,85 @@ app.get('/api/debug/cookies', (req, res) => {
         parsed: parseCookies(req.headers.cookie || ''),
         ip: req.ip
     });
+});
+
+// --- Asset Lifecycle Endpoints ---
+app.post('/api/assets/:id/sell', authenticateJWT, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { buyerName, saleDate, salePrice, invoiceNo, remarks } = req.body;
+        const username = req.user.user_id || 'web';
+
+        await db.transaction(async (trx) => {
+            const asset = await trx('assets').where('id', id).first();
+            if (!asset) throw new Error('Asset not found');
+
+            const saleDetails = JSON.stringify({
+                buyer: buyerName,
+                date: saleDate,
+                price: salePrice,
+                invoice: invoiceNo,
+                remarks: remarks
+            });
+
+            await trx('assets')
+                .where('id', id)
+                .update({
+                    status: 'Sold',
+                    is_retired: 1,
+                    sale_details: saleDetails,
+                    lastupdated: new Date().toISOString()
+                });
+
+            await logAssetHistory(id, 'ASSET_SOLD', asset.status, 'Sold', username, `Sold to ${buyerName} for ${salePrice}. Invoice: ${invoiceNo}`, trx);
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Sell asset error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/assets/:id/release-to-store', authenticateJWT, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { condition, remarks } = req.body;
+        const username = req.user.user_id || 'web';
+
+        await db.transaction(async (trx) => {
+            const asset = await trx('assets').where('id', id).first();
+            if (!asset) throw new Error('Asset not found');
+
+            await trx('assets')
+                .where('id', id)
+                .update({
+                    status: 'In Store',
+                    condition: condition || 'Good',
+                    remarks: remarks ? `${asset.remarks || ''}\n[Inspection]: ${remarks}` : asset.remarks,
+                    lastupdated: new Date().toISOString()
+                });
+
+            await logAssetHistory(id, 'INSPECTION_PASSED', asset.status, 'In Store', username, `Passed inspection. Condition: ${condition}. ${remarks}`, trx);
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Release asset error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
+    try {
+        const assets = await db('assets')
+            .where('is_retired', 1)
+            .orderBy('lastupdated', 'desc');
+        res.json(normalizeResult(assets));
+    } catch (err) {
+        console.error('Fetch retired assets error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // --- Asset History Endpoint ---
@@ -2347,6 +2429,8 @@ app.get('/api/asset-details/:id', async (req, res) => {
     const auditHistory = await db('audit_log').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
     const structuredHistory = await db('asset_history').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
     const parent = normalizedAsset.parentid ? await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.parentid]).first() : null;
+
+    console.log(`[API] Asset History fetch for ${id}: audit_log=${auditHistory.length}, asset_history=${structuredHistory.length}`);
 
     let quantity = null
     let quantityChildren = []
@@ -5761,7 +5845,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .where('id', assetId)
                     .update({ 
                         assignedto: null, 
-                        status: 'In Store', 
+                        status: 'Under Inspection', 
                         currentlocation: 'Warehouse', 
                         purpose: 'Owned',
                         linked_po_item_id: null,
@@ -5769,6 +5853,8 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                         is_deleted: 0,
                         deleted_at: null
                     });
+                
+                await logAssetHistory(assetId, 'UNASSIGNED', 'In Use', 'Under Inspection', req.user.user_id, `Unassigned from project ${id}. Awaiting inward inspection.`, trx);
             } else {
                 // 2. Check if it's a temporary asset
                 const tempAsset = await trx('temporary_assets')
@@ -5779,18 +5865,20 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                 if (tempAsset) {
                     // Check if it's converted to permanent
                     if (tempAsset.ispermanent || tempAsset.is_permanent) {
-                        // Return to general inventory as 'In Store'
+                        // Return to general inventory as 'Under Inspection'
                         await trx('assets')
                             .where('id', assetId)
                             .update({
                                 assignedto: null,
-                                status: 'In Store',
+                                status: 'Under Inspection',
                                 currentlocation: 'Warehouse',
                                 purpose: 'Owned',
                                 linked_po_item_id: null,
                                 is_deleted: 0,
                                 deleted_at: null
                             });
+                        
+                        await logAssetHistory(assetId, 'UNASSIGNED', 'In Use', 'Under Inspection', req.user.user_id, `Converted permanent asset unassigned from project ${id}. Awaiting inward inspection.`, trx);
                     }
                     
                     // Soft-delete temporary asset record for this project
