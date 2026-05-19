@@ -3804,7 +3804,7 @@ export function renderDashboard(assets, filteredAssets) {
         if (dashboardTitle) {
             dashboardTitle.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <button id="btnDashboardBack" class="icon-button" style="background: #eee; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; cursor: pointer;">←</button>
+                    <button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>
                     <span>Temporary Assets</span>
                 </div>
             `;
@@ -3881,7 +3881,7 @@ export function renderDashboard(assets, filteredAssets) {
     if (dashboardTitle) {
         dashboardTitle.innerHTML = `
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #eee; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; cursor: pointer;">←</button>' : ''}
+                ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>' : ''}
                 <span>${parentNode ? parentNode.Name : `${category} Assets`}</span>
                 ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
                 <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
@@ -6262,13 +6262,13 @@ export function setupDashboardFormHandlers() {
 
             // Get current assets in view for detailed report
             if (!parent) {
-                assetsToReport = window.allAssets || [];
+                assetsToReport = (window.allAssets || []).filter(a => a.Category === category);
             } else {
                 const manager = window.hierarchyManager;
                 if (manager) {
                     const descendants = manager.getDescendants(parent.ID, true);
                     const kindNames = descendants.filter(d => d.type === 'kind').map(d => d.Name);
-                    assetsToReport = (window.allAssets || []).filter(a => kindNames.includes(a.Type));
+                    assetsToReport = (window.allAssets || []).filter(a => kindNames.includes(a.Type) && a.Category === category);
                 }
             }
 
@@ -6298,8 +6298,9 @@ export function setupDashboardFormHandlers() {
                     'Purchase Date': formatDisplayDate(a.PurchaseDate) || '',
                     'Warranty (Months)': a.warranty_months || 0,
                     'AMC (Months)': a.amc_months || 0,
-                    'Asset Value': a.asset_value || 0,
+                    'Asset Value': a.AssetValue || a.asset_value || 0,
                     'Currency': a.Currency || 'INR',
+                    'HSN/SAC': a.HSNCode || '',
                     'Components': components || 'None'
                 };
             });
@@ -6337,19 +6338,30 @@ function generateKindSummaryReport(moduleCategory) {
     const moduleKinds = kinds.filter(k => k.Category === moduleCategory);
     
     const reportData = moduleKinds.map(kind => {
-        const kindAssets = assets.filter(a => a.Type === kind.Name && a.Category === moduleCategory);
+        const manager = window.hierarchyManager;
+        let descendantKindNames = [kind.Name];
+        
+        if (manager) {
+            // Get all sub-kinds under this folder/kind to include nested assets in the count
+            const descendants = manager.getDescendants(kind.ID, true);
+            descendantKindNames = descendants.filter(d => d.type === 'kind').map(d => d.Name);
+            if (!descendantKindNames.includes(kind.Name)) descendantKindNames.push(kind.Name);
+        }
+
+        const kindAssets = assets.filter(a => descendantKindNames.includes(a.Type) && a.Category === moduleCategory);
         const total = kindAssets.length;
         
         const stats = {
             'Category': kind.Name,
             'Total Assets': total,
-            'Owned': kindAssets.filter(a => a.Status === 'Owned').length,
-            'Sold': kindAssets.filter(a => a.Status === 'Sold').length,
-            'Demo': kindAssets.filter(a => a.Status === 'Demo').length,
-            'In-Use': kindAssets.filter(a => a.Status === 'In-Use').length,
-            'Rental': kindAssets.filter(a => a.Status === 'Rental').length,
-            'Stand By': kindAssets.filter(a => a.Status === 'Stand By').length,
-            'In-Repair': kindAssets.filter(a => a.Status === 'In-Repair').length,
+            'In Store': kindAssets.filter(a => a.Status === 'In Store').length,
+            'In Use': kindAssets.filter(a => a.Status === 'In Use').length,
+            'Owned': kindAssets.filter(a => a.Purpose === 'Owned').length,
+            'Rental': kindAssets.filter(a => a.Purpose === 'Rental').length,
+            'Demo': kindAssets.filter(a => a.Purpose === 'Demo').length,
+            'Project': kindAssets.filter(a => a.Purpose === 'Project').length,
+            'Stand By': kindAssets.filter(a => a.Purpose === 'Stand By').length,
+            'In-Repair': kindAssets.filter(a => a.Status === 'In-Repair' || a.Status === 'Maintenance').length,
             'Scraped': kindAssets.filter(a => a.Status === 'Scraped').length
         };
         return stats;
