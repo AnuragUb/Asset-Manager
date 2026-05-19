@@ -329,8 +329,9 @@ async function renderAsset(data) {
     }
 
     // 2. Add Audit Log (Filter out duplicates if they exist in structured history)
-    if (data.history && Array.isArray(data.history)) {
-        data.history.forEach(h => {
+    const auditLog = data.auditHistory || data.history;
+    if (auditLog && Array.isArray(auditLog)) {
+        auditLog.forEach(h => {
             if (!h) return;
             const action = h.Action || h.action || 'Unknown';
             const timestamp = h.Timestamp || h.timestamp;

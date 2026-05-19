@@ -193,7 +193,14 @@ function normalizeResult(data) {
     'vendoraddress': 'VendorAddress',
     'vendorcontact': 'VendorContact',
     'vendoremail': 'VendorEmail',
-    'vendorgst': 'VendorGST'
+    'vendorgst': 'VendorGST',
+    // History Mappings
+    'oldvalue': 'OldValue',
+    'newvalue': 'NewValue',
+    'assetid': 'AssetID',
+    'timestamp': 'Timestamp',
+    'action': 'Action',
+    'user': 'User'
   };
 
   Object.keys(data).forEach(key => {

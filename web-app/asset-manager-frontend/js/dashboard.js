@@ -2521,13 +2521,80 @@ async function loadProjectAssets(projectId) {
     }
 }
 
+window.viewAssetDetails = function(asset) {
+    if (asset && asset.ID) {
+        window.showAssetDetails(asset.ID);
+    }
+};
+
+window.renderDashboardByNode = async function(node) {
+    if (!node) return;
+    console.log(`[DASHBOARD] Rendering dashboard for node:`, node);
+    
+    // Set global parent
+    window.currentDashboardParent = node;
+    
+    // Clear search and other filters
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = '';
+    window.currentSearchQuery = ''; // CRITICAL: Clear global search query
+    
+    // Fetch assets for this category and kind
+    if (window.loadAssets) {
+        await window.loadAssets();
+    }
+};
+
+window.locateAssetInTree = function(kindName, categoryName) {
+    console.log(`[LOCATE] Searching for Kind: "${kindName}", Category: "${categoryName}"`);
+    
+    // 1. Switch to correct module (Default to IT if empty)
+    const targetModule = categoryName || 'IT';
+    localStorage.setItem('selectedAssetCategory', targetModule);
+    
+    if (window.showView) window.showView('itAssetsView');
+    
+    // 2. Find the Kind node in the hierarchy
+    const manager = window.hierarchyManager;
+    if (!manager) {
+        console.error('HierarchyManager not initialized');
+        return;
+    }
+    
+    const node = manager.findNodeByName(kindName, 'kind');
+    if (node) {
+        console.log(`[LOCATE] Found node:`, node);
+        // Navigate to the parent of this kind to show it in the grid
+        const parentId = node.ParentID;
+        const parentNode = manager.getNode(parentId);
+        
+        // Render the dashboard for this parent
+        if (parentNode) {
+            window.renderDashboardByNode(parentNode);
+        } else {
+            // It's a top-level kind
+            window.renderDashboardByNode(node);
+        }
+        
+        // Refresh sidebar to show the active folder
+        if (typeof window.renderSidebarTree === 'function') {
+            window.renderSidebarTree(parentId || node.ID);
+        }
+    } else {
+        console.warn(`[LOCATE] Node "${kindName}" not found in hierarchy. Falling back to search.`);
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.value = kindName;
+            searchInput.dispatchEvent(new Event('input'));
+        }
+    }
+};
+
 window.showAssetDetails = async function(assetId) {
     console.log(`[AssetDetails] Opening details for asset ID: "${assetId}"`);
     
     let asset = (window.allAssets || []).find(a => a.ID === assetId);
-    if (asset) {
-        console.log('[AssetDetails] Found asset in local cache');
-    }
+    let preFetchedHistory = null;
     
     const modal = document.getElementById('assetDetailsModal');
     const content = document.getElementById('assetDetailsContent');
@@ -2535,59 +2602,70 @@ window.showAssetDetails = async function(assetId) {
     const btnEdit = document.getElementById('btnEditFromDetails');
     const btnDelete = document.getElementById('btnDeleteFromDetails');
 
-    if (!modal) {
-        console.error('[AssetDetails] Modal "assetDetailsModal" not found in DOM');
-        return;
-    }
-    if (!content) {
-        console.error('[AssetDetails] Container "assetDetailsContent" not found in DOM');
-        return;
-    }
+    if (!modal || !content) return;
 
-    // Show loading state in modal
-    console.log('[AssetDetails] Showing loading state and modal...');
+    // Show loading state
     content.innerHTML = '<div style="text-align:center; padding: 20px;"><div class="spinner"></div><p>Loading asset details...</p></div>';
     modal.style.display = 'flex';
 
-    if (!asset) {
-        console.log(`[AssetDetails] Asset not found in local cache. Fetching from server: /api/asset-details/${assetId}...`);
-        try {
-            const response = await fetch(`/api/asset-details/${encodeURIComponent(assetId)}`);
-            if (!response.ok) {
-                console.error(`[AssetDetails] Server fetch failed with status: ${response.status}`);
-                throw new Error(`Asset not found (${response.status})`);
-            }
-            const data = await response.json();
-            console.log('[AssetDetails] Received asset data from server:', data);
-            asset = data.asset;
-        } catch (err) {
-            console.error('[AssetDetails] Error fetching asset details:', err);
-            content.innerHTML = `<div style="text-align:center; color: red; padding: 20px;">
-                <p>❌ Error: ${err.message}</p>
-                <button onclick="document.getElementById('assetDetailsModal').style.display='none'" class="btn-action">Close</button>
-            </div>`;
-            return;
-        }
-    }
-
-    if (!asset) {
-        console.error('[AssetDetails] Asset data is still null after attempt');
-        content.innerHTML = `<div style="text-align:center; padding: 20px;">
-            <p>❌ Asset not found.</p>
+    // Always fetch from server to get latest history and components
+    try {
+        const response = await fetch(`/api/asset-details/${encodeURIComponent(assetId)}`);
+        if (!response.ok) throw new Error(`Asset not found (${response.status})`);
+        
+        const data = await response.json();
+        asset = data.asset;
+        preFetchedHistory = data.structuredHistory || data.auditHistory || data.history || [];
+    } catch (err) {
+        console.error('[AssetDetails] Error fetching asset details:', err);
+        content.innerHTML = `<div style="text-align:center; color: red; padding: 20px;">
+            <p>❌ Error: ${err.message}</p>
             <button onclick="document.getElementById('assetDetailsModal').style.display='none'" class="btn-action">Close</button>
         </div>`;
         return;
     }
+
+    if (!asset) return;
 
     console.log('[AssetDetails] Rendering asset details...');
     title.textContent = `Asset Details: ${asset.ID}`;
     
     // Ensure QRCode is a full URL or base64
     let qrSrc = asset.QRCode;
-    if (!qrSrc || qrSrc.length < 50) { // Assuming if short it might be missing or invalid
-        // Fallback to dynamic generation endpoint
+    if (!qrSrc || qrSrc.length < 50) {
         qrSrc = `/api/qr/dynamic/asset/${encodeURIComponent(asset.ID)}?t=${Date.now()}`;
     }
+
+    const historyHtml = preFetchedHistory && preFetchedHistory.length > 0 
+        ? preFetchedHistory.map(entry => {
+            const date = new Date(entry.Timestamp).toLocaleString();
+            let icon = '📝';
+            let actionLabel = (entry.Action || '').replace('_', ' ');
+            if (entry.Action === 'ASSIGNMENT_CHANGE') { icon = '👤'; actionLabel = 'Personnel Assignment'; }
+            if (entry.Action === 'PROJECT_CHANGE') { icon = '🏗️'; actionLabel = 'Project Assignment'; }
+            if (entry.Action === 'STATUS_CHANGE') { icon = '🔄'; actionLabel = 'Status Update'; }
+            if (entry.Action === 'LOCATION_CHANGE') { icon = '📍'; actionLabel = 'Location Transfer'; }
+            if (entry.Action === 'CREATE') { icon = '🆕'; actionLabel = 'Asset Created'; }
+
+            return `
+                <div style="padding: 10px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 12px; align-items: flex-start;">
+                    <div style="font-size: 16px; background: #f8fafc; padding: 8px; border-radius: 8px;">${icon}</div>
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <strong style="color: #334155; font-size: 13px;">${actionLabel}</strong>
+                            <span style="color: #94a3b8; font-size: 10px;">${date}</span>
+                        </div>
+                        <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">
+                            ${entry.OldValue ? `<span style="background: #fee2e2; color: #991b1b; padding: 1px 4px; border-radius: 3px;">${entry.OldValue}</span> <span style="margin: 0 4px;">→</span> ` : ''}
+                            <span style="background: #dcfce7; color: #166534; padding: 1px 4px; border-radius: 3px; font-weight: 500;">${entry.NewValue || 'None'}</span>
+                        </div>
+                        ${entry.Details ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px; font-style: italic;">"${entry.Details}"</div>` : ''}
+                        <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px;">Admin: <strong>${entry.User || 'web'}</strong></div>
+                    </div>
+                </div>
+            `;
+        }).join('')
+        : '<p style="color: #94a3b8; text-align: center; padding: 10px;">No history available for this asset.</p>';
 
     let html = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -2609,9 +2687,9 @@ window.showAssetDetails = async function(assetId) {
                 <p><strong>Location:</strong> ${asset.CurrentLocation || '-'}</p>
                 <p><strong>Assigned To:</strong> ${asset.AssignedTo || '-'}</p>
                 <p><strong>Project Assigned To:</strong> ${asset.AssignedProjectName || '-'}</p>
-                <p><strong>Value:</strong> ${asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
+                <p><strong>Value:</strong> ${asset.AssetValue || asset.asset_value || 0} ${asset.Currency || 'INR'}</p>
                 <p><strong>Purchase Date:</strong> ${formatDisplayDate(asset.PurchaseDate) || '-'}</p>
-                <p><strong>Warranty:</strong> ${asset.warranty_months || 0} Months</p>
+                <p><strong>Warranty:</strong> ${asset.WarrantyMonths || asset.warranty_months || 0} Months</p>
                 <p><strong>Bought Against PO:</strong> ${asset.BoughtAgainstPO || '-'}</p>
                 <p><strong>Sent Against DC:</strong> ${asset.SentAgainstDC || '-'}</p>
                 <p><strong>Remarks:</strong> ${asset.Remarks || '-'}</p>
@@ -2630,7 +2708,7 @@ window.showAssetDetails = async function(assetId) {
                 📜 Assignment History
             </h4>
             <div id="assetHistoryList" style="max-height: 200px; overflow-y: auto; font-size: 12px;">
-                <p style="color: #94a3b8; text-align: center; padding: 10px;">Loading history...</p>
+                ${historyHtml}
             </div>
         </div>
     `;
@@ -2647,9 +2725,6 @@ window.showAssetDetails = async function(assetId) {
         });
     }
 
-    // Fetch and render history
-    fetchAssetHistory(asset.ID);
-    
     if (btnEdit) {
         btnEdit.onclick = () => {
             modal.style.display = 'none';
@@ -2664,52 +2739,6 @@ window.showAssetDetails = async function(assetId) {
         };
     }
 };
-
-async function fetchAssetHistory(assetId) {
-    const list = document.getElementById('assetHistoryList');
-    if (!list) return;
-
-    try {
-        const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/history`);
-        const data = await res.json();
-
-        if (data.success && data.history && data.history.length > 0) {
-            list.innerHTML = data.history.map(entry => {
-                const date = new Date(entry.Timestamp).toLocaleString();
-                let icon = '📝';
-                let actionLabel = entry.Action.replace('_', ' ');
-                if (entry.Action === 'ASSIGNMENT_CHANGE') { icon = '👤'; actionLabel = 'Personnel Assignment'; }
-                if (entry.Action === 'PROJECT_CHANGE') { icon = '🏗️'; actionLabel = 'Project Assignment'; }
-                if (entry.Action === 'STATUS_CHANGE') { icon = '🔄'; actionLabel = 'Status Update'; }
-                if (entry.Action === 'LOCATION_CHANGE') { icon = '📍'; actionLabel = 'Location Transfer'; }
-                if (entry.Action === 'CREATE') { icon = '🆕'; actionLabel = 'Asset Created'; }
-
-                return `
-                    <div style="padding: 10px; border-bottom: 1px solid #f1f5f9; display: flex; gap: 12px; align-items: flex-start;">
-                        <div style="font-size: 16px; background: #f8fafc; padding: 8px; border-radius: 8px;">${icon}</div>
-                        <div style="flex: 1;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                <strong style="color: #334155; font-size: 13px;">${actionLabel}</strong>
-                                <span style="color: #94a3b8; font-size: 10px;">${date}</span>
-                            </div>
-                            <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">
-                                ${entry.FromValue ? `<span style="background: #fee2e2; color: #991b1b; padding: 1px 4px; border-radius: 3px;">${entry.FromValue}</span> <span style="margin: 0 4px;">→</span> ` : ''}
-                                <span style="background: #dcfce7; color: #166534; padding: 1px 4px; border-radius: 3px; font-weight: 500;">${entry.ToValue || 'None'}</span>
-                            </div>
-                            ${entry.Details ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px; font-style: italic;">"${entry.Details}"</div>` : ''}
-                            <div style="font-size: 10px; color: #cbd5e1; margin-top: 4px;">Admin: <strong>${entry.User}</strong></div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        } else {
-            list.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 10px;">No history available for this asset.</p>';
-        }
-    } catch (err) {
-        console.error('[History] Fetch error:', err);
-        list.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 10px;">Failed to load history.</p>';
-    }
-}
 
 window.showTempAssetDetails = async function(assetId) {
     console.log('showTempAssetDetails() for:', assetId);
@@ -4215,13 +4244,16 @@ export function renderDashboard(assets, filteredAssets) {
             batch.forEach(asset => {
                 const item = document.createElement('div');
                 item.className = 'asset-card search-result-card';
-                item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative;';
+                item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative; padding: 12px 15px;';
+                
+                // Clicking the card opens the View Details modal now (not Edit)
                 item.onclick = (e) => {
                     e.stopPropagation();
-                    if (typeof editAsset === 'function') {
-                        editAsset(asset);
+                    if (e.target.tagName === 'A' || e.target.closest('a') || e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+                    if (typeof window.viewAssetDetails === 'function') {
+                        window.viewAssetDetails(asset);
                     } else {
-                        console.error('editAsset function not found');
+                        console.error('viewAssetDetails function not found');
                     }
                 };
 
@@ -4230,10 +4262,8 @@ export function renderDashboard(assets, filteredAssets) {
                 
                 const displayImg = asset.Icon;
                 const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
-                // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
                 const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
-                // Material icons are usually single words or snake_case strings
-                const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
+                const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
                 item.innerHTML = `
                     <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
@@ -4244,16 +4274,27 @@ export function renderDashboard(assets, filteredAssets) {
                                 ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${displayImg}</i>`
                                 : `<span style="font-size: 24px;">${displayImg || '📦'}</span>`}
                     </div>
-                    <div class="search-result-info">
-                        <div class="search-result-title">${asset.ItemName}</div>
-                        <div class="search-result-subtitle">
-                            ID: ${asset.ID} • ${asset.Type} • ${asset.CurrentLocation || 'No Location'} ${isNoQr ? '<span style="color: #f5222d; font-weight: bold;">(No QR)</span>' : ''}
-                            ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? ` • <span style="color: #0078d4; font-weight: 600;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>` : ''}
-                            • <a href="#" onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="margin-left: 5px; color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 1px 5px; border-radius: 3px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 2px;">🔗 Qty API</a>
+                    <div class="search-result-info" style="flex: 1;">
+                        <div class="search-result-title" style="font-weight: 700; color: #1e293b; font-size: 15px; margin-bottom: 2px;">${asset.ItemName}</div>
+                        <div class="search-result-subtitle" style="color: #64748b; font-size: 12px;">
+                            ID: <span style="font-family: monospace; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; color: #334155;">${asset.ID}</span> • ${asset.Type} • ${asset.CurrentLocation || 'No Location'}
+                            ${isNoQr ? '<span style="color: #f5222d; font-weight: bold; margin-left: 5px;">(No QR)</span>' : ''}
+                            <div style="display: flex; gap: 10px; margin-top: 10px; align-items: center;">
+                                <button onclick="window.viewAssetDetails(JSON.parse(this.dataset.asset)); return false;" data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}' style="background: #eef2ff; color: #6366f1; border: 1px solid #e0e7ff; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                                    📜 Full History
+                                </button>
+                                <button onclick="window.locateAssetInTree('${asset.Type}', '${asset.Category}'); return false;" style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                                    📂 Locate in Folders
+                                </button>
+                                <button onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="background: #fff7ed; color: #9a3412; border: 1px solid #ffedd5; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                                    ⚖️ Qty History
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div style="text-align: right; flex-shrink: 0;">
-                        <span class="status-badge" style="font-size: 10px; padding: 2px 6px; background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40; border-radius: 4px;">${asset.Status || 'Owned'}</span>
+                    <div style="text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                        <span class="status-badge" style="font-size: 10px; padding: 3px 8px; background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40; border-radius: 20px;">${asset.Status || 'Owned'}</span>
+                        <button onclick="window.editAsset(JSON.parse(this.dataset.asset)); return false;" data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}' style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 8px; border-radius: 4px; font-size: 10px; color: #64748b; cursor: pointer;">✏️ Edit</button>
                     </div>
                 `;
                 assetGrid.appendChild(item);
@@ -4653,6 +4694,10 @@ export function openAddItemModal(kind, prefillData = null) {
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
 
+        // Hide lifecycle actions for new assets
+        const editActions = document.getElementById('editAssetActions');
+        if (editActions) editActions.style.display = 'none';
+
         // Reset Batch UI
         const srNoInput = document.getElementById('itemSrNo');
         const srNoBatch = document.getElementById('itemSrNoBatch');
@@ -4917,6 +4962,14 @@ export async function editAsset(asset) {
     const submitBtn = document.querySelector('#addAssetItemForm button[type="submit"]');
     if (title) title.textContent = `Edit Asset: ${asset.ID}`;
     if (submitBtn) submitBtn.textContent = 'Save Changes';
+    
+    // Show lifecycle actions
+    const editActions = document.getElementById('editAssetActions');
+    const historyBtn = document.getElementById('btnViewAssetHistory');
+    if (editActions && historyBtn) {
+        editActions.style.display = 'flex';
+        historyBtn.href = `/asset/${encodeURIComponent(asset.ID)}`;
+    }
     
     // Fill the hidden ID
     const assetDbId = document.getElementById('assetDbId');

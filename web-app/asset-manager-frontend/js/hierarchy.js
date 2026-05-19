@@ -98,6 +98,32 @@ export class HierarchyManager {
     }
 
     /**
+     * Finds a node by its Name and Type
+     */
+    findNodeByName(name, type = null) {
+        const traverse = (nodes) => {
+            for (const node of nodes) {
+                if (node.Name === name && (!type || node.type === type)) {
+                    return node;
+                }
+                if (node.children && node.children.length > 0) {
+                    const found = traverse(node.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        return traverse(this.tree);
+    }
+
+    /**
+     * Gets a node by ID directly from the tree
+     */
+    getNode(id) {
+        return this.findNode(id);
+    }
+
+    /**
      * Finds a node by ID recursively
      */
     findNode(id, nodes = this.tree) {
