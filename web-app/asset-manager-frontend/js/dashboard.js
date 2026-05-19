@@ -4105,18 +4105,21 @@ export function renderDashboard(assets, filteredAssets) {
                 const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
                 const statusColor = getStatusColor(asset.Status);
                 
-                const isUrl = asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'));
-                const isEmoji = asset.Icon && asset.Icon.match(/\p{Emoji}/u);
-                const isMaterialIcon = asset.Icon && !isUrl && !isEmoji;
+                const displayImg = asset.Icon;
+                const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
+                // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
+                const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
+                // Material icons are usually single words or snake_case strings
+                const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
 
                 item.innerHTML = `
                     <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
                     <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">
                         ${isUrl 
-                            ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
+                            ? `<img src="${displayImg}" style="width: 32px; height: 32px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
                             : isMaterialIcon
-                                ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${asset.Icon}</i>`
-                                : (asset.Icon || '📦')}
+                                ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${displayImg}</i>`
+                                : `<span style="font-size: 24px;">${displayImg || '📦'}</span>`}
                     </div>
                     <div class="search-result-info">
                         <div class="search-result-title">${asset.ItemName}</div>
@@ -4248,17 +4251,19 @@ export function renderDashboard(assets, filteredAssets) {
 
         const displayImg = node.DisplayImage || node.Icon;
         const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
-        const isEmoji = displayImg && displayImg.match(/\p{Emoji}/u);
-        const isMaterialIcon = displayImg && !isUrl && !isEmoji;
+        // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
+        const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
+        // Material icons are usually single words or snake_case strings
+        const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
             <div class="asset-card-icon">
                 ${isUrl 
-                    ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;">`
+                    ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
                     : isMaterialIcon
                         ? `<i class="material-icons" style="font-size: 48px; color: #007bff;">${displayImg}</i>`
-                        : (displayImg || (isKind ? '📦' : '📂'))}
+                        : `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${displayImg || (isKind ? '📦' : '📂')}</span>`}
             </div>
             <div class="asset-card-header">
                 <span class="asset-card-title">${nodeName} (${total})</span>
@@ -4308,17 +4313,20 @@ export function renderDashboard(assets, filteredAssets) {
 
             const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
             
-            const isUrl = asset.Icon && (asset.Icon.startsWith('/') || asset.Icon.startsWith('http'));
-            const isEmoji = asset.Icon && asset.Icon.match(/\p{Emoji}/u);
-            const isMaterialIcon = asset.Icon && !isUrl && !isEmoji;
+            const displayImg = asset.Icon;
+            const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
+            // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
+            const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
+            // Material icons are usually single words or snake_case strings
+            const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
             
             card.innerHTML = `
                 <div class="asset-card-icon" style="font-size: 24px;">
                     ${isUrl 
-                        ? `<img src="${asset.Icon}" style="width: 32px; height: 32px; object-fit: contain;">`
+                        ? `<img src="${displayImg}" style="width: 32px; height: 32px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
                         : isMaterialIcon
-                            ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${asset.Icon}</i>`
-                            : (asset.Icon || '📦')}
+                            ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${displayImg}</i>`
+                            : `<span style="font-size: 24px;">${displayImg || '📦'}</span>`}
                 </div>
                 <div class="asset-card-header">
                     <span class="asset-card-title">${asset.ItemName}</span>
@@ -6260,15 +6268,23 @@ export function setupDashboardFormHandlers() {
                 return;
             }
 
+            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
+            const categoryMatch = (aCat, cCat) => {
+                if (!aCat || !cCat) return false;
+                const a = aCat.toLowerCase();
+                const c = cCat.toLowerCase();
+                return a === c || a.includes(c) || c.includes(a);
+            };
+
             // Get current assets in view for detailed report
             if (!parent) {
-                assetsToReport = (window.allAssets || []).filter(a => a.Category === category);
+                assetsToReport = (window.allAssets || []).filter(a => categoryMatch(a.Category, currentCategory));
             } else {
                 const manager = window.hierarchyManager;
                 if (manager) {
                     const descendants = manager.getDescendants(parent.ID, true);
                     const kindNames = descendants.filter(d => d.type === 'kind').map(d => d.Name);
-                    assetsToReport = (window.allAssets || []).filter(a => kindNames.includes(a.Type) && a.Category === category);
+                    assetsToReport = (window.allAssets || []).filter(a => kindNames.includes(a.Type) && categoryMatch(a.Category, currentCategory));
                 }
             }
 
@@ -6335,7 +6351,15 @@ export function setupDashboardFormHandlers() {
 function generateKindSummaryReport(moduleCategory) {
     const kinds = window.allAssetKinds || [];
     const assets = window.allAssets || [];
-    const moduleKinds = kinds.filter(k => k.Category === moduleCategory);
+    
+    const categoryMatch = (aCat, cCat) => {
+        if (!aCat || !cCat) return false;
+        const a = aCat.toLowerCase();
+        const c = cCat.toLowerCase();
+        return a === c || a.includes(c) || c.includes(a);
+    };
+
+    const moduleKinds = kinds.filter(k => categoryMatch(k.Module || k.Category, moduleCategory));
     
     const reportData = moduleKinds.map(kind => {
         const manager = window.hierarchyManager;
@@ -6348,7 +6372,7 @@ function generateKindSummaryReport(moduleCategory) {
             if (!descendantKindNames.includes(kind.Name)) descendantKindNames.push(kind.Name);
         }
 
-        const kindAssets = assets.filter(a => descendantKindNames.includes(a.Type) && a.Category === moduleCategory);
+        const kindAssets = assets.filter(a => descendantKindNames.includes(a.Type) && categoryMatch(a.Category, moduleCategory));
         const total = kindAssets.length;
         
         const stats = {
