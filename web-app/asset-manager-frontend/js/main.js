@@ -1,15 +1,15 @@
-console.log('MAIN.JS: Entry point (v6.08)');
-import { showView } from './utils.js?v=6.08';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.08';
+console.log('MAIN.JS: Entry point (v6.27)');
+import { showView } from './utils.js?v=6.27';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.27';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.08';
-import { setupAuth, checkSession } from './auth.js?v=6.08';
-import { HierarchyManager } from './hierarchy.js?v=6.08';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.08';
+import { renderItAssets } from './itAssets.js?v=6.27';
+import { setupAuth, checkSession } from './auth.js?v=6.27';
+import { HierarchyManager } from './hierarchy.js?v=6.27';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.27';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.08';
-import { initProjectsView } from './projects.js?v=6.08';
-import { initSettingsView } from './settings.js?v=6.08';
+import { initWarrantyView } from './warranty.js?v=6.27';
+import { initProjectsView } from './projects.js?v=6.27';
+import { initSettingsView } from './settings.js?v=6.27';
 import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=1.2';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
@@ -353,7 +353,14 @@ let currentUser = null;
 let filteredAssets = () => {
     const selectedCategory = localStorage.getItem('selectedAssetCategory');
     console.log('Filtering assets for category:', selectedCategory);
-    let result = assets;
+    
+    // Exclude retired assets from the main view (unless specifically viewing them)
+    let result = (assets || []).filter(a => {
+        const isRetired = a.IsRetired == 1 || a.is_retired == 1;
+        if (isRetired) console.log(`[Filter] Excluding retired asset: ${a.ID} (Status: ${a.Status})`);
+        return !isRetired;
+    });
+    
     if (selectedCategory) {
         result = result.filter(a => a.Category === selectedCategory);
     }

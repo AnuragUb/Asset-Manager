@@ -1886,28 +1886,36 @@ const currentPort = process.env.PORT || 8080;
 const distPath = path.join(__dirname, '../asset-manager-frontend/dist');
 const useDist = false; // Force source assets to prevent 404s during rapid development
 
+// Setup Icons Directory (Serve from Source or DIST based on environment)
+const sourceIconsDir = path.join(__dirname, '../asset-manager-frontend/static/icons');
+const distIconsDir = path.join(__dirname, '../asset-manager-frontend/dist/static/icons');
+const iconsDir = useDist ? distIconsDir : sourceIconsDir;
+
+// Ensure icons directory exists
+if (!fs.existsSync(iconsDir)) {
+  fs.mkdirSync(iconsDir, { recursive: true });
+}
+
+// Port-specific static file serving
 if (useDist) {
     // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
     console.log('[ENV] Serving minified assets from DIST folder on port 8080');
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/dist/js')));
     app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/dist/static')));
+    app.use('/icons', express.static(distIconsDir));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 } else {
     // Port 9090 or Dist missing: Serve from source (Easier debugging)
     console.log(`[ENV] Serving source assets from JS/STATIC folders on port ${currentPort}${currentPort == 8080 ? ' (DIST missing)' : ''}`);
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
     app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
+    app.use('/icons', express.static(sourceIconsDir));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
 }
 
 app.use('/uploads', express.static(uploadsDir));
 app.use('/input', express.static(uploadsDir));
-app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons')));
-
-const iconsDir = path.join(__dirname, '../asset-manager-frontend/dist/assets/icons');
-if (!fs.existsSync(iconsDir)) {
-  fs.mkdirSync(iconsDir, { recursive: true });
-}
+// app.use('/icons', express.static(path.join(__dirname, '../asset-manager-frontend/dist/assets/icons'))); // REMOVED: Handled above
 
 app.get('/api/icons', (req, res) => {
   if (!fs.existsSync(iconsDir)) {
@@ -2088,6 +2096,9 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
             Remarks: a.remarks,
             WarrantyMonths: a.warranty_months,
             AssetValue: a.asset_value,
+            IsRetired: a.is_retired || 0,
+            Condition: a.condition || 'Good',
+            SaleDetails: a.sale_details,
             // isComponent should ONLY be true for items in the components table
             // Items with a parentid but NOT in the components table are "Split Assets" or "Sub-Assets"
             // which should be counted as real assets in the dashboard.
@@ -2158,6 +2169,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
                 BoughtAgainstPO: a.boughtagainstpo,
                 SentAgainstDC: a.sentagainstdc,
                 Remarks: a.remarks,
+                IsRetired: a.is_retired || 0,
                 isComponent: false, // In fallback, we don't know for sure, so don't exclude
                 isSplitChild: hasParent,
                 isQuantitySubAsset: a.quantity_root_id != null && String(a.quantity_root_id).trim() !== ''
@@ -2633,7 +2645,43 @@ app.get('/api/hsn', async (req, res) => {
 app.get('/api/dc', async (req, res) => {
   try {
     const dcs = await db('delivery_challans').orderBy('timestamp', 'desc');
-    res.json(normalizeResult(dcs));
+    const normalizedDcs = normalizeResult(dcs);
+    
+    // Enrich with serial numbers for display if missing in payload
+    const enrichedDcs = await Promise.all(normalizedDcs.map(async (dc) => {
+      let payload = null;
+      try {
+        payload = dc.PayloadJSON ? (typeof dc.PayloadJSON === 'string' ? JSON.parse(dc.PayloadJSON) : dc.PayloadJSON) : null;
+      } catch (e) {}
+
+      // If payload items already have srNo, just return
+      if (payload && payload.items && payload.items.some(it => it.srNo)) {
+        return dc;
+      }
+
+      // Otherwise, fetch asset IDs and their serial numbers
+      let assetIds = [];
+      try {
+        assetIds = dc.AssetIds ? (typeof dc.AssetIds === 'string' ? JSON.parse(dc.AssetIds) : dc.AssetIds) : [];
+      } catch (e) {}
+
+      if (assetIds.length > 0) {
+        const assets = await db('assets').select('id', 'srno').whereIn('id', assetIds);
+        const srMap = {};
+        assets.forEach(a => srMap[a.id.toLowerCase()] = a.srno);
+
+        if (payload && payload.items) {
+          payload.items = payload.items.map(it => ({
+            ...it,
+            srNo: srMap[String(it.assetId).toLowerCase()] || ''
+          }));
+          dc.PayloadJSON = payload; // Update the object for the response
+        }
+      }
+      return dc;
+    }));
+
+    res.json(enrichedDcs);
   } catch (err) {
     console.error('DC Fetch Error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -2686,7 +2734,7 @@ app.post('/api/dc', async (req, res) => {
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = await Promise.all(normalizedAssetIds.map(async (assetId) => {
       const row = await db('assets')
-        .select('id', 'itemname', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
+        .select('id', 'itemname', 'srno', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
         .whereRaw('LOWER(id) = LOWER(?)', [assetId])
         .first();
       return normalizeResult(row) || { id: assetId };
@@ -2766,6 +2814,7 @@ app.post('/api/dc', async (req, res) => {
           items: assetsForDc.map((a) => ({
             assetId: a.id,
             description: a.itemname || a.id,
+            srNo: a.srno || '',
             hsn: '',
             qty: 1,
             per: 'NO',
@@ -6271,7 +6320,8 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         quantity_precision: asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
         quantity_available: db.raw('COALESCE(quantity_available, 0) + ?', [qtyAvailableDelta]),
         is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
-        is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0)
+        is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
+        is_retired: (asset.Status === 'Sold' || asset.Status === 'Scraped') ? 1 : (asset.is_retired !== undefined ? asset.is_retired : (existing.is_retired || 0))
     };
 
     await db('assets')

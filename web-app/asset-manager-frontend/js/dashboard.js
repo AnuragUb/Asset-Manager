@@ -16,6 +16,147 @@ let dcItemsByAssetId = {};
 let showRateAmount = true;
 let showTotalPrice = true;
 
+window.allDCs = [];
+
+async function fetchDCHistory() {
+    const list = document.getElementById('dcHistoryList');
+    if (!list) return;
+
+    list.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;"><div class="spinner" style="margin: 0 auto 10px;"></div>Loading Challan history...</td></tr>';
+
+    try {
+        const response = await fetch('/api/dc');
+        const dcs = await response.json();
+        window.allDCs = dcs;
+        renderDCHistory(dcs);
+    } catch (err) {
+        console.error('Failed to fetch DC history:', err);
+        list.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: red;">Failed to load DC history.</td></tr>';
+    }
+}
+
+function renderDCHistory(dcs) {
+    const list = document.getElementById('dcHistoryList');
+    if (!list) return;
+
+    if (!dcs || dcs.length === 0) {
+        list.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">No Delivery Challans found.</td></tr>';
+        return;
+    }
+
+    list.innerHTML = dcs.map(dc => {
+        const date = dc.DeliveryDate || (dc.Timestamp ? dc.Timestamp.split('T')[0] : '-');
+        let assetIds = [];
+        try {
+            assetIds = dc.AssetIds ? (typeof dc.AssetIds === 'string' ? JSON.parse(dc.AssetIds) : dc.AssetIds) : [];
+        } catch (e) {
+            assetIds = [];
+        }
+
+        // Extract serial numbers from payload if available
+        let serialNumbers = '-';
+        try {
+            const payload = dc.PayloadJSON ? (typeof dc.PayloadJSON === 'string' ? JSON.parse(dc.PayloadJSON) : dc.PayloadJSON) : null;
+            if (payload && payload.items) {
+                const srs = payload.items.map(item => item.srNo || item.serialNo || item.SrNo).filter(sr => sr);
+                if (srs.length > 0) {
+                    serialNumbers = srs.join(', ');
+                }
+            }
+        } catch (e) {}
+        
+        return `
+            <tr>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-weight: 600;">${dc.ChallanNo || dc.ID}</td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${date}</td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${dc.CustomerName || '-'}</td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">
+                    <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b;" title="${serialNumbers}">
+                        ${serialNumbers}
+                    </div>
+                </td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px; color: #6366f1;">
+                    ${dc.ID}
+                </td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">
+                    <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #475569;">${assetIds.length} Assets</span>
+                </td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; text-align: right;">
+                    <button onclick="window.dcHistoryAction('${dc.ID}')" class="btn-action" style="padding: 4px 10px; font-size: 11px;">View</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.dcHistoryAction = function(id) {
+    const modal = document.getElementById('dcHistoryModal');
+    if (modal) modal.style.display = 'none';
+    window.openDeliveryChallan(id);
+};
+
+function filterDCHistory(query) {
+    if (!window.allDCs) return;
+    const q = query.toLowerCase().trim();
+    if (!q) {
+        renderDCHistory(window.allDCs);
+        return;
+    }
+
+    const filtered = window.allDCs.filter(dc => {
+        const challanNo = (dc.ChallanNo || '').toLowerCase();
+        const id = (dc.ID || '').toLowerCase();
+        const customer = (dc.CustomerName || '').toLowerCase();
+        
+        let assetIdsStr = '';
+        try {
+            const assetIds = dc.AssetIds ? (typeof dc.AssetIds === 'string' ? JSON.parse(dc.AssetIds) : dc.AssetIds) : [];
+            assetIdsStr = assetIds.join(',').toLowerCase();
+        } catch (e) {}
+
+        return challanNo.includes(q) || id.includes(q) || customer.includes(q) || assetIdsStr.includes(q);
+    });
+
+    renderDCHistory(filtered);
+}
+
+function setupDCHistoryHandlers() {
+    const btnShowDCHistory = document.getElementById('btnShowDCHistory');
+    const dcHistoryModal = document.getElementById('dcHistoryModal');
+    const closeDcHistoryModal = document.getElementById('closeDcHistoryModal');
+    const btnCloseDcHistory = document.getElementById('btnCloseDcHistory');
+    const btnRefreshDcHistory = document.getElementById('btnRefreshDcHistory');
+    const dcHistorySearch = document.getElementById('dcHistorySearch');
+
+    if (btnShowDCHistory && dcHistoryModal) {
+        btnShowDCHistory.onclick = () => {
+            dcHistoryModal.style.display = 'flex';
+            fetchDCHistory();
+        };
+    }
+
+    if (closeDcHistoryModal) closeDcHistoryModal.onclick = () => dcHistoryModal.style.display = 'none';
+    if (btnCloseDcHistory) btnCloseDcHistory.onclick = () => dcHistoryModal.style.display = 'none';
+
+    if (btnRefreshDcHistory) {
+        btnRefreshDcHistory.onclick = () => fetchDCHistory();
+    }
+
+    if (dcHistorySearch) {
+        dcHistorySearch.oninput = (e) => {
+            const query = e.target.value;
+            filterDCHistory(query);
+        };
+    }
+
+    // Close on outside click (avoiding conflict by checking target)
+    window.addEventListener('click', (event) => {
+        if (event.target == dcHistoryModal) {
+            dcHistoryModal.style.display = 'none';
+        }
+    });
+}
+
 // Asset Lifecycle UI Functions
 window.showSaleModal = function(assetId, assetData = null) {
     const modal = document.getElementById('saleModal');
@@ -868,6 +1009,7 @@ function initDCView() {
                     otherReferences: document.getElementById('dcOtherReferences')?.value || '',
                     dispatchedThrough: document.getElementById('dcDispatchedThrough')?.value || '',
                     destination: document.getElementById('dcDestination')?.value || '',
+                    placeOfSupply: document.getElementById('dcPlaceOfSupply')?.value || '',
                     termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || '',
                     remarks: document.getElementById('dcRemarks')?.value || '', // Ensure remarks are captured
                     showRateAmount, // Pass toggle state
@@ -881,6 +1023,7 @@ function initDCView() {
                         sr: index + 1,
                         assetId,
                         description: row.description || assetId,
+                        srNo: row.srNo || '',
                         hsn: row.hsn || '',
                         qty: row.qty ?? 1,
                         per: row.per || 'NO',
@@ -949,6 +1092,7 @@ function addAssetToDC(asset) {
         dcItemsByAssetId[asset.ID] = {
             assetId: asset.ID,
             description: `${asset.ItemName || asset.ID}${asset.Model ? ' - ' + asset.Model : ''}`,
+            srNo: asset.SrNo || '',
             hsn: '',
             qty,
             per: 'NO',
@@ -984,6 +1128,9 @@ function renderSelectedAssets() {
                 <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.ID}</td>
                 <td style="padding: 10px;">
                     <input data-dc-field="description" data-asset-id="${a.ID}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                </td>
+                <td style="padding: 10px; width: 120px;">
+                    <input data-dc-field="srNo" data-asset-id="${a.ID}" value="${String(row.srNo || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
                 <td style="padding: 10px; width: 90px;">
                     <input data-dc-field="hsn" data-asset-id="${a.ID}" value="${String(row.hsn || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
@@ -1073,11 +1220,15 @@ function showDCPreview(result) {
             const qty = it.qty ?? '';
             const rate = it.rate ?? '';
             const amount = it.amount ?? '';
+            const srNo = it.srNo || it.serialNo || it.SrNo || '';
             return `
                 <tr>
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">${idx + 1}</td>
                     <td style="padding: 7px; border: 1px solid #222; font-family: monospace; white-space: nowrap; width: 150px;">${escapeHtml(it.assetId || '')}</td>
-                    <td style="padding: 7px; border: 1px solid #222;">${escapeHtml(it.description || '')}</td>
+                    <td style="padding: 7px; border: 1px solid #222;">
+                        <div style="font-weight: bold;">${escapeHtml(it.description || '')}</div>
+                    </td>
+                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 120px;">${escapeHtml(srNo)}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">${escapeHtml(it.hsn || '')}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px; font-variant-numeric: tabular-nums;">${escapeHtml(qty)}</td>
                     <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">${escapeHtml(it.per || 'NO')}</td>
@@ -1162,9 +1313,13 @@ function showDCPreview(result) {
                         <div><span style="color:#555;">Reference No</span>: ${escapeHtml(meta.referenceNo || '')}</div>
                         <div><span style="color:#555;">Buyer’s Order No</span>: ${escapeHtml(meta.buyerOrderNo || '')}</div>
                         
+                        <div><span style="color:#555;">Dispatch Doc No.</span>: ${escapeHtml(meta.dispatchDocNo || '')}</div>
                         <div><span style="color:#555;">Other References</span>: ${escapeHtml(meta.otherReferences || '')}</div>
-                        <div><span style="color:#555;">Dispatched Through</span>: ${escapeHtml(meta.dispatchedThrough || '')}</div>
                         
+                        <div><span style="color:#555;">Dispatched Through</span>: ${escapeHtml(meta.dispatchedThrough || '')}</div>
+                        <div><span style="color:#555;">Destination</span>: ${escapeHtml(meta.destination || '')}</div>
+
+                        <div><span style="color:#555;">Place of Supply</span>: ${escapeHtml(meta.placeOfSupply || '')}</div>
                     </div>
                     ${(meta.termsOfDelivery || '').trim() ? `<div style="margin-top: 8px; font-size: 12px;"><span style="color:#555;">Terms of Delivery</span>: ${escapeHtml(meta.termsOfDelivery)}</div>` : ''}
                 </div>
@@ -1175,6 +1330,7 @@ function showDCPreview(result) {
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">Srl</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: left; width: 150px;">Asset ID</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: left;">Description of Goods</th>
+                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 120px;">Serial No</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">HSN/SAC</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px;">Qty</th>
                             <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">Per</th>
@@ -1939,6 +2095,8 @@ export function setupDashboard() {
             });
         };
     }
+
+    setupDCHistoryHandlers();
 }
 
 // --- Project View Functions ---
@@ -3950,6 +4108,76 @@ export function renderDashboard(assets, filteredAssets) {
 
 
 
+    // Special Case: Retired Assets View
+    if (window.currentDashboardParent && window.currentDashboardParent.ID === 'RETIRED_VIEW') {
+        const dashboardTitle = document.getElementById('dashboard-title');
+        if (dashboardTitle) {
+            dashboardTitle.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="btnDashboardBack" class="icon-button" style="background: #eef2ff; color: #6366f1; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #e0e7ff; cursor: pointer;">←</button>
+                    <span>Retired & Sold Assets</span>
+                </div>
+            `;
+            const btnBack = document.getElementById('btnDashboardBack');
+            if (btnBack) {
+                btnBack.onclick = () => {
+                    window.currentDashboardParent = null;
+                    renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                };
+            }
+        }
+        
+        // Hide health widget and other category stuff
+        const healthWidget = document.getElementById('assetHealthWidget');
+        if (healthWidget) healthWidget.style.display = 'none';
+        
+        assetGrid.innerHTML = '';
+        const retiredItems = assetsToRender;
+        
+        if (retiredItems.length === 0) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🗑️</div>
+                    <p>No retired or sold assets found.</p>
+                </div>
+            `;
+        } else {
+            // Re-use the search result rendering logic for retired items
+            retiredItems.forEach(asset => {
+                const item = document.createElement('div');
+                item.className = 'asset-card search-result-card';
+                item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative; padding: 12px 15px;';
+                item.onclick = () => window.viewAssetDetails(asset);
+
+                const statusColor = getStatusColor(asset.Status);
+                const displayImg = asset.Icon;
+                const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
+                const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
+                const isMaterialIcon = displayImg && !isUrl && !isEmoji;
+
+                item.innerHTML = `
+                    <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: ${statusColor}; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
+                    <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">
+                        ${isUrl ? `<img src="${displayImg}" style="width: 32px; height: 32px; object-fit: contain;">` : 
+                          isMaterialIcon ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${displayImg}</i>` : 
+                          `<span style="font-size: 24px;">${displayImg || '📦'}</span>`}
+                    </div>
+                    <div class="search-result-info" style="flex: 1;">
+                        <div class="search-result-title" style="font-weight: 700; color: #1e293b; font-size: 15px;">${asset.ItemName}</div>
+                        <div class="search-result-subtitle" style="color: #64748b; font-size: 12px;">
+                            ID: <span style="font-family: monospace;">${asset.ID}</span> • ${asset.Type} • Retired
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <span class="status-badge" style="background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40;">${asset.Status}</span>
+                    </div>
+                `;
+                assetGrid.appendChild(item);
+            });
+        }
+        return; // CRITICAL: Stop here for retired view
+    }
+
     // Special Case: Temporary Assets View
     if (window.currentDashboardParent && window.currentDashboardParent.ID === 'TEMP_VIEW') {
         const dashboardTitle = document.getElementById('dashboard-title');
@@ -4024,7 +4252,9 @@ export function renderDashboard(assets, filteredAssets) {
 
     // Re-sync parentNode with current manager to avoid stale object issues
     let parentNode = window.currentDashboardParent;
-    if (parentNode && manager) {
+    const isVirtualView = parentNode && (parentNode.ID === 'TEMP_VIEW' || parentNode.ID === 'RETIRED_VIEW');
+    
+    if (parentNode && manager && !isVirtualView) {
         parentNode = manager.findNode(parentNode.ID);
         window.currentDashboardParent = parentNode; // Update global reference
     }
@@ -4244,7 +4474,8 @@ export function renderDashboard(assets, filteredAssets) {
             batch.forEach(asset => {
                 const item = document.createElement('div');
                 item.className = 'asset-card search-result-card';
-                item.style = 'grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative; padding: 12px 15px;';
+                const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
+                item.style = `grid-column: 1 / -1; cursor: pointer; gap: 15px; position: relative; padding: 12px 15px; ${isRetired ? 'opacity: 0.6; filter: grayscale(0.5);' : ''}`;
                 
                 // Clicking the card opens the View Details modal now (not Edit)
                 item.onclick = (e) => {
@@ -4282,9 +4513,6 @@ export function renderDashboard(assets, filteredAssets) {
                             <div style="display: flex; gap: 10px; margin-top: 10px; align-items: center;">
                                 <button onclick="window.viewAssetDetails(JSON.parse(this.dataset.asset)); return false;" data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}' style="background: #eef2ff; color: #6366f1; border: 1px solid #e0e7ff; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                                     📜 Full History
-                                </button>
-                                <button onclick="window.locateAssetInTree('${asset.Type}', '${asset.Category}'); return false;" style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                                    📂 Locate in Folders
                                 </button>
                                 <button onclick="window.showQuantityHistoryModal('${asset.ID}'); return false;" style="background: #fff7ed; color: #9a3412; border: 1px solid #ffedd5; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                                     ⚖️ Qty History
@@ -4468,7 +4696,12 @@ export function renderDashboard(assets, filteredAssets) {
         directAssets.forEach(asset => {
             const card = document.createElement('div');
             card.classList.add('asset-card');
+            const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
             card.style.borderLeft = `4px solid ${getStatusColor(asset.Status)}`;
+            if (isRetired) {
+                card.style.opacity = '0.6';
+                card.style.filter = 'grayscale(0.5)';
+            }
             card.onclick = () => {
                 if (typeof editAsset === 'function') {
                     editAsset(asset);
@@ -5576,6 +5809,12 @@ function showAssetList(nodeOrKindName) {
             const tr = document.createElement('tr');
             if (isSelected) tr.style.backgroundColor = '#e3f2fd';
             
+            const isRetired = a.IsRetired == 1 || a.is_retired == 1 || a.Status === 'Sold' || a.Status === 'Scraped';
+            if (isRetired) {
+                tr.style.opacity = '0.6';
+                tr.style.filter = 'grayscale(0.5)';
+            }
+            
             tr.innerHTML = `
                 <td>
                     ${isSelectionMode ? `
@@ -6414,8 +6653,8 @@ export function setupDashboardFormHandlers() {
                     
                     // Show Dashboard first if it's hidden
                     if (window.showView) {
-                        console.log('[Lifecycle] Switching to itAssetsView');
-                        window.showView('itAssetsView');
+                        console.log('[Lifecycle] Switching to dashboardView');
+                        window.showView('dashboardView');
                     }
                     
                     if (retiredAssets.length === 0) {
@@ -6429,7 +6668,7 @@ export function setupDashboardFormHandlers() {
                     
                     if (typeof renderDashboard === 'function') {
                         console.log('[Lifecycle] Rendering Retired Assets');
-                        renderDashboard(window.allAssets, retiredAssets);
+                        renderDashboard(window.allAssets, () => retiredAssets);
                     } else {
                         console.error('[Lifecycle] renderDashboard not found!');
                     }

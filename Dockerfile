@@ -30,7 +30,7 @@ COPY web-app/asset-manager-backend/ ./web-app/asset-manager-backend/
 
 # Build frontend (Generates the DIST folder required for Port 8080)
 WORKDIR /app/web-app/asset-manager-frontend
-RUN node build-dev.cjs
+RUN npm run build
 
 # Start the application
 WORKDIR /app/web-app/asset-manager-backend

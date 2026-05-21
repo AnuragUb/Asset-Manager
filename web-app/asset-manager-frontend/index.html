@@ -642,6 +642,7 @@
                                 <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
                                     <input id="dcOpenId" type="text" placeholder="Open existing DC by ID (e.g. DC123...)" style="flex: 1; min-width: 240px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; background: white;">
                                     <button id="btnOpenDC" class="action-button purple" style="justify-content: center;">Open DC</button>
+                                    <button id="btnShowDCHistory" class="action-button blue" style="justify-content: center; background: #0078d4;">📋 View All DCs</button>
                                 </div>
                             </div>
                         </div>
@@ -793,6 +794,7 @@
                                             <tr style="border-bottom: 2px solid #eee; text-align: left;">
                                                 <th style="padding: 10px; width: 140px;">Asset ID</th>
                                                 <th style="padding: 10px;">Description</th>
+                                                <th style="padding: 10px; width: 120px;">Serial No</th>
                                                 <th style="padding: 10px; width: 90px;">HSN/SAC</th>
                                                 <th style="padding: 10px; width: 60px; text-align: center;">Unit</th>
                                                 <th style="padding: 10px; width: 70px; text-align: right;">Qty</th>
@@ -2258,7 +2260,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=6.08"></script>
+<script type="module" src="/js/main.js?v=6.27"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {
@@ -2319,6 +2321,60 @@
             </div>
             <button type="submit" class="login-button" style="margin-top: 10px; width: 100%;">Sign Up</button>
         </form>
+    </div>
+</div>
+
+<!-- Delivery Challan History Modal -->
+<div id="dcHistoryModal" class="modal">
+    <div class="modal-content" style="max-width: 900px; height: 80vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+            <h2 style="display: flex; align-items: center; gap: 10px;">
+                <span>📋</span> Delivery Challan Index
+            </h2>
+            <span class="close" id="closeDcHistoryModal">&times;</span>
+        </div>
+        <div class="modal-body" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 20px;">
+            <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+                <div style="position: relative; flex: 4;">
+                    <input type="text" id="dcHistorySearch" placeholder="Search by DC No, Customer, or Asset ID..." style="width: 100%; padding: 12px 15px 12px 40px; border: 1px solid #ddd; border-radius: 50px; font-size: 14px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: all 0.2s; outline: none;">
+                    <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #6366f1; font-size: 16px;">🔍</span>
+                </div>
+                <button id="btnRefreshDcHistory" class="action-button blue" style="flex: 1; min-width: 120px; height: 44px; border-radius: 50px; justify-content: center; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; font-weight: 600; transition: all 0.2s;">
+                    🔄 Refresh
+                </button>
+            </div>
+            
+            <div style="flex: 1; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead style="position: sticky; top: 0; background: #fff; z-index: 10; box-shadow: 0 1px 0 #e2e8f0;">
+                        <tr>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">DC Number</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Date</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Customer</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Serial Numbers</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">DC IDs</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Assets</th>
+                            <th style="text-align: right; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dcHistoryList">
+                        <!-- DCs will be loaded here -->
+                        <tr>
+                            <td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;">
+                                <div class="spinner" style="margin: 0 auto 10px;"></div>
+                                Loading Challan history...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 12px; color: #94a3b8; font-style: italic;">
+                💡 Tip: Search by <strong>Asset ID</strong> to see history for a specific item.
+            </div>
+            <button type="button" class="action-button" id="btnCloseDcHistory" style="background: #fff; color: #64748b; border: 1px solid #e2e8f0; padding: 8px 20px; border-radius: 50px; font-weight: 600; cursor: pointer;">Close</button>
+        </div>
     </div>
 </div>
 

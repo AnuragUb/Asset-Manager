@@ -304,8 +304,8 @@ async function renderAsset(data) {
             const timestamp = h.Timestamp || h.timestamp;
             const user = h.User || h.user || 'web';
             const details = h.Details || h.details || '';
-            const fromVal = h.FromValue || h.oldvalue;
-            const toVal = h.ToValue || h.newvalue;
+            const fromVal = h.OldValue || h.oldvalue;
+            const toVal = h.NewValue || h.newvalue;
 
             let actionLabel = action ? action.replace(/_/g, ' ') : 'Unknown Action';
             
