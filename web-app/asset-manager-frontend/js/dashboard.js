@@ -917,9 +917,7 @@ function initDCView() {
                 // Actually, let's allow Temp assets to be searched regardless of category if they don't have one matching
                 ((category === 'ALL' || a.Category === category) || !a.Category) && 
                 // Global Search Logic (matchesQuery checks ID, Name, Serial, Location, User, etc.)
-                matchesQuery(a, query) &&
-                // Exclude already selected assets
-                !selectedDCAssets.find(s => s.ID === a.ID)
+                matchesQuery(a, query)
             ).slice(0, 10);
 
             if (matches.length > 0) {
@@ -1017,12 +1015,12 @@ function initDCView() {
                     orderDate: window.tempDCOrderDate || '', // Pass order date
                     logoUrl: document.getElementById('dcLogoSelect')?.value || '' // Pass selected logo
                 },
-                items: assetIds.map((assetId, index) => {
-                    const row = dcItemsByAssetId[assetId] || {};
+                items: selectedDCAssets.map((a, index) => {
+                    const row = dcItemsByAssetId[a.rowId] || {};
                     return {
                         sr: index + 1,
-                        assetId,
-                        description: row.description || assetId,
+                        assetId: a.ID,
+                        description: row.description || a.ItemName || a.ID,
                         srNo: row.srNo || '',
                         hsn: row.hsn || '',
                         qty: row.qty ?? 1,
@@ -1084,12 +1082,32 @@ function initDCView() {
 }
 
 function addAssetToDC(asset) {
-    selectedDCAssets.push(asset);
-    if (!dcItemsByAssetId[asset.ID]) {
+    // Check if the asset is already in the list
+    const existingAsset = selectedDCAssets.find(a => a.ID === asset.ID);
+    
+    if (existingAsset) {
+        // If it exists, just increment the quantity in the row data
+        const rowId = existingAsset.rowId;
+        if (dcItemsByAssetId[rowId]) {
+            const currentQty = toNumber(dcItemsByAssetId[rowId].qty) || 0;
+            dcItemsByAssetId[rowId].qty = currentQty + 1;
+            
+            // Re-calculate amount
+            const rate = toNumber(dcItemsByAssetId[rowId].rate);
+            if (rate !== null) {
+                dcItemsByAssetId[rowId].amount = round2(dcItemsByAssetId[rowId].qty * rate);
+            }
+        }
+    } else {
+        // Generate a unique row ID for a new asset entry
+        const rowId = `row_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        
         const rateCandidate = toNumber(asset.asset_value);
         const qty = 1;
         const amount = rateCandidate === null ? '' : round2(rateCandidate * qty);
-        dcItemsByAssetId[asset.ID] = {
+        
+        dcItemsByAssetId[rowId] = {
+            rowId: rowId,
             assetId: asset.ID,
             description: `${asset.ItemName || asset.ID}${asset.Model ? ' - ' + asset.Model : ''}`,
             srNo: asset.SrNo || '',
@@ -1099,13 +1117,16 @@ function addAssetToDC(asset) {
             rate: rateCandidate === null ? '' : rateCandidate,
             amount: amount === '' ? '' : amount
         };
+        
+        selectedDCAssets.push({ ...asset, rowId: rowId });
     }
+    
     renderSelectedAssets();
 }
 
-function removeAssetFromDC(assetId) {
-    selectedDCAssets = selectedDCAssets.filter(a => a.ID !== assetId);
-    delete dcItemsByAssetId[assetId];
+function removeAssetFromDC(rowId) {
+    selectedDCAssets = selectedDCAssets.filter(a => a.rowId !== rowId);
+    delete dcItemsByAssetId[rowId];
     renderSelectedAssets();
 }
 
@@ -1121,34 +1142,35 @@ function renderSelectedAssets() {
 
     dcEmptyState.style.display = 'none';
     dcSelectedAssetsBody.innerHTML = selectedDCAssets.map(a => {
-        const row = dcItemsByAssetId[a.ID] || {};
+        const rowId = a.rowId;
+        const row = dcItemsByAssetId[rowId] || {};
         const displayStyle = showRateAmount ? '' : 'display: none;';
         return `
             <tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.ID}</td>
                 <td style="padding: 10px;">
-                    <input data-dc-field="description" data-asset-id="${a.ID}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                    <input data-dc-field="description" data-row-id="${rowId}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
-                <td style="padding: 10px; width: 120px;">
-                    <input data-dc-field="srNo" data-asset-id="${a.ID}" value="${String(row.srNo || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                <td style="padding: 10px; width: 150px;">
+                    <input data-dc-field="srNo" data-row-id="${rowId}" value="${String(row.srNo || '').replace(/"/g, '&quot;')}" placeholder="SN1, SN2..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
                 <td style="padding: 10px; width: 90px;">
-                    <input data-dc-field="hsn" data-asset-id="${a.ID}" value="${String(row.hsn || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
+                    <input data-dc-field="hsn" data-row-id="${rowId}" value="${String(row.hsn || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
                 <td style="padding: 10px; width: 60px;">
-                    <input data-dc-field="per" data-asset-id="${a.ID}" value="${row.per || 'Pcs'}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;" />
+                    <input data-dc-field="per" data-row-id="${rowId}" value="${row.per || 'Pcs'}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;" />
                 </td>
                 <td style="padding: 10px; width: 70px;">
-                    <input data-dc-field="qty" data-asset-id="${a.ID}" value="${row.qty ?? 1}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
+                    <input data-dc-field="qty" data-row-id="${rowId}" value="${row.qty ?? 1}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
                 </td>
                 <td class="dc-rate-col" style="padding: 10px; width: 90px; ${displayStyle}">
-                    <input data-dc-field="rate" data-asset-id="${a.ID}" value="${row.rate ?? ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
+                    <input data-dc-field="rate" data-row-id="${rowId}" value="${row.rate ?? ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
                 </td>
                 <td class="dc-amount-col" style="padding: 10px; width: 100px; text-align: right; font-variant-numeric: tabular-nums; ${displayStyle}">
-                    <span data-dc-field="amount" data-asset-id="${a.ID}">${row.amount ?? ''}</span>
+                    <span data-dc-field="amount" data-row-id="${rowId}">${row.amount ?? ''}</span>
                 </td>
                 <td style="padding: 10px; text-align: center; width: 60px;">
-                    <button onclick="removeAssetFromDC('${a.ID}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>
+                    <button onclick="removeAssetFromDC('${rowId}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>
                 </td>
             </tr>
         `;
@@ -1156,11 +1178,11 @@ function renderSelectedAssets() {
 
     dcSelectedAssetsBody.querySelectorAll('input[data-dc-field]').forEach((input) => {
         input.oninput = () => {
-            const assetId = input.getAttribute('data-asset-id');
+            const rowId = input.getAttribute('data-row-id');
             const field = input.getAttribute('data-dc-field');
-            if (!assetId || !field) return;
+            if (!rowId || !field) return;
 
-            const existing = dcItemsByAssetId[assetId] || { assetId };
+            const existing = dcItemsByAssetId[rowId] || { rowId };
             const next = { ...existing, [field]: input.value };
             if (field === 'qty' || field === 'rate') {
                 const qty = toNumber(next.qty);
@@ -1172,10 +1194,10 @@ function renderSelectedAssets() {
                 } else {
                     next.amount = '';
                 }
-                const amountEl = dcSelectedAssetsBody.querySelector(`span[data-dc-field="amount"][data-asset-id="${assetId}"]`);
+                const amountEl = dcSelectedAssetsBody.querySelector(`span[data-dc-field="amount"][data-row-id="${rowId}"]`);
                 if (amountEl) amountEl.textContent = next.amount ?? '';
             }
-            dcItemsByAssetId[assetId] = next;
+            dcItemsByAssetId[rowId] = next;
         };
     });
 }
@@ -3404,8 +3426,8 @@ window.unassignAsset = async function(assetId) {
         if (data.success) {
             showToast('Asset unassigned. Awaiting inspection.', 'success');
             
-            // Show Inspection Modal
-            if (typeof window.showInspectionModal === 'function') {
+            // Show Inspection Modal (only if it wasn't a split child that got merged/deleted)
+            if (!data.isSplitChild && typeof window.showInspectionModal === 'function') {
                 window.showInspectionModal(assetId, currentProjectId);
             }
             
@@ -5092,6 +5114,12 @@ export function openAddItemModal(kind, prefillData = null) {
         const isQtyTrackedToggle = document.getElementById('itemIsQtyTracked');
         const qtyTotalField = document.getElementById('itemQtyTotal');
         const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
+
+        if (isQtyTrackedToggle && qtyFieldsContainer) {
+            isQtyTrackedToggle.onchange = () => {
+                qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+            };
+        }
 
         if (btnToggleBatch && srNoInput && srNoBatch) {
             srNoInput.style.display = 'block';
@@ -7602,3 +7630,4 @@ async function loadDCDropdowns() {
 }
 
 window.showQuantityHistoryModal = showQuantityHistoryModal;
+                                                                                                                                                                                                            ``

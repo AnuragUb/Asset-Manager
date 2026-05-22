@@ -5828,7 +5828,7 @@ app.post('/api/projects/:id/assign-asset', authenticateJWT, async (req, res) => 
                 .where('id', AssetID)
                 .update({ 
                     assignedto: `Project: ${projectName}`, 
-                    status: 'In-Use', 
+                    status: 'Project', 
                     currentlocation: 'On Site',
                     client_label: clientLabel
                 });
@@ -5849,6 +5849,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
     try {
         const { id, assetId } = req.params;
 
+        let isSplitChild = false;
         await db.transaction(async (trx) => {
             // 1. Check if it's a permanent asset
             const projectAsset = await trx('project_assets')
@@ -5863,26 +5864,31 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .andWhere('assetid', assetId)
                     .delete();
                 
-                const asset = await trx('assets').where('id', assetId).first();
-                if (asset && asset.parentid) {
-                    // 1.1 Check if it's a split child (has parentid)
-                    const parent = await trx('assets').where('id', asset.parentid).first();
+                const assetRow = await trx('assets').where('id', assetId).first();
+                const asset = normalizeResult(assetRow);
+
+                if (asset && asset.ParentId) {
+                    // 1.1 Check if it's a split child (has ParentId)
+                    const parentRow = await trx('assets').where('id', asset.ParentId).first();
+                    const parent = normalizeResult(parentRow);
+
                     if (parent) {
-                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent ${asset.parentid}`);
+                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent ${asset.ParentId}`);
+                        isSplitChild = true;
                         
                         // Increase parent quantity
-                        const qtyToRestore = parseFloat(asset.quantity_total) || 1;
+                        const qtyToRestore = parseFloat(asset.QuantityTotal) || 1;
                         await trx('assets')
-                            .where('id', asset.parentid)
+                            .where('id', asset.ParentId)
                             .update({
-                                quantity_available: (parent.quantity_available || 0) + qtyToRestore,
-                                quantity_total: (parent.quantity_total || 0) + qtyToRestore,
+                                quantity_available: (parent.QuantityAvailable || 0) + qtyToRestore,
+                                quantity_total: (parent.QuantityTotal || 0) + qtyToRestore,
                                 lastupdated: new Date().toISOString()
                             });
                         
                         // Delete the child asset record
                         await trx('assets').where('id', assetId).delete();
-                        await logAssetHistory(asset.parentid, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
+                        await logAssetHistory(asset.ParentId, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
                         
                         // We are done with this asset
                         return;
@@ -5948,7 +5954,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                 }
             }
         });
-        res.json({ success: true });
+        res.json({ success: true, isSplitChild });
     } catch (err) {
         console.error('Unassign asset error:', err);
         res.status(500).json({ error: err.message });
@@ -8352,83 +8358,147 @@ app.post('/api/assets/split', async (req, res) => {
             }
             splitCount = qtyToSplit;
 
-            // 1. Update Parent Quantity
+            // 1. Update Parent Quantity (Use PascalCase since normalized)
             await trx('assets')
                 .whereRaw('LOWER(id) = LOWER(?)', [parentId])
                 .update({
-                    quantity_total: (parent.quantity_total || 0) - qtyToSplit,
-                    quantity_available: (parent.quantity_available || 0) - qtyToSplit,
+                    quantity_total: (parent.QuantityTotal || 0) - qtyToSplit,
+                    quantity_available: (parent.QuantityAvailable || 0) - qtyToSplit,
                     lastupdated: ts
                 });
 
-            // 2. Create One Child Asset with the split quantity
-            const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
-            
-            let status = parent.Status;
-            let assignedTo = parent.AssignedTo;
-            let clientLabel = null;
-            
-            if (autoAssign) {
-                status = 'Assigned';
-                assignedTo = autoAssign;
-            } else if (projectId) {
-                status = 'Project';
-                assignedTo = `Project: ${projectName}`;
-                const assetParts = childId.split('-');
-                const assetKind = assetParts[0] || 'AST';
-                const sixDigitCode = assetParts[3] || '000000';
-                clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
-            }
-
-            const childRecord = normalizeDBData({
-                id: childId,
-                itemname: parent.ItemName,
-                itemdescription: parent.ItemDescription,
-                status: status,
-                make: parent.Make,
-                model: parent.Model,
-                srno: parent.SrNo, 
-                type: parent.Type,
-                category: parent.Category,
-                icon: parent.Icon,
-                isplaceholder: 0,
-                parentid: parentId,
-                currentlocation: parent.CurrentLocation,
-                dispatchreceivedt: parent.DispatchReceiveDt,
-                purchasedetails: parent.PurchaseDetails,
-                remarks: parent.Remarks,
-                purpose: parent.Purpose,
-                lastupdated: ts,
-                qrcode: null,
-                assignedto: assignedTo,
-                client_label: clientLabel,
-                noqr: parent.NoQR,
-                warranty_months: parent.WarrantyMonths || 0,
-                amc_months: parent.AMCMonths || 0,
-                asset_value: (parent.AssetValue || 0) * (qtyToSplit / (parent.quantity_total || 1)),
-                currency: parent.Currency || 'INR',
-                purchasedate: parent.PurchaseDate,
-                is_quantity_tracked: 1,
-                quantity_total: qtyToSplit,
-                quantity_available: qtyToSplit,
-                quantity_unit: parent.quantity_unit || 'pcs',
-                is_batch: 0
-            });
-
-            await trx('assets').insert(childRecord);
-            createdChildren.push(childRecord);
-
+            // 2. Determine if we should MERGE into an existing split child in the same project/user
+            let targetChildId = null;
             if (projectId) {
-                await trx('project_assets').insert({
-                    projectid: projectId,
-                    assetid: childId,
-                    assigneddate: ts,
-                    type: 'Permanent'
-                }).onConflict(['projectid', 'assetid']).merge();
+                const existingChildRow = await trx('assets')
+                    .join('project_assets', 'assets.id', 'project_assets.assetid')
+                    .where('assets.parentid', parentId)
+                    .where('project_assets.projectid', projectId)
+                    .select('assets.*')
+                    .first();
+                const existingChild = normalizeResult(existingChildRow);
+
+                if (existingChild) {
+                    targetChildId = existingChild.ID;
+                    console.log(`[SPLIT] Found existing child ${targetChildId} in project ${projectId}. Merging qty ${qtyToSplit}`);
+                    
+                    const newTotal = (existingChild.QuantityTotal || 0) + qtyToSplit;
+                    const newAvailable = (existingChild.QuantityAvailable || 0) + qtyToSplit;
+                    const additionalValue = (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1));
+
+                    await trx('assets')
+                        .where('id', targetChildId)
+                        .update({
+                            quantity_total: newTotal,
+                            quantity_available: newAvailable,
+                            asset_value: (existingChild.AssetValue || 0) + additionalValue,
+                            lastupdated: ts
+                        });
+                    
+                    await logAssetHistory(targetChildId, 'QUANTITY_INCREASED', existingChild.QuantityTotal, newTotal, actor, `Merged ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId} via re-split`, trx);
+                }
+            } else if (autoAssign) {
+                const existingChildRow = await trx('assets')
+                    .where('parentid', parentId)
+                    .where('assignedto', autoAssign)
+                    .where('status', 'Assigned')
+                    .select('*')
+                    .first();
+                const existingChild = normalizeResult(existingChildRow);
+
+                if (existingChild) {
+                    targetChildId = existingChild.ID;
+                    console.log(`[SPLIT] Found existing child ${targetChildId} assigned to ${autoAssign}. Merging qty ${qtyToSplit}`);
+
+                    const newTotal = (existingChild.QuantityTotal || 0) + qtyToSplit;
+                    const newAvailable = (existingChild.QuantityAvailable || 0) + qtyToSplit;
+                    const additionalValue = (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1));
+
+                    await trx('assets')
+                        .where('id', targetChildId)
+                        .update({
+                            quantity_total: newTotal,
+                            quantity_available: newAvailable,
+                            asset_value: (existingChild.AssetValue || 0) + additionalValue,
+                            lastupdated: ts
+                        });
+                    
+                    await logAssetHistory(targetChildId, 'QUANTITY_INCREASED', existingChild.QuantityTotal, newTotal, actor, `Merged ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId} via re-split`, trx);
+                }
             }
 
-            await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, null, actor, `Split ${qtyToSplit} ${parent.quantity_unit} from parent ${parentId}`, trx);
-            await logAssetHistory(parentId, 'QUANTITY_REDUCED', parent.quantity_available, parent.quantity_available - qtyToSplit, actor, `Split ${qtyToSplit} ${parent.quantity_unit} to ${childId}`, trx);
+            if (!targetChildId) {
+                // 3. Create One Child Asset with the split quantity (Standard logic)
+                const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
+                targetChildId = childId;
+                
+                let status = parent.Status;
+                let assignedTo = parent.AssignedTo;
+                let clientLabel = null;
+                
+                if (autoAssign) {
+                    status = 'Assigned';
+                    assignedTo = autoAssign;
+                } else if (projectId) {
+                    status = 'Project';
+                    assignedTo = `Project: ${projectName}`;
+                    const assetParts = childId.split('-');
+                    const assetKind = assetParts[0] || 'AST';
+                    const sixDigitCode = assetParts[3] || '000000';
+                    clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
+                }
+
+                const childRecord = normalizeDBData({
+                    id: childId,
+                    itemname: parent.ItemName,
+                    itemdescription: parent.ItemDescription,
+                    status: status,
+                    make: parent.Make,
+                    model: parent.Model,
+                    srno: parent.SrNo, 
+                    type: parent.Type,
+                    category: parent.Category,
+                    icon: parent.Icon,
+                    isplaceholder: 0,
+                    parentid: parentId,
+                    currentlocation: parent.CurrentLocation,
+                    dispatchreceivedt: parent.DispatchReceiveDt,
+                    purchasedetails: parent.PurchaseDetails,
+                    remarks: parent.Remarks,
+                    purpose: parent.Purpose,
+                    lastupdated: ts,
+                    qrcode: null,
+                    assignedto: assignedTo,
+                    client_label: clientLabel,
+                    noqr: parent.NoQR,
+                    warranty_months: parent.WarrantyMonths || 0,
+                    amc_months: parent.AMCMonths || 0,
+                    asset_value: (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1)),
+                    currency: parent.Currency || 'INR',
+                    purchasedate: parent.PurchaseDate,
+                    is_quantity_tracked: 1,
+                    quantity_total: qtyToSplit,
+                    quantity_available: qtyToSplit,
+                    quantity_unit: parent.QuantityUnit || 'pcs',
+                    is_batch: 0
+                });
+
+                await trx('assets').insert(childRecord);
+                createdChildren.push(childRecord);
+
+                if (projectId) {
+                    await trx('project_assets').insert({
+                        projectid: projectId,
+                        assetid: childId,
+                        assigneddate: ts,
+                        type: 'Permanent'
+                    }).onConflict(['projectid', 'assetid']).merge();
+                }
+
+                await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, null, actor, `Split ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId}`, trx);
+            }
+
+            await logAssetHistory(parentId, 'QUANTITY_REDUCED', parent.QuantityAvailable, parent.QuantityAvailable - qtyToSplit, actor, `Split ${qtyToSplit} ${parent.QuantityUnit} to ${targetChildId}`, trx);
 
         } else {
             // --- SERIAL-BASED SPLIT (Existing Logic for Serialized Items) ---

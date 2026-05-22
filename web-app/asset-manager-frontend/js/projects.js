@@ -758,10 +758,11 @@ async function unassignAssetFromProject(projectId, assetId) {
         });
 
         if (res.ok) {
+            const data = await res.json();
             showToast('Asset unassigned successfully', 'success');
             
-            // Show Inspection Modal
-            if (typeof window.showInspectionModal === 'function') {
+            // Show Inspection Modal (only if it wasn't a split child that got merged/deleted)
+            if (!data.isSplitChild && typeof window.showInspectionModal === 'function') {
                 window.showInspectionModal(assetId, projectId);
             }
             
@@ -800,25 +801,38 @@ async function loadProjectAssets(projectId) {
             return;
         }
 
-        tbody.innerHTML = assets.map(a => `
-            <tr>
-                <td>${a.ID}</td>
-                <td>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span>${a.Icon || '📦'}</span>
-                        <span>${a.ItemName}</span>
-                    </div>
-                </td>
-                <td><span style="padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #f1f5f9; color: #475569;">${a.Status}</span></td>
-                <td>${a.Category || '-'}</td>
-                <td>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="action-button small" onclick="event.preventDefault(); window.showAssetDetails('${a.ID}'); window.location.hash = 'asset-details?id=${a.ID}';" style="padding:4px 8px; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; cursor: pointer; border-radius: 4px;">View</button>
-                        <button class="action-button small" onclick="unassignAssetFromProject('${projectId}', '${a.ID}')" style="padding:4px 8px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; cursor: pointer; border-radius: 4px;">Unassign</button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = assets.map(a => {
+            const isQtyTracked = a.is_quantity_tracked === 1;
+            const qtyDisplay = isQtyTracked ? `
+                <div style="font-size: 11px; margin-top: 4px; color: #2563eb; font-weight: 600;">
+                    Qty: ${a.quantity_total || 0} ${a.quantity_unit || 'pcs'} 
+                    <span style="color: #64748b; font-weight: 400; margin-left: 4px;">(${a.quantity_available || 0} Available)</span>
+                </div>
+            ` : '';
+
+            return `
+                <tr>
+                    <td>${a.ID}</td>
+                    <td>
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span>${a.Icon || '📦'}</span>
+                                <span style="font-weight: 600;">${a.ItemName}</span>
+                            </div>
+                            ${qtyDisplay}
+                        </div>
+                    </td>
+                    <td><span style="padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #f1f5f9; color: #475569;">${a.Status}</span></td>
+                    <td>${a.Category || '-'}</td>
+                    <td>
+                        <div style="display: flex; gap: 5px;">
+                            <button class="action-button small" onclick="event.preventDefault(); window.showAssetDetails('${a.ID}'); window.location.hash = 'asset-details?id=${a.ID}';" style="padding:4px 8px; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; cursor: pointer; border-radius: 4px;">View</button>
+                            <button class="action-button small" onclick="unassignAssetFromProject('${projectId}', '${a.ID}')" style="padding:4px 8px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; cursor: pointer; border-radius: 4px;">Unassign</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
 
     } catch (err) {
         console.error(err);
@@ -2783,16 +2797,19 @@ window.removeFromWorkspaceStaging = async (index) => {
         });
 
         if (res.ok) {
+            const data = await res.json();
             workspaceStagedAssets.splice(index, 1);
             renderStagingArea();
             updateWorkspacePoProgress();
             
             console.log('[Workspace] Unassign successful for:', asset.ID);
             
-            // Show Inspection Modal instead of just a toast
-            if (typeof window.showInspectionModal === 'function') {
+            // Show Inspection Modal (only if it wasn't a split child that got merged/deleted)
+            if (!data.isSplitChild && typeof window.showInspectionModal === 'function') {
                 console.log('[Workspace] Triggering showInspectionModal for:', asset.ID);
                 window.showInspectionModal(asset.ID, currentProjectId);
+            } else if (data.isSplitChild) {
+                showToast('Quantity merged back to parent asset.', 'success');
             } else {
                 console.warn('[Workspace] window.showInspectionModal not found!');
                 showToast('Asset unassigned. Awaiting inspection.', 'info');
