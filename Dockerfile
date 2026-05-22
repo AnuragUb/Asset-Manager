@@ -17,11 +17,11 @@ COPY web-app/asset-manager-frontend/package.json ./web-app/asset-manager-fronten
 
 # Install backend dependencies
 WORKDIR /app/web-app/asset-manager-backend
-RUN npm install --production --network-timeout=100000 --registry=https://registry.npmjs.org/
+RUN npm install --production --no-audit --no-fund --network-timeout=300000
 
-# Install frontend dependencies (including build tools)
+# Install frontend dependencies
 WORKDIR /app/web-app/asset-manager-frontend
-RUN npm install --network-timeout=100000 --registry=https://registry.npmjs.org/
+RUN npm install --no-audit --no-fund --network-timeout=300000
 
 # Copy source code
 WORKDIR /app

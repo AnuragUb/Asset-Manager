@@ -31,12 +31,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # Backend Application (Development - Port 8080)
-  app-dev:
+  # Backend Application (Production - Port 8080)
+  app-prod:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: asset-manager-dev
+    container_name: asset-manager-prod
     depends_on:
       postgres:
         condition: service_healthy

@@ -15,7 +15,7 @@ const cron = require('node-cron');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const cache = require('./services/cacheService');
 
 // Ensure uploads directory exists
