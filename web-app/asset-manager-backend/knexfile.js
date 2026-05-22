@@ -11,7 +11,8 @@ module.exports = {
       database: process.env.DB_NAME || 'asset_manager',
       user:     process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'password',
-      port:     process.env.DB_PORT || 5432
+      port:     process.env.DB_PORT || 5432,
+      charset:  'utf8'
     },
     pool: {
       min: 2,
@@ -30,7 +31,8 @@ module.exports = {
       database: process.env.DB_TEST_NAME || 'asset_manager_test',
       user:     process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'password',
-      port:     process.env.DB_PORT || 5432
+      port:     process.env.DB_PORT || 5432,
+      charset:  'utf8'
     },
     pool: {
       min: 2,
@@ -50,7 +52,8 @@ module.exports = {
       user:     process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       port:     process.env.DB_PORT || 5432,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      charset:  'utf8'
     },
     pool: {
       min: 2,

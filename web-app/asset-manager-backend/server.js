@@ -708,7 +708,38 @@ async function initializeHierarchyFolders() {
                     icon: f.icon,
                     timestamp: new Date().toISOString()
                 });
+            } else if (exists.icon && exists.icon.includes('?')) {
+                console.log(`[STARTUP] Repairing corrupted icon for folder: ${f.name}`);
+                await db('folders').where('id', f.id).update({ icon: f.icon });
             }
+        }
+
+        // --- SELF-HEALING: Repair corrupted asset_kinds icons ---
+        const corruptedKinds = await db('asset_kinds').where('icon', 'like', '%?%');
+        if (corruptedKinds.length > 0) {
+            console.log(`[STARTUP] Found ${corruptedKinds.length} corrupted asset_kinds icons. Repairing...`);
+            
+            const repairMap = {
+                'Laptop': '/static/icons/laptop.svg',
+                'Desktop': '/static/icons/desktop.svg',
+                'Monitor': '/static/icons/monitor.svg',
+                'Server': '/static/icons/server.svg',
+                'Switch': '/static/icons/switch.svg',
+                'Camera': '/static/icons/camera.svg',
+                'Keyboard': '⌨️',
+                'Mouse': '🖱️',
+                'License': '🔑',
+                'Router': '📶',
+                'Networking': '/static/icons/networking.svg',
+                'Hardware': '/static/icons/hardware.svg',
+                'Software': '/static/icons/software.svg'
+            };
+
+            for (const kind of corruptedKinds) {
+                const repairIcon = repairMap[kind.name] || '📦';
+                await db('asset_kinds').where('name', kind.name).update({ icon: repairIcon });
+            }
+            console.log('[STARTUP] Asset kinds icons repaired.');
         }
     } catch (err) {
         console.error('Hierarchy initialization error:', err);
