@@ -1,12 +1,12 @@
-# Backend Application (Port 8080/9090)
-FROM node:20-alpine
+# Use a stable Node.js version
+FROM node:20-slim
 
-# Install necessary build tools for native modules
-RUN apk add --no-cache python3 make g++ gcc libc-dev linux-headers py3-pip \
-    && ln -sf python3 /usr/bin/python
-
-# Set Python environment variable for node-gyp
-ENV PYTHON=/usr/bin/python3
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -15,23 +15,24 @@ COPY package.json ./
 COPY web-app/asset-manager-backend/package.json ./web-app/asset-manager-backend/
 COPY web-app/asset-manager-frontend/package.json ./web-app/asset-manager-frontend/
 
-# Install backend dependencies
+# Install backend dependencies (using bcryptjs, so no native build needed)
 WORKDIR /app/web-app/asset-manager-backend
-RUN npm install --production --no-audit --no-fund --network-timeout=300000
+RUN npm install --production --no-audit --no-fund --network-timeout=600000
 
 # Install frontend dependencies
 WORKDIR /app/web-app/asset-manager-frontend
-RUN npm install --no-audit --no-fund --network-timeout=300000
+RUN npm install --no-audit --no-fund --network-timeout=600000
 
 # Copy source code
 WORKDIR /app
 COPY web-app/asset-manager-frontend/ ./web-app/asset-manager-frontend/
 COPY web-app/asset-manager-backend/ ./web-app/asset-manager-backend/
 
-# Build frontend (Generates the DIST folder required for Port 8080)
+# Build frontend
 WORKDIR /app/web-app/asset-manager-frontend
 RUN npm run build
 
-# Start the application
+# Final Stage
 WORKDIR /app/web-app/asset-manager-backend
+EXPOSE 8080 9090
 CMD ["node", "server.js"]
