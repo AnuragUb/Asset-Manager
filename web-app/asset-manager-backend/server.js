@@ -94,11 +94,12 @@ const port = process.env.PORT || 9090;
  * Also handles common type conversions and date formatting.
  */
 function normalizeResult(data) {
-  if (!data) return data;
-  if (Array.isArray(data)) return data.map(item => normalizeResult(item));
-  if (typeof data !== 'object') return data;
+    if (!data) return data;
+    if (Array.isArray(data)) return data.map(item => normalizeResult(item));
+    if (typeof data !== 'object') return data;
 
-  const result = { ...data };
+    const result = { ...data };
+
   
   // 1. Common Key Mapping (lower -> Pascal/Camel)
   const mappings = {
@@ -210,16 +211,25 @@ function normalizeResult(data) {
     }
   });
 
-  // 2. Specialized Logic
-  if (result.PayloadJSON && typeof result.PayloadJSON === 'string') {
-      try { result.PayloadJSON = JSON.parse(result.PayloadJSON); } catch(e) {}
-  }
-  if (result.metadata_json && typeof result.metadata_json === 'string') {
-      try { result.metadata = JSON.parse(result.metadata_json); } catch(e) {}
-  }
+        // 2. Specialized Logic
+        if (result.PayloadJSON && typeof result.PayloadJSON === 'string') {
+            try { result.PayloadJSON = JSON.parse(result.PayloadJSON); } catch(e) {}
+        }
+        if (result.metadata_json && typeof result.metadata_json === 'string') {
+            try { result.metadata = JSON.parse(result.metadata_json); } catch(e) {}
+        }
 
-  return result;
-}
+        // 3. Runtime Repair: Check for corrupted icons in the result
+        if (result.Icon && (result.Icon.includes('?') || result.Icon.includes('�'))) {
+            // If it's a known kind, we could repair it here too, 
+            // but usually startup repair is enough.
+            // For now, just fallback to a safe emoji if still corrupted.
+            result.Icon = '📦';
+        }
+
+        return result;
+    }
+
 
 /**
  * Executes a query against the active database (Knex).
@@ -708,16 +718,17 @@ async function initializeHierarchyFolders() {
                     icon: f.icon,
                     timestamp: new Date().toISOString()
                 });
-            } else if (exists.icon && exists.icon.includes('?')) {
-                console.log(`[STARTUP] Repairing corrupted icon for folder: ${f.name}`);
+            } else if (!exists.icon || exists.icon.includes('?')) {
+                console.log(`[STARTUP] Repairing corrupted/missing icon for folder: ${f.name}`);
                 await db('folders').where('id', f.id).update({ icon: f.icon });
             }
         }
 
+
         // --- SELF-HEALING: Repair corrupted asset_kinds icons ---
-        const corruptedKinds = await db('asset_kinds').where('icon', 'like', '%?%');
+        const corruptedKinds = await db('asset_kinds').where('icon', 'like', '%?%').orWhereNull('icon');
         if (corruptedKinds.length > 0) {
-            console.log(`[STARTUP] Found ${corruptedKinds.length} corrupted asset_kinds icons. Repairing...`);
+            console.log(`[STARTUP] Found ${corruptedKinds.length} corrupted/missing asset_kinds icons. Repairing...`);
             
             const repairMap = {
                 'Laptop': '/static/icons/laptop.svg',
@@ -732,15 +743,27 @@ async function initializeHierarchyFolders() {
                 'Router': '📶',
                 'Networking': '/static/icons/networking.svg',
                 'Hardware': '/static/icons/hardware.svg',
-                'Software': '/static/icons/software.svg'
+                'Software': '/static/icons/software.svg',
+                'Cables': '🔌',
+                'Cable': '🔌',
+                'Accessory': '⌨️',
+                'Printer': '🖨️',
+                'Projector': '📽️',
+                'Scanner': '📠',
+                'UPS': '🔋',
+                'Rack': '🗄️',
+                'Data Drives': '💾'
             };
+
 
             for (const kind of corruptedKinds) {
                 const repairIcon = repairMap[kind.name] || '📦';
+                console.log(`[STARTUP] Repairing Kind ${kind.name}: ${kind.icon || 'NULL'} -> ${repairIcon}`);
                 await db('asset_kinds').where('name', kind.name).update({ icon: repairIcon });
             }
             console.log('[STARTUP] Asset kinds icons repaired.');
         }
+
     } catch (err) {
         console.error('Hierarchy initialization error:', err);
     }
@@ -1920,15 +1943,9 @@ const useDist = false; // Force source assets to prevent 404s during rapid devel
 // Setup Icons Directory (Serve from Source or DIST based on environment)
 const sourceIconsDir = path.join(__dirname, '../asset-manager-frontend/static/icons');
 const distIconsDir = path.join(__dirname, '../asset-manager-frontend/dist/static/icons');
-const iconsDir = useDist ? distIconsDir : sourceIconsDir;
-
-// Ensure icons directory exists
-if (!fs.existsSync(iconsDir)) {
-  fs.mkdirSync(iconsDir, { recursive: true });
-}
 
 // Port-specific static file serving
-if (useDist) {
+if (currentPort == 8080 && fs.existsSync(distPath)) {
     // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
     console.log('[ENV] Serving minified assets from DIST folder on port 8080');
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/dist/js')));
@@ -1943,6 +1960,16 @@ if (useDist) {
     app.use('/icons', express.static(sourceIconsDir));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend')));
 }
+
+const iconsDir = (currentPort == 8080 && fs.existsSync(distPath)) ? distIconsDir : sourceIconsDir;
+
+// Ensure icons directory exists
+if (!fs.existsSync(iconsDir)) {
+  console.log(`[STARTUP] Creating missing icons directory: ${iconsDir}`);
+  fs.mkdirSync(iconsDir, { recursive: true });
+}
+
+
 
 app.use('/uploads', express.static(uploadsDir));
 app.use('/input', express.static(uploadsDir));
