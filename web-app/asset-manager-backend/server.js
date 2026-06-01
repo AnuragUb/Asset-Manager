@@ -147,6 +147,8 @@ function normalizeResult(data) {
     'phone': 'Phone',
     'timestamp': 'Timestamp',
     'projectname': 'ProjectName',
+    'assignedprojectname': 'AssignedProjectName',
+    'assignedprojectid': 'AssignedProjectID',
     'clientname': 'ClientName',
     'location': 'Location',
     'startdate': 'StartDate',
@@ -191,6 +193,9 @@ function normalizeResult(data) {
     'sale_details': 'SaleDetails',
     'is_deleted': 'IsDeleted',
     'is_batch': 'IsBatch',
+    'is_quantity_tracked': 'IsQuantityTracked',
+    'is_set': 'IsSet',
+    'set_price_mode': 'SetPriceMode',
     'vendoraddress': 'VendorAddress',
     'vendorcontact': 'VendorContact',
     'vendoremail': 'VendorEmail',
@@ -230,6 +235,101 @@ function normalizeResult(data) {
         return result;
     }
 
+/**
+ * ATOMIC PROMOTION LOGIC: Moves an item from 'components' to 'assets'.
+ * Ensures the move is permanent, atomic, and logged in history.
+ * Prevents duplicates by checking existence in both tables.
+ */
+async function promoteToAsset(targetId, targetData, trx, user = 'system') {
+    console.log(`[PROMOTION] Starting atomic promotion for ${targetId}`);
+    
+    // 1. Check if it already exists as a full asset
+    const existingAsset = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [targetId.toLowerCase()]).first();
+    if (existingAsset) {
+        console.warn(`[PROMOTION] Asset ${targetId} already exists in 'assets' table. Updating instead.`);
+        await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [targetId.toLowerCase()]).update({
+            ...targetData,
+            noqr: 0,
+            lastupdated: new Date().toISOString()
+        });
+        // Delete from components if it was there
+        await trx('components').whereRaw('LOWER(id) = LOWER(?)', [targetId.toLowerCase()]).del();
+        return targetId;
+    }
+
+    // 2. Insert into assets
+    await trx('assets').insert({
+        ...targetData,
+        id: targetId,
+        noqr: 0, // Logic: Promoted means it's now a tracked asset with QR
+        lastupdated: new Date().toISOString()
+    });
+
+    // 3. Delete from components (The cleanup)
+    const deleted = await trx('components').whereRaw('LOWER(id) = LOWER(?)', [targetId.toLowerCase()]).del();
+    
+    // 4. Log the life-long history
+    await logAssetHistory(targetId, 'PROMOTED', 'COMPONENT', 'ASSET', user, `Permanently promoted to full asset. Table cleanup performed: ${deleted > 0}`, trx);
+    
+    console.log(`[PROMOTION] Success: ${targetId} is now a full asset.`);
+    return targetId;
+}
+
+/**
+ * RELIABLE STATUS TRANSITION HELPER
+ * Ensures status updates are atomic, logged, and propagated to children.
+ * Forces cache invalidation to prevent "disappearing" assets.
+ * Optional projectId: If provided, also handles project_assets linking/unlinking.
+ */
+async function updateAssetStatus(assetId, newStatus, updates, trx, user = 'system', historyDetails = '', recursive = true, projectId = null) {
+    console.log(`[STATUS] Transitioning ${assetId}: Status -> ${newStatus}. Project: ${projectId || 'N/A'}`);
+    
+    const assetRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).first();
+    const asset = normalizeResult(assetRow);
+    if (!asset) {
+        console.warn(`[STATUS] Asset ${assetId} not found. Skipping status update.`);
+        return;
+    }
+
+    const oldStatus = asset.Status || asset.status;
+
+    // 1. Perform the update
+    await trx('assets')
+        .whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()])
+        .update({
+            ...updates,
+            status: newStatus,
+            lastupdated: new Date().toISOString()
+        });
+
+    // 2. Project Linking Logic
+    if (projectId) {
+        if (newStatus === 'Project') {
+            // Link to project
+            await trx('project_assets').insert({
+                projectid: projectId,
+                assetid: asset.id || asset.ID,
+                assigneddate: new Date().toISOString(),
+                type: 'Permanent'
+            }).onConflict(['projectid', 'assetid']).merge();
+        } else if (newStatus === 'Under Inspection' || newStatus === 'In Store') {
+            // Unlink from project (Note: usually unassign-asset handles this, but here for safety)
+            await trx('project_assets').where({ projectid: projectId, assetid: asset.id || asset.ID }).delete();
+        }
+    }
+
+    // 3. Log History
+    await logAssetHistory(assetId, 'STATUS_CHANGE', oldStatus, newStatus, user, historyDetails || `Status updated to ${newStatus}`, trx);
+
+    // 4. Recursive Propagation (for Sets/Supersets)
+    if (recursive && (asset.IsSet || asset.is_set)) {
+        const children = await trx('assets').whereRaw('LOWER(parentid) = LOWER(?)', [assetId.toLowerCase()]).select('id');
+        for (const child of children) {
+            await updateAssetStatus(child.id, newStatus, updates, trx, user, historyDetails ? `Propagated: ${historyDetails}` : `Propagated from parent set ${assetId}`, true, projectId);
+        }
+    }
+}
+
 
 /**
  * Executes a query against the active database (Knex).
@@ -258,8 +358,16 @@ async function invalidateEmployeesCache() {
 }
 
 async function invalidateAssetsCache() {
-  console.log('[CACHE] Invalidating assets cache');
-  await cache.delPattern('assets:list:*');
+  console.log('[CACHE] Performing FULL cache flush');
+  try {
+    // Clear all asset-related patterns
+    await cache.delPattern('assets:*');
+    await cache.delPattern('projects:*');
+    // If user is really suspicious of Redis, we can do a full flush
+    // await cache.flush(); 
+  } catch (err) {
+    console.error('[CACHE] Invalidation failed:', err);
+  }
 }
 
 // --- Automated Backup System ---
@@ -413,10 +521,11 @@ async function initializeHistory() {
 initializeHistory();
 
 // Unified logAssetHistory
-async function logAssetHistory(assetId, action, oldValue, newValue, user, details = '') {
+async function logAssetHistory(assetId, action, oldValue, newValue, user, details = '', trx = null) {
   try {
     const timestamp = new Date().toISOString();
-    await db('asset_history').insert(normalizeDBData({
+    const query = trx || db;
+    await query('asset_history').insert(normalizeDBData({
       AssetID: assetId,
       Action: action,
       OldValue: oldValue,
@@ -431,10 +540,11 @@ async function logAssetHistory(assetId, action, oldValue, newValue, user, detail
 }
 
 // Unified logAudit
-async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO') {
+async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO', trx = null) {
     try {
         const timestamp = new Date().toISOString();
-        await db('audit_log').insert(normalizeDBData({
+        const query = trx || db;
+        await query('audit_log').insert(normalizeDBData({
             User: user || 'web',
             Action: action,
             Details: details,
@@ -589,27 +699,34 @@ app.post('/api/assets/:id/release-to-store', authenticateJWT, async (req, res) =
         const username = req.user.user_id || 'web';
 
         await db.transaction(async (trx) => {
-            const asset = await trx('assets').where('id', id).first();
-            if (!asset) throw new Error('Asset not found');
+            const assetRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).first();
+            const asset = normalizeResult(assetRow);
+            if (!asset) return;
 
-            await trx('assets')
-                .where('id', id)
-                .update({
-                    status: 'In Store',
+            // Use the Reliable Status Helper
+            await updateAssetStatus(
+                id,
+                'In Store',
+                {
                     condition: condition || 'Good',
-                    remarks: remarks ? `${asset.remarks || ''}\n[Inspection]: ${remarks}` : asset.remarks,
-                    lastupdated: new Date().toISOString()
-                });
-
-            await logAssetHistory(id, 'INSPECTION_PASSED', asset.status, 'In Store', username, `Passed inspection. Condition: ${condition}. ${remarks}`, trx);
+                    currentlocation: 'Mumbai', // Reset to main hub on release
+                    remarks: remarks ? `${asset.remarks || ''}\n[Inspection]: ${remarks}` : asset.remarks
+                },
+                trx,
+                username,
+                `Passed inspection. Condition: ${condition}. ${remarks}`,
+                true // Recursive for sets
+            );
         });
 
+        await invalidateAssetsCache();
         res.json({ success: true });
     } catch (err) {
         console.error('Release asset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
     try {
@@ -2046,9 +2163,9 @@ async function getAssetAssignmentStatus(assetId) {
     if (normalizedLink) {
         return { 
             type: 'project', 
-            projectId: normalizedLink.project_id, 
-            projectName: normalizedLink.project_name,
-            status: normalizedLink.status 
+            projectId: normalizedLink.ProjectID || normalizedLink.projectId, 
+            projectName: normalizedLink.ProjectName || normalizedLink.projectName,
+            status: normalizedLink.Status || normalizedLink.status 
         };
     }
 
@@ -2157,6 +2274,10 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
             IsRetired: a.is_retired || 0,
             Condition: a.condition || 'Good',
             SaleDetails: a.sale_details,
+            IsSet: a.is_set === 1 || a.is_set === true,
+            is_set: a.is_set === 1 || a.is_set === true,
+            SetPriceMode: a.set_price_mode || 'SUM_OF_CHILDREN',
+            set_price_mode: a.set_price_mode || 'SUM_OF_CHILDREN',
             // isComponent should ONLY be true for items in the components table
             // Items with a parentid but NOT in the components table are "Split Assets" or "Sub-Assets"
             // which should be counted as real assets in the dashboard.
@@ -2321,6 +2442,14 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
         query.whereIn('a.status', statuses);
     }
 
+    // 1.3 Availability Filter (Strict for Workspace)
+    if (req.query.availableOnly === 'true') {
+        query.where(function() {
+            this.where('a.quantity_available', '>', 0)
+                .orWhereNull('a.quantity_available');
+        });
+    }
+
     // 1.5 Global Search
     const search = req.query.search;
     if (search) {
@@ -2439,7 +2568,17 @@ app.get('/api/asset-details/:id', async (req, res) => {
   try {
     let asset = await db('assets as a')
       .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
-      .select('a.*', 'it.macaddress', 'it.ipaddress', 'it.networktype', 'it.physicalport', 'it.vlan', 'it.socketid', 'it.userid')
+      .leftJoin(
+        db('project_assets')
+          .select('assetid')
+          .max('projectid as projectid')
+          .groupBy('assetid')
+          .as('pa_raw'),
+        'a.id',
+        'pa_raw.assetid'
+      )
+      .leftJoin('projects as p', 'pa_raw.projectid', 'p.id')
+      .select('a.*', 'it.macaddress', 'it.ipaddress', 'it.networktype', 'it.physicalport', 'it.vlan', 'it.socketid', 'it.userid', 'p.projectname as AssignedProjectName', 'p.id as AssignedProjectID')
       .whereRaw('LOWER(a.id) = LOWER(?)', [id])
       .first();
       
@@ -2494,14 +2633,45 @@ app.get('/api/asset-details/:id', async (req, res) => {
     }
 
     // Fetch True Components (from components table)
-    const trueComponents = await db('components').whereRaw('LOWER(parentid) = LOWER(?)', [id]);
+    const trueComponents = await db('components').whereRaw('LOWER(parentid) = LOWER(?)', [id.toLowerCase()]);
     // Fetch Split Children (from assets table where parentid is this id)
-    const splitChildren = await db('assets').whereRaw('LOWER(parentid) = LOWER(?)', [id]);
+    const splitChildren = await db('assets').whereRaw('LOWER(parentid) = LOWER(?)', [id.toLowerCase()]);
     
-    const children = [
-        ...normalizeResult(trueComponents).map(c => ({ ...c, isComponent: true })),
-        ...normalizeResult(splitChildren).map(c => ({ ...c, isComponent: false, isSplitChild: true }))
-    ];
+    // --- ROBUST CHILD FETCHING: Ensure unique IDs across both tables ---
+    const childMap = new Map();
+    
+    // 1. Add split children (real assets) first - they take priority
+    normalizeResult(splitChildren).forEach(c => {
+        childMap.set((c.id || c.ID).toLowerCase(), { ...c, isComponent: false, isSplitChild: true });
+    });
+    
+    // 2. Add true components only if not already present as a full asset
+    normalizeResult(trueComponents).forEach(c => {
+        const cId = (c.id || c.ID).toLowerCase();
+        if (!childMap.has(cId)) {
+            childMap.set(cId, { ...c, isComponent: true });
+        }
+    });
+
+    const children = Array.from(childMap.values());
+    normalizedAsset.components = children;
+
+    // --- SET PRICE CALCULATION ---
+    if (normalizedAsset.IsSet && normalizedAsset.SetPriceMode === 'SUM_OF_CHILDREN') {
+        let calculatedValue = 0;
+        children.forEach(c => {
+            // Only add assets that are not components of other sub-items (to avoid double counting if nested)
+            // For now, just sum all direct split children that have a value
+            if (c.AssetValue) {
+                calculatedValue += parseFloat(c.AssetValue);
+            }
+        });
+        // Add parent's own value if it has one (though usually the parent is just a container)
+        // calculatedValue += parseFloat(normalizedAsset.asset_value || 0);
+        
+        normalizedAsset.AssetValue = calculatedValue;
+        normalizedAsset.asset_value = calculatedValue;
+    }
 
     const auditHistory = await db('audit_log').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
     const structuredHistory = await db('asset_history').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
@@ -2792,10 +2962,21 @@ app.post('/api/dc', async (req, res) => {
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = await Promise.all(normalizedAssetIds.map(async (assetId) => {
       const row = await db('assets')
-        .select('id', 'itemname', 'srno', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
+        .select('id', 'itemname', 'srno', 'is_set', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
         .whereRaw('LOWER(id) = LOWER(?)', [assetId])
         .first();
-      return normalizeResult(row) || { id: assetId };
+      
+      const asset = normalizeResult(row) || { id: assetId };
+      
+      // If it's a set, fetch components for the "Hybrid" view
+      if (asset.IsSet) {
+          const children = await db('assets')
+            .whereRaw('LOWER(parentid) = LOWER(?)', [assetId])
+            .select('id', 'itemname', 'srno', 'make', 'model');
+          asset.components = normalizeResult(children);
+      }
+      
+      return asset;
     }));
 
     // 2. Atomic Transaction
@@ -2861,33 +3042,63 @@ app.post('/api/dc', async (req, res) => {
         }
 
         // 4. Initial Payload (without QR)
-        const initialPayload = payload && typeof payload === 'object' ? payload : {
-          company: {},
-          consignee: { name: CustomerName || '' },
-          buyer: { name: CustomerName || '' },
-          meta: {
-            deliveryNoteNo: challanNo,
-            dated: DeliveryDate || ''
-          },
-          items: assetsForDc.map((a) => ({
-            assetId: a.id,
-            description: a.itemname || a.id,
-            srNo: a.srno || '',
-            hsn: '',
-            qty: 1,
-            per: 'NO',
-            rate: '',
-            amount: '',
-            quantity: a.quantity_root_id ? {
-              rootId: a.quantity_root_id,
-              parentId: a.quantity_parent_id || null,
-              unit: a.quantity_unit || null,
-              available: a.quantity_available ?? null,
-              total: a.quantity_total ?? null,
-              precision: a.quantity_precision ?? null
-            } : null
-          }))
-        };
+        let finalPayload;
+        if (payload && typeof payload === 'object') {
+            finalPayload = payload;
+            // Enrich descriptions for sets if not already manually edited
+            if (Array.isArray(finalPayload.items)) {
+                finalPayload.items = finalPayload.items.map(item => {
+                    const asset = assetsForDc.find(a => (a.id || a.ID).toLowerCase() === (item.assetId || '').toLowerCase());
+                    if (asset && asset.IsSet && Array.isArray(asset.components) && asset.components.length > 0) {
+                        const compList = asset.components.map(c => c.itemname || c.ItemName).join(', ');
+                        const suffix = `\nwith: ${compList}`;
+                        if (!item.description.includes('with:')) {
+                            item.description += suffix;
+                        }
+                    }
+                    return item;
+                });
+            }
+        } else {
+            finalPayload = {
+              company: {},
+              consignee: { name: CustomerName || '' },
+              buyer: { name: CustomerName || '' },
+              meta: {
+                deliveryNoteNo: challanNo,
+                dated: DeliveryDate || ''
+              },
+              items: assetsForDc.map((a) => {
+                let description = a.itemname || a.id;
+                
+                // Hybrid View: Append components to description if it's a set
+                if (a.IsSet && Array.isArray(a.components) && a.components.length > 0) {
+                    const compList = a.components.map(c => c.itemname || c.ItemName).join(', ');
+                    description += `\nwith: ${compList}`;
+                }
+
+                return {
+                  assetId: a.id,
+                  description: description,
+                  srNo: a.srno || '',
+                  hsn: '',
+                  qty: 1,
+                  per: 'NO',
+                  rate: '',
+                  amount: '',
+                  isSet: a.IsSet ? 1 : 0,
+                  quantity: a.quantity_root_id ? {
+                    rootId: a.quantity_root_id,
+                    parentId: a.quantity_parent_id || null,
+                    unit: a.quantity_unit || null,
+                    available: a.quantity_available ?? null,
+                    total: a.quantity_total ?? null,
+                    precision: a.quantity_precision ?? null
+                  } : null
+                };
+              })
+            };
+        }
 
         const insertData = {
           id: id,
@@ -2899,12 +3110,12 @@ app.post('/api/dc', async (req, res) => {
           qrcode: '',
           createdby: CreatedBy || 'System',
           timestamp: timestamp,
-          payloadjson: JSON.stringify(initialPayload)
+          payloadjson: JSON.stringify(finalPayload)
         };
 
         await trx('delivery_challans').insert(insertData);
 
-        return { id, challanNo, payload: initialPayload };
+        return { id, challanNo, payload: finalPayload };
     };
 
     const createResult = await db.transaction(runCreateTransaction);
@@ -4137,10 +4348,14 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       newId = generateModernAssetId(asset.CurrentLocation || asset.currentlocation || '', type);
       console.log('Generated Modern ID:', newId);
     } else {
-      // Check if ID already exists
-      const existing = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [newId]).first();
-      if (existing) {
-        return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists` });
+      // --- CROSS-TABLE EXISTENCE GUARD ---
+      const existingAsset = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [newId.toLowerCase()]).first();
+      if (existingAsset) {
+        return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists in full inventory.` });
+      }
+      const existingComp = await db('components').whereRaw('LOWER(id) = LOWER(?)', [newId.toLowerCase()]).first();
+      if (existingComp) {
+        return res.status(400).json({ success: false, error: `Asset ID ${newId} already exists as a No-QR component. Please promote it instead of creating a duplicate.` });
       }
     }
 
@@ -4197,7 +4412,9 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       conversion_factor: asset.conversion_factor || null,
       conversion_mode: asset.conversion_mode || 'multiply',
       is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
-      is_batch: asset.is_batch || 0
+      is_batch: asset.is_batch || 0,
+      is_set: asset.is_set || 0,
+      set_price_mode: asset.set_price_mode || 'SUM_OF_CHILDREN'
     }));
 
     appendAudit({
@@ -4469,6 +4686,294 @@ app.post('/api/quantity/split', async (req, res) => {
     res.status(500).json({ success: false, error: err.message })
   }
 })
+
+// --- SET LOGIC ENDPOINTS ---
+
+/**
+ * Combine multiple standalone assets into a Set.
+ * Can either use an existing asset as parent or create a brand new container asset.
+ */
+app.post('/api/assets/make-set', authenticateJWT, async (req, res) => {
+  let finalParentId = null; // Declare and initialize at the very top of the function
+  try {
+    let { parentAssetId, childAssetIds, setPriceMode, createNewParent, newParentName, headAssetId, parentQtyToSplit, childSplits } = req.body;
+    const user = req.headers['x-user'] || 'web';
+
+    finalParentId = parentAssetId; // Initial value
+
+    console.log(`[LOGIC-ENGINE] Make Set. Parent: ${parentAssetId}, Children: ${childAssetIds?.length}`);
+
+    await db.transaction(async (trx) => {
+      // 1. DATA INHERITANCE
+      const mainId = headAssetId || parentAssetId || (childAssetIds && childAssetIds[0]);
+      if (!mainId) throw new Error('Could not determine head asset for inheritance.');
+
+      let mainItemRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [mainId.toLowerCase()]).first();
+      let mainItem = normalizeResult(mainItemRow);
+      
+      let category = mainItem?.Category || 'IT';
+      let location = mainItem?.CurrentLocation || 'Mumbai';
+      let status = mainItem?.Status || 'In Store';
+      let projectId = null;
+
+      const projLink = await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [mainId.toLowerCase()]).first();
+      if (projLink) projectId = projLink.projectid;
+
+      // 2. PARENT LOGIC: Handle Batch Parent
+      if (!createNewParent && parentAssetId) {
+          const parentRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentAssetId.toLowerCase()]).first();
+          const parent = normalizeResult(parentRow);
+          
+          if (parent && (parent.IsBatch || parent.IsQuantityTracked || (parent.QuantityTotal > 1))) {
+              const qtyToSplit = parseFloat(parentQtyToSplit || 1);
+              if (qtyToSplit > (parent.QuantityTotal || 0)) throw new Error(`Insufficient quantity in parent batch ${parent.ID}`);
+
+              const segmentId = `${parent.ID}-${Date.now().toString().slice(-4)}`;
+              await trx('assets').insert({
+                  id: segmentId,
+                  itemname: `${parent.ItemName} (Set Head)`,
+                  category: parent.Category,
+                  type: parent.Type,
+                  status: projectId ? 'Project' : parent.Status,
+                  currentlocation: parent.CurrentLocation,
+                  quantity_total: qtyToSplit,
+                  quantity_available: projectId ? 0 : qtyToSplit,
+                  quantity_parent_id: parent.ID,
+                  is_set: 1,
+                  set_price_mode: 'SUM_OF_CHILDREN',
+                  assignedto: projectId ? `Project: ${projectId}` : null,
+                  lastupdated: new Date().toISOString()
+              });
+
+              // Update original
+              const newTotal = (parent.QuantityTotal || 0) - qtyToSplit;
+              await trx('assets').where('id', parent.ID).update({
+                  quantity_total: newTotal,
+                  quantity_available: Math.max(0, (parent.QuantityAvailable || parent.QuantityTotal || 0) - qtyToSplit),
+                  status: newTotal <= 0 ? 'All Assigned' : parent.Status,
+                  lastupdated: new Date().toISOString()
+              });
+
+              finalParentId = segmentId; // Update the scoped variable
+              await logAssetHistory(parent.ID, 'BATCH_SEGMENTED', parent.QuantityTotal, newTotal, user, `Split ${qtyToSplit} to Set Head ${segmentId}`, trx);
+          }
+      }
+
+      // 3. NEW CONTAINER LOGIC
+      if (createNewParent) {
+        const newId = generateModernAssetId(location, 'Set');
+        finalParentId = newId; // Update the scoped variable
+
+        await trx('assets').insert({
+          id: newId,
+          itemname: newParentName || 'New Set Bundle',
+          status: projectId ? 'Project' : status,
+          category: category,
+          currentlocation: location,
+          is_set: 1,
+          noqr: 0, // Logic: Sets/Supersets are tracked assets
+          set_price_mode: setPriceMode || 'SUM_OF_CHILDREN',
+          assignedto: projectId ? `Project: ${projectId}` : null,
+          lastupdated: new Date().toISOString()
+        });
+        
+        await logAssetHistory(newId, 'MAKE_SET', null, 'CONTAINER_CREATED', user, `Created brand new set container.`, trx);
+      } else if (finalParentId === parentAssetId) {
+        // Standard promotion to SET if not a batch
+        await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentAssetId.toLowerCase()]).update({
+          is_set: 1,
+          noqr: 0, // Logic: Promoted to set means it's a tracked asset
+          status: projectId ? 'Project' : status,
+          assignedto: projectId ? `Project: ${projectId}` : null,
+          lastupdated: new Date().toISOString()
+        });
+        await logAssetHistory(parentAssetId, 'MAKE_SET', 'SINGLE', 'SET_PARENT', user, `Converted existing asset to a set parent.`, trx);
+      }
+
+      // --- LOGIC ENGINE: Ensure Parent is assigned to Project ---
+      if (projectId && finalParentId) {
+          await trx('project_assets').insert({
+              projectid: projectId,
+              assetid: finalParentId,
+              assigneddate: new Date().toISOString(),
+              type: 'Permanent'
+          }).onConflict(['projectid', 'assetid']).merge();
+      }
+
+      // 4. CHILD LOGIC: Handle Child Splitting
+      for (const childId of childAssetIds) {
+        if (!finalParentId || childId.toLowerCase() === finalParentId.toLowerCase()) continue;
+
+        let targetChildId = childId;
+        const splitQty = childSplits ? parseFloat(childSplits[childId]) : null;
+
+        if (splitQty) {
+            const childItemRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [childId.toLowerCase()]).first();
+            const childItem = normalizeResult(childItemRow);
+            if (childItem && splitQty < (childItem.QuantityTotal || 0)) {
+                const childSegmentId = `${childItem.ID}-S${Date.now().toString().slice(-3)}`;
+                await trx('assets').insert({
+                    id: childSegmentId,
+                    itemname: childItem.ItemName,
+                    category: childItem.Category,
+                    type: childItem.Type,
+                    status: projectId ? 'Project' : childItem.Status,
+                    currentlocation: location,
+                    quantity_total: splitQty,
+                    quantity_available: projectId ? 0 : splitQty,
+                    quantity_parent_id: childItem.ID,
+                    parentid: finalParentId,
+                    assignedto: projectId ? `Project: ${projectId}` : null,
+                    lastupdated: new Date().toISOString()
+                });
+                const newChildTotal = (childItem.QuantityTotal || 0) - splitQty;
+                await trx('assets').where('id', childItem.ID).update({
+                    quantity_total: newChildTotal,
+                    quantity_available: Math.max(0, (childItem.QuantityAvailable || childItem.QuantityTotal || 0) - splitQty),
+                    status: newChildTotal <= 0 ? 'All Assigned' : childItem.Status,
+                    lastupdated: new Date().toISOString()
+                });
+                targetChildId = childSegmentId;
+            }
+        }
+
+        // --- PROMOTION LOGIC: Check both tables ---
+        let assetRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [targetChildId.toLowerCase()]).first();
+        let asset = normalizeResult(assetRow);
+
+        if (!asset) {
+            const compRow = await trx('components').whereRaw('LOWER(id) = LOWER(?)', [targetChildId.toLowerCase()]).first();
+            if (compRow) {
+                const comp = normalizeResult(compRow);
+                const promoData = {
+                    itemname: comp.ItemName || comp.itemname,
+                    make: comp.Make || comp.make || '',
+                    model: comp.Model || comp.model || '',
+                    srno: comp.SrNo || comp.srno || '',
+                    status: projectId ? 'Project' : status,
+                    category: comp.Category || comp.category || category,
+                    type: comp.Type || comp.type || 'Accessory',
+                    is_set: 0,
+                    parentid: finalParentId,
+                    currentlocation: location,
+                    assignedto: projectId ? `Project: ${projectId}` : null
+                };
+                await promoteToAsset(targetChildId, promoData, trx, user);
+            }
+        } else {
+            // Standard asset update
+            await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [targetChildId.toLowerCase()]).update({
+                parentid: finalParentId,
+                currentlocation: location,
+                status: projectId ? 'Project' : status,
+                assignedto: projectId ? `Project: ${projectId}` : null,
+                lastupdated: new Date().toISOString()
+            });
+        }
+
+        if (projectId) {
+            await trx('project_assets').insert({ projectid: projectId, assetid: targetChildId, assigneddate: new Date().toISOString(), type: 'Permanent' }).onConflict(['projectid', 'assetid']).merge();
+        }
+        
+        await logAssetHistory(targetChildId, 'JOIN_SET', null, finalParentId, user, `Linked to set ${finalParentId}. Project: ${projectId || 'None'}`, trx);
+      }
+    });
+
+    await invalidateAssetsCache();
+    res.json({ success: true, message: 'Logic Engine: Set balanced.', parentId: finalParentId });
+  } catch (err) {
+    console.error('[LOGIC-ENGINE] Make set error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+/**
+ * Break an item out of a Set.
+ * If the item is a No-QR component, it is PROMOTED to a full Asset.
+ */
+app.post('/api/assets/break-set', authenticateJWT, async (req, res) => {
+  try {
+    const { childAssetId, newPrice, componentData } = req.body;
+    const user = req.user?.username || req.headers['x-user'] || 'web';
+
+    console.log(`[SET] Break set request. child: ${childAssetId}, newPrice: ${newPrice}`);
+
+    let resultId = childAssetId;
+
+    await db.transaction(async (trx) => {
+      let category = 'IT'; 
+      let parentData = null;
+
+      // 1. CATEGORY & DATA INHERITANCE
+      const parentId = (componentData && componentData.parentid) || null;
+      if (parentId) {
+        const parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()]).first();
+        if (parent) {
+          parentData = parent;
+          if (parent.category) category = parent.category;
+        }
+      }
+
+      // 2. PROMOTION LOGIC: If we are breaking out a "No-QR" component
+      if (componentData && (!childAssetId || childAssetId.startsWith('COMP-') || (componentData.noqr === 1) || (componentData.NoQR === 1))) {
+        const loc = componentData.currentlocation || (parentData ? parentData.currentlocation : 'Mumbai');
+        const type = componentData.type || 'Accessory';
+        
+        let newId = childAssetId;
+        if (!childAssetId || childAssetId.startsWith('COMP-')) {
+            newId = generateModernAssetId(loc, type);
+        }
+        
+        resultId = newId;
+
+        const promoData = {
+          itemname: componentData.itemname || componentData.ItemName,
+          make: componentData.make || componentData.Make || '',
+          model: componentData.model || componentData.Model || '',
+          srno: componentData.srno || componentData.SrNo || '',
+          status: 'Under Inspection', 
+          category: category, 
+          type: type,
+          asset_value: newPrice || 0,
+          is_set: 0,
+          parentid: parentId, 
+          currentlocation: loc
+        };
+
+        await promoteToAsset(newId, promoData, trx, user);
+      } else {
+        // 3. STANDARD DETACH
+        console.log(`[SET] Detaching asset ${childAssetId} from parent`);
+        const updateData = { 
+          parentid: null,
+          lastupdated: new Date().toISOString()
+        };
+        if (newPrice !== undefined && newPrice !== null) {
+          updateData.asset_value = newPrice;
+        }
+        await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [childAssetId.toLowerCase()]).update(updateData);
+        await logAssetHistory(childAssetId, 'BREAK_SET', 'SET_MEMBER', 'STANDALONE', user, `Broken out from set. New Price: ${newPrice || 'Original'}`, trx);
+      }
+    });
+
+    console.log(`[SET] Break set successful. resultId: ${resultId}`);
+    await invalidateAssetsCache();
+    res.json({ 
+      success: true, 
+      message: 'Item broken out and promoted successfully.',
+      newAssetId: resultId
+    });
+  } catch (err) {
+    console.error('[SET] Break set error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
+
+
 
 app.post('/api/quantity/issue', async (req, res) => {
   try {
@@ -5816,7 +6321,7 @@ app.get('/api/projects/:id/assets', authenticateJWT, async (req, res) => {
             .join('project_assets as pa', 'a.id', 'pa.assetid')
             .where('pa.projectid', id)
             .select(
-              'a.id', 'a.itemname', 'a.status', 'a.make', 'a.model', 'a.type', 'a.category', 'a.icon', 'a.currency',
+              'a.id', 'a.itemname', 'a.status', 'a.make', 'a.model', 'a.type', 'a.category', 'a.icon', 'a.currency', 'a.is_set', 'a.parentid',
               'pa.type as assignmenttype', 'pa.assigneddate as assigneddate'
             )
             .select(db.raw('0 as estimatedprice'))
@@ -5836,8 +6341,27 @@ app.get('/api/projects/:id/assets', authenticateJWT, async (req, res) => {
         let assets = [...permanent, ...temporary];
         assets = normalizeResult(assets);
         
-        console.log(`Found ${assets.length} assets for project ${id}`);
-        res.json(assets);
+        // --- HIERARCHY LOGIC: Hide nested children from main list ---
+        const assetMap = {};
+        assets.forEach(a => {
+            const id = a.id || a.ID;
+            assetMap[id.toLowerCase()] = { ...a, children: [] };
+        });
+
+        const roots = [];
+        assets.forEach(a => {
+            const id = (a.id || a.ID).toLowerCase();
+            const parentId = (a.parentid || a.ParentId || '').toLowerCase();
+            
+            if (parentId && assetMap[parentId]) {
+                assetMap[parentId].children.push(assetMap[id]);
+            } else {
+                roots.push(assetMap[id]);
+            }
+        });
+
+        console.log(`Found ${assets.length} assets for project ${id}. Returning ${roots.length} top-level items.`);
+        res.json(roots);
     } catch (err) {
         console.error('Error fetching project assets:', err);
         res.status(500).json({ error: err.message });
@@ -5864,38 +6388,99 @@ app.post('/api/projects/:id/assign-asset', authenticateJWT, async (req, res) => 
             }
         }
 
-        const project = await db('projects').where('id', id).select('projectname', 'initials').first();
-        const projectName = project ? (project.projectname || project.ProjectName) : id;
-        const projectInitials = project ? (project.initials || project.Initials || 'NA') : 'NA';
-        
         await db.transaction(async (trx) => {
-            // Generate Client Label: (AssetKind)-(ProjectInitials)-(6DigitCodeFromAssetID)
-            const assetParts = AssetID.split('-');
-            const assetKind = assetParts[0] || 'AST';
-            const sixDigitCode = assetParts[3] || '000000';
-            const clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
+            const project = await trx('projects').where('id', id).select('projectname', 'initials').first();
+            const projectName = project ? (project.projectname || project.ProjectName) : id;
+            const projectInitials = project ? (project.initials || project.Initials || 'NA') : 'NA';
 
-            await trx('project_assets').insert({
-                projectid: id, 
-                assetid: AssetID, 
-                assigneddate: new Date().toISOString(), 
-                type: Type || 'Permanent'
-            }).onConflict(['projectid', 'assetid']).merge();
-            
-            await trx('assets')
-                .where('id', AssetID)
-                .update({ 
-                    assignedto: `Project: ${projectName}`, 
-                    status: 'Project', 
-                    currentlocation: 'On Site',
-                    client_label: clientLabel
-                });
+            const processAssignment = async (assetId, isChild = false) => {
+                const assetParts = assetId.split('-');
+                const assetKind = assetParts[0] || 'AST';
+                const sixDigitCode = assetParts[3] || '000000';
+                const clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
 
-            // --- Log Asset History ---
-            await logAssetHistory(AssetID, 'PROJECT_CHANGE', 'General Stock', `Project: ${projectName}`, req.user.username || 'web', `Assigned to project manually`, trx);
-            await logAssetHistory(AssetID, 'STATUS_CHANGE', 'In Store', 'In-Use', req.user.username || 'web', `Status updated via project assignment`, trx);
+                // --- PROMOTION LOGIC: Check both tables ---
+                let assetRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).first();
+                let asset = normalizeResult(assetRow);
+
+                if (!asset) {
+                    const compRow = await trx('components').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).first();
+                    if (compRow) {
+                        const comp = normalizeResult(compRow);
+                        const loc = 'On Site';
+                        const type = comp.Type || comp.type || 'Accessory';
+                        
+                        let newId = assetId;
+                        if (!assetId || assetId.startsWith('COMP-')) {
+                            newId = generateModernAssetId(loc, type);
+                        }
+
+                        const promoData = {
+                            itemname: comp.ItemName || comp.itemname,
+                            make: comp.Make || comp.make || '',
+                            model: comp.Model || comp.model || '',
+                            srno: comp.SrNo || comp.srno || '',
+                            status: 'Project',
+                            category: comp.Category || comp.category || 'IT',
+                            type: type,
+                            is_set: 0,
+                            parentid: comp.ParentId || comp.parentid,
+                            currentlocation: loc,
+                            assignedto: `Project: ${projectName}`
+                        };
+                        
+                        await promoteToAsset(newId, promoData, trx, req.user?.username || 'web');
+                        
+                        // Continue with the newly created asset
+                        asset = { id: newId, ID: newId, status: 'Project', is_set: 0 };
+                        assetId = newId;
+                    }
+                }
+
+                if (!asset) {
+                    console.warn(`[ASSIGN] Asset ${assetId} not found for assignment.`);
+                    return;
+                }
+
+                // --- FIXED: Double-Assignment Prevention ---
+                if (asset.status === 'Project' || asset.Status === 'Project') {
+                    console.warn(`[ASSIGN] Asset ${assetId} is already assigned to a project. Skipping.`);
+                    // Still recurse into children though, just in case some weren't locked
+                } else {
+                    // Lock the asset
+                    const currentQty = parseFloat(asset.quantity_available || asset.QuantityAvailable || 0);
+                    const isBatch = !!(asset.IsBatch || asset.is_batch || (asset.quantity_total > 1 && asset.is_quantity_tracked));
+                    
+                    let newQty = 0;
+                    if (isBatch && currentQty > 1) {
+                        newQty = currentQty - 1;
+                    }
+
+                    console.log(`[ASSIGN] Locking asset ${assetId}. Qty: ${currentQty} -> ${newQty}. Status -> Project`);
+
+                    // Use the Reliable Status Helper (now with recursive project linking)
+                    await updateAssetStatus(
+                        assetId, 
+                        'Project', 
+                        { 
+                            assignedto: `Project: ${projectName}`, 
+                            currentlocation: 'On Site',
+                            client_label: clientLabel,
+                            quantity_available: newQty
+                        }, 
+                        trx, 
+                        req.user?.username || 'web', 
+                        isChild ? `Assigned to project as part of set` : `Assigned to project manually`,
+                        true, // Recursive for sets
+                        id    // Pass projectId for linking
+                    );
+                }
+            };
+
+            await processAssignment(AssetID);
         });
 
+        await invalidateAssetsCache();
         res.json({ success: true });
     } catch (err) {
         console.error('Assign asset error:', err);
@@ -5922,59 +6507,74 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                     .andWhere('assetid', assetId)
                     .delete();
                 
-                const assetRow = await trx('assets').where('id', assetId).first();
+                const assetRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).first();
                 const asset = normalizeResult(assetRow);
 
-                if (asset && asset.ParentId) {
-                    // 1.1 Check if it's a split child (has ParentId)
-                    const parentRow = await trx('assets').where('id', asset.ParentId).first();
+                if (asset && (asset.ParentId || asset.parentid)) {
+                    const pId = asset.ParentId || asset.parentid;
+                    // 1.1 Check if it's a split child (Batch/Quantity) vs a Set Component
+                    const parentRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [pId.toLowerCase()]).first();
                     const parent = normalizeResult(parentRow);
 
-                    if (parent) {
-                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent ${asset.ParentId}`);
+                    // ONLY delete and merge back if the parent is a BATCH or QUANTITY asset
+                    // If the parent is a SET, the child is a standalone asset and must be preserved!
+                    if (parent && (parent.IsBatch || parent.IsQuantityTracked || (parent.is_batch || parent.is_quantity_tracked))) {
+                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent batch ${pId}`);
                         isSplitChild = true;
                         
-                        // Increase parent quantity
-                        const qtyToRestore = parseFloat(asset.QuantityTotal) || 1;
+                        const qtyToRestore = parseFloat(asset.QuantityTotal || asset.quantity_total) || 1;
                         await trx('assets')
-                            .where('id', asset.ParentId)
+                            .whereRaw('LOWER(id) = LOWER(?)', [pId.toLowerCase()])
                             .update({
-                                quantity_available: (parent.QuantityAvailable || 0) + qtyToRestore,
-                                quantity_total: (parent.QuantityTotal || 0) + qtyToRestore,
+                                quantity_available: (parent.QuantityAvailable || parent.quantity_available || 0) + qtyToRestore,
+                                quantity_total: (parent.QuantityTotal || parent.quantity_total || 0) + qtyToRestore,
                                 lastupdated: new Date().toISOString()
                             });
                         
-                        // Delete the child asset record
-                        await trx('assets').where('id', assetId).delete();
-                        await logAssetHistory(asset.ParentId, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
-                        
-                        // We are done with this asset
+                        await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).delete();
+                        await logAssetHistory(pId, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
                         return;
+                    } else {
+                        console.log(`[UNASSIGN] Asset ${assetId} is a component of SET ${pId}. Preserving identity.`);
                     }
                 }
 
-                // Determine loc code from ID (e.g. AST-MUM-...)
                 const assetParts = assetId.split('-');
                 const assetKind = assetParts[0] || 'AST';
                 const locCode = assetParts[1] || 'LOC';
                 const sixDigitCode = assetParts[3] || '000000';
                 const revertedLabel = `${assetKind}-${locCode}-${sixDigitCode}`;
 
-                // Reset permanent asset status
-                await trx('assets') 
-                    .where('id', assetId)
-                    .update({ 
-                        assignedto: null, 
-                        status: 'Under Inspection', 
-                        currentlocation: 'Warehouse', 
-                        purpose: 'Owned',
-                        linked_po_item_id: null,
-                        client_label: revertedLabel,
-                        is_deleted: 0,
-                        deleted_at: null
-                    });
-                
-                await logAssetHistory(assetId, 'UNASSIGNED', 'In Use', 'Under Inspection', req.user.user_id, `Unassigned from project ${id}. Awaiting inward inspection.`, trx);
+                const aRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).first();
+                const aObj = normalizeResult(aRow);
+
+                if (aObj) {
+                    // Use the Reliable Status Helper (now with recursive project unlinking)
+                    await updateAssetStatus(
+                        assetId,
+                        'Under Inspection',
+                        {
+                            assignedto: null,
+                            currentlocation: 'Warehouse',
+                            purpose: 'Owned',
+                            linked_po_item_id: null,
+                            client_label: revertedLabel,
+                            // Restore quantity_available for single assets
+                            quantity_available: (aObj.IsBatch || aObj.is_batch || aObj.quantity_total > 1) ? aObj.quantity_available : (aObj.quantity_total || 1),
+                            is_deleted: 0,
+                            deleted_at: null
+                        },
+                        trx,
+                        req.user?.username || 'web',
+                        `Unassigned from project manually`,
+                        true, // Recursive for sets
+                        id    // Pass projectId for unlinking
+                    );
+                }
+
+                // --- NEW LOGIC: Trigger Inward Inspection Modal ---
+                // We'll pass a flag to the frontend to trigger the modal automatically
+                trx.isInspectionTriggered = true;
             } else {
                 // 2. Check if it's a temporary asset
                 const tempAsset = await trx('temporary_assets')
@@ -6012,6 +6612,7 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
                 }
             }
         });
+        await invalidateAssetsCache();
         res.json({ success: true, isSplitChild });
     } catch (err) {
         console.error('Unassign asset error:', err);
@@ -6382,11 +6983,17 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         quantity_unit: asset.quantity_unit !== undefined ? asset.quantity_unit : (existing.quantity_unit || null),
         quantity_total: asset.quantity_total !== undefined ? asset.quantity_total : (existing.quantity_total || 0),
         quantity_precision: asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
-        quantity_available: db.raw('COALESCE(quantity_available, 0) + ?', [qtyAvailableDelta]),
         is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
         is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
+        is_set: asset.is_set !== undefined ? (asset.is_set ? 1 : 0) : (existing.is_set || 0),
+        set_price_mode: asset.set_price_mode !== undefined ? asset.set_price_mode : (existing.set_price_mode || 'SUM_OF_CHILDREN'),
         is_retired: (asset.Status === 'Sold' || asset.Status === 'Scraped') ? 1 : (asset.is_retired !== undefined ? asset.is_retired : (existing.is_retired || 0))
     };
+
+    // Only update quantity_available if it's a quantity tracked asset OR if there was an actual total change
+    if ((asset.is_quantity_tracked || existing.is_quantity_tracked) || qtyAvailableDelta !== 0) {
+        updateObj.quantity_available = db.raw('COALESCE(quantity_available, 0) + ?', [qtyAvailableDelta]);
+    }
 
     await db('assets')
         .whereRaw('LOWER(id) = LOWER(?)', [id])
@@ -6798,9 +7405,19 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
           }
         }
       }
-    } else {
-      // 3. Component Hierarchy Check (Non-quantity assets)
-      const qtyChildren = await db('assets').where('quantity_parent_id', id).first();
+    // 3. Component Hierarchy Check (Non-quantity assets)
+    const activeChildren = await db('assets')
+      .whereRaw('LOWER(parentid) = LOWER(?)', [id.toLowerCase()])
+      .andWhere(function() {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .first();
+    
+    if (activeChildren) {
+        return res.status(400).send(`Cannot delete asset: It is a Parent Set with active members (e.g. ${activeChildren.id}). Unsplit or delete children first.`);
+    }
+
+    const qtyChildren = await db('assets').where('quantity_parent_id', id).first();
       if (qtyChildren) {
         return res.status(400).send('Cannot delete asset with quantity children');
       }
@@ -8663,104 +9280,117 @@ app.post('/api/assets/split', async (req, res) => {
   }
 });
 
+/**
+ * Unsplit/Move back a child asset to its parent batch or set.
+ */
 app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
   try {
-    const { childIds } = req.body;
+    const { childIds, assetId, parentId: providedParentId } = req.body;
     const actor = getRequestActor(req);
     const ts = new Date().toISOString();
 
-    if (!childIds || !Array.isArray(childIds) || childIds.length === 0) {
-      return res.status(400).json({ error: 'List of Child IDs required' });
+    const idsToProcess = childIds || (assetId ? [assetId] : []);
+
+    if (!idsToProcess || !Array.isArray(idsToProcess) || idsToProcess.length === 0) {
+      return res.status(400).json({ error: 'List of Asset IDs required' });
     }
 
-    console.log(`[UNSPLIT] Request to merge children: ${childIds.join(', ')}`);
+    console.log(`[UNSPLIT] Request to unsplit assets: ${idsToProcess.join(', ')}`);
 
     await db.transaction(async (trx) => {
-        // 1. Get all children and their parent info
-        let children = await trx('assets').whereIn('id', childIds);
-        children = normalizeResult(children);
+        for (const id of idsToProcess) {
+            console.log(`[UNSPLIT] Processing asset: ${id}`);
+            // 1. Check BOTH tables for the child
+            let child = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).first();
+            let isFullAsset = !!child;
+            
+            if (!child) {
+                child = await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).first();
+            }
 
-        if (children.length === 0) throw new Error('No valid children found');
+            if (!child) {
+                console.warn(`[UNSPLIT] Child ${id} not found in either assets or components table.`);
+                continue;
+            }
 
-        const parentId = children[0].ParentId;
-        if (!parentId) throw new Error('Selected assets do not have a parent recorded');
+            const parentId = providedParentId || child.parentid || child.ParentId;
+            console.log(`[UNSPLIT] Found child ${id}, parentId in DB: ${child.parentid || child.ParentId}, providedParentId: ${providedParentId}`);
+            
+            if (!parentId) {
+                console.warn(`[UNSPLIT] No parentId found for child ${id}.`);
+                continue;
+            }
 
-        // Verify all children have the same parent
-        if (children.some(c => c.ParentId !== parentId)) {
-          throw new Error('All selected assets must belong to the same parent');
-        }
+            // 2. Get the parent
+            let parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()]).first();
+            parent = normalizeResult(parent);
+            
+            if (!parent) {
+                console.warn(`[UNSPLIT] Parent ${parentId} not found in database.`);
+                continue;
+            }
 
-        // 2. Get the parent
-        let parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId]).first();
-        parent = normalizeResult(parent);
-        if (!parent) throw new Error('Parent asset not found in database');
+            console.log(`[UNSPLIT] Found parent ${parent.ID}. IsBatch: ${parent.IsBatch}, IsQuantityTracked: ${parent.IsQuantityTracked}`);
 
-        // Decrypt parent and children serials for merging
-        if (parent.SrNo) parent.SrNo = encryptionService.universalDecrypt(parent.SrNo);
-        if (parent.srno) parent.srno = encryptionService.universalDecrypt(parent.srno);
-
-        children.forEach(c => {
-            if (c.SrNo) c.SrNo = encryptionService.universalDecrypt(c.SrNo);
-            if (c.srno) c.srno = encryptionService.universalDecrypt(c.srno);
-        });
-
-        const childSerials = children.map(c => c.SrNo).filter(s => s);
-        const currentParentSerials = (parent.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s);
-        
-        // Correct way: The new parent serial list is the union of existing and child serials
-        const mergedSerials = [...new Set([...currentParentSerials, ...childSerials])];
-        
-        const correctQuantity = mergedSerials.length;
-        const currentQuantity = parseFloat(parent.quantity_total) || 0;
-        const delta = correctQuantity - currentQuantity;
-
-        console.log(`[UNSPLIT] Syncing parent ${parentId}. Current Qty: ${currentQuantity}, Target Qty (S/N count): ${correctQuantity}, Delta: ${delta}`);
-
-        // 3. Update Parent Serial Numbers
-        await trx('assets')
-          .whereRaw('LOWER(id) = LOWER(?)', [parentId])
-          .update({
-            srno: encryptionService.encryptDeterministic(mergedSerials.join(', ')),
-            lastupdated: ts
-          });
-
-        // 4. Delete Children
-        const lowerChildIds = childIds.map(id => id.toLowerCase());
-        await trx('project_assets').whereRaw('LOWER(assetid) IN (' + lowerChildIds.map(() => '?').join(',') + ')', lowerChildIds).delete();
-        await trx('assets').whereRaw('LOWER(id) IN (' + lowerChildIds.map(() => '?').join(',') + ')', lowerChildIds).delete();
-
-        // 5. Record Quantity Event
-        if (delta !== 0) {
-          if (parent.is_quantity_tracked) {
-            await applyQuantityEvent({
-              rootId: parent.quantity_root_id || parent.ID,
-              type: 'SYNC',
-              actor: actor,
-              note: `Unsplit merge: Synced quantity to match Serial Number count (${correctQuantity})`,
-              metadata: { parentId, mergedChildren: childIds, previousQty: currentQuantity, newQty: correctQuantity },
-              lines: [
-                { assetId: parent.ID, unit: parent.quantity_unit || 'pcs', deltaAvailable: delta, deltaTotal: delta, precision: parent.quantity_precision || 0 }
-              ]
-            }, trx);
-          } else {
-              await trx('assets')
-                  .whereRaw('LOWER(id) = LOWER(?)', [parentId])
+            // CASE 1: Parent is a Batch or Quantity asset (Merge and Delete behavior)
+            if (parent.IsBatch || parent.IsQuantityTracked || parent.is_batch || parent.is_quantity_tracked) {
+                console.log(`[UNSPLIT] Merging split child ${id} back into parent batch ${parentId}`);
+                
+                const qtyToRestore = parseFloat(child.quantity_total || child.QuantityTotal || child.quantity_available || 1);
+                await trx('assets')
+                  .whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()])
                   .update({
-                      quantity_total: correctQuantity,
-                      quantity_available: correctQuantity
+                    quantity_available: (parent.QuantityAvailable || parent.quantity_available || 0) + qtyToRestore,
+                    quantity_total: (parent.QuantityTotal || parent.quantity_total || 0) + qtyToRestore,
+                    lastupdated: ts
                   });
-          }
-        }
+                
+                // Remove from project assignments too
+                await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
+                
+                await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).delete();
+                await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).delete();
+                
+                await logAssetHistory(parentId, 'SPLIT_CHILD_RESTORED', null, null, actor, `Merged ${qtyToRestore} units back from child ${id}`, trx);
+            } 
+            // CASE 2: Parent is a SET (Break from set, return to store)
+            else {
+                console.log(`[UNSPLIT] Breaking item ${id} out of SET ${parentId}`);
+                
+                // 1. Remove from project assignments
+                await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
 
-        await logAssetHistory(parentId, 'UNSPLIT_MERGED', childSerials.join(', '), mergedSerials.join(', '), actor, `Merged ${childIds.length} children back`, trx);
+                // 2. Clear parent link and return to general store
+                if (isFullAsset) {
+                    await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
+                        parentid: null,
+                        status: 'In Store',
+                        currentlocation: 'Mumbai',
+                        assignedto: null,
+                        lastupdated: ts
+                    });
+                } else {
+                    await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
+                        parentid: null,
+                        lastupdated: ts
+                    });
+                }
+                await logAssetHistory(id, 'BREAK_SET', parentId, 'STANDALONE', actor, `Broken out from set via unsplit. Returned to general store.`, trx);
+            }
+        }
     });
 
-    res.json({ success: true, message: `Successfully merged ${childIds.length} assets back to parent` });
+    await invalidateAssetsCache();
+    res.json({ success: true, message: `Successfully processed assets` });
   } catch (err) {
     console.error('[UNSPLIT] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
+
 
 // --- Google Sheets Sync Endpoint ---
 app.post('/api/external/sheets-sync', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {

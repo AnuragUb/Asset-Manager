@@ -96,6 +96,18 @@
             border: 1px solid #ffa39e;
         }
 
+        .status-badge.project {
+            background-color: #e6f7ff;
+            color: #1890ff;
+            border: 1px solid #91d5ff;
+        }
+
+        .status-badge.under-inspection {
+            background-color: #feffe6;
+            color: #ad8b00;
+            border: 1px solid #fffb8f;
+        }
+
         .status-badge.others {
             background-color: #f5f5f5;
             color: #595959;
@@ -1380,6 +1392,9 @@
                             <div class="form-group">
                                 <label for="itemStatus">Status</label>
                                 <select id="itemStatus" name="itemStatus">
+                                    <option value="In Store">In Store</option>
+                                    <option value="Under Inspection">Under Inspection</option>
+                                    <option value="Project">Project</option>
                                     <option value="Owned">Owned</option>
                                     <option value="Sold">Sold</option>
                                     <option value="Demo">Demo</option>
@@ -1416,6 +1431,10 @@
                             <div class="form-group">
                                 <label for="itemLocation">Current Location</label>
                                 <input type="text" id="itemLocation" name="itemLocation">
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; gap: 10px; padding-top: 25px;">
+                                <input type="checkbox" id="itemIsSet" name="itemIsSet" style="width: 20px; height: 20px; cursor: pointer;">
+                                <label for="itemIsSet" style="font-weight: 700; color: #92400e; cursor: pointer;">📦 Is this a SET?</label>
                             </div>
                             <div class="form-group">
                                 <label for="itemDate">Dispatch / Receive Dt.</label>
@@ -2494,7 +2513,92 @@
     </div>
     <div style="display: flex; gap: 10px;">
         <button id="btnCancelSelection" class="size-btn" style="background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px; padding: 5px 15px; cursor: pointer;">Cancel</button>
+        <button id="btnMakeSet" class="login-button" style="width: auto; padding: 5px 20px; background: #fbbf24; color: #78350f; font-size: 14px; border: 1px solid #d97706;">Make Set 📦</button>
         <button id="btnProceedBatchPrint" class="login-button" style="width: auto; padding: 5px 20px; background: #17a2b8; font-size: 14px;">Print Selected</button>
+    </div>
+</div>
+
+<!-- Granular Break Set Modal -->
+<div id="granularBreakSetModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <span class="close-modal" id="closeGranularBreakModal">&times;</span>
+            <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                <span>✂️</span> Break Out Set Components
+            </h3>
+        </div>
+        <div class="modal-body" style="padding-top: 15px;">
+            <p style="font-size: 13px; color: #666; margin-bottom: 20px;">
+                Select which items you want to <strong>Detach</strong> from the set. 
+                Detached items will become individual line items, while the rest stay inside the set.
+            </p>
+            
+            <div id="granularCompList" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-bottom: 20px;">
+                <!-- Populated via JS -->
+            </div>
+
+            <div style="margin-top: 30px; display: flex; gap: 10px;">
+                <button id="cancelGranularBreak" class="action-button grey" style="flex: 1;">Cancel</button>
+                <button id="confirmGranularBreak" class="action-button blue" style="flex: 1;">Break Selected Items</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Make Set Modal -->
+<div id="makeSetModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <span class="close-modal" id="closeMakeSetModal">&times;</span>
+            <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                <span>📦</span> Create New Asset Set
+            </h3>
+        </div>
+        <div class="modal-body" style="padding-top: 15px;">
+            <p style="font-size: 13px; color: #666; margin-bottom: 20px;">
+                You are about to combine <span id="makeSetCount" style="font-weight: 700; color: #000;">0</span> selected items into a set. 
+            </p>
+
+            <div class="form-group" style="margin-bottom: 20px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; color: #1e293b;">
+                    <input type="checkbox" id="makeSetCreateNew" style="width: 18px; height: 18px;">
+                    <span>Create a NEW Container Asset for this set?</span>
+                </label>
+                <p style="font-size: 11px; color: #64748b; margin: 5px 0 0 28px;">If unchecked, you must pick one of the selected items as the parent.</p>
+            </div>
+
+            <div id="makeSetNewNameGroup" class="form-group" style="display: none; margin-bottom: 20px;">
+                <label>Set Container Name</label>
+                <input type="text" id="makeSetNewName" class="form-input" placeholder="e.g. ARRI Camera Rig A" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+            </div>
+            
+            <div id="makeSetParentSelectGroup" class="form-group">
+                <label>Select Parent Asset</label>
+                <select id="makeSetParentSelect" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                    <!-- Options populated via JS -->
+                </select>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label>Select Items to Include in Set</label>
+                <div id="makeSetItemsList" style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-top: 5px;">
+                    <!-- Checkboxes populated via JS -->
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label>Set Pricing Logic</label>
+                <select id="makeSetPriceMode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                    <option value="SUM_OF_CHILDREN">Sum of Components (Calculated)</option>
+                    <option value="FIXED">Fixed Set Price (Manual)</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 30px; display: flex; gap: 10px;">
+                <button id="cancelMakeSet" class="action-button grey" style="flex: 1;">Cancel</button>
+                <button id="confirmMakeSet" class="action-button blue" style="flex: 1;">Create Set</button>
+            </div>
+        </div>
     </div>
 </div>
 

@@ -172,7 +172,7 @@ window.showSaleModal = function(assetId, assetData = null) {
     modal.style.display = 'flex';
 };
 
-window.showInspectionModal = function(assetId, projectId) {
+window.showInspectionModal = function(assetId, projectId, isUnassign = false) {
     const modal = document.getElementById('inspectionModal');
     if (!modal) return;
     
@@ -181,6 +181,13 @@ window.showInspectionModal = function(assetId, projectId) {
     document.getElementById('inspectionCondition').value = 'Good';
     document.getElementById('inspectionRemarks').value = '';
     
+    // Update button text if it's an unassignment flow
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.textContent = isUnassign ? 'Unassign & Release to Store' : 'Release to Store';
+    }
+
+    window.inspectionFlow_isUnassign = isUnassign;
     modal.style.display = 'flex';
 };
 
@@ -192,8 +199,28 @@ function setupLifecycleFormHandlers() {
             e.preventDefault();
             const formData = new FormData(inspectionForm);
             const assetId = document.getElementById('inspectionAssetId').value;
+            const projectId = document.getElementById('inspectionProjectId').value;
             
             try {
+                // 1. If it's an unassignment flow, call unassign API first
+                if (window.inspectionFlow_isUnassign && projectId) {
+                    const token = localStorage.getItem('token');
+                    const headers = {};
+                    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+                    const unassignRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/unassign-asset/${encodeURIComponent(assetId)}`, {
+                        method: 'DELETE',
+                        headers: headers
+                    });
+
+                    if (!unassignRes.ok) {
+                        const err = await unassignRes.json();
+                        throw new Error('Unassignment failed: ' + (err.error || 'Unknown error'));
+                    }
+                    console.log('[Inspection] Unassigned asset from project successfully');
+                }
+
+                // 2. Call Release to Store API
                 const response = await fetch(`/api/assets/${assetId}/release-to-store`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -209,15 +236,27 @@ function setupLifecycleFormHandlers() {
                 }
                 
                 if (response.ok) {
-                    showToast('Asset released to store successfully', 'success');
+                    showToast('Asset returned to inventory successfully', 'success');
                     document.getElementById('inspectionModal').style.display = 'none';
+                    
+                    // Refresh UIs
                     if (window.loadAssets) await window.loadAssets();
+                    
+                    // If in projects view, refresh project data
+                    const activeView = localStorage.getItem('activeView') || 'dashboard';
+                    if (activeView === 'projects-view' || (projectId && typeof window.loadProjectAssets === 'function')) {
+                        if (projectId) window.loadProjectAssets(projectId);
+                        // Refresh workspace if exists
+                        if (typeof window.initProjectWorkspace === 'function' && projectId) {
+                            window.initProjectWorkspace(projectId);
+                        }
+                    }
                 } else {
                     const err = await response.text();
                     throw new Error(err);
                 }
             } catch (err) {
-                alert('Failed to release asset: ' + err.message);
+                alert('Failed to process asset: ' + err.message);
             }
         };
     }
@@ -339,6 +378,7 @@ function matchesQuery(asset, query) {
         asset.User,
         asset.Department,
         asset.ParentId,
+        asset.IsSet ? 'set bundle' : null,
         asset.EstimatedPrice ? String(asset.EstimatedPrice) : null
     ];
     
@@ -565,7 +605,7 @@ function renderAssetKanban(assets) {
 
     kanban.innerHTML = '';
 
-    const statuses = ['In Store', 'Owned', 'Sold', 'Demo', 'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped'];
+    const statuses = ['In Store', 'Under Inspection', 'Project', 'Owned', 'Sold', 'Demo', 'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped'];
     
     statuses.forEach(status => {
         const statusAssets = assets.filter(a => (a.Status || 'In Store') === status);
@@ -659,9 +699,13 @@ function renderAssetKanban(assets) {
                     <div style="flex: 1; overflow: hidden;">
                         <div style="font-size: 13px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${asset.ItemName}">${asset.ItemName}</div>
                         <div style="font-size: 11px; color: #5e6c84;">ID: ${asset.ID}</div>
+                        ${asset.ParentId ? `<div style="font-size: 10px; color: #007bff; margin-bottom: 3px;">🔗 Child of: <span style="font-weight: 600; cursor: pointer; text-decoration: underline;" onclick="event.stopPropagation(); window.navigateToAssetPage('${asset.ParentId}')">${asset.ParentId}</span></div>` : ''}
                         <div style="font-size: 11px; color: #5e6c84; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${asset.Make || ''} ${asset.Model || ''}</div>
                         ${asset.SrNo ? `<div style="font-size: 11px; color: #5e6c84; margin-top: 3px;">SN: ${asset.SrNo}</div>` : ''}
                         <div style="font-size: 10px; color: #007bff; margin-top: 5px; font-weight: 500;">${asset.Type}</div>
+                        ${asset.IsSet ? `
+                            <div style="display: inline-block; background: #fbbf24; color: #78350f; font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: 700; margin-top: 5px;">📦 SET</div>
+                        ` : ''}
                         <div style="font-size: 10px; margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? `
                                 <span style="color: #0078d4; font-weight: 600; display: flex; align-items: center; gap: 3px;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>
@@ -1580,7 +1624,7 @@ async function initSheetView() {
             { title: "ID", field: "ID", width: 150, headerFilter: "input" },
             { title: "Type", field: "Type", width: 120, headerFilter: "input" },
             { title: "Item Name", field: "ItemName", editor: "input", headerFilter: "input" },
-            { title: "Status", field: "Status", width: 120, editor: "select", editorParams: { values: ["In Store", "In Use", "In Repair", "Others"] }, headerFilter: "select", headerFilterParams: { values: ["In Store", "In Use", "In Repair", "Others"] } },
+            { title: "Status", field: "Status", width: 120, editor: "select", editorParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"] }, headerFilter: "select", headerFilterParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"] } },
             { title: "Make", field: "Make", editor: "input", headerFilter: "input" },
             { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
             { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
@@ -1945,6 +1989,89 @@ export function setupDashboard() {
                 return;
             }
             window.openPrintPreview(selectedBatchAssets);
+        };
+    }
+
+    const btnMakeSet = document.getElementById('btnMakeSet');
+    if (btnMakeSet) {
+        btnMakeSet.onclick = () => {
+            if (selectedBatchAssets.length < 2) {
+                showToast('Please select at least 2 assets to create a set.', 'warning');
+                return;
+            }
+            
+            // Show Make Set Modal
+            const modal = document.getElementById('makeSetModal');
+            const countEl = document.getElementById('makeSetCount');
+            const select = document.getElementById('makeSetParentSelect');
+            
+            if (!modal || !select) return;
+
+            countEl.textContent = selectedBatchAssets.length;
+            
+            // Populate parent select with selected assets
+            const options = selectedBatchAssets.map(asset => {
+                const assetId = asset.ID || asset.id;
+                const name = asset.ItemName || asset.itemname || assetId;
+                return `<option value="${assetId}">${name} (${assetId})</option>`;
+            }).join('');
+            
+            select.innerHTML = options;
+            modal.style.display = 'flex';
+        };
+    }
+
+    // Make Set Modal Handlers
+    const closeMakeSetModal = document.getElementById('closeMakeSetModal');
+    if (closeMakeSetModal) closeMakeSetModal.onclick = () => document.getElementById('makeSetModal').style.display = 'none';
+    
+    const cancelMakeSet = document.getElementById('cancelMakeSet');
+    if (cancelMakeSet) cancelMakeSet.onclick = () => document.getElementById('makeSetModal').style.display = 'none';
+
+    const confirmMakeSet = document.getElementById('confirmMakeSet');
+    if (confirmMakeSet) {
+        confirmMakeSet.onclick = async () => {
+            const parentId = document.getElementById('makeSetParentSelect').value;
+            const priceMode = document.getElementById('makeSetPriceMode').value;
+            const childIds = selectedBatchAssets.map(a => a.ID || a.id).filter(id => id !== parentId);
+
+            if (!parentId || childIds.length === 0) {
+                showToast('Parent ID and child IDs are required.', 'error');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                const headers = { 
+                    'Content-Type': 'application/json',
+                    'x-user': localStorage.getItem('username') || 'web'
+                };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch('/api/assets/make-set', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        parentAssetId: parentId,
+                        childAssetIds: childIds,
+                        setPriceMode: priceMode
+                    })
+                });
+
+                if (response.ok) {
+                    showToast('Set created successfully!', 'success');
+                    document.getElementById('makeSetModal').style.display = 'none';
+                    toggleSelectionMode(false);
+                    if (window.loadAssets) await window.loadAssets();
+                    renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                } else {
+                    const err = await response.json();
+                    showToast(`Failed to create set: ${err.error}`, 'error');
+                }
+            } catch (err) {
+                console.error('Make set error:', err);
+                showToast('Error creating set. Check console.', 'error');
+            }
         };
     }
 
@@ -5011,6 +5138,10 @@ export function openAddItemModal(kind, prefillData = null) {
         const iconInput = document.getElementById('itemIcon');
         if (iconInput) iconInput.value = '';
 
+        // Reset IsSet checkbox
+        const isSetCheckbox = document.getElementById('itemIsSet');
+        if (isSetCheckbox) isSetCheckbox.checked = false;
+
         // Populate the Kind dropdown
         const kindSelect = document.getElementById('itemKind');
         const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
@@ -5201,6 +5332,26 @@ export function openAddItemModal(kind, prefillData = null) {
 }
 window.openAddItemModal = openAddItemModal;
 
+// Add this to window so projects.js can call it
+window.showEditAssetModal = async function(assetId) {
+    try {
+        console.log('[Dashboard] showEditAssetModal fetching:', assetId);
+        const response = await fetch(`/api/asset-details/${encodeURIComponent(assetId)}`);
+        if (!response.ok) throw new Error('Failed to fetch asset details');
+        const data = await response.json();
+        // Data returned from /api/asset-details/:id is { asset, children, history, ... }
+        if (data && data.asset) {
+            editAsset(data.asset);
+        } else {
+            throw new Error('Asset data not found in response');
+        }
+    } catch (err) {
+        console.error('[Dashboard] showEditAssetModal error:', err);
+        if (typeof showToast === 'function') showToast('Error loading asset details', 'error');
+        else alert('Error loading asset details');
+    }
+};
+
 export async function editAsset(asset) {
     console.log('editAsset() called for:', asset.ID);
     
@@ -5242,19 +5393,41 @@ export async function editAsset(asset) {
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
     document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
 
+    // Populate Assignment Fields
+    const assignedToVal = asset.AssignedTo || '';
+    const assignedProjectName = asset.AssignedProjectName || '';
+    
+    if (assignedToVal.startsWith('Project: ') || assignedProjectName) {
+        document.getElementById('itemProjectAssignedTo').value = assignedProjectName || assignedToVal.replace('Project: ', '');
+        document.getElementById('itemAssignedTo').value = ''; 
+    } else {
+        document.getElementById('itemProjectAssignedTo').value = '';
+        document.getElementById('itemAssignedTo').value = assignedToVal;
+    }
+    
+    // Populate IsSet checkbox
+    const isSetCheckbox = document.getElementById('itemIsSet');
+    if (isSetCheckbox) {
+        // Handle both IsSet (normalized uppercase) and is_set (lowercase)
+        const isSetVal = (asset.IsSet !== undefined) ? asset.IsSet : asset.is_set;
+        isSetCheckbox.checked = isSetVal === 1 || isSetVal === true || isSetVal === 'true';
+    }
+
     // Handle Batch UI in Edit Modal
     const srNoInputEdit = document.getElementById('itemSrNo');
     const srNoBatchEdit = document.getElementById('itemSrNoBatch');
     const batchListEdit = document.getElementById('batchSnListContainer');
     const btnToggleBatchEdit = document.getElementById('btnToggleBatchMode');
+
     const btnSplitEdit = document.getElementById('btnSplitBatch');
     const btnUnsplitEdit = document.getElementById('btnUnsplitBatch');
 
     if (btnUnsplitEdit) {
-        if (asset.ParentId) {
+        const pId = asset.ParentId || asset.parentid;
+        if (pId) {
             btnUnsplitEdit.style.display = 'block';
             btnUnsplitEdit.onclick = async () => {
-                if (confirm(`Are you sure you want to merge this asset back into its parent batch (${asset.ParentId})? This individual record will be deleted.`)) {
+                if (confirm(`Are you sure you want to merge this asset back into its parent batch/set (${pId})?`)) {
                     try {
                         const token = localStorage.getItem('token');
                         const headers = { 'Content-Type': 'application/json' };
@@ -5263,7 +5436,7 @@ export async function editAsset(asset) {
                         const response = await fetch('/api/assets/unsplit', {
                             method: 'POST',
                             headers: headers,
-                            body: JSON.stringify({ childIds: [asset.ID] })
+                            body: JSON.stringify({ childIds: [asset.ID || asset.id] })
                         });
                         
                         if (response.ok) {
@@ -5297,26 +5470,28 @@ export async function editAsset(asset) {
             const resp = await fetch(`/api/assets?all=true`);
             if (resp.ok) {
                 const allAssets = await resp.json();
-                const children = allAssets.filter(a => String(a.ParentId).toLowerCase() === String(asset.ID).toLowerCase());
-                if (children.length > 0) {
-                    splitSection.style.display = 'block';
-                    splitList.innerHTML = children.map(c => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border: 1px solid #e2e8f0; border-radius: 6px;">
-                            <div>
-                                <div style="font-weight: 600; color: #1e293b; font-size: 13px;">${c.ID}</div>
-                                <div style="font-size: 11px; color: #64748b;">S/N: ${c.SrNo || 'N/A'} | Status: ${c.Status}</div>
+                if (Array.isArray(allAssets)) {
+                    const children = allAssets.filter(a => String(a.ParentId || a.parentid).toLowerCase() === String(asset.ID || asset.id).toLowerCase());
+                    if (children.length > 0) {
+                        splitSection.style.display = 'block';
+                        splitList.innerHTML = children.map(c => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border: 1px solid #e2e8f0; border-radius: 6px;">
+                                <div>
+                                    <div style="font-weight: 600; color: #1e293b; font-size: 13px;">${c.ID || c.id}</div>
+                                    <div style="font-size: 11px; color: #64748b;">S/N: ${c.SrNo || c.srno || 'N/A'} | Status: ${c.Status || c.status}</div>
+                                </div>
+                                <button type="button" class="btn-view-split" data-id="${c.ID || c.id}" style="font-size: 10px; color: #6366f1; background: #eef2ff; border: 1px solid #e0e7ff; padding: 4px 8px; border-radius: 4px; cursor: pointer;">View</button>
                             </div>
-                            <button type="button" class="btn-view-split" data-id="${c.ID}" style="font-size: 10px; color: #6366f1; background: #eef2ff; border: 1px solid #e0e7ff; padding: 4px 8px; border-radius: 4px; cursor: pointer;">View</button>
-                        </div>
-                    `).join('');
+                        `).join('');
 
-                    splitList.querySelectorAll('.btn-view-split').forEach(btn => {
-                        btn.onclick = () => {
-                            const childId = btn.getAttribute('data-id');
-                            const childAsset = allAssets.find(a => a.ID === childId);
-                            if (childAsset) editAsset(childAsset);
-                        };
-                    });
+                        splitList.querySelectorAll('.btn-view-split').forEach(btn => {
+                            btn.onclick = () => {
+                                const childId = btn.getAttribute('data-id');
+                                const childAsset = allAssets.find(a => (a.ID || a.id) === childId);
+                                if (childAsset) editAsset(childAsset);
+                            };
+                        });
+                    }
                 }
             }
         } catch (err) {
@@ -5569,14 +5744,19 @@ export async function editAsset(asset) {
 
     // Force fetch latest details to ensure project assignment is up to date
     try {
-        const response = await fetch(`/api/assets/${encodeURIComponent(asset.ID)}`);
+        const response = await fetch(`/api/asset-details/${encodeURIComponent(asset.ID || asset.id)}`);
         if (response.ok) {
-            const freshAsset = await response.json();
+            const data = await response.json();
+            const freshAsset = data.asset;
             if (freshAsset) {
-                document.getElementById('itemProjectAssignedTo').value = freshAsset.AssignedProjectName || '';
-                // Also update other fields that might be stale
-                document.getElementById('itemAssignedTo').value = freshAsset.AssignedTo || '';
-                document.getElementById('itemStatus').value = freshAsset.Status || 'Owned';
+                const projField = document.getElementById('itemProjectAssignedTo');
+                if (projField) projField.value = freshAsset.AssignedProjectName || '';
+                
+                const assignedField = document.getElementById('itemAssignedTo');
+                if (assignedField) assignedField.value = freshAsset.AssignedTo || '';
+                
+                const statusField = document.getElementById('itemStatus');
+                if (statusField) statusField.value = freshAsset.Status || 'Owned';
             }
         }
     } catch (e) {
@@ -6397,6 +6577,13 @@ export function setupDashboardFormHandlers() {
                     isBatchValue = 0;
                 }
 
+                // Determine AssignedTo value (Personnel or Project)
+                let assignedToValue = formData.get('itemAssignedTo');
+                const projectNameValue = formData.get('itemProjectAssignedTo');
+                if (!assignedToValue && projectNameValue) {
+                    assignedToValue = `Project: ${projectNameValue}`;
+                }
+
                 // Collect basic fields
                 const asset = {
                     ID: assetId || null,
@@ -6414,7 +6601,7 @@ export function setupDashboardFormHandlers() {
                     PurchaseDetails: formData.get('itemPurchase'),
                     HSNCode: formData.get('itemHsnCode'),
                     Remarks: formData.get('itemRemarks'),
-                    AssignedTo: formData.get('itemAssignedTo'),
+                    AssignedTo: assignedToValue,
                     ParentId: formData.get('itemParentId'),
                     Category: category,
                     
@@ -6429,7 +6616,9 @@ export function setupDashboardFormHandlers() {
                     Currency: canEditPrice() ? (formData.get('itemCurrency') || 'INR') : undefined,
                     PurchaseDate: formData.get('itemPurchaseDate'),
                     warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
-                    is_quantity_tracked: document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0
+                    is_quantity_tracked: document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0,
+                    is_set: document.getElementById('itemIsSet')?.checked ? 1 : 0,
+                    set_price_mode: document.getElementById('itemIsSet')?.checked ? 'SUM_OF_CHILDREN' : undefined
                 };
 
                 // FormData ignores disabled fields, so we get values directly from DOM

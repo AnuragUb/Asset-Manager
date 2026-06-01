@@ -137,15 +137,26 @@ async function renderAsset(data) {
             <div style="font-size: 40px; margin-bottom: 10px;">${getIcon(asset.Icon)}</div>
             <h1 style="font-size: 24px; margin-bottom: 5px;">${safe(asset.ItemName)}</h1>
             <div style="opacity: 0.9; font-size: 14px; font-family: monospace;">${safe(asset.ID)}</div>
-            <div class="status-pill" style="margin-top: 15px; background: rgba(255,255,255,0.25); padding: 5px 15px; border-radius: 20px; display: inline-block; font-weight: 600;">
-                ${safe(asset.Status)}
+            <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px;">
+                <div class="status-pill" style="background: rgba(255,255,255,0.25); padding: 5px 15px; border-radius: 20px; display: inline-block; font-weight: 600;">
+                    ${safe(asset.Status)}
+                </div>
+                ${asset.IsSet ? `
+                    <div class="set-pill" style="background: #fbbf24; color: #78350f; padding: 5px 15px; border-radius: 20px; display: inline-block; font-weight: 600; font-size: 12px; text-transform: uppercase;">
+                        Set 📦
+                    </div>
+                ` : ''}
             </div>
             
             ${asset.ParentId ? `
-                <div style="margin-top: 15px;">
+                <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;">
                     <button id="btnUnsplitAssetView" class="action-button" 
                             style="background: #fff; color: #2563eb; border: none; padding: 6px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                         <span>🔗</span> Unsplit & Merge back to Parent
+                    </button>
+                    <button id="btnBreakSet" class="action-button" 
+                            style="background: #fff; color: #ef4444; border: none; padding: 6px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <span>✂️</span> Break from Set
                     </button>
                 </div>
             ` : ''}
@@ -474,9 +485,12 @@ async function renderAsset(data) {
 
     // Add event listener for unsplit button
     const btnUnsplit = document.getElementById('btnUnsplitAssetView');
-    if (btnUnsplit && asset.ParentId) {
+    const pId = asset.ParentId || asset.parentid;
+    const assetId = asset.ID || asset.id;
+
+    if (btnUnsplit && pId) {
         btnUnsplit.onclick = async () => {
-            if (!confirm(`Are you sure you want to merge this asset back into its parent batch (${asset.ParentId})? This individual asset record will be deleted.`)) {
+            if (!confirm(`Are you sure you want to merge this asset back into its parent batch/set (${pId})?`)) {
                 return;
             }
 
@@ -488,13 +502,13 @@ async function renderAsset(data) {
                 const response = await fetch('/api/assets/unsplit', {
                     method: 'POST',
                     headers: headers,
-                    body: JSON.stringify({ childIds: [asset.ID] })
+                    body: JSON.stringify({ childIds: [assetId] })
                 });
 
                 if (response.ok) {
-                    alert('Asset successfully merged back to parent batch.');
+                    alert('Asset successfully merged back to parent batch/set.');
                     // Redirect to parent asset page
-                    window.location.href = `/asset/${encodeURIComponent(asset.ParentId)}`;
+                    window.location.href = `/asset/${encodeURIComponent(pId)}`;
                 } else {
                     const err = await response.json();
                     alert('Unsplit failed: ' + (err.error || 'Unknown error'));
@@ -502,6 +516,42 @@ async function renderAsset(data) {
             } catch (err) {
                 console.error('[AssetView] Unsplit error:', err);
                 alert('Error processing unsplit request');
+            }
+        };
+    }
+
+    // Break Set Handler
+    const btnBreakSet = document.getElementById('btnBreakSet');
+    if (btnBreakSet && pId) {
+        btnBreakSet.onclick = async () => {
+            const newPrice = prompt(`Are you sure you want to break this item (${assetId}) out of its set?\n\nYou can optionally set a new individual price for this item below:`, asset.AssetValue || asset.asset_value || '');
+            
+            if (newPrice === null) return; // Cancelled
+
+            try {
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'application/json', 'x-user': currentUser ? currentUser.username : 'web' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch('/api/assets/break-set', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ 
+                        childAssetId: assetId,
+                        newPrice: newPrice ? parseFloat(newPrice) : null
+                    })
+                });
+
+                if (response.ok) {
+                    alert('Item successfully broken out of set.');
+                    location.reload();
+                } else {
+                    const err = await response.json();
+                    alert('Break Set failed: ' + (err.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('[AssetView] Break Set error:', err);
+                alert('Error processing Break Set request');
             }
         };
     }

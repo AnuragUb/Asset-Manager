@@ -145,6 +145,7 @@ const typeCode = {
     'Cable': 'CBL',
     'Software': 'SFT',
     'License': 'LIC',
+    'Set': 'SET',
     'Accessory': 'ACC',
     'Other': 'OTH'
 };

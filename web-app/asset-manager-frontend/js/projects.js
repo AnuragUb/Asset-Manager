@@ -745,42 +745,11 @@ async function showProjectDetails(id) {
 }
 
 async function unassignAssetFromProject(projectId, assetId) {
-    if (!confirm(`Are you sure you want to unassign ${assetId} from this project?`)) return;
-
-    try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/unassign-asset/${encodeURIComponent(assetId)}`, {
-            method: 'DELETE',
-            headers: headers
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            showToast('Asset unassigned successfully', 'success');
-            
-            // Show Inspection Modal (only if it wasn't a split child that got merged/deleted)
-            if (!data.isSplitChild && typeof window.showInspectionModal === 'function') {
-                window.showInspectionModal(assetId, projectId);
-            }
-            
-            loadProjectAssets(projectId);
-            if (window.loadAssets) window.loadAssets();
-            
-            // Also refresh workspace if active
-            const workspaceTab = document.getElementById('projectWorkspaceTab');
-            if (workspaceTab && workspaceTab.style.display !== 'none') {
-                initProjectWorkspace(projectId);
-            }
-        } else {
-            const err = await res.json();
-            alert('Failed to unassign: ' + (err.error || 'Unknown error'));
-        }
-    } catch (err) {
-        console.error('Unassign error:', err);
-        alert('Error unassigning asset');
+    if (typeof window.showInspectionModal === 'function') {
+        window.showInspectionModal(assetId, projectId, true);
+    } else {
+        if (!confirm(`Are you sure you want to unassign ${assetId} from this project?`)) return;
+        // ... fallback logic (optional, but keep it simple)
     }
 }
 window.unassignAssetFromProject = unassignAssetFromProject;
@@ -810,16 +779,24 @@ async function loadProjectAssets(projectId) {
                 </div>
             ` : '';
 
+            const childDisplay = (a.children && a.children.length > 0) ? `
+                <div style="font-size: 11px; margin-top: 4px; padding-left: 20px; color: #64748b; border-left: 2px solid #e2e8f0; margin-left: 6px;">
+                    <div style="font-weight: 600; color: #94a3b8; text-transform: uppercase; font-size: 9px; margin-bottom: 2px;">Includes:</div>
+                    ${a.children.map(c => `<div>• ${c.ItemName || c.itemname} <span style="font-family: monospace; font-size: 10px; opacity: 0.7;">(${c.id || c.ID})</span></div>`).join('')}
+                </div>
+            ` : '';
+
             return `
                 <tr>
-                    <td>${a.ID}</td>
+                    <td>${a.ID || a.id}</td>
                     <td>
                         <div style="display:flex; flex-direction:column; gap:2px;">
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <span>${a.Icon || '📦'}</span>
-                                <span style="font-weight: 600;">${a.ItemName}</span>
+                                <span style="font-weight: 600;">${a.ItemName || a.itemname}</span>
                             </div>
                             ${qtyDisplay}
+                            ${childDisplay}
                         </div>
                     </td>
                     <td><span style="padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #f1f5f9; color: #475569;">${a.Status}</span></td>
@@ -2336,11 +2313,20 @@ let workspaceProjectPOs = [];
 let workspaceSelectedPoId = null;
 
 async function initProjectWorkspace(projectId) {
-    console.log('[Workspace] Initializing for:', projectId);
-    workspaceStagedAssets = []; // Reset staging area
+    console.log('[Workspace] initProjectWorkspace called for:', projectId);
+    
+    // Only reset if it's a different project
+    if (currentProjectId !== projectId) {
+        console.log('[Workspace] New project detected, resetting staging area.');
+        workspaceStagedAssets = [];
+        currentProjectId = projectId;
+    } else {
+        console.log('[Workspace] Same project, preserving staging area.');
+    }
+
     const stagingArea = document.getElementById('workspaceStagingArea');
     if (stagingArea) {
-        renderStagingArea(); // Clear the UI
+        renderStagingArea();
         
         // Setup Drop Zone
         stagingArea.ondragover = (e) => {
@@ -2357,8 +2343,11 @@ async function initProjectWorkspace(projectId) {
             stagingArea.style.borderColor = '#e2e8f0';
             stagingArea.style.background = '#fafafa';
             try {
-                const assetData = JSON.parse(e.dataTransfer.getData('application/json'));
-                handleWorkspaceDrop(assetData);
+                const dataTransfer = e.dataTransfer.getData('application/json');
+                if (dataTransfer) {
+                    const assetData = JSON.parse(dataTransfer);
+                    handleWorkspaceDrop(assetData);
+                }
             } catch (err) {
                 console.error('[Workspace] Drop error:', err);
             }
@@ -2368,7 +2357,13 @@ async function initProjectWorkspace(projectId) {
     // Setup Search
     const searchInput = document.getElementById('workspaceSearch');
     if (searchInput) {
-        searchInput.oninput = (e) => loadWorkspaceInventory(e.target.value);
+        searchInput.oninput = (e) => {
+            // Add a small debounce to search to improve responsiveness
+            if (window.workspaceSearchTimeout) clearTimeout(window.workspaceSearchTimeout);
+            window.workspaceSearchTimeout = setTimeout(() => {
+                loadWorkspaceInventory(e.target.value);
+            }, 300);
+        };
     }
 
     // One-Click DC Handler
@@ -2376,9 +2371,8 @@ async function initProjectWorkspace(projectId) {
     if (btnDC) btnDC.onclick = handleWorkspaceGenerateDC;
 
     // Load Data
-    // await loadExistingWorkspaceAssets(projectId); // DISABLED: Staging area should be empty initially
-    await loadWorkspaceInventory();
-    await loadWorkspacePO(projectId);
+    loadWorkspaceInventory();
+    loadWorkspacePO(projectId);
     updateWorkspacePoProgress();
 }
 
@@ -2389,17 +2383,29 @@ async function loadExistingWorkspaceAssets(projectId) {
         if (!res.ok) throw new Error('Failed to load project assets');
         const assets = await res.json();
         
-        // We only add assets that are "In-Use" or "Project" status 
-        // (Temporary assets also included)
-        workspaceStagedAssets = assets.map(a => ({
+        // --- LOGIC ENGINE: Filter for Top-Level Staging ---
+        // We only show "Top-Level" assets in the staging area.
+        // If an item has a ParentId that is ALSO in this project, it's "inside" another item here.
+        const assignedIds = new Set(assets.map(a => (a.id || a.ID).toLowerCase()));
+        const topLevelAssets = assets.filter(a => {
+            const pId = a.parentid || a.ParentId;
+            if (!pId) return true;
+            // If the parent is NOT in this project, then this item is a top-level representative for its set here.
+            return !assignedIds.has(pId.toLowerCase());
+        });
+
+        console.log(`[Workspace] Project has ${assets.length} items. Staging ${topLevelAssets.length} top-level items.`);
+
+        workspaceStagedAssets = topLevelAssets.map(a => ({
             ...a,
             ID: a.ID || a.id,
             ItemName: a.ItemName || a.itemname,
             Icon: a.Icon || a.icon,
-            linkedPoItemId: a.linked_po_item_id
+            IsSet: a.IsSet || a.is_set || false,
+            linkedPoItemId: a.linked_po_item_id,
+            isAlreadyLinkedOnServer: true
         }));
         
-        console.log(`[Workspace] Pre-populated staging with ${workspaceStagedAssets.length} assets`);
         renderStagingArea();
     } catch (err) {
         console.error('[Workspace] Error pre-populating staging:', err);
@@ -2414,15 +2420,11 @@ async function loadWorkspaceInventory(term = '') {
     list.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:12px;">Searching...</div>';
     
     try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token && token !== 'null' && token !== 'undefined') {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
+        // Browser automatically sends cookies for authentication
         // Fetch "Available" assets from server (In Store, Owned, Demo)
-        const url = `/api/assets?search=${encodeURIComponent(term)}&status=In Store,Owned,Demo&limit=100`;
-        const res = await fetch(url, { headers });
+        // Added availableOnly=true to filter out 0-qty assets
+        const url = `/api/assets?search=${encodeURIComponent(term)}&status=In Store,Owned,Demo&availableOnly=true&limit=100`;
+        const res = await fetch(url);
         const result = await res.json();
         
         const assets = Array.isArray(result) ? result : (result.data || []);
@@ -2441,18 +2443,30 @@ async function loadWorkspaceInventory(term = '') {
             const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
             const qtyDesc = asset.is_batch ? `${serials.length} units` : (asset.quantity_total ? `${asset.quantity_available} ${asset.quantity_unit || 'pcs'}` : '1 unit');
             
+            const assetDataJson = JSON.stringify(asset).replace(/'/g, "&apos;");
+            
             return `
                 <div class="workspace-asset-card" draggable="true" 
                      style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; cursor: grab; user-select: none; margin-bottom: 8px;"
-                     data-asset='${JSON.stringify(asset).replace(/'/g, "&apos;")}'>
+                     data-asset='${assetDataJson}'>
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${asset.ItemName}</div>
-                        <div style="font-size: 10px; color: #2563eb; font-weight: 600; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">${qtyDesc}</div>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                            <div style="font-size: 10px; color: #2563eb; font-weight: 600; background: #eff6ff; padding: 1px 5px; border-radius: 4px;">${qtyDesc}</div>
+                            ${(asset.IsSet || asset.is_set) ? `
+                                <div style="font-size: 9px; background: #fbbf24; color: #78350f; padding: 1px 5px; border-radius: 4px; font-weight: 700;">📦 SET</div>
+                            ` : ''}
+                        </div>
                     </div>
                     <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 5px;">
                         <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${asset.Type}</span>
-                        ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<button class="split-assign-btn" style="padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 10px; cursor: pointer;">Split & Assign</button>` : ''}
+                        <div style="display: flex; gap: 4px;">
+                            <button onclick='handleWorkspaceAssign(${assetDataJson})' 
+                                    style="padding: 2px 8px; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 10px; cursor: pointer; font-weight: 600;">Assign</button>
+                            ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? 
+                                `<button class="split-assign-btn" style="padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 10px; cursor: pointer;">Split & Assign</button>` : ''}
+                        </div>
                     </div>
                 </div>
             `;
@@ -2477,13 +2491,7 @@ async function loadWorkspacePO(projectId) {
     const badge = document.getElementById('workspacePoBadge');
     if (!summary) return;
     try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token && token !== 'null' && token !== 'undefined') {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders`, { headers });
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders`);
         const ordersResult = await res.json();
         
         // Handle both { success: true, orders: [...] } and direct array
@@ -2592,67 +2600,224 @@ function renderWorkspacePoChecklist() {
     }
 }
 
+window.handleWorkspaceAssign = function(asset) {
+    console.log('[Workspace] Manual assign button clicked for:', asset.ID);
+    handleWorkspaceDrop(asset);
+};
+
 async function handleWorkspaceDrop(asset) {
-    // If batch OR quantity-tracked with multiple units, we need to split
+    const token = localStorage.getItem('token');
+    const validToken = (token && token !== 'null' && token !== 'undefined') ? token : null;
+    const headers = {};
+    if (validToken) headers['Authorization'] = `Bearer ${token}`;
+
+    // 1. SET LOGIC: Granular Choice
+    if (asset.IsSet || asset.is_set) {
+        // Ask if they want to assign the entire set or break it down
+        const assignEntire = confirm(`You are assigning a SET: "${asset.ItemName}"\n\n- Click OK to assign the ENTIRE set as a single line item.\n- Click CANCEL to break out specific components for promotion.`);
+        
+        if (assignEntire) {
+            console.log('[Workspace] Staging ENTIRE parent set:', asset.ID);
+            await stageSingleAsset(asset);
+            return;
+        }
+
+        // Show Granular Break Modal
+        const modal = document.getElementById('granularBreakSetModal');
+        const list = document.getElementById('granularCompList');
+        if (modal && list) {
+            showToast('Loading set components...', 'info');
+            try {
+                const res = await fetch(`/api/asset-details/${encodeURIComponent(asset.ID)}`, { headers });
+                
+                if (res.status === 401) {
+                    showToast('Session expired. Please log in again.', 'error');
+                    return;
+                }
+                
+                const data = await res.json();
+                const components = data.children || [];
+                
+                if (components.length === 0) {
+                    showToast('This set has no components. Staging as single item.', 'warning');
+                } else {
+                    list.innerHTML = components.map(function(c) {
+                        return '<div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #f1f5f9; background: #fff; border-radius: 6px; margin-bottom: 5px;">' +
+                            '<input type="checkbox" class="granular-comp-cb" value=\'' + JSON.stringify(c).replace(/'/g, "&apos;") + '\' style="width: 18px; height: 18px; cursor: pointer;">' +
+                            '<div style="flex: 1;">' +
+                                '<div style="font-size: 13px; font-weight: 600; color: #1e293b;">' + (c.ItemName || c.itemname) + '</div>' +
+                                '<div style="font-size: 11px; color: #64748b; font-family: monospace;">' + (c.ID || c.id) + '</div>' +
+                            '</div>' +
+                        '</div>';
+                    }).join('');
+
+                    // Show Modal
+                    modal.style.display = 'flex';
+
+                    // Handlers
+                    document.getElementById('closeGranularBreakModal').onclick = function() { modal.style.display = 'none'; };
+                    document.getElementById('cancelGranularBreak').onclick = function() { modal.style.display = 'none'; };
+                    
+                    document.getElementById('confirmGranularBreak').onclick = async function() {
+                        const selectedCbs = list.querySelectorAll('.granular-comp-cb:checked');
+                        
+                        modal.style.display = 'none';
+                        showToast('Processing subset promotion...', 'info');
+
+                        // 1. Determine if we stage the parent set
+                        let stageParent = true;
+                        if (selectedCbs.length > 0) {
+                            stageParent = confirm(`You are breaking out ${selectedCbs.length} items. \n\nDo you also want to stage the Parent Set "${asset.ItemName}" as its own line item?`);
+                        }
+
+                        if (stageParent) {
+                            console.log('[Workspace] Staging parent set:', asset.ID);
+                            await stageSingleAsset(asset);
+                        }
+
+                        // 2. Process each selected component
+                        if (selectedCbs.length > 0) {
+                            const promotedIds = [];
+                            for (const cb of selectedCbs) {
+                                const compData = JSON.parse(cb.value);
+                                console.log('[Workspace] Breaking out component:', compData.itemname);
+                                
+                                try {
+                                    const breakHeaders = { 'Content-Type': 'application/json' };
+                                    if (validToken) breakHeaders['Authorization'] = `Bearer ${validToken}`;
+                                    breakHeaders['x-user'] = localStorage.getItem('username') || 'web';
+
+                                    const breakRes = await fetch('/api/assets/break-set', {
+                                        method: 'POST',
+                                        headers: breakHeaders,
+                                        body: JSON.stringify({ 
+                                            childAssetId: compData.id || compData.ID,
+                                            componentData: {
+                                                ...compData,
+                                                currentlocation: asset.CurrentLocation || asset.currentlocation || 'Mumbai',
+                                                parentid: asset.ID || asset.id,
+                                                type: compData.Type || compData.type || 'Accessory'
+                                            }
+                                        })
+                                    });
+                                    
+                                    if (breakRes.ok) {
+                                        const result = await breakRes.json();
+                                        if (result.newAssetId) {
+                                            console.log('[Workspace] Component promoted to ID:', result.newAssetId);
+                                            promotedIds.push(result.newAssetId);
+
+                                            // Stage the newly created asset
+                                            await stageSingleAsset({
+                                                ...compData,
+                                                ID: result.newAssetId,
+                                                ItemName: compData.itemname || compData.ItemName,
+                                                IsSet: false
+                                            });
+                                        }
+                                    } else {
+                                        const errText = await breakRes.text();
+                                        let errMsg = errText;
+                                        try { errMsg = JSON.parse(errText).error; } catch(e) {}
+                                        console.error('[Workspace] Promotion failed:', errMsg);
+                                        showToast(`Failed to break out ${compData.itemname}: ${errMsg}`, 'error');
+                                    }
+                                } catch (err) {
+                                    console.error('[Workspace] Error promoting component:', err);
+                                }
+                            }
+
+                            // --- MANDATORY USER INPUT ---
+                            // Open the Edit Modal for the promoted asset(s) to let user complete details
+                            if (promotedIds.length > 0 && typeof window.showEditAssetModal === 'function') {
+                                // If multiple, the user will have to edit them from the list, 
+                                // but we open the first one immediately as requested.
+                                setTimeout(() => {
+                                    window.showEditAssetModal(promotedIds[0]);
+                                    showToast('Please complete the details for the promoted asset.', 'info');
+                                }, 800);
+                            }
+                        }
+
+                        showToast('Promotion complete.', 'success');
+                        renderStagingArea();
+                        loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');
+                    };
+                    return; // Modal takes over
+                }
+            } catch (err) {
+                console.error('[Workspace] Error in granular break:', err);
+            }
+        }
+    }
+
+    // Fallback to existing logic if not a set or modal fails
+    await stageSingleAsset(asset);
+}
+
+async function stageSingleAsset(asset) {
+    console.log('[Workspace] Staging asset:', asset);
+    // Standardize ID/Name
+    const assetId = asset.ID || asset.id;
+    const itemName = asset.ItemName || asset.itemname;
+
+    // Check if already staged
+    if (workspaceStagedAssets.some(a => (a.ID || a.id) === assetId)) {
+        console.log(`[Workspace] Asset ${assetId} already staged, skipping.`);
+        return;
+    }
+
+    // BATCH/QUANTITY LOGIC
     if (asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) {
         handleProjectBatchSplit(asset, currentProjectId, (newAssets) => {
-            console.log('[Workspace] Split completed, adding child assets to staging:', newAssets);
-            
-            // Add all newly created child assets to staging
             newAssets.forEach(child => {
                 if (!workspaceStagedAssets.some(a => a.ID === child.ID)) {
                     workspaceStagedAssets.push(child);
                 }
             });
-            
             renderStagingArea();
             updateWorkspacePoProgress();
-            
-            // Refresh inventory to remove the split serial numbers from the parent batch
-            loadWorkspaceInventory(document.getElementById('workspaceSearch').value);
+            loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');
         });
         return;
     }
 
-    // Check if already staged
-    if (workspaceStagedAssets.some(a => a.ID === asset.ID)) {
-        showToast('Asset already in staging', 'info');
-        return;
-    }
-
-    // Step 1: Assign to Project via existing API
     try {
-        const token = localStorage.getItem('token');
         const headers = { 'Content-Type': 'application/json' };
-        if (token && token !== 'null' && token !== 'undefined') {
-            headers['Authorization'] = `Bearer ${token}`;
+
+        if (!currentProjectId) {
+            throw new Error('Project ID missing. Please re-open the project.');
         }
 
-        console.log(`[Workspace] Sending POST to /api/projects/${currentProjectId}/assign-asset`);
         const res = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/assign-asset`, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify({ AssetID: asset.ID, Type: 'Permanent' })
+            body: JSON.stringify({ AssetID: assetId, Type: 'Permanent' })
         });
 
         if (!res.ok) {
-            const errorData = await res.json();
-            throw new Error(errorData.error || 'Assignment failed');
+            const errData = await res.json();
+            if (errData.error && errData.error.includes('already assigned')) {
+                // Ignore if already assigned on server
+            } else {
+                throw new Error(errData.error || 'Assignment failed');
+            }
         }
 
-        // Step 2: Add to local staging list
-        workspaceStagedAssets.push(asset);
+        // Add to local list only after successful server assignment
+        workspaceStagedAssets.push({
+            ...asset,
+            ID: assetId,
+            ItemName: itemName
+        });
+
         renderStagingArea();
         updateWorkspacePoProgress();
-        showToast(`Staged: ${asset.ItemName}`, 'success');
-        
-        // Refresh project asset list in background
         loadProjectAssets(currentProjectId);
-        // Refresh inventory list
-        loadWorkspaceInventory(document.getElementById('workspaceSearch').value);
-
+        loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');
     } catch (err) {
-        alert('Failed to stage asset: ' + err.message);
+        console.error('Failed to stage asset:', err);
+        showToast(`Failed to stage ${itemName}: ${err.message}`, 'error');
     }
 }
 
@@ -2660,6 +2825,14 @@ function renderStagingArea() {
     const stagingArea = document.getElementById('workspaceStagingArea');
     if (!stagingArea) return;
     
+    // Add "Create Set" button if multiple assets are staged
+    const headerHtml = workspaceStagedAssets.length > 1 ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #fffbeb; padding: 10px; border: 1px solid #fde68a; border-radius: 8px;">
+            <div style="font-size: 12px; color: #92400e; font-weight: 600;">Multiple items staged. Create a combined set?</div>
+            <button onclick="window.handleWorkspaceMakeSet()" class="action-button small" style="background: #fbbf24; color: #78350f; border: 1px solid #d97706; padding: 4px 12px; font-weight: 700;">Create Superset 📦</button>
+        </div>
+    ` : '';
+
     if (workspaceStagedAssets.length === 0) {
         stagingArea.innerHTML = '<div class="empty-state" style="text-align: center; color: #cbd5e1; margin-top: 100px;"><div style="font-size: 32px; margin-bottom: 10px;">📦</div><div style="font-size: 12px;">Drag items here to stage for DC</div></div>';
         return;
@@ -2675,21 +2848,26 @@ function renderStagingArea() {
         }
     });
 
-    stagingArea.innerHTML = workspaceStagedAssets.map((asset, index) => `
+    let itemsHtml = workspaceStagedAssets.map((asset, index) => {
+        const assetId = asset.ID || asset.id;
+        const itemName = asset.ItemName || asset.itemname || assetId;
+        const pId = asset.ParentId || asset.parentid;
+        const linkedPoId = asset.linkedPoItemId || '';
+        
+        return `
         <div style="padding: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 10px;">
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
                 <div style="font-size: 20px;">📦</div>
                 <div style="flex-grow: 1;">
-                    <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${asset.ItemName}</div>
-                    <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID} ${asset.SrNo ? `(S/N: ${asset.SrNo})` : ''}</div>
-                    ${asset.ParentId ? `<div style="font-size: 10px; color: #2563eb; margin-top: 2px;">Child of ${asset.ParentId}</div>` : ''}
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="font-weight: 600; font-size: 13px; color: #1e293b;">${itemName}</div>
+                        ${(asset.IsSet || asset.is_set) ? `<div style="font-size: 9px; background: #fbbf24; color: #78350f; padding: 1px 5px; border-radius: 4px; font-weight: 700;">📦 SET</div>` : ''}
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; font-family: monospace;">${assetId} ${asset.SrNo || asset.srno ? `(S/N: ${asset.SrNo || asset.srno})` : ''}</div>
+                    ${pId ? `<div style="font-size: 10px; color: #2563eb; margin-top: 2px;">Child of ${pId}</div>` : ''}
                 </div>
                 <div style="display: flex; gap: 5px;">
-                    ${asset.ParentId ? `
-                        <button onclick="handleUnsplit('${asset.ID}', ${index})" 
-                                title="Unsplit: Merge back into parent batch"
-                                style="background: #f8fafc; border: 1px solid #e2e8f0; color: #2563eb; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 14px;">🔗</button>
-                    ` : ''}
+                    ${pId ? `<button onclick="handleUnsplit('${assetId}', ${index})" title="Unsplit: Merge back into parent batch" style="background: #f8fafc; border: 1px solid #e2e8f0; color: #2563eb; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 14px;">🔗</button>` : ''}
                     <button onclick="removeFromWorkspaceStaging(${index})" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px;">&times;</button>
                 </div>
             </div>
@@ -2697,11 +2875,13 @@ function renderStagingArea() {
             <div style="border-top: 1px solid #f1f5f9; padding-top: 8px;">
                 <label style="display: block; font-size: 10px; color: #94a3b8; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Matches PO Requirement:</label>
                 <select onchange="tagAssetToPoItem(${index}, this.value)" style="width: 100%; padding: 5px; font-size: 11px; border: 1px solid #e2e8f0; border-radius: 4px; background: #f8fafc;">
-                    ${poOptions.replace(`value="${asset.linkedPoItemId || ''}"`, `value="${asset.linkedPoItemId || ''}" selected`)}
+                    ${poOptions.replace(`value="${linkedPoId}"`, `value="${linkedPoId}" selected`)}
                 </select>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
+
+    stagingArea.innerHTML = headerHtml + itemsHtml;
 }
 
 window.handleUnsplit = async (childId, index) => {
@@ -2776,57 +2956,20 @@ window.removeFromWorkspaceStaging = async (index) => {
     const asset = workspaceStagedAssets[index];
     if (!asset) return;
 
-    // Use currentProjectId from the outer scope
     if (!currentProjectId) {
         console.error('[Workspace] Cannot unassign: currentProjectId is missing');
         return;
     }
 
-    if (!confirm(`Are you sure you want to unassign "${asset.ItemName || asset.ID}" from this project and return it to inventory?`)) {
-        return;
-    }
-
-    try {
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/unassign-asset/${encodeURIComponent(asset.ID)}`, {
-            method: 'DELETE',
-            headers: headers
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            workspaceStagedAssets.splice(index, 1);
-            renderStagingArea();
-            updateWorkspacePoProgress();
-            
-            console.log('[Workspace] Unassign successful for:', asset.ID);
-            
-            // Show Inspection Modal (only if it wasn't a split child that got merged/deleted)
-            if (!data.isSplitChild && typeof window.showInspectionModal === 'function') {
-                console.log('[Workspace] Triggering showInspectionModal for:', asset.ID);
-                window.showInspectionModal(asset.ID, currentProjectId);
-            } else if (data.isSplitChild) {
-                showToast('Quantity merged back to parent asset.', 'success');
-            } else {
-                console.warn('[Workspace] window.showInspectionModal not found!');
-                showToast('Asset unassigned. Awaiting inspection.', 'info');
-            }
-            
-            // Refresh inventory to show it back
-            loadWorkspaceInventory(document.getElementById('workspaceSearch')?.value || '');
-            
-            // Also refresh project assets table if it exists
-            if (typeof loadProjectAssets === 'function') loadProjectAssets(currentProjectId);
-        } else {
-            const err = await res.json();
-            alert('Failed to unassign: ' + (err.error || 'Unknown error'));
+    // Trigger Smart Unassign Modal
+    if (typeof window.showInspectionModal === 'function') {
+        window.showInspectionModal(asset.ID || asset.id, currentProjectId, true);
+        // We don't splice here; the modal handler will refresh the whole workspace on success
+    } else {
+        if (!confirm(`Are you sure you want to unassign "${asset.ItemName || asset.ID}" from this project?`)) {
+            return;
         }
-    } catch (err) {
-        console.error('[Workspace] Unassign error:', err);
-        alert('Error unassigning asset');
+        // ... fallback if modal fails
     }
 };
 
@@ -2881,6 +3024,212 @@ window.selectWorkspacePo = (poId) => {
     workspaceSelectedPoId = poId;
     renderWorkspacePoChecklist();
     console.log('[Workspace] Selected PO changed to:', poId);
+};
+
+window.handleWorkspaceMakeSet = function() {
+    if (workspaceStagedAssets.length < 2) {
+        showToast('Please stage at least 2 assets to create a set.', 'warning');
+        return;
+    }
+    
+    // Show Make Set Modal
+    var modal = document.getElementById('makeSetModal');
+    var countEl = document.getElementById('makeSetCount');
+    var select = document.getElementById('makeSetParentSelect');
+    var itemsList = document.getElementById('makeSetItemsList');
+    
+    if (!modal || !select || !itemsList) {
+        console.error('[Workspace] Make Set Modal elements not found');
+        return;
+    }
+
+    countEl.textContent = workspaceStagedAssets.length;
+    
+    // Populate parent select
+    var parentOptions = workspaceStagedAssets.map(function(asset) {
+        var assetId = asset.ID || asset.id;
+        var name = asset.ItemName || asset.itemname || assetId;
+        return '<option value="' + assetId + '">' + name + ' (' + assetId + ')</option>';
+    }).join('');
+    select.innerHTML = parentOptions;
+
+    // Handle Create New Toggle
+    var createNewCb = document.getElementById('makeSetCreateNew');
+    var newNameGroup = document.getElementById('makeSetNewNameGroup');
+    var parentSelectGroup = document.getElementById('makeSetParentSelectGroup');
+    
+    if (createNewCb) {
+        createNewCb.checked = false; // Reset
+        newNameGroup.style.display = 'none';
+        parentSelectGroup.style.display = 'block';
+        
+        createNewCb.onchange = function(e) {
+            newNameGroup.style.display = e.target.checked ? 'block' : 'none';
+            parentSelectGroup.style.display = e.target.checked ? 'none' : 'block';
+        };
+    }
+
+    // Populate checklist of items to include
+    itemsList.innerHTML = workspaceStagedAssets.map(function(asset) {
+        var assetId = asset.ID || asset.id;
+        var name = asset.ItemName || asset.itemname || assetId;
+        var qty = asset.quantity_total || asset.QuantityTotal || 1;
+        
+        var html = '<div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px; border-bottom: 1px solid #f8fafc;">' +
+                '<div style="display: flex; align-items: center; gap: 10px;">' +
+                    '<input type="checkbox" class="make-set-item-cb" value="' + assetId + '" checked style="width: 16px; height: 16px; cursor: pointer;">' +
+                    '<div style="font-size: 12px; color: #334155;">' + name + ' <span style="color: #94a3b8; font-size: 10px;">(' + assetId + ')</span></div>' +
+                '</div>';
+        
+        if (qty > 1) {
+            html += '<div style="display: flex; align-items: center; gap: 5px;">' +
+                        '<span style="font-size: 10px; color: #64748b;">Qty:</span>' +
+                        '<input type="number" class="make-set-item-qty" data-id="' + assetId + '" value="' + qty + '" min="1" max="' + qty + '" ' +
+                               'style="width: 50px; padding: 2px 5px; font-size: 11px; border: 1px solid #e2e8f0; border-radius: 4px;">' +
+                    '</div>';
+        }
+        html += '</div>';
+        return html;
+    }).join('');
+    
+    modal.style.display = 'flex';
+
+    // Override the confirm button for workspace context
+    var confirmBtn = document.getElementById('confirmMakeSet');
+    confirmBtn.onclick = async function() {
+        var createNew = (createNewCb && createNewCb.checked) || false;
+        var parentId = createNew ? null : select.value;
+        var newName = document.getElementById('makeSetNewName').value;
+        var priceMode = document.getElementById('makeSetPriceMode').value;
+        
+        // Get selected children and their quantities
+        var selectedCbs = Array.from(itemsList.querySelectorAll('.make-set-item-cb:checked'));
+        var childIds = [];
+        var childSplits = {};
+
+        selectedCbs.forEach(function(cb) {
+            var id = cb.value;
+            if (createNew || id !== parentId) {
+                childIds.push(id);
+                var qtyInput = itemsList.querySelector('.make-set-item-qty[data-id="' + id + '"]');
+                if (qtyInput) {
+                    childSplits[id] = parseFloat(qtyInput.value);
+                }
+            }
+        });
+
+        if (childIds.length === 0) {
+            showToast('Please select at least one other item to include in the set.', 'warning');
+            return;
+        }
+
+        if (createNew && !newName) {
+            showToast('Please enter a name for the new set container.', 'warning');
+            return;
+        }
+
+        // --- LOGIC ENGINE: Batch Parent Detection ---
+        var parentQtyToSplit = 1;
+        if (!createNew && parentId) {
+            var parentObj = workspaceStagedAssets.find(function(a) { return (a.ID || a.id) === parentId; });
+            var parentQtyInput = itemsList.querySelector('.make-set-item-qty[data-id="' + parentId + '"]');
+            if (parentQtyInput) {
+                parentQtyToSplit = parseFloat(parentQtyInput.value);
+            } else if (parentObj && (parentObj.is_batch || parentObj.is_quantity_tracked || (parentObj.quantity_total > 1))) {
+                // Fallback to prompt if input somehow missing
+                var qtyInput = prompt('How many units from the batch "' + parentObj.ItemName + '" should be the parent?', "1");
+                if (qtyInput === null) return;
+                parentQtyToSplit = parseFloat(qtyInput);
+            }
+        }
+
+        try {
+            var token = localStorage.getItem('token');
+            var headers = { 
+                'Content-Type': 'application/json',
+                'x-user': localStorage.getItem('username') || 'web'
+            };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+
+            var response = await fetch('/api/assets/make-set', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    parentAssetId: parentId,
+                    childAssetIds: childIds,
+                    setPriceMode: priceMode,
+                    createNewParent: createNew,
+                    newParentName: newName,
+                    headAssetId: parentId || childIds[0],
+                    parentQtyToSplit: parentQtyToSplit,
+                    childSplits: childSplits
+                })
+            });
+
+            if (response.ok) {
+                var result = await response.json();
+                showToast('Logic Engine: Set created and balanced.', 'success');
+                modal.style.display = 'none';
+                
+                // --- FIXED: Targeted Staging Update ---
+                if (currentProjectId && result.parentId) {
+                    console.log('[Workspace] Updating staging area for new set:', result.parentId);
+                    
+                    // 1. Remove the children from the staging area locally
+                    workspaceStagedAssets = workspaceStagedAssets.filter(function(a) { return !childIds.includes(a.ID || a.id); });
+                    
+                    // 2. Fetch the new set's details to add it to staging
+                    try {
+                        var assetRes = await fetch('/api/asset-details/' + encodeURIComponent(result.parentId), { headers: headers });
+                        if (assetRes.ok) {
+                            var assetData = await assetRes.json();
+                            var newSet = assetData.asset;
+                            
+                            // Replace or add the parent
+                            if (!createNew) {
+                                workspaceStagedAssets = workspaceStagedAssets.filter(function(a) { return (a.ID || a.id) !== parentId; });
+                            }
+                            
+                            var stagedObj = Object.assign({}, newSet, {
+                                ID: newSet.id || newSet.ID,
+                                ItemName: newSet.itemname || newSet.ItemName,
+                                IsSet: true
+                            });
+                            workspaceStagedAssets.push(stagedObj);
+                        }
+                    } catch (fetchErr) {
+                        console.error('[Workspace] Error fetching new set details:', fetchErr);
+                    }
+                    
+                    renderStagingArea();
+                    if (typeof updateWorkspacePoProgress === 'function') updateWorkspacePoProgress();
+                }
+
+                // Also trigger a dashboard refresh if available
+                if (typeof window.loadAssets === 'function') {
+                    window.loadAssets();
+                }
+
+                // --- NEW LOGIC: If brand new container, open the full Edit Modal to add details ---
+                if (createNew && result.parentId) {
+                    console.log('[Workspace] Opening full Edit Modal for new container:', result.parentId);
+                    
+                    // Small delay to ensure workspace is refreshed and modal can find the asset
+                    if (typeof window.showEditAssetModal === 'function') {
+                        setTimeout(function() {
+                            window.showEditAssetModal(result.parentId);
+                        }, 500);
+                    }
+                }
+            } else {
+                var err = await response.json();
+                showToast('Failed to create set: ' + err.error, 'error');
+            }
+        } catch (err) {
+            console.error('[Workspace] Make set error:', err);
+            showToast('Error creating set.', 'error');
+        }
+    };
 };
 
 async function handleWorkspaceGenerateDC() {
