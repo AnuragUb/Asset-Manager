@@ -2459,6 +2459,7 @@ async function loadWorkspaceInventory(term = '') {
                         </div>
                     </div>
                     <div style="font-size: 11px; color: #64748b; font-family: monospace;">${asset.ID}</div>
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Weight: ${asset.Weight || asset.weight || 'N/A'}</div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 5px;">
                         <span style="font-size: 10px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${asset.Type}</span>
                         <div style="display: flex; gap: 4px;">

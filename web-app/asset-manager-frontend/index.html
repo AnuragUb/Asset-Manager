@@ -1454,6 +1454,10 @@
                                 <label for="itemRemarks">Remarks</label>
                                 <input type="text" id="itemRemarks" name="itemRemarks">
                             </div>
+                            <div class="form-group">
+                                <label for="itemWeight">Weight (kg)</label>
+                                <input type="text" id="itemWeight" name="itemWeight" placeholder="e.g. 5.5">
+                            </div>
                             <!-- Warranty Details -->
                             <div class="form-group">
                                 <label for="itemWarranty">Warranty (Months)</label>
@@ -1967,6 +1971,14 @@
                     <h3>Analyze & Map Data</h3>
                     <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">We've analyzed your file. Please verify that the spreadsheet columns match our system fields correctly.</p>
                     
+                    <!-- New Help Tip for Sets -->
+                    <div style="background: #e6f7ff; border: 1px solid #91d5ff; padding: 10px 15px; border-radius: 6px; margin-bottom: 15px; display: flex; align-items: flex-start; gap: 10px;">
+                        <span style="font-size: 1.2em;">💡</span>
+                        <div style="font-size: 0.85em; color: #0050b3; line-height: 1.4;">
+                            <strong>Tip for Sets/Kits:</strong> To import items as a kit, use the <strong>"Temporary Group Name"</strong> field. Items with the same group name will be automatically linked together, with the first item becoming the parent.
+                        </div>
+                    </div>
+                    
                     <div style="flex-grow: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 5px; margin-bottom: 10px;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
                         <thead style="position: sticky; top: 0; background: #f8f9fa; border-bottom: 2px solid #dee2e6; z-index: 10;">
@@ -2234,7 +2246,10 @@
                     <div id="projectAssetsTab" class="project-tab-content active">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h3 style="margin: 0;">Assigned Permanent Assets</h3>
-                            <button class="action-button green" onclick="showAssignAssetModal()">+ Assign Asset</button>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="action-button blue" onclick="window.showSetImportTemplate()" style="background: #eef2ff; color: #6366f1; border: 1px solid #e0e7ff; font-weight: 600;">📥 Set Import Template</button>
+                                <button class="action-button green" onclick="showAssignAssetModal()">+ Assign Asset</button>
+                            </div>
                         </div>
                         <table class="data-table">
                             <thead>

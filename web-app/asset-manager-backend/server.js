@@ -731,9 +731,28 @@ app.post('/api/assets/:id/release-to-store', authenticateJWT, async (req, res) =
 app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
     try {
         const assets = await db('assets')
-            .where('is_retired', 1)
+            .where(function() {
+                // An asset is retired if it's explicitly sold/scraped OR marked retired BUT NOT 'In Store'
+                this.whereRaw('LOWER(status) = ?', ['sold'])
+                    .orWhereRaw('LOWER(status) = ?', ['scraped'])
+                    .orWhere(function() {
+                        this.where('is_retired', 1)
+                            .andWhereRaw('LOWER(status) != ?', ['in store']);
+                    });
+            })
             .orderBy('lastupdated', 'desc');
-        res.json(normalizeResult(assets));
+        
+        const normalizedAssets = normalizeResult(assets).map(a => {
+            // Force status to "Retired" if it's not Sold/Scraped but is in this list
+            const currentStatus = (a.Status || a.status || '').toLowerCase();
+            if (currentStatus !== 'sold' && currentStatus !== 'scraped') {
+                return { ...a, Status: 'Retired', status: 'Retired' };
+            }
+            return a;
+        });
+
+        console.log(`[RETIRED] Found ${normalizedAssets.length} retired assets`);
+        res.json(normalizedAssets);
     } catch (err) {
         console.error('Fetch retired assets error:', err);
         res.status(500).json({ error: err.message });
@@ -2174,10 +2193,15 @@ async function getAssetAssignmentStatus(assetId) {
 
 // --- Public Asset View API ---
 // This endpoint is for client-facing barcode scans. 
-// It redacts sensitive internal information.
+// It redacts sensitive internal information and enforces access via ClientLabel only.
 app.get('/api/public/assets/:label', async (req, res) => {
     try {
         const { label } = req.params;
+
+        // Security check: Only allow lookup by client_label, never by internal ID
+        if (label.includes('-MUM-') || label.includes('SET-')) {
+            return res.status(403).json({ error: 'Direct internal ID access is restricted for security.' });
+        }
 
         const asset = await db('assets as a')
             .leftJoin('project_assets as pa', 'a.id', 'pa.assetid')
@@ -2195,9 +2219,8 @@ app.get('/api/public/assets/:label', async (req, res) => {
 
         const normalized = normalizeResult(asset);
 
-        // Redact internal data
+        // Redact internal data (Sanctity Check)
         const publicAsset = {
-            ID: normalized.id,
             ClientLabel: normalized.client_label,
             ItemName: normalized.itemname,
             ItemDescription: normalized.itemdescription,
@@ -2210,7 +2233,7 @@ app.get('/api/public/assets/:label', async (req, res) => {
             CurrentLocation: normalized.currentlocation,
             WarrantyMonths: normalized.warranty_months,
             Department: normalized.department,
-            // Include specifications but exclude pricing/vendors
+            // Include specifications but strictly exclude Pricing, Vendor, and Purchase Date
             Specifications: normalized.remarks
         };
 
@@ -2478,7 +2501,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     if (Array.isArray(filters)) {
       filters.forEach(f => {
         const { field, value, type } = f;
-        const allowedFields = ['id', 'itemname', 'status', 'type', 'category', 'make', 'model', 'serialno', 'currentlocation', 'assignedto'];
+        const allowedFields = ['id', 'itemname', 'status', 'type', 'category', 'make', 'model', 'serialno', 'currentlocation', 'assignedto', 'weight'];
         const lowerField = field.toLowerCase();
         if (allowedFields.includes(lowerField)) {
             if (type === 'like') {
@@ -2962,7 +2985,7 @@ app.post('/api/dc', async (req, res) => {
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
     const assetsForDc = await Promise.all(normalizedAssetIds.map(async (assetId) => {
       const row = await db('assets')
-        .select('id', 'itemname', 'srno', 'is_set', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
+        .select('id', 'itemname', 'srno', 'weight', 'is_set', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
         .whereRaw('LOWER(id) = LOWER(?)', [assetId])
         .first();
       
@@ -5516,6 +5539,41 @@ app.post('/api/assets/bulk', async (req, res) => {
       return { ...asset, ID: newId, QRCode: qrCode || null, finalType: recordType, finalModule, kindToCreate, baseKindToEnsure };
     }));
 
+    // --- NEW: Group Name Resolution Logic ---
+    // Create a map of GroupName -> Resolved Asset ID (from this batch)
+    const groupResolutionMap = {};
+    processedAssets.forEach(a => {
+        // If this asset defines a Group Name, it is potentially the parent of that group
+        if (a.ParentGroup && !a.ParentId) {
+            const gName = a.ParentGroup.toLowerCase();
+            // The first asset in the batch with this group name becomes the parent
+            if (!groupResolutionMap[gName]) {
+                groupResolutionMap[gName] = a.ID;
+            }
+        }
+    });
+
+    // Resolve Parent IDs for children
+    for (const a of processedAssets) {
+        // If this asset points to a Group Name, and we haven't already set a hard ParentId
+        if (a.ParentGroup && !a.ParentId) {
+            const gName = a.ParentGroup.toLowerCase();
+            const resolvedId = groupResolutionMap[gName];
+            
+            if (resolvedId && resolvedId !== a.ID) {
+                // Link to the parent found in the same Excel file
+                a.ParentId = resolvedId;
+            } else if (!resolvedId) {
+                // If not found in batch, check if the Group Name is actually a real Asset ID already in DB
+                const existingParent = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [gName]).first();
+                if (existingParent) {
+                    a.ParentId = existingParent.id || existingParent.ID;
+                }
+            }
+        }
+    }
+    // ----------------------------------------
+
     // Check for duplicate IDs in the batch
     const idSet = new Set();
     const batchDuplicates = new Set();
@@ -5963,6 +6021,34 @@ app.get('/api/orders', authenticateJWT, async (req, res) => {
     console.error('[PO SEARCH] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// --- NEW: Dynamic CSV Template Generation ---
+app.get('/api/templates/set-import', authenticateJWT, async (req, res) => {
+    try {
+        const type = req.query.type || 'general';
+        let headers = [
+            'ItemName', 'ItemDescription', 'Make', 'Model', 'SrNo', 
+            'Status', 'Category', 'asset_value', 'Currency', 
+            'CurrentLocation', 'Weight', 'PurchaseDate', 'PurchaseDetails', 'Remarks',
+            'Temporary Group Name' // The new magic column
+        ];
+
+        if (type === 'it') {
+            // Append IT-specific fields
+            headers = headers.concat(['MACAddress', 'IPAddress', 'Type', 'PhysicalPort', 'VLAN', 'SocketID', 'UserID']);
+        }
+
+        // Generate CSV content
+        const csvContent = headers.join(',') + '\n';
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=Asset_Set_Import_Template_${type.toUpperCase()}.csv`);
+        res.send(csvContent);
+    } catch (err) {
+        console.error('[TEMPLATE] Generation Error:', err);
+        res.status(500).send('Error generating template');
+    }
 });
 
 app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
@@ -6993,6 +7079,14 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     // Only update quantity_available if it's a quantity tracked asset OR if there was an actual total change
     if ((asset.is_quantity_tracked || existing.is_quantity_tracked) || qtyAvailableDelta !== 0) {
         updateObj.quantity_available = db.raw('COALESCE(quantity_available, 0) + ?', [qtyAvailableDelta]);
+    }
+
+    // Sync is_retired based on Status
+    const newStatus = (asset.Status || existing.status || '').toLowerCase();
+    if (newStatus === 'sold' || newStatus === 'scraped' || newStatus === 'retired') {
+        updateObj.is_retired = 1;
+    } else if (newStatus === 'in store' || newStatus === 'project' || newStatus === 'under inspection') {
+        updateObj.is_retired = 0;
     }
 
     await db('assets')

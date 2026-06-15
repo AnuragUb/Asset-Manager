@@ -1,5 +1,33 @@
 export function showView(viewName) {
     console.log(`showView('${viewName}') called`);
+
+    // --- REFINED SECURITY GUARD: SANCTITY ENFORCEMENT ---
+    // We only restrict views AFTER login is established. 
+    // Login and Public views are always allowed.
+    const PUBLIC_VIEWS = ['loginView', 'public-view'];
+    const RESTRICTED_VIEWS = ['settings-view', 'admin-view'];
+    
+    const token = localStorage.getItem('token');
+    const userJson = localStorage.getItem('currentUser');
+    const user = userJson ? JSON.parse(userJson) : null;
+    const role = user ? (user.role || '').toLowerCase() : '';
+
+    // 1. If trying to access a non-public view without a token, force login
+    if (!PUBLIC_VIEWS.includes(viewName) && !token) {
+        console.warn(`SECURITY: Unauthorized access attempt to ${viewName}. Redirecting to login.`);
+        return showView('loginView');
+    }
+
+    // 2. If trying to access restricted admin views without admin privileges
+    if (RESTRICTED_VIEWS.includes(viewName) && (role !== 'admin' && role !== 'superuser')) {
+        console.error(`SECURITY: Access denied to ${viewName} for role: ${role}`);
+        if (typeof window.showToast === 'function') {
+            window.showToast('Access Restricted: Administrator privileges required.', 'error');
+        }
+        return; // Block the switch
+    }
+    // --------------------------------------------------
+
     try {
         // Execute cleanup for the current active view before switching
         const currentActive = document.querySelector('#main-content > .view.active');

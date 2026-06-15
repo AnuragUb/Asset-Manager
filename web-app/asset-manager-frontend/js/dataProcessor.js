@@ -21,11 +21,14 @@ export class DataProcessor {
             'PurchaseDate': { label: 'Purchase Date', synonyms: ['purchase date', 'date of purchase', 'bought on'] },
             'PurchaseDetails': { label: 'Purchase Details', synonyms: ['purchase details', 'vendor', 'supplier'] },
             'Remarks': { label: 'Remarks', synonyms: ['remarks', 'notes', 'comment'] },
+            'Weight': { label: 'Weight (kg)', synonyms: ['weight', 'kg', 'kilograms', 'mass'] },
             'warranty_months': { label: 'Warranty (Months)', synonyms: ['warranty', 'warranty months'] },
             'amc_months': { label: 'AMC (Months)', synonyms: ['amc', 'amc months'] },
             'MACAddress': { label: 'MAC Address', synonyms: ['mac', 'physical address', 'ethernet'] },
             'IPAddress': { label: 'IP Address', synonyms: ['ip', 'network address'] },
-            'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] }
+            'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] },
+            'ParentId': { label: 'Parent Asset ID', synonyms: ['parent id', 'parentid', 'linked to', 'member of'] },
+            'ParentGroup': { label: 'Temporary Group Name (for Sets)', synonyms: ['group name', 'batch name', 'kit name', 'set name', 'parent group'] }
         };
     }
 

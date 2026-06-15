@@ -3,6 +3,20 @@ import { HierarchyManager } from './hierarchy.js?v=5.50';
 import { DataProcessor } from './dataProcessor.js?v=5.50';
 import { initScannerView } from './networkScanner.js?v=5.50';
 
+window.showSetImportTemplate = function() {
+    const type = confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general';
+    const url = `/api/templates/set-import?type=${type}`;
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Asset_Set_Import_Template_${type.toUpperCase()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast('Template download started!', 'info');
+};
+
 console.log('DASHBOARD.JS: Module loading (v3.0)');
 
 let searchVisible = false;
@@ -1629,6 +1643,7 @@ async function initSheetView() {
             { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
             { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
             { title: "Location", field: "CurrentLocation", editor: "input", headerFilter: "input" },
+            { title: "Weight", field: "Weight", editor: "input", headerFilter: "input", width: 80 },
             { title: "Assigned To", field: "AssignedTo", editor: "list", editorParams: { 
                 values: () => (window.allEmployees || []).map(e => e.Name),
                 autocomplete: true,
@@ -5392,6 +5407,7 @@ export async function editAsset(asset) {
     document.getElementById('itemHsnCode').value = asset.HSNCode || '';
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
     document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
+    document.getElementById('itemWeight').value = asset.Weight || asset.weight || '';
 
     // Populate Assignment Fields
     const assignedToVal = asset.AssignedTo || '';
@@ -6601,6 +6617,7 @@ export function setupDashboardFormHandlers() {
                     PurchaseDetails: formData.get('itemPurchase'),
                     HSNCode: formData.get('itemHsnCode'),
                     Remarks: formData.get('itemRemarks'),
+                    Weight: formData.get('itemWeight'),
                     AssignedTo: assignedToValue,
                     ParentId: formData.get('itemParentId'),
                     Category: category,
