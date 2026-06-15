@@ -4274,6 +4274,17 @@ export function renderDashboard(assets, filteredAssets) {
 
     // Special Case: Retired Assets View
     if (window.currentDashboardParent && window.currentDashboardParent.ID === 'RETIRED_VIEW') {
+        // Validation: If we are in retired view but the assetsToRender are NOT retired, 
+        // it means we probably arrived here via navigation leak. Reset and bail.
+        const hasActiveAssets = assetsToRender.some(a => !(a.IsRetired == 1 || a.is_retired == 1 || ['sold', 'scraped'].includes((a.Status || '').toLowerCase())));
+        if (hasActiveAssets && assetsToRender.length > 5) {
+            console.warn('[Dashboard] Navigation leak detected in Retired View. Resetting state.');
+            window.currentDashboardParent = null;
+            // Re-render with default filters
+            setTimeout(() => renderDashboard(assets, window.getFilteredAssets || (() => assets)), 0);
+            return;
+        }
+
         const dashboardTitle = document.getElementById('dashboard-title');
         if (dashboardTitle) {
             dashboardTitle.innerHTML = `
