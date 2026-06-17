@@ -20,13 +20,16 @@ export class DataProcessor {
             'AssignedTo': { label: 'Assigned To', synonyms: ['assigned', 'user', 'owner', 'employee'] },
             'PurchaseDate': { label: 'Purchase Date', synonyms: ['purchase date', 'date of purchase', 'bought on'] },
             'PurchaseDetails': { label: 'Purchase Details', synonyms: ['purchase details', 'vendor', 'supplier'] },
+            'itemHsnCode': { label: 'HSN / SAC Code', synonyms: ['hsn', 'sac', 'tax code', 'hsn code', 'sac code'] },
             'Remarks': { label: 'Remarks', synonyms: ['remarks', 'notes', 'comment'] },
             'Weight': { label: 'Weight (kg)', synonyms: ['weight', 'kg', 'kilograms', 'mass'] },
             'warranty_months': { label: 'Warranty (Months)', synonyms: ['warranty', 'warranty months'] },
             'amc_months': { label: 'AMC (Months)', synonyms: ['amc', 'amc months'] },
             'MACAddress': { label: 'MAC Address', synonyms: ['mac', 'physical address', 'ethernet'] },
             'IPAddress': { label: 'IP Address', synonyms: ['ip', 'network address'] },
-            'Type': { label: 'Asset Type', synonyms: ['type', 'kind', 'class'] },
+            'itemFolder': { label: 'Parent Folder', synonyms: ['folder', 'parent folder', 'main category', 'grandparent'] },
+            'itemBrandCategory': { label: 'Make Category (Brand)', synonyms: ['make category', 'brand category', 'sub-kind'] },
+            'Type': { label: 'Asset Type / Kind', synonyms: ['type', 'kind', 'class'] },
             'ParentId': { label: 'Parent Asset ID', synonyms: ['parent id', 'parentid', 'linked to', 'member of'] },
             'ParentGroup': { label: 'Temporary Group Name (for Sets)', synonyms: ['group name', 'batch name', 'kit name', 'set name', 'parent group'] }
         };

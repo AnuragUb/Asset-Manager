@@ -38,7 +38,6 @@ function readJson(file) {
         if (!fs.existsSync(file)) return [];
         return JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch (err) {
-        console.error(`Error reading ${file}:`, err);
         return [];
     }
 }
@@ -47,7 +46,6 @@ function writeJson(file, data) {
     try {
         fs.writeFileSync(file, JSON.stringify(data, null, 2));
     } catch (err) {
-        console.error(`Error writing ${file}:`, err);
     }
 }
 
@@ -97,7 +95,6 @@ async function appendAudit(entry) {
         };
         await db('audit_log').insert(record);
     } catch (err) {
-        console.error('Failed to append audit log to DB:', err);
     }
 }
 
@@ -106,7 +103,6 @@ function readDynamic() {
         if (!fs.existsSync(dynamicFile)) return {};
         return JSON.parse(fs.readFileSync(dynamicFile, 'utf8'));
     } catch (err) {
-        console.error('Error reading dynamic.json:', err);
         return {};
     }
 }
@@ -115,7 +111,6 @@ function writeDynamic(data) {
     try {
         fs.writeFileSync(dynamicFile, JSON.stringify(data, null, 2));
     } catch (err) {
-        console.error('Error writing dynamic.json:', err);
     }
 }
 
@@ -548,7 +543,6 @@ async function sendTallyRequest(xmlData) {
         });
         return await response.text();
     } catch (error) {
-        console.error('Tally Connection Error:', error);
         throw error;
     }
 }

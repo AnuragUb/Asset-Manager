@@ -1350,16 +1350,36 @@
                     </div>
                     <form id="addAssetItemForm">
                         <input type="hidden" id="assetDbId" name="assetDbId">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
-                                <label for="itemKind">Asset Category / Kind</label>
-                                <select id="itemKind" name="itemKind" required>
-                                    <option value="" disabled selected>Select Kind...</option>
-                                </select>
-                                <div id="kindIdentifierDisplay" style="font-size: 11px; color: #666; margin-top: 4px; display: none;">
-                                    ID Prefix: <span id="kindIdentifierValue" style="font-weight: bold; color: #007bff;"></span>
+                        
+                        <!-- 3-Level Hierarchy Selection -->
+                        <div style="background: #f1f5f9; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e2e8f0;">
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; display: block;">Hierarchy Selection</label>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="itemFolder" style="font-size: 11px;">1. Parent Folder</label>
+                                    <select id="itemFolder" name="itemFolder" required style="font-size: 12px; padding: 6px;">
+                                        <option value="" disabled selected>Select Folder...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="itemKind" style="font-size: 11px;">2. Category / Kind</label>
+                                    <select id="itemKind" name="itemKind" required disabled style="font-size: 12px; padding: 6px;">
+                                        <option value="" disabled selected>Select Kind...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="itemBrandCategory" style="font-size: 11px;">3. Make Category</label>
+                                    <select id="itemBrandCategory" name="itemBrandCategory" disabled style="font-size: 12px; padding: 6px;">
+                                        <option value="" selected>Generic / Default</option>
+                                    </select>
                                 </div>
                             </div>
+                            <div id="kindIdentifierDisplay" style="font-size: 10px; color: #64748b; margin-top: 6px; display: none; background: white; padding: 4px 8px; border-radius: 4px; display: inline-block;">
+                                🏷️ ID Prefix: <span id="kindIdentifierValue" style="font-weight: 700; color: #2563eb;"></span>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                             <div class="form-group">
                                 <label for="itemName">Item Name / ID</label>
                                 <input type="text" id="itemName" name="itemName" required>

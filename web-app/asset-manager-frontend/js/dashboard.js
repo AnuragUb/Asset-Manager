@@ -1642,6 +1642,7 @@ async function initSheetView() {
             { title: "Make", field: "Make", editor: "input", headerFilter: "input" },
             { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
             { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
+            { title: "HSN / SAC", field: "HSNCode", editor: "input", headerFilter: "input" },
             { title: "Location", field: "CurrentLocation", editor: "input", headerFilter: "input" },
             { title: "Weight", field: "Weight", editor: "input", headerFilter: "input", width: 80 },
             { title: "Assigned To", field: "AssignedTo", editor: "list", editorParams: { 
@@ -5168,82 +5169,107 @@ export function openAddItemModal(kind, prefillData = null) {
         const isSetCheckbox = document.getElementById('itemIsSet');
         if (isSetCheckbox) isSetCheckbox.checked = false;
 
-        // Populate the Kind dropdown
+// --- 3-Level Hierarchy Logic ---
+        const folderSelect = document.getElementById('itemFolder');
         const kindSelect = document.getElementById('itemKind');
+        const brandSelect = document.getElementById('itemBrandCategory');
         const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
-        if (kindSelect) {
-            const allKinds = window.allAssetKinds || [];
-            
-            // Only show kinds that belong to the current module (category)
-            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory);
-            
-            console.log(`Populating Kind dropdown with ${filteredKinds.length} options for ${currentCategory}`);
-            
-            kindSelect.innerHTML = '<option value="" disabled selected>Select Kind...</option>';
-            filteredKinds.forEach(k => {
-                const kName = k.Name || k.name;
-                const opt = document.createElement('option');
-                opt.value = kName;
-                opt.textContent = kName;
-                kindSelect.appendChild(opt);
-            });
-            
-            kindSelect.onchange = () => {
-                const title = document.getElementById('addItemModalTitle');
-                if (title && kindSelect.value) {
-                    title.textContent = `Add New ${kindSelect.value}`;
-                }
-                
-                // Update identifier display
-                const selectedKind = allKinds.find(k => (k.Name || k.name) === kindSelect.value);
-                const idDisplay = document.getElementById('kindIdentifierDisplay');
-                const idValue = document.getElementById('kindIdentifierValue');
-                if (idDisplay && idValue) {
-                    if (selectedKind && selectedKind.Identifier) {
-                        idValue.textContent = selectedKind.Identifier;
-                        idDisplay.style.display = 'block';
-                    } else {
-                        idDisplay.style.display = 'none';
-                    }
-                }
 
-                // Toggle IT fields
-                const itFields = document.getElementById('itFields');
-                if (itFields) {
-                    itFields.style.display = (currentCategory === 'IT') ? 'block' : 'none';
+        if (folderSelect && kindSelect && brandSelect) {
+            const allFolders = window.allFolders || [];
+            const allKinds = window.allAssetKinds || [];
+
+            // 1. Populate Folders
+            folderSelect.innerHTML = '<option value="" disabled selected>Select Folder...</option>';
+            allFolders.filter(f => (f.Module || f.module) === currentCategory).forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.Name || f.name;
+                opt.textContent = f.Name || f.name;
+                folderSelect.appendChild(opt);
+            });
+
+            // 2. Folder Change -> Populate Kinds
+            folderSelect.onchange = () => {
+                const selectedFolder = folderSelect.value;
+                kindSelect.innerHTML = '<option value="" disabled selected>Select Kind...</option>';
+                kindSelect.disabled = false;
+                brandSelect.innerHTML = '<option value="" selected>Generic / Default</option>';
+                brandSelect.disabled = true;
+
+                allKinds.filter(k => (k.ParentName || k.parentname) === selectedFolder).forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.Name || k.name;
+                    opt.textContent = k.Name || k.name;
+                    kindSelect.appendChild(opt);
+                });
+
+                // Auto-select if only one
+                if (kindSelect.options.length === 2) {
+                    kindSelect.selectedIndex = 1;
+                    kindSelect.dispatchEvent(new Event('change'));
                 }
             };
 
-            // Apply Kind if provided
-            if (kind) {
-                kindSelect.value = kind;
+            // 3. Kind Change -> Populate Brands (Models)
+            kindSelect.onchange = () => {
+                const selectedKind = kindSelect.value;
+                brandSelect.innerHTML = '<option value="" selected>Generic / Default</option>';
+                brandSelect.disabled = false;
+
+                allKinds.filter(k => (k.ParentName || k.parentname) === selectedKind).forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.Name || k.name;
+                    opt.textContent = k.Name || k.name;
+                    brandSelect.appendChild(opt);
+                });
+
+                // Update Title & Identifier
                 const title = document.getElementById('addItemModalTitle');
-                if (title) title.textContent = `Add New ${kind}`;
+                if (title) title.textContent = `Add New ${selectedKind}`;
                 
-                // Update identifier display for initial kind
-                const selectedKind = allKinds.find(k => k.Name === kind);
+                const kindObj = allKinds.find(k => (k.Name || k.name) === selectedKind);
                 const idDisplay = document.getElementById('kindIdentifierDisplay');
                 const idValue = document.getElementById('kindIdentifierValue');
-                if (idDisplay && idValue) {
-                    if (selectedKind && selectedKind.Identifier) {
-                        idValue.textContent = selectedKind.Identifier;
-                        idDisplay.style.display = 'block';
-                    } else {
-                        idDisplay.style.display = 'none';
-                    }
+                if (idDisplay && idValue && kindObj && kindObj.Identifier) {
+                    idValue.textContent = kindObj.Identifier;
+                    idDisplay.style.display = 'inline-block';
+                } else if (idDisplay) {
+                    idDisplay.style.display = 'none';
                 }
-            } else {
-                kindSelect.value = "";
-                const title = document.getElementById('addItemModalTitle');
-                if (title) title.textContent = 'Add New Asset';
-            }
+            };
 
-            // Initial toggle for IT fields
-            const itFields = document.getElementById('itFields');
-            if (itFields) {
-                itFields.style.display = (currentCategory === 'IT') ? 'block' : 'none';
+            // 4. Handle Prefill (Edit Mode)
+            if (prefillData) {
+                console.log('[Hierarchy] Setting up Edit Mode for:', prefillData);
+                const currentType = prefillData.Type;
+                const kindObj = allKinds.find(k => (k.Name || k.name) === currentType);
+                
+                if (kindObj) {
+                    // Is this a brand-level category?
+                    const parentKind = allKinds.find(k => (k.Name || k.name) === kindObj.ParentName);
+                    
+                    if (parentKind) {
+                        // Current Type is a Brand
+                        folderSelect.value = prefillData.ParentFolder || parentKind.ParentName || '';
+                        folderSelect.dispatchEvent(new Event('change'));
+                        kindSelect.value = parentKind.Name || parentKind.name;
+                        kindSelect.dispatchEvent(new Event('change'));
+                        brandSelect.value = kindObj.Name || kindObj.name;
+                    } else {
+                        // Current Type is a Base Kind
+                        folderSelect.value = prefillData.ParentFolder || kindObj.ParentName || '';
+                        folderSelect.dispatchEvent(new Event('change'));
+                        kindSelect.value = kindObj.Name || kindObj.name;
+                        kindSelect.dispatchEvent(new Event('change'));
+                    }
+                } else if (prefillData.ParentFolder) {
+                    // Fallback: If Type is not in allKinds, at least set the folder
+                    folderSelect.value = prefillData.ParentFolder;
+                    folderSelect.dispatchEvent(new Event('change'));
+                }
             }
         }
+        // ---------------------------------
 
         // Populate Assigned To dropdown
         const assignedSelect = document.getElementById('itemAssignedTo');
@@ -5385,7 +5411,7 @@ export async function editAsset(asset) {
     const listModal = document.getElementById('assetListModal');
     if (listModal) listModal.style.display = 'none';
 
-    openAddItemModal(asset.Type);
+    openAddItemModal(asset.Type, asset);
     
     const title = document.getElementById('addItemModalTitle');
     const submitBtn = document.querySelector('#addAssetItemForm button[type="submit"]');
@@ -5751,6 +5777,7 @@ export async function editAsset(asset) {
     }
     
     document.getElementById('itemPurchase').value = asset.PurchaseDetails || '';
+    document.getElementById('itemHsnCode').value = asset.HSNCode || '';
     document.getElementById('itemRemarks').value = asset.Remarks || '';
     document.getElementById('itemAssignedTo').value = asset.AssignedTo || '';
     document.getElementById('itemProjectAssignedTo').value = asset.AssignedProjectName || ''; // New field
@@ -6614,7 +6641,10 @@ export function setupDashboardFormHandlers() {
                 // Collect basic fields
                 const asset = {
                     ID: assetId || null,
-                    Type: formData.get('itemKind'),
+                    itemFolder: formData.get('itemFolder'),
+                    itemKind: formData.get('itemKind'),
+                    itemBrandCategory: formData.get('itemBrandCategory'),
+                    Type: formData.get('itemBrandCategory') || formData.get('itemKind'),
                     ItemName: formData.get('itemName'),
                     Icon: formData.get('itemIcon'),
                     Status: formData.get('itemStatus'),
@@ -6623,12 +6653,14 @@ export function setupDashboardFormHandlers() {
                     SrNo: srNoValue,
                     is_batch: isBatchValue,
                     CurrentLocation: formData.get('itemLocation'),
+                    parent_folder: formData.get('itemFolder'),
                     Purpose: formData.get('itemPurpose') || 'Owned',
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
                     HSNCode: formData.get('itemHsnCode'),
                     Remarks: formData.get('itemRemarks'),
                     Weight: formData.get('itemWeight'),
+                    itemHsnCode: formData.get('itemHsnCode'),
                     AssignedTo: assignedToValue,
                     ParentId: formData.get('itemParentId'),
                     Category: category,

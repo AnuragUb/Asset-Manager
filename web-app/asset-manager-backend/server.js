@@ -184,6 +184,7 @@ function normalizeResult(data) {
     'createdby': 'CreatedBy',
     'module': 'Module',
     'parentname': 'ParentName',
+    'parent_folder': 'ParentFolder',
     'displayimage': 'DisplayImage',
     'identifier': 'Identifier',
     'description': 'Description',
@@ -2295,6 +2296,8 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
             WarrantyMonths: a.warranty_months,
             AssetValue: a.asset_value,
             IsRetired: a.is_retired || 0,
+            Weight: a.weight,
+            HSNCode: a.hsn_code,
             Condition: a.condition || 'Good',
             SaleDetails: a.sale_details,
             IsSet: a.is_set === 1 || a.is_set === true,
@@ -2490,6 +2493,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
                   .orWhere('it.ipaddress', encryptedTerm)
                   .orWhere('a.currentlocation', 'like', searchParam)
                   .orWhere('a.assignedto', 'like', searchParam)
+                  .orWhere('a.hsn_code', 'like', searchParam)
                   .orWhere('a.type', 'like', searchParam)
                   .orWhere('a.category', 'like', searchParam)
                   .orWhere('a.status', 'like', searchParam);
@@ -2501,7 +2505,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     if (Array.isArray(filters)) {
       filters.forEach(f => {
         const { field, value, type } = f;
-        const allowedFields = ['id', 'itemname', 'status', 'type', 'category', 'make', 'model', 'serialno', 'currentlocation', 'assignedto', 'weight'];
+        const allowedFields = ['id', 'itemname', 'status', 'type', 'category', 'make', 'model', 'serialno', 'currentlocation', 'assignedto', 'weight', 'hsn_code'];
         const lowerField = field.toLowerCase();
         if (allowedFields.includes(lowerField)) {
             if (type === 'like') {
@@ -4414,6 +4418,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       SrNo: encryptionService.encryptDeterministic(asset.SrNo || asset.srno || ''),
       Type: type,
       Category: category,
+      parent_folder: asset.itemFolder || '',
       Icon: asset.Icon || asset.icon || '',
       isPlaceholder: 0,
       ParentId: asset.ParentId || asset.parentid || null,
@@ -5449,6 +5454,8 @@ app.post('/api/assets/bulk', async (req, res) => {
           else if (name.includes('cable')) finalType = 'Video Cables';
           else if (name.includes('camera')) finalType = 'Camera';
           else if (name.includes('lens')) finalType = 'Cinema Lens';
+          else if (name.includes('access point') || name.includes('wireless ap')) finalType = 'Access Points';
+          else if (name.includes('firewall') || name.includes('sophos') || name.includes('fortinet')) finalType = 'Firewall';
           else if (name.includes('keyboard')) finalType = 'Keyboard';
           else if (name.includes('mouse')) finalType = 'Mouse';
           else finalType = 'General Asset';
@@ -5465,17 +5472,18 @@ app.post('/api/assets/bulk', async (req, res) => {
           finalModule = kindModuleMap[finalType.toLowerCase()] || folderModuleMap[finalType.toLowerCase()] || 'IT';
       }
 
-      // 3. Automated Sub-category creation (Kind/Brand) - ONLY if Parent exists
+      // 3. Automated Sub-category creation (Kind/Brand) - STRICT HIERARCHY
       let kindToCreate = null;
       let recordType = finalType;
 
-      // Find if the parent category (finalType) exists in DB as either a Kind or a Folder (case-insensitive)
+      // Find if the parent category (finalType) exists in DB (case-insensitive)
       const existingParent = allKinds.find(k => k.name.toLowerCase() === finalType.toLowerCase()) ||
                              allFolders.find(f => f.name.toLowerCase() === finalType.toLowerCase());
 
       if (asset.Make && existingParent) {
-          // Rule: Only create sub-category (Brand) if the parent exists
-          const parentName = existingParent.name || existingParent.id; // Use ID as fallback for folders
+          // Rule: Only create sub-category (Brand) if the parent exists.
+          // This sub-category (e.g. Netgear) will be locked under its parent (e.g. Switch).
+          const parentName = existingParent.name || existingParent.id;
           kindToCreate = {
               name: asset.Make,
               parentname: parentName,
@@ -5484,11 +5492,11 @@ app.post('/api/assets/bulk', async (req, res) => {
           };
           // The asset itself is classified by the Brand for grouping
           recordType = asset.Make;
-          finalType = parentName; // Normalize casing
+          // finalType remains the parent category (Switch) for ID generation
       } else if (!existingParent) {
-          // If parent doesn't exist, we don't create sub-folders. 
-          // We also don't auto-create the parent to avoid user errors like "Laptops" vs "Laptop"
-          console.log(`[BULK] Category/Parent "${finalType}" not found in system for asset ${asset.ItemName}. Skipping auto-sub-categorization.`);
+          // STRICT POLICY: No category, no upload. 
+          // We throw an error here to prevent 'ghost' assets from being created.
+          throw new Error(`[BULK] Category "${finalType}" not found in system. Please create the category first or check for typos (e.g. "Laptops" vs "Laptop"). Row skipped to protect data integrity.`);
       }
 
       // 4. Ensure Parent Hierarchy is consistent for standard IT categories
@@ -5502,6 +5510,8 @@ app.post('/api/assets/bulk', async (req, res) => {
           'switch': 'Networking',
           'cables': 'Networking',
           'video cables': 'Networking',
+          'access points': 'Networking',
+          'firewall': 'Networking',
           'accessory': 'Media & Others',
           'data drives': 'Media & Others',
           'printer': 'Media & Others'
@@ -5536,7 +5546,16 @@ app.post('/api/assets/bulk', async (req, res) => {
         }
       }
 
-      return { ...asset, ID: newId, QRCode: qrCode || null, finalType: recordType, finalModule, kindToCreate, baseKindToEnsure };
+      return { 
+          ...asset, 
+          ID: newId, 
+          QRCode: qrCode || null, 
+          finalType: recordType, 
+          finalModule, 
+          kindToCreate, 
+          baseKindToEnsure,
+          resolvedFolder: asset.itemFolder || baseParent || ''
+      };
     }));
 
     // --- NEW: Group Name Resolution Logic ---
@@ -5651,9 +5670,14 @@ app.post('/api/assets/bulk', async (req, res) => {
             // Ensure Dynamic Kind (Brand) exists
             if (asset.kindToCreate) {
                 console.log(`[BULK] Ensuring Dynamic Kind: ${asset.kindToCreate.name} under parent ${asset.kindToCreate.parentname}`);
-                const exists = await trx('asset_kinds').where('name', asset.kindToCreate.name).first();
+                // Fix: Check for existence by BOTH name AND parentname to avoid cross-category bundling
+                const exists = await trx('asset_kinds')
+                    .where('name', asset.kindToCreate.name)
+                    .andWhere('parentname', asset.kindToCreate.parentname)
+                    .first();
+                    
                 if (!exists) {
-                    console.log(`[BULK] Creating NEW category: ${asset.kindToCreate.name}`);
+                    console.log(`[BULK] Creating NEW category: ${asset.kindToCreate.name} under ${asset.kindToCreate.parentname}`);
                     await trx('asset_kinds').insert({
                         name: asset.kindToCreate.name,
                         module: asset.kindToCreate.module,
@@ -5662,17 +5686,23 @@ app.post('/api/assets/bulk', async (req, res) => {
                         lastupdated: new Date().toISOString()
                     });
                 } else {
-                    console.log(`[BULK] Category ${asset.kindToCreate.name} already exists. Updating parent to ${asset.kindToCreate.parentname}`);
-                    await trx('asset_kinds').where('name', asset.kindToCreate.name).update({
-                        parentname: asset.kindToCreate.parentname,
-                        lastupdated: new Date().toISOString(),
-                        is_deleted: 0 // Ensure it's not hidden if it was previously deleted
-                    });
+                    console.log(`[BULK] Category ${asset.kindToCreate.name} already exists under ${asset.kindToCreate.parentname}.`);
+                    await trx('asset_kinds')
+                        .where('name', asset.kindToCreate.name)
+                        .andWhere('parentname', asset.kindToCreate.parentname)
+                        .update({
+                            lastupdated: new Date().toISOString(),
+                            is_deleted: 0 
+                        });
                 }
             }
 
             // Invalidate Cache after changes
             await invalidateAssetKindsCache();
+
+            // 2. Resolve Category (Brand or Base Kind)
+            // If brandCategory is provided and not empty, it becomes the asset's "Type"
+            const finalAssetType = asset.itemBrandCategory || asset.itemKind;
 
             // Prepare Record
             const record = {
@@ -5684,7 +5714,7 @@ app.post('/api/assets/bulk', async (req, res) => {
                 model: asset.Model || '',
                 srno: encryptionService.encryptDeterministic(asset.SrNo || asset.SerialNo || ''),
                 serialno: encryptionService.encryptDeterministic(asset.SerialNo || asset.SrNo || ''),
-                type: asset.finalType,
+                type: finalAssetType,
                 category: asset.finalModule,
                 icon: asset.Icon || '📦',
                 isplaceholder: parseBool(asset.IsPlaceholder),
@@ -5700,9 +5730,12 @@ app.post('/api/assets/bulk', async (req, res) => {
                 assignedto: asset.AssignedTo || '',
                 currency: asset.Currency || 'INR',
                 asset_value: parseFloat(asset.asset_value) || 0,
+                weight: asset.Weight || '',
+                hsn_code: asset.itemHsnCode || '',
                 warranty_months: parseMonths(asset.warranty_months),
                 amc_months: parseMonths(asset.amc_months),
-                department: asset.Department || ''
+                department: asset.Department || '',
+                parent_folder: asset.resolvedFolder || ''
             };
 
             // Insert Main
@@ -7049,6 +7082,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         SrNo: encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.srno || '')),
         Type: asset.Type || existing.type || '',
         Category: asset.Category || existing.category || '',
+        parent_folder: asset.itemFolder || existing.parent_folder || '',
         Icon: asset.Icon || existing.icon || '',
         ParentId: asset.ParentId !== undefined ? asset.ParentId : (existing.parentid || null),
         CurrentLocation: asset.CurrentLocation || existing.currentlocation || '',
@@ -7073,6 +7107,8 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
         is_set: asset.is_set !== undefined ? (asset.is_set ? 1 : 0) : (existing.is_set || 0),
         set_price_mode: asset.set_price_mode !== undefined ? asset.set_price_mode : (existing.set_price_mode || 'SUM_OF_CHILDREN'),
+        weight: asset.Weight !== undefined ? asset.Weight : (existing.weight || ''),
+        hsn_code: asset.itemHsnCode !== undefined ? asset.itemHsnCode : (existing.hsn_code || ''),
         is_retired: (asset.Status === 'Sold' || asset.Status === 'Scraped') ? 1 : (asset.is_retired !== undefined ? asset.is_retired : (existing.is_retired || 0))
     };
 

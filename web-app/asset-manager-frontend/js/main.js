@@ -285,12 +285,10 @@ async function saveAsset(asset) {
             return result;
         } else {
             const errText = await response.text();
-            console.error('Failed to save asset, status:', response.status, errText);
             alert('Error saving asset: ' + errText);
             return false;
         }
     } catch (err) {
-        console.error('Failed to save asset:', err);
         alert('Error saving asset: ' + err.message);
         return false;
     }

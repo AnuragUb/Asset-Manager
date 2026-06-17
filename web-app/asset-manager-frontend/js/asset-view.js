@@ -173,6 +173,7 @@ async function renderAsset(data) {
                 ${renderField('Serial No', asset.SrNo)}
                 ${renderField('Type', asset.Type)}
                 ${renderField('Weight', asset.Weight || asset.weight ? `${asset.Weight || asset.weight} kg` : 'N/A')}
+                ${renderField('HSN / SAC', asset.HSNCode || asset.hsn_code || 'N/A')}
                 ${renderField('Location', asset.CurrentLocation)}
                 ${renderField('Category', asset.Category)}
                 ${renderField('Purchase Date', formatDisplayDate(asset.PurchaseDate))}
