@@ -454,40 +454,71 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const dashboardView = document.getElementById('dashboardView');
         if (dashboardView) {
-            console.log('Found dashboardView, switching...');
-            showView('dashboardView');
-            
-            // Set nav-dashboard as active
-            document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-            document.getElementById('nav-dashboard')?.classList.add('active');
+            // --- SMART DEFAULT VIEW (RBAC AWARE) ---
+            const userPermissions = (user && user.permissions) ? user.permissions : [];
+            const isSuper = (user && user.role === 'superuser');
+            const canViewDashboard = isSuper || userPermissions.includes('view.dashboard');
 
-            // Show home-view subview by default
-            const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
-            subViews.forEach(sv => {
-                const el = document.getElementById(sv);
-                if (el) {
-                    if (sv === 'home-view') {
-                        el.classList.remove('hidden');
-                        el.style.display = 'flex';
-                        el.style.flexDirection = 'column'; // Stack header and content vertically
-                    } else {
-                        el.classList.add('hidden');
-                        el.style.display = 'none';
-                        // Still set flexDirection so it's ready when the view is shown
-                        if (sv === 'dc-view' || sv === 'warranty-view') {
-                            el.style.flexDirection = 'column';
+            if (canViewDashboard) {
+                console.log('Found dashboardView and permission ok, switching...');
+                showView('dashboardView');
+                
+                // Set nav-dashboard as active
+                document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+                document.getElementById('nav-dashboard')?.classList.add('active');
+
+                // Show home-view subview by default
+                const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
+                subViews.forEach(sv => {
+                    const el = document.getElementById(sv);
+                    if (el) {
+                        if (sv === 'home-view') {
+                            el.classList.remove('hidden');
+                            el.style.display = 'flex';
+                            el.style.flexDirection = 'column'; // Stack header and content vertically
+                        } else {
+                            el.classList.add('hidden');
+                            el.style.display = 'none';
+                            // Still set flexDirection so it's ready when the view is shown
+                            if (sv === 'dc-view' || sv === 'warranty-view') {
+                                el.style.flexDirection = 'column';
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            // Render sidebar tree AFTER showView to ensure container is visible and ready
-            console.log('Rendering sidebar tree. Kinds:', (window.allAssetKinds || []).length);
-            await renderSidebarTree();
-            
-            setupDashboard();
-            setupDashboardFormHandlers();
-            renderDashboard(assets, filteredAssets);
+                // Render sidebar tree AFTER showView to ensure container is visible and ready
+                console.log('Rendering sidebar tree. Kinds:', (window.allAssetKinds || []).length);
+                await renderSidebarTree();
+                
+                setupDashboard();
+                setupDashboardFormHandlers();
+                renderDashboard(assets, filteredAssets);
+            } else {
+                // Dashboard restricted - Find first available tab based on RBAC
+                console.log('Dashboard restricted. Finding alternative landing tab...');
+                const availableTabs = [
+                    { id: 'nav-projects', view: 'dashboardView', sub: 'projects-view' },
+                    { id: 'nav-dc', view: 'dashboardView', sub: 'dc-view' },
+                    { id: 'nav-warranty', view: 'dashboardView', sub: 'warranty-view' },
+                    { id: 'nav-releases', view: 'dashboardView', sub: 'releases-view' }
+                ];
+
+                const target = availableTabs.find(t => {
+                    const perm = t.id.replace('nav-', 'view.');
+                    return userPermissions.includes(perm);
+                });
+
+                if (target) {
+                    console.log(`Redirecting to: ${target.id}`);
+                    const el = document.getElementById(target.id);
+                    if (el) el.click(); // Trigger the standard click handler
+                } else {
+                    console.warn('No accessible tabs found for this user.');
+                    showView('dashboardView'); // Fallback
+                }
+            }
+            // ----------------------------------------
 
             // Check for edit parameter in URL
             const urlParams = new URLSearchParams(window.location.search);
@@ -498,11 +529,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     editAsset(assetToEdit);
                 }
                 // Clear the parameter without reloading
-            const newUrl = window.location.pathname;
-            window.history.replaceState({}, document.title, newUrl);
-        }
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, newUrl);
+            }
 
-        // Handle hash-based routing and details (e.g. from QR scan)
+            // Handle hash-based routing and details (e.g. from QR scan)
             handleInitialUrl();
             
             // Ensure default view has a hash if none exists
@@ -916,6 +947,17 @@ function setupNavigation() {
                                 return;
                             }
                             const users = body.users || [];
+                            const availableRoles = body.roles || [];
+                            
+                            // Update the "Create User" role dropdown too
+                            const newUserRoleSelect = document.getElementById('adminNewRole');
+                            if (newUserRoleSelect && availableRoles.length > 0) {
+                                newUserRoleSelect.innerHTML = availableRoles.map(r => {
+                                    const rName = r.Name || r.name;
+                                    return `<option value="${rName}">${rName}</option>`;
+                                }).join('');
+                            }
+                            
                             if (!users.length) {
                                 container.innerHTML = '<p style="padding: 20px; color: #999;">No users found for this company.</p>';
                                 return;
@@ -932,16 +974,26 @@ function setupNavigation() {
                                 html += '<td>' + fullname + '</td>';
                                 html += '<td>';
                                 html += '<select class="admin-role-select raul-role-select" data-username="' + username + '">';
-                                const roleMap = {
-                                    'user': 'User',
-                                    'manager': 'Manager',
-                                    'admin': 'Admin',
-                                    'it_manager': 'IT Admin',
-                                    'superuser': 'Superuser'
-                                };
-                                Object.keys(roleMap).forEach(r => {
-                                    html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + roleMap[r] + '</option>';
-                                });
+                                
+                                // Build role options dynamically from DB roles
+                                if (availableRoles.length > 0) {
+                                    availableRoles.forEach(r => {
+                                        const rName = r.Name || r.name;
+                                        html += `<option value="${rName}" ${role === rName ? 'selected' : ''}>${rName}</option>`;
+                                    });
+                                } else {
+                                    // Fallback to defaults if no roles in DB
+                                    const roleMap = {
+                                        'user': 'User',
+                                        'manager': 'Manager',
+                                        'admin': 'Admin',
+                                        'it_manager': 'IT Admin',
+                                        'superuser': 'Superuser'
+                                    };
+                                    Object.keys(roleMap).forEach(r => {
+                                        html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + roleMap[r] + '</option>';
+                                    });
+                                }
                                 html += '</select>';
                                 html += '</td>';
                                 html += '<td><button type="button" class="admin-delete-user-btn" data-username="' + username + '">Delete</button></td>';
@@ -1195,6 +1247,36 @@ function setupNavigation() {
         
         newToggle.addEventListener('touchend', (e) => onEnd(e));
     }
+
+    // --- RBAC TAB VISIBILITY ENFORCEMENT ---
+    const userPermissions = (currentUser && currentUser.permissions) ? currentUser.permissions : [];
+    const isSuper = (currentUser && currentUser.role === 'superuser');
+
+    const checkTabPermission = (perm) => isSuper || userPermissions.includes(perm);
+
+    const navVisibility = {
+        'nav-dashboard': checkTabPermission('view.dashboard'),
+        'nav-projects': checkTabPermission('view.projects'),
+        'nav-dc': checkTabPermission('view.dc'),
+        'nav-employees': checkTabPermission('user.manage'), // Map Employees tab to user.manage permission
+        'nav-warranty': checkTabPermission('view.warranty'),
+        'nav-releases': checkTabPermission('view.releases'),
+        'nav-admin': checkTabPermission('view.admin')
+    };
+
+    Object.entries(navVisibility).forEach(([id, isVisible]) => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (isVisible) {
+                el.style.display = '';
+                el.classList.remove('hidden-by-rbac');
+            } else {
+                el.style.display = 'none';
+                el.classList.add('hidden-by-rbac');
+            }
+        }
+    });
+    // ----------------------------------------
 
     Object.entries(navLinks).forEach(([id, config]) => {
         const el = document.getElementById(id);

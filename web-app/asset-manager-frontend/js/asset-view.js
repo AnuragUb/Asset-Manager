@@ -1,4 +1,4 @@
-import { checkSession } from './auth.js?v=5.50';
+import { checkSession, fetchWithAuth } from './auth.js?v=5.50';
 
 // Asset View Module
 // Handles fetching and displaying asset details
@@ -54,7 +54,7 @@ async function loadAssetDetails() {
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         
-        const response = await fetch(url, { headers });
+        const response = await fetchWithAuth(url, { headers });
         console.log('[AssetView] Response status:', response.status);
 
         if (!response.ok) {
@@ -501,7 +501,7 @@ async function renderAsset(data) {
                 const headers = { 'Content-Type': 'application/json' };
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                const response = await fetch('/api/assets/unsplit', {
+                const response = await fetchWithAuth('/api/assets/unsplit', {
                     method: 'POST',
                     headers: headers,
                     body: JSON.stringify({ childIds: [assetId] })
@@ -535,7 +535,7 @@ async function renderAsset(data) {
                 const headers = { 'Content-Type': 'application/json', 'x-user': currentUser ? currentUser.username : 'web' };
                 if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                const response = await fetch('/api/assets/break-set', {
+                const response = await fetchWithAuth('/api/assets/break-set', {
                     method: 'POST',
                     headers: headers,
                     body: JSON.stringify({ 
@@ -566,9 +566,13 @@ async function renderAsset(data) {
             
             try {
                 const username = currentUser ? currentUser.username : 'web';
-                const response = await fetch(`/api/assets/${encodeURIComponent(asset.ID)}`, {
+                const token = localStorage.getItem('token');
+                const headers = { 'x-user': username };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetchWithAuth(`/api/assets/${encodeURIComponent(asset.ID)}`, {
                     method: 'DELETE',
-                    headers: { 'x-user': username }
+                    headers: headers
                 });
                 
                 if (response.ok) {

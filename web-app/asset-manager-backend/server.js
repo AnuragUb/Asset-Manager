@@ -3855,7 +3855,15 @@ app.get('/api/tenant/users', authenticateJWT, authorizeRoles('admin', 'manager',
     }
     
     const users = await query;
-    return res.json({ ok: true, users: normalizeResult(users) });
+
+    // Also fetch available roles for the dropdown
+    const availableRoles = await db('roles').select('name', 'description');
+    
+    return res.json({ 
+        ok: true, 
+        users: normalizeResult(users),
+        roles: normalizeResult(availableRoles)
+    });
   } catch (err) {
     console.error('Tenant users error:', err);
     return res.status(500).json({ error: 'Internal server error' });
