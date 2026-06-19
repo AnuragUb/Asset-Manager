@@ -5176,19 +5176,7 @@ export function openAddItemModal(kind, prefillData = null) {
         const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
 
         if (folderSelect && kindSelect && brandSelect) {
-            const allFolders = window.allFolders || [];
-            const allKinds = window.allAssetKinds || [];
-
-            // 1. Populate Folders
-            folderSelect.innerHTML = '<option value="" disabled selected>Select Folder...</option>';
-            allFolders.filter(f => (f.Module || f.module) === currentCategory).forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f.Name || f.name;
-                opt.textContent = f.Name || f.name;
-                folderSelect.appendChild(opt);
-            });
-
-            // 2. Folder Change -> Populate Kinds
+            // Setup standard change handlers FIRST
             folderSelect.onchange = () => {
                 const selectedFolder = folderSelect.value;
                 kindSelect.innerHTML = '<option value="" disabled selected>Select Kind...</option>';
@@ -5196,6 +5184,7 @@ export function openAddItemModal(kind, prefillData = null) {
                 brandSelect.innerHTML = '<option value="" selected>Generic / Default</option>';
                 brandSelect.disabled = true;
 
+                const allKinds = window.allAssetKinds || [];
                 allKinds.filter(k => (k.ParentName || k.parentname) === selectedFolder).forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name || k.name;
@@ -5203,19 +5192,18 @@ export function openAddItemModal(kind, prefillData = null) {
                     kindSelect.appendChild(opt);
                 });
 
-                // Auto-select if only one
                 if (kindSelect.options.length === 2) {
                     kindSelect.selectedIndex = 1;
                     kindSelect.dispatchEvent(new Event('change'));
                 }
             };
 
-            // 3. Kind Change -> Populate Brands (Models)
             kindSelect.onchange = () => {
                 const selectedKind = kindSelect.value;
                 brandSelect.innerHTML = '<option value="" selected>Generic / Default</option>';
                 brandSelect.disabled = false;
 
+                const allKinds = window.allAssetKinds || [];
                 allKinds.filter(k => (k.ParentName || k.parentname) === selectedKind).forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name || k.name;
@@ -5223,9 +5211,8 @@ export function openAddItemModal(kind, prefillData = null) {
                     brandSelect.appendChild(opt);
                 });
 
-                // Update Title & Identifier
                 const title = document.getElementById('addItemModalTitle');
-                if (title) title.textContent = `Add New ${selectedKind}`;
+                if (title) title.textContent = (prefillData ? 'Edit ' : 'Add New ') + selectedKind;
                 
                 const kindObj = allKinds.find(k => (k.Name || k.name) === selectedKind);
                 const idDisplay = document.getElementById('kindIdentifierDisplay');
@@ -5238,52 +5225,62 @@ export function openAddItemModal(kind, prefillData = null) {
                 }
             };
 
-            // 4. Handle Prefill (Edit Mode)
-            if (prefillData) {
-                console.log('[Hierarchy] Setting up Edit Mode for:', prefillData);
-                const currentType = prefillData.Type;
-                
-                // --- ROBUST DATA RETRIEVAL ---
-                // If window.allAssetKinds is empty, we must wait or retry once.
-                const ensureDataAndPopulate = () => {
-                    const allKinds = window.allAssetKinds || [];
-                    const allFolders = window.allFolders || [];
-                    
-                    if (allKinds.length === 0) {
-                        console.warn('[Hierarchy] window.allAssetKinds is empty. Retrying population in 300ms...');
-                        setTimeout(ensureDataAndPopulate, 300);
-                        return;
-                    }
+            // Define the robust population function
+            let syncRetryCount = 0;
+            const syncHierarchyData = () => {
+                const allFolders = window.allFolders || [];
+                const allKinds = window.allAssetKinds || [];
 
+                if (allFolders.length === 0 || allKinds.length === 0) {
+                    if (syncRetryCount < 15) {
+                        syncRetryCount++;
+                        console.warn(`[Hierarchy] Data not ready (Attempt ${syncRetryCount}). Retrying in 400ms...`);
+                        setTimeout(syncHierarchyData, 400);
+                    } else {
+                        console.error('[Hierarchy] Failed to load hierarchy data after 15 attempts.');
+                    }
+                    return;
+                }
+
+                // 1. Populate Folders
+                const currentFolderVal = folderSelect.value;
+                folderSelect.innerHTML = '<option value="" disabled selected>Select Folder...</option>';
+                allFolders.filter(f => (f.Module || f.module) === currentCategory).forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.Name || f.name;
+                    opt.textContent = f.Name || f.name;
+                    folderSelect.appendChild(opt);
+                });
+                if (currentFolderVal) folderSelect.value = currentFolderVal;
+
+                // 2. Handle Prefill (Edit Mode)
+                if (prefillData) {
+                    const currentType = prefillData.Type || prefillData.type;
                     const kindObj = allKinds.find(k => (k.Name || k.name) === currentType);
                     
                     if (kindObj) {
-                        // Is this a brand-level category?
-                        const parentKind = allKinds.find(k => (k.Name || k.name) === kindObj.ParentName);
-                        
+                        const parentKind = allKinds.find(k => (k.Name || k.name) === kindObj.ParentName || (k.Name || k.name) === kindObj.parentname);
                         if (parentKind) {
-                            // Current Type is a Brand
-                            folderSelect.value = prefillData.ParentFolder || parentKind.ParentName || '';
+                            folderSelect.value = prefillData.parent_folder || prefillData.ParentFolder || parentKind.ParentName || parentKind.parentname || '';
                             folderSelect.dispatchEvent(new Event('change'));
                             kindSelect.value = parentKind.Name || parentKind.name;
                             kindSelect.dispatchEvent(new Event('change'));
                             brandSelect.value = kindObj.Name || kindObj.name;
                         } else {
-                            // Current Type is a Base Kind
-                            folderSelect.value = prefillData.ParentFolder || kindObj.ParentName || '';
+                            folderSelect.value = prefillData.parent_folder || prefillData.ParentFolder || kindObj.ParentName || kindObj.parentname || '';
                             folderSelect.dispatchEvent(new Event('change'));
                             kindSelect.value = kindObj.Name || kindObj.name;
                             kindSelect.dispatchEvent(new Event('change'));
                         }
-                    } else if (prefillData.ParentFolder) {
-                        // Fallback: If Type is not in allKinds, at least set the folder
-                        folderSelect.value = prefillData.ParentFolder;
+                    } else if (prefillData.parent_folder || prefillData.ParentFolder) {
+                        folderSelect.value = prefillData.parent_folder || prefillData.ParentFolder;
                         folderSelect.dispatchEvent(new Event('change'));
                     }
-                };
+                }
+            };
 
-                ensureDataAndPopulate();
-            }
+            // Start the sync
+            syncHierarchyData();
         }
         // ---------------------------------
 

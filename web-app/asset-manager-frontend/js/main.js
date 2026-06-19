@@ -123,25 +123,6 @@ async function loadAssetKinds() {
 
         if (kindsRes.ok) {
             assetKinds = await kindsRes.json();
-
-            // [Auto-Fix] Reparent orphaned kinds (Client-side Patch)
-            // This ensures common asset types appear under their logical folders even if DB links are missing
-            const orphans = {
-                'Laptop': 'Computing Devices',
-                'Server': 'Computing Devices',
-                'Mobile Phones': 'Computing Devices',
-                'Video Cables': 'Peripherals',
-                'Component': 'Hardware'
-            };
-            
-            assetKinds.forEach(k => {
-                // Only patch if it has NO parent
-                if (!k.ParentName && !k.ParentID && orphans[k.Name]) {
-                    console.log(`[Auto-Fix] Reparenting orphan kind '${k.Name}' to '${orphans[k.Name]}'`);
-                    k.ParentName = orphans[k.Name];
-                }
-            });
-
             window.allAssetKinds = assetKinds;
         }
         if (foldersRes.ok) {
