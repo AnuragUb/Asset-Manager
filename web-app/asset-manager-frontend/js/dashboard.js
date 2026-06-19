@@ -1965,11 +1965,11 @@ function setupFolderHandlers() {
                         await window.loadFolders();
                         // Re-render dashboard to show the new folder card
                         const assets = window.allAssets || [];
-                        const filtered = window.getFilteredAssets ? window.getFilteredAssets() : assets;
-                        renderDashboard(assets, filtered);
+                        const filterFn = window.getFilteredAssets || (() => assets);
+                        renderDashboard(assets, filterFn);
                         // Re-render sidebar if needed
                         if (window.renderSidebarTree) {
-                            window.renderSidebarTree(assets, filtered);
+                            window.renderSidebarTree(assets, filterFn);
                         }
                     }
                 } else {
