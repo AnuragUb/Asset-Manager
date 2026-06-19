@@ -2352,12 +2352,27 @@ export function setupDashboard() {
     // RBAC: Manage Hierarchy Visibility
     const btnAddAssetKind = document.getElementById('btnAddAssetKind');
     if (btnAddAssetKind) {
-        btnAddAssetKind.style.display = hasPermission('manage.hierarchy') ? 'flex' : 'none';
+        btnAddAssetKind.style.display = 'flex'; // Restore visibility
     }
 
     const btnAddAssetItem = document.getElementById('btnAddAssetItem');
     if (btnAddAssetItem) {
-        btnAddAssetItem.style.display = (hasPermission('user.manage') || hasPermission('manage.hierarchy')) ? 'flex' : 'none';
+        btnAddAssetItem.style.display = 'flex'; // Restore visibility
+    }
+
+    const btnAddAssetFolder = document.getElementById('btnAddAssetFolder');
+    if (btnAddAssetFolder) {
+        btnAddAssetFolder.style.display = 'flex'; // Restore visibility
+    }
+
+    const btnBatchPrintQr = document.getElementById('btnBatchPrintQr');
+    if (btnBatchPrintQr) {
+        btnBatchPrintQr.style.display = 'flex';
+    }
+
+    const btnKanban = document.getElementById('btnAssetKanban'); // Assuming ID based on common patterns
+    if (btnKanban) {
+        btnKanban.style.display = 'flex';
     }
 }
 
