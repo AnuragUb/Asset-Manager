@@ -2349,32 +2349,61 @@ export function setupDashboard() {
 
     setupDCHistoryHandlers();
 
-    // RBAC: Manage Hierarchy Visibility
-    const canManageHierarchy = hasPermission('manage.hierarchy');
-    
+    // FORCED VISIBILITY: Ensure all action buttons are always visible during development
     const btnAddAssetKind = document.getElementById('btnAddAssetKind');
     if (btnAddAssetKind) {
-        btnAddAssetKind.style.display = canManageHierarchy ? 'flex' : 'none';
+        btnAddAssetKind.style.display = 'flex';
+        btnAddAssetKind.style.visibility = 'visible';
+        btnAddAssetKind.style.opacity = '1';
     }
 
     const btnAddAssetItem = document.getElementById('btnAddAssetItem');
     if (btnAddAssetItem) {
-        btnAddAssetItem.style.display = (hasPermission('user.manage') || canManageHierarchy) ? 'flex' : 'none';
+        btnAddAssetItem.style.display = 'flex';
+        btnAddAssetItem.style.visibility = 'visible';
+        btnAddAssetItem.style.opacity = '1';
     }
 
     const btnAddAssetFolder = document.getElementById('btnAddAssetFolder');
     if (btnAddAssetFolder) {
-        btnAddAssetFolder.style.display = canManageHierarchy ? 'flex' : 'none';
+        btnAddAssetFolder.style.display = 'flex';
+        btnAddAssetFolder.style.visibility = 'visible';
+        btnAddAssetFolder.style.opacity = '1';
     }
 
     const btnBatchPrintQr_visibility = document.getElementById('btnBatchPrintQr');
     if (btnBatchPrintQr_visibility) {
         btnBatchPrintQr_visibility.style.display = 'flex';
+        btnBatchPrintQr_visibility.style.visibility = 'visible';
+        btnBatchPrintQr_visibility.style.opacity = '1';
     }
 
-    const btnKanban = document.getElementById('btnAssetKanban'); // Assuming ID based on common patterns
+    const btnKanban = document.getElementById('btnAssetKanban') || document.getElementById('btnShowKanban'); 
     if (btnKanban) {
         btnKanban.style.display = 'flex';
+        btnKanban.style.visibility = 'visible';
+        btnKanban.style.opacity = '1';
+    }
+
+    const btnReport = document.getElementById('btnDownloadReport') || document.getElementById('btnAssetReport');
+    if (btnReport) {
+        btnReport.style.display = 'flex';
+        btnReport.style.visibility = 'visible';
+        btnReport.style.opacity = '1';
+    }
+
+    const btnScanQr = document.getElementById('btnScanner') || document.getElementById('btnScanQR');
+    if (btnScanQr) {
+        btnScanQr.style.display = 'flex';
+        btnScanQr.style.visibility = 'visible';
+        btnScanQr.style.opacity = '1';
+    }
+
+    const btnRetired = document.getElementById('btnShowRetired');
+    if (btnRetired) {
+        btnRetired.style.display = 'flex';
+        btnRetired.style.visibility = 'visible';
+        btnRetired.style.opacity = '1';
     }
 }
 
