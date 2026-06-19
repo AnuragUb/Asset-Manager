@@ -926,7 +926,7 @@ function showMappingModal(rows, suggestions) {
 
             if (response.ok) {
                 const result = await response.json();
-                alert(`Bulk Processing Complete:\n- Created: ${result.created}\n- Updated: ${result.updated}\n- Total: ${result.total}`);
+                showToast(`Bulk Processing Complete: ${result.created} created, ${result.updated} updated`, 'success');
                 modal.style.display = 'none';
                 loadEmployees();
             } else {
