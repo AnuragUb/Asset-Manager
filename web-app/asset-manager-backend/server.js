@@ -2087,7 +2087,10 @@ const sourceIconsDir = path.join(__dirname, '../asset-manager-frontend/static/ic
 const distIconsDir = path.join(__dirname, '../asset-manager-frontend/dist/static/icons');
 
 // Port-specific static file serving
-if (currentPort == 8080 && fs.existsSync(distPath)) {
+// FORCE SOURCE ASSETS FOR ALL PORTS (Development Mode)
+const forceSource = true; 
+
+if (!forceSource && currentPort == 8080 && fs.existsSync(distPath)) {
     // Port 8080: Serve from DIST (Minified/Obfuscated/Hidden)
     console.log('[ENV] Serving minified assets from DIST folder on port 8080');
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/dist/js')));
@@ -2095,8 +2098,8 @@ if (currentPort == 8080 && fs.existsSync(distPath)) {
     app.use('/icons', express.static(distIconsDir));
     app.use(express.static(path.join(__dirname, '../asset-manager-frontend/dist')));
 } else {
-    // Port 9090 or Dist missing: Serve from source (Easier debugging)
-    console.log(`[ENV] Serving source assets from JS/STATIC folders on port ${currentPort}${currentPort == 8080 ? ' (DIST missing)' : ''}`);
+    // Port 9090 or Force Source: Serve from source (Easier debugging)
+    console.log(`[ENV] Serving source assets from JS/STATIC folders on port ${currentPort}`);
     app.use('/js', express.static(path.join(__dirname, '../asset-manager-frontend/js')));
     app.use('/static', express.static(path.join(__dirname, '../asset-manager-frontend/static')));
     app.use('/icons', express.static(sourceIconsDir));
