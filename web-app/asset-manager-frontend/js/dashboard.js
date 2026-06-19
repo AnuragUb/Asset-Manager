@@ -5227,19 +5227,29 @@ export function openAddItemModal(kind, prefillData = null) {
 
             // Define the robust population function
             let syncRetryCount = 0;
-            const syncHierarchyData = () => {
-                const allFolders = window.allFolders || [];
-                const allKinds = window.allAssetKinds || [];
+            const syncHierarchyData = async () => {
+                let allFolders = window.allFolders || [];
+                let allKinds = window.allAssetKinds || [];
 
                 if (allFolders.length === 0 || allKinds.length === 0) {
-                    if (syncRetryCount < 15) {
+                    if (syncRetryCount === 0) {
+                        console.log('[Hierarchy] Data missing on modal open. Attempting proactive fetch...');
+                        if (typeof window.loadAssetKinds === 'function') {
+                            await window.loadAssetKinds();
+                            allFolders = window.allFolders || [];
+                            allKinds = window.allAssetKinds || [];
+                        }
+                    }
+
+                    if ((allFolders.length === 0 || allKinds.length === 0) && syncRetryCount < 15) {
                         syncRetryCount++;
                         console.warn(`[Hierarchy] Data not ready (Attempt ${syncRetryCount}). Retrying in 400ms...`);
                         setTimeout(syncHierarchyData, 400);
-                    } else {
+                        return;
+                    } else if (allFolders.length === 0 || allKinds.length === 0) {
                         console.error('[Hierarchy] Failed to load hierarchy data after 15 attempts.');
+                        return;
                     }
-                    return;
                 }
 
                 // 1. Populate Folders
