@@ -1,6 +1,6 @@
 // Employees management module
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, canViewPrice } from './utils.js?v=5.50';
-import { DataProcessor } from './dataProcessor.js?v=4.1';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, canViewPrice } from './utils.js?v=6.41';
+import { DataProcessor } from './dataProcessor.js?v=6.41';
 
 let employeeTable = null;
 

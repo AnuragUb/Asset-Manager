@@ -3,7 +3,7 @@
  * Handles Role-Based Access Control management for Superusers
  */
 
-import { showView } from './utils.js?v=3.8';
+import { showView } from './utils.js?v=6.41';
 
 let allPermissions = [];
 let allRoles = [];

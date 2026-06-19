@@ -1,6 +1,6 @@
-import { showView, canViewPrice, canEditPrice, showToast } from './utils.js?v=6.01';
+import { showView, canViewPrice, canEditPrice, showToast } from './utils.js?v=6.41';
 
-console.log('[Projects] Module loading... (v6.01)');
+console.log('[Projects] Module loading... (v6.41)');
 
 let allProjects = [];
 let currentProjectId = null;

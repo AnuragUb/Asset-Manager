@@ -1,4 +1,4 @@
-import { checkSession, fetchWithAuth } from './auth.js?v=5.50';
+import { checkSession, fetchWithAuth } from './auth.js?v=6.41';
 
 // Asset View Module
 // Handles fetching and displaying asset details
