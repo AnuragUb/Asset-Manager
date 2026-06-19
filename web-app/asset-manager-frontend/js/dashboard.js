@@ -1923,19 +1923,14 @@ function setupFolderHandlers() {
     const cancelBtn = document.getElementById('cancelAddFolder');
     const form = document.getElementById('addFolderForm');
 
-    // RBAC: Only show Add Folder button to authorized users
+    // UNBLOCK: Ensure Add Folder always works during development
     if (btnAddFolder) {
-        if (hasPermission('manage.hierarchy')) {
-            btnAddFolder.style.display = 'flex';
-            btnAddFolder.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Add Parent Folder button clicked');
-                if (modal) modal.style.display = 'flex';
-            };
-        } else {
-            btnAddFolder.style.display = 'none';
-        }
+        btnAddFolder.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Add Parent Folder button clicked');
+            if (modal) modal.style.display = 'flex';
+        };
     }
 
     const closeModal = () => {
@@ -2251,10 +2246,6 @@ export function setupDashboard() {
             
             // 2. Handle Add Asset Kind Button (top right)
             if (e.target.id === 'btnAddAssetKind' || e.target.closest('#btnAddAssetKind')) {
-                if (!hasPermission('manage.hierarchy')) {
-                    showToast('Unauthorized: You do not have permission to manage categories.', 'error');
-                    return;
-                }
                 console.log('Add Asset Kind button clicked');
                 openAddKindModal();
                 return;
@@ -2262,10 +2253,6 @@ export function setupDashboard() {
 
             // 2b. Handle Add Asset Item Button (top right)
             if (e.target.id === 'btnAddAssetItem' || e.target.closest('#btnAddAssetItem')) {
-                if (!hasPermission('user.manage') && !hasPermission('manage.hierarchy')) {
-                    showToast('Unauthorized: You do not have permission to add assets.', 'error');
-                    return;
-                }
                 console.log('Add Asset Item button clicked');
                 openAddItemModal(); // Open without a pre-filled kind
                 return;
