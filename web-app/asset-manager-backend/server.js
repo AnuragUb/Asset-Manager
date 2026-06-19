@@ -3604,23 +3604,27 @@ app.post('/api/folders', async (req, res) => {
     if (!Name) return res.status(400).send('Name is required');
     
     const id = ID || `F${Date.now()}`;
+    const dataToInsert = {
+        id: id,
+        name: Name,
+        parentid: ParentID || null,
+        icon: Icon || '📂',
+        module: Module || 'IT',
+        createdby: req.user ? req.user.username : 'system',
+        timestamp: new Date().toISOString()
+    };
+
+    console.log('[FOLDERS] Saving folder:', dataToInsert);
+
     await db('folders')
-        .insert(normalizeDBData({
-            ID: id,
-            Name,
-            ParentID: ParentID || null,
-            Icon: Icon || '📂',
-            Module: Module || 'IT',
-            Order: Order || 0,
-            LastUpdated: new Date().toISOString()
-        }))
+        .insert(dataToInsert)
         .onConflict('id')
         .merge();
     
     res.json({ ok: true, id });
   } catch (err) {
     console.error('Failed to save folder:', err);
-    res.status(500).send('Database error');
+    res.status(500).send('Database error: ' + err.message);
   }
 });
 
