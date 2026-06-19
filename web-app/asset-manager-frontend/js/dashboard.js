@@ -1,7 +1,7 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.41';
-import { HierarchyManager } from './hierarchy.js?v=6.41';
-import { DataProcessor } from './dataProcessor.js?v=6.41';
-import { initScannerView } from './networkScanner.js?v=6.41';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.42';
+import { HierarchyManager } from './hierarchy.js?v=6.42';
+import { DataProcessor } from './dataProcessor.js?v=6.42';
+import { initScannerView } from './networkScanner.js?v=6.42';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
@@ -5231,9 +5231,9 @@ export function openAddItemModal(kind, prefillData = null) {
                 let allFolders = window.allFolders || [];
                 let allKinds = window.allAssetKinds || [];
 
-                if (allFolders.length === 0 || allKinds.length === 0) {
+                if (allFolders.length === 0) {
                     if (syncRetryCount === 0) {
-                        console.log('[Hierarchy] Data missing on modal open. Attempting proactive fetch...');
+                        console.log('[Hierarchy] Folders missing on modal open. Attempting proactive fetch...');
                         if (typeof window.loadAssetKinds === 'function') {
                             await window.loadAssetKinds();
                             allFolders = window.allFolders || [];
@@ -5241,16 +5241,19 @@ export function openAddItemModal(kind, prefillData = null) {
                         }
                     }
 
-                    if ((allFolders.length === 0 || allKinds.length === 0) && syncRetryCount < 15) {
+                    if (allFolders.length === 0 && syncRetryCount < 15) {
                         syncRetryCount++;
-                        console.warn(`[Hierarchy] Data not ready (Attempt ${syncRetryCount}). Retrying in 400ms...`);
+                        console.warn(`[Hierarchy] Folders not ready (Attempt ${syncRetryCount}). Retrying in 400ms...`);
                         setTimeout(syncHierarchyData, 400);
                         return;
-                    } else if (allFolders.length === 0 || allKinds.length === 0) {
-                        console.error('[Hierarchy] Failed to load hierarchy data after 15 attempts.');
+                    } else if (allFolders.length === 0) {
+                        console.error('[Hierarchy] Failed to load folders after 15 attempts.');
                         return;
                     }
                 }
+
+                console.log('[Hierarchy] Data ready. Folders:', allFolders.length, 'Kinds:', allKinds.length);
+
 
                 // 1. Populate Folders
                 const currentFolderVal = folderSelect.value;

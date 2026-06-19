@@ -1,15 +1,15 @@
-console.log('MAIN.JS: Entry point (v6.41)');
-import { showView } from './utils.js?v=6.41';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.41';
+console.log('MAIN.JS: Entry point (v6.42)');
+import { showView } from './utils.js?v=6.42';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.42';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.41';
-import { setupAuth, checkSession } from './auth.js?v=6.41';
-import { HierarchyManager } from './hierarchy.js?v=6.41';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.41';
+import { renderItAssets } from './itAssets.js?v=6.42';
+import { setupAuth, checkSession } from './auth.js?v=6.42';
+import { HierarchyManager } from './hierarchy.js?v=6.42';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.42';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.41';
-import { initProjectsView } from './projects.js?v=6.41';
-import { initSettingsView } from './settings.js?v=6.41';
+import { initWarrantyView } from './warranty.js?v=6.42';
+import { initProjectsView } from './projects.js?v=6.42';
+import { initSettingsView } from './settings.js?v=6.42';
 import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=1.2';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
@@ -111,6 +111,8 @@ let folders = [];
 
 // Instantiate Hierarchy Manager
 window.hierarchyManager = new HierarchyManager();
+window.loadAssetKinds = loadAssetKinds;
+window.loadAssets = loadAssets;
 
 async function loadAssetKinds() {
     console.log('loadAssetKinds() called');
