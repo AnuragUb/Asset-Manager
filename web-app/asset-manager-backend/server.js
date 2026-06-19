@@ -2079,6 +2079,12 @@ app.post('/api/settings/email/run-check', async (req, res) => {
 
 // Environment-based static file serving
 const currentPort = process.env.PORT || 8080;
+
+// FAVICON FIX: Explicitly serve logo.png for /favicon.ico requests
+app.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, '../asset-manager-frontend/static/logo.png'));
+});
+
 const distPath = path.join(__dirname, '../asset-manager-frontend/dist');
 const useDist = false; // Force source assets to prevent 404s during rapid development
 
