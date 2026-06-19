@@ -1,19 +1,19 @@
-console.log('MAIN.JS: Entry point (v6.42)');
-import { showView } from './utils.js?v=6.42';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.42';
+console.log('MAIN.JS: Entry point (v6.43)');
+import { showView } from './utils.js?v=6.43';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.43';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.42';
-import { setupAuth, checkSession } from './auth.js?v=6.42';
-import { HierarchyManager } from './hierarchy.js?v=6.42';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.42';
+import { renderItAssets } from './itAssets.js?v=6.43';
+import { setupAuth, checkSession } from './auth.js?v=6.43';
+import { HierarchyManager } from './hierarchy.js?v=6.43';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.43';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.42';
-import { initProjectsView } from './projects.js?v=6.42';
-import { initSettingsView } from './settings.js?v=6.42';
-import { initCompanyTemplates } from './companyTemplates.js?v=1.0';
-import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=1.2';
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js';
-import { initFormAutosave } from './formAutosave.js?v=1.0';
+import { initWarrantyView } from './warranty.js?v=6.43';
+import { initProjectsView } from './projects.js?v=6.43';
+import { initSettingsView } from './settings.js?v=6.43';
+import { initCompanyTemplates } from './companyTemplates.js?v=6.43';
+import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.43';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.43';
+import { initFormAutosave } from './formAutosave.js?v=6.43';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
