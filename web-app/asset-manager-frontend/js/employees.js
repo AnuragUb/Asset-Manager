@@ -450,9 +450,17 @@ export async function loadEmployees() {
     }
 }
 
-export function renderEmployeeCards() {
+let employeeDisplayLimit = 30; // Start with 30 cards
+
+export function renderEmployeeCards(increaseLimit = false) {
     const container = document.getElementById('employee-cards-container');
     if (!container) return;
+
+    if (increaseLimit) {
+        employeeDisplayLimit += 30;
+    } else {
+        employeeDisplayLimit = 30; // Reset when searching or filtering
+    }
 
     const searchTerm = document.getElementById('employeeSearch')?.value.toLowerCase() || '';
     const deptTerm = document.getElementById('deptFilter')?.value || 'all';
@@ -471,7 +479,7 @@ export function renderEmployeeCards() {
         filtered = filtered.filter(e => (e.Department || '') === deptTerm);
     }
 
-    console.log(`[EMPLOYEES] Rendering ${filtered.length} out of ${window.allEmployees?.length || 0} employees`);
+    console.log(`[EMPLOYEES] Rendering ${Math.min(employeeDisplayLimit, filtered.length)} out of ${filtered.length} employees (Total: ${window.allEmployees?.length || 0})`);
     
     if (filtered.length === 0) {
         container.innerHTML = `
@@ -482,7 +490,9 @@ export function renderEmployeeCards() {
         return;
     }
 
-    container.innerHTML = filtered.map(emp => {
+    const toDisplay = filtered.slice(0, employeeDisplayLimit);
+
+    container.innerHTML = toDisplay.map(emp => {
         const assignedAssets = (window.allAssets || []).filter(a => a.AssignedTo === emp.Name);
         const totalValue = assignedAssets.reduce((sum, a) => sum + (parseFloat(a.Value) || 0), 0);
         const assetCount = assignedAssets.length;
@@ -517,6 +527,20 @@ export function renderEmployeeCards() {
             </div>
         `;
     }).join('');
+
+    // Add "Load More" button if there are more records
+    if (filtered.length > employeeDisplayLimit) {
+        const loadMoreDiv = document.createElement('div');
+        loadMoreDiv.style.cssText = 'grid-column: 1 / -1; text-align: center; padding: 20px;';
+        loadMoreDiv.innerHTML = `
+            <button class="action-button blue" id="btnLoadMoreEmployees" style="padding: 10px 40px;">
+                Load More (${filtered.length - employeeDisplayLimit} remaining)
+            </button>
+        `;
+        container.appendChild(loadMoreDiv);
+        
+        document.getElementById('btnLoadMoreEmployees').onclick = () => renderEmployeeCards(true);
+    }
 }
 
 function generateHandoverPDF(empName, empId, assets) {
