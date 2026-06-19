@@ -7,6 +7,7 @@ let employeeTable = null;
 export function initEmployeeView() {
     console.log('initEmployeeView() called');
     window.editEmployee = editEmployee; // Expose globally
+    window.deleteEmployee = deleteEmployee; // Expose globally
     window.switchEmployeeTab = switchEmployeeTab; // Expose globally
     const btnAddEmployee = document.getElementById('btnAddEmployee');
     const btnBulkAssign = document.getElementById('btnBulkAssign');
@@ -811,15 +812,19 @@ function renderEmployeeTree(empName) {
 }
 
 async function deleteEmployee(id) {
+    if (!confirm('Are you sure you want to delete this employee? This will not delete their assigned assets, but they will be unlinked.')) return;
     try {
         const response = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
         if (response.ok) {
+            showToast('Employee deleted successfully', 'success');
             loadEmployees();
         } else {
-            alert('Failed to delete employee');
+            const err = await response.text();
+            showToast('Failed to delete employee: ' + err, 'error');
         }
     } catch (err) {
         console.error('Error deleting employee:', err);
+        showToast('Error during deletion', 'error');
     }
 }
 
