@@ -3,8 +3,8 @@ import { HierarchyManager } from './hierarchy.js?v=5.50';
 import { DataProcessor } from './dataProcessor.js?v=5.50';
 import { initScannerView } from './networkScanner.js?v=5.50';
 
-window.showSetImportTemplate = function() {
-    const type = confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general';
+window.showSetImportTemplate = function(forcedType) {
+    const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
     const url = `/api/templates/set-import?type=${type}`;
     
     const link = document.createElement('a');

@@ -1656,8 +1656,8 @@
                             <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Add Asset</button>
                             <div style="display: flex; align-items: center; gap: 10px;">
                                 <span style="font-size: 0.9em; color: #666;">Or Bulk Upload:</span>
-                                <a href="/static/Asset_Import_Template.xlsx" download class="action-button blue" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center;">📥 General Template</a>
-                                <a href="/static/IT_Asset_Import_Template.xlsx" download class="action-button purple" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center;">📥 IT Template</a>
+                                <button onclick="window.showSetImportTemplate('general')" class="action-button blue" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center; border: none; cursor: pointer;">📥 General Template</button>
+                                <button onclick="window.showSetImportTemplate('it')" class="action-button purple" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center; border: none; cursor: pointer;">📥 IT Template</button>
                                 <input type="file" id="bulkUploadFile" accept=".csv,.xlsx" style="display: none;">
                                 <button type="button" class="login-button" style="width: auto; padding: 5px 15px; background: #28a745;" onclick="document.getElementById('bulkUploadFile').click()">CSV/Excel</button>
                             </div>
