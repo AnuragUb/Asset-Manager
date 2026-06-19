@@ -54,6 +54,13 @@ export function initEmployeeView() {
         employeeBulkInput.onchange = (e) => handleBulkUpload(e);
     }
 
+    const btnDownloadTemplate = document.getElementById('btnDownloadEmployeeTemplate');
+    if (btnDownloadTemplate) {
+        btnDownloadTemplate.onclick = () => {
+            window.location.href = '/api/templates/set-import?type=employee';
+        };
+    }
+
     if (btnCancelEmployee) {
         btnCancelEmployee.onclick = () => {
             employeeModal.style.display = 'none';
@@ -919,7 +926,7 @@ function showMappingModal(rows, suggestions) {
 
             if (response.ok) {
                 const result = await response.json();
-                alert(`Successfully uploaded ${result.count} employees.`);
+                alert(`Bulk Processing Complete:\n- Created: ${result.created}\n- Updated: ${result.updated}\n- Total: ${result.total}`);
                 modal.style.display = 'none';
                 loadEmployees();
             } else {

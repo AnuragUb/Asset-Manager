@@ -3458,9 +3458,10 @@ app.post('/api/employees', async (req, res) => {
     const { EmployeeID, Name, Department, Designation, Email, Phone, Status } = req.body;
     if (!Name || !EmployeeID) return res.status(400).send('Name and EmployeeID are required');
 
-    const id = `EMP${Date.now()}`;
-    await db('employees').insert(normalizeDBData({
-        ID: id,
+    // UPSERT LOGIC: Check if EmployeeID already exists
+    const existing = await db('employees').where('employeeid', EmployeeID).first();
+    
+    const data = normalizeDBData({
         EmployeeID,
         Name,
         Department: Department || '',
@@ -3469,11 +3470,22 @@ app.post('/api/employees', async (req, res) => {
         Phone: Phone || '',
         Status: Status || 'ACTIVE',
         LastUpdated: new Date().toISOString()
-    }));
-    await invalidateEmployeesCache();
-    res.json({ success: true, id });
+    });
+
+    if (existing) {
+        // Update existing
+        await db('employees').where('employeeid', EmployeeID).update(data);
+        await invalidateEmployeesCache();
+        return res.json({ success: true, id: existing.id, updated: true });
+    } else {
+        // Create new
+        const id = `EMP${Date.now()}`;
+        await db('employees').insert({ ...data, ID: id });
+        await invalidateEmployeesCache();
+        return res.json({ success: true, id, created: true });
+    }
   } catch (err) {
-    console.error('Failed to create employee:', err);
+    console.error('Failed to save employee:', err);
     res.status(500).send('Database error: ' + err.message);
   }
 });
@@ -3485,26 +3497,39 @@ app.post('/api/employees/bulk', async (req, res) => {
       return res.status(400).send('Expected an array of employees');
     }
 
+    console.log(`[BULK EMPLOYEES] Processing ${employees.length} records...`);
     const timestamp = new Date().toISOString();
-    const empToInsert = employees.map((emp, index) => normalizeDBData({
-        ID: `EMP${Date.now()}${index}`,
-        EmployeeID: emp.EmployeeID || '',
-        Name: emp.Name || '',
-        Department: emp.Department || '',
-        Designation: emp.Designation || '',
-        Email: emp.Email || '',
-        Phone: emp.Phone || '',
-        Status: emp.Status || 'ACTIVE',
-        LastUpdated: timestamp
-    }));
-    
-    // Chunk inserts to avoid large payload issues
-    const chunkSize = 50;
-    for (let i = 0; i < empToInsert.length; i += chunkSize) {
-        await db('employees').insert(empToInsert.slice(i, i + chunkSize));
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const emp of employees) {
+        if (!emp.EmployeeID) continue; // Skip records without an ID anchor
+
+        const data = normalizeDBData({
+            EmployeeID: emp.EmployeeID,
+            Name: emp.Name || '',
+            Department: emp.Department || '',
+            Designation: emp.Designation || '',
+            Email: emp.Email || '',
+            Phone: emp.Phone || '',
+            Status: emp.Status || 'ACTIVE',
+            LastUpdated: timestamp
+        });
+
+        // Check if exists
+        const existing = await db('employees').where('employeeid', emp.EmployeeID).first();
+        if (existing) {
+            await db('employees').where('employeeid', emp.EmployeeID).update(data);
+            updatedCount++;
+        } else {
+            const id = `EMP${Date.now()}${createdCount}`;
+            await db('employees').insert({ ...data, ID: id });
+            createdCount++;
+        }
     }
+
     await invalidateEmployeesCache();
-    res.json({ success: true, count: employees.length });
+    res.json({ success: true, created: createdCount, updated: updatedCount, total: employees.length });
   } catch (err) {
     console.error('Bulk employee upload error:', err);
     res.status(500).send('Database error: ' + err.message);
@@ -6140,16 +6165,25 @@ app.get('/api/orders', authenticateJWT, async (req, res) => {
 app.get('/api/templates/set-import', authenticateJWT, async (req, res) => {
     try {
         const type = req.query.type || 'general';
-        let headers = [
-            'ItemName', 'ItemDescription', 'Make', 'Model', 'SrNo', 
-            'Status', 'Category', 'Parent Folder', 'asset_value', 'Currency', 
-            'CurrentLocation', 'Weight', 'HSN Code', 'PurchaseDate', 'PurchaseDetails', 'Remarks',
-            'ParentId', 'Temporary Group Name'
-        ];
+        let headers = [];
+        let filename = '';
 
-        if (type === 'it') {
-            // Append IT-specific fields
-            headers = headers.concat(['MACAddress', 'IPAddress', 'Type', 'PhysicalPort', 'VLAN', 'SocketID', 'UserID']);
+        if (type === 'employee') {
+            headers = ['EmployeeID', 'Name', 'Department', 'Designation', 'Email', 'Phone', 'Status'];
+            filename = 'Employee_Import_Template.csv';
+        } else {
+            headers = [
+                'ItemName', 'ItemDescription', 'Make', 'Model', 'SrNo', 
+                'Status', 'Category', 'Parent Folder', 'asset_value', 'Currency', 
+                'CurrentLocation', 'Weight', 'HSN Code', 'PurchaseDate', 'PurchaseDetails', 'Remarks',
+                'ParentId', 'Temporary Group Name'
+            ];
+
+            if (type === 'it') {
+                // Append IT-specific fields
+                headers = headers.concat(['MACAddress', 'IPAddress', 'Type', 'PhysicalPort', 'VLAN', 'SocketID', 'UserID']);
+            }
+            filename = `Asset_Import_Template_${type.toUpperCase()}.csv`;
         }
 
         // Generate CSV content
@@ -6158,7 +6192,7 @@ app.get('/api/templates/set-import', authenticateJWT, async (req, res) => {
         console.log(`[TEMPLATE] Generated ${type} template with headers: ${headers.join(', ')}`);
         
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename=Asset_Import_Template_${type.toUpperCase()}.csv`);
+        res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
         res.status(200).send(csvContent);
     } catch (err) {
         console.error('[TEMPLATE] Generation Error:', err);
