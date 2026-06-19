@@ -544,6 +544,9 @@
                                 <button class="action-button cyan" id="btnBatchPrintQr">
                                     <span>🖨️ Print QR</span>
                                 </button>
+                                <button class="action-button blue" id="btnAddAssetFolder" title="Add Parent Folder (Hardware, Networking, etc.)">
+                                    <span>📁 Add Folder</span>
+                                </button>
                                 <button class="action-button blue" id="btnAddAssetKind">
                                     <span>📂 Add Category</span>
                                 </button>
@@ -1332,6 +1335,44 @@
                         </div>
                         <button type="submit" class="login-button">Add Kind</button>
                     </form>
+                </div>
+            </div>
+
+            <!-- Modal for Adding Parent Folder -->
+            <div id="addFolderModal" class="modal">
+                <div class="modal-content" style="max-width: 450px;">
+                    <div class="modal-header">
+                        <span class="close-modal" id="closeFolderModal">&times;</span>
+                        <h3 style="margin: 0;">📁 Add New Parent Folder</h3>
+                    </div>
+                    <div class="modal-body" style="padding-top: 15px;">
+                        <p style="font-size: 13px; color: #666; margin-bottom: 20px;">
+                            Create a high-level folder like <strong>Hardware</strong>, <strong>Networking</strong>, or <strong>Media</strong>.
+                        </p>
+                        <form id="addFolderForm">
+                            <div class="form-group">
+                                <label>Folder Name</label>
+                                <input type="text" id="folderName" name="folderName" class="form-input" placeholder="e.g., Hardware" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Module / Category</label>
+                                <select id="folderModule" name="folderModule" class="form-input">
+                                    <option value="IT">IT Assets</option>
+                                    <option value="In-House">In-House</option>
+                                    <option value="Rental">Rental</option>
+                                    <option value="Inventory">Inventory</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Folder Icon (Emoji)</label>
+                                <input type="text" id="folderIcon" name="folderIcon" class="form-input" value="📁">
+                            </div>
+                            <div style="margin-top: 30px; display: flex; gap: 10px;">
+                                <button type="button" class="action-button grey" id="cancelAddFolder" style="flex: 1;">Cancel</button>
+                                <button type="submit" class="action-button blue" style="flex: 1;">Create Folder</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
 

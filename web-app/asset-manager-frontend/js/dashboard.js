@@ -1915,8 +1915,78 @@ export function addChildField(data = null) {
     container.appendChild(row);
 }
 
+// --- Parent Folder Modal Logic ---
+function setupFolderHandlers() {
+    const btnAddFolder = document.getElementById('btnAddAssetFolder');
+    const modal = document.getElementById('addFolderModal');
+    const closeBtn = document.getElementById('closeFolderModal');
+    const cancelBtn = document.getElementById('cancelAddFolder');
+    const form = document.getElementById('addFolderForm');
+
+    if (btnAddFolder) {
+        btnAddFolder.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Add Parent Folder button clicked');
+            if (modal) modal.style.display = 'flex';
+        };
+    }
+
+    const closeModal = () => {
+        if (modal) modal.style.display = 'none';
+        if (form) form.reset();
+    };
+
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const data = {
+                Name: formData.get('folderName'),
+                Module: formData.get('folderModule'),
+                Icon: formData.get('folderIcon') || '📁'
+            };
+
+            try {
+                const response = await fetch('/api/folders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    showToast('Parent Folder created successfully!', 'success');
+                    closeModal();
+                    // Refresh the folders globally
+                    if (window.loadFolders) {
+                        await window.loadFolders();
+                        // Re-render sidebar tree to show new folder
+                        if (window.renderSidebarTree) {
+                            const assets = window.allAssets || [];
+                            const filtered = window.getFilteredAssets ? window.getFilteredAssets() : assets;
+                            window.renderSidebarTree(assets, filtered);
+                        }
+                    }
+                } else {
+                    const err = await response.text();
+                    showToast('Failed to create folder: ' + err, 'error');
+                }
+            } catch (err) {
+                console.error('Folder creation error:', err);
+                showToast('Error creating folder', 'error');
+            }
+        };
+    }
+}
+
 export function setupDashboard() {
     console.log('setupDashboard() called');
+
+    // Setup Parent Folder Handlers
+    setupFolderHandlers();
 
     // Setup Children / Components UI
     setupChildrenUI();
