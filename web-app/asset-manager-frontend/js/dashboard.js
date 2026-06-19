@@ -2350,19 +2350,21 @@ export function setupDashboard() {
     setupDCHistoryHandlers();
 
     // RBAC: Manage Hierarchy Visibility
+    const canManageHierarchy = hasPermission('manage.hierarchy');
+    
     const btnAddAssetKind = document.getElementById('btnAddAssetKind');
     if (btnAddAssetKind) {
-        btnAddAssetKind.style.display = 'flex'; // Restore visibility
+        btnAddAssetKind.style.display = canManageHierarchy ? 'flex' : 'none';
     }
 
     const btnAddAssetItem = document.getElementById('btnAddAssetItem');
     if (btnAddAssetItem) {
-        btnAddAssetItem.style.display = 'flex'; // Restore visibility
+        btnAddAssetItem.style.display = (hasPermission('user.manage') || canManageHierarchy) ? 'flex' : 'none';
     }
 
     const btnAddAssetFolder = document.getElementById('btnAddAssetFolder');
     if (btnAddAssetFolder) {
-        btnAddAssetFolder.style.display = 'flex'; // Restore visibility
+        btnAddAssetFolder.style.display = canManageHierarchy ? 'flex' : 'none';
     }
 
     const btnBatchPrintQr_visibility = document.getElementById('btnBatchPrintQr');
@@ -4925,10 +4927,10 @@ export function renderDashboard(assets, filteredAssets) {
         const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
         const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
-        const canManageHierarchy = true; // FORCE ENABLE FOR DEV
-        const deleteBtnHtml = `
+        const canManageHierarchy = hasPermission('manage.hierarchy');
+        const deleteBtnHtml = canManageHierarchy ? `
             <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
-        `;
+        ` : '';
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}

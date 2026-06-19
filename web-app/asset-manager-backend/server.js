@@ -967,7 +967,12 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     console.log(`[AUTH] Login successful for: ${username}`);
-    const permissions = Array.from(rolePermissionCache[user.role] || []);
+    const permissionsSet = new Set(rolePermissionCache[user.role] || []);
+    // SECURITY: Ensure 'admin' and 'superuser' always have manage.hierarchy
+    if (claims.role === 'admin' || claims.role === 'superuser') {
+        permissionsSet.add('manage.hierarchy');
+    }
+    const permissions = Array.from(permissionsSet);
 
     res.json({
       ok: true,
@@ -1034,7 +1039,11 @@ app.get('/api/auth/me', async (req, res) => {
                 user = normalizeResult(user);
 
                 if (user) {
-                    const permissions = Array.from(rolePermissionCache[decoded.role] || []);
+                    const permissionsSet = new Set(rolePermissionCache[decoded.role] || []);
+                    if (decoded.role === 'admin' || decoded.role === 'superuser') {
+                        permissionsSet.add('manage.hierarchy');
+                    }
+                    const permissions = Array.from(permissionsSet);
                     return res.json({
                         ok: true,
                         user: {
@@ -1071,7 +1080,11 @@ app.get('/api/auth/me', async (req, res) => {
                         maxAge: JWT_EXPIRES_IN_SECONDS * 1000
                     });
 
-                    const permissions = Array.from(rolePermissionCache[claims.role] || []);
+                    const permissionsSet = new Set(rolePermissionCache[claims.role] || []);
+                    if (claims.role === 'admin' || claims.role === 'superuser') {
+                        permissionsSet.add('manage.hierarchy');
+                    }
+                    const permissions = Array.from(permissionsSet);
 
                     return res.json({
                         ok: true,
@@ -3691,9 +3704,12 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
 
 app.delete('/api/folders/:id', authenticateJWT, async (req, res) => {
   try {
-    // Check for specific hierarchy permission
+    // SECURITY: Ensure 'admin' and 'superuser' roles always have permission
+    const isSuperUser = req.user.role === 'superuser';
+    const isAdmin = req.user.role === 'admin';
     const permissions = await getPermissionsForUser(req.user.id);
-    if (req.user.role !== 'superuser' && !permissions.includes('manage.hierarchy')) {
+    
+    if (!isSuperUser && !isAdmin && !permissions.includes('manage.hierarchy')) {
         return res.status(403).send('Unauthorized: You do not have permission to delete folders.');
     }
 
@@ -3718,9 +3734,12 @@ app.delete('/api/folders/:id', authenticateJWT, async (req, res) => {
 
 app.delete('/api/asset_kinds/:name', authenticateJWT, async (req, res) => {
   try {
-    // Check for specific hierarchy permission
+    // SECURITY: Ensure 'admin' and 'superuser' roles always have permission
+    const isSuperUser = req.user.role === 'superuser';
+    const isAdmin = req.user.role === 'admin';
     const permissions = await getPermissionsForUser(req.user.id);
-    if (req.user.role !== 'superuser' && !permissions.includes('manage.hierarchy')) {
+
+    if (!isSuperUser && !isAdmin && !permissions.includes('manage.hierarchy')) {
         return res.status(403).send('Unauthorized: You do not have permission to delete categories.');
     }
 
