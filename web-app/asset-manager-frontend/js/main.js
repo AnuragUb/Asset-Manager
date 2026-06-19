@@ -111,6 +111,7 @@ let folders = [];
 
 // Instantiate Hierarchy Manager
 window.hierarchyManager = new HierarchyManager();
+window.loadFolders = loadAssetKinds; // Alias to refresh both kinds and folders
 window.loadAssetKinds = loadAssetKinds;
 window.loadAssets = loadAssets;
 

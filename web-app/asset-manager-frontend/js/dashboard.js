@@ -1957,16 +1957,18 @@ function setupFolderHandlers() {
                     body: JSON.stringify(data)
                 });
 
-                if (response.ok) {
+                    if (response.ok) {
                     showToast('Parent Folder created successfully!', 'success');
                     closeModal();
                     // Refresh the folders globally
                     if (window.loadFolders) {
                         await window.loadFolders();
-                        // Re-render sidebar tree to show new folder
+                        // Re-render dashboard to show the new folder card
+                        const assets = window.allAssets || [];
+                        const filtered = window.getFilteredAssets ? window.getFilteredAssets() : assets;
+                        renderDashboard(assets, filtered);
+                        // Re-render sidebar if needed
                         if (window.renderSidebarTree) {
-                            const assets = window.allAssets || [];
-                            const filtered = window.getFilteredAssets ? window.getFilteredAssets() : assets;
                             window.renderSidebarTree(assets, filtered);
                         }
                     }
