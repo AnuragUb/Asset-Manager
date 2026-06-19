@@ -5242,31 +5242,47 @@ export function openAddItemModal(kind, prefillData = null) {
             if (prefillData) {
                 console.log('[Hierarchy] Setting up Edit Mode for:', prefillData);
                 const currentType = prefillData.Type;
-                const kindObj = allKinds.find(k => (k.Name || k.name) === currentType);
                 
-                if (kindObj) {
-                    // Is this a brand-level category?
-                    const parentKind = allKinds.find(k => (k.Name || k.name) === kindObj.ParentName);
+                // --- ROBUST DATA RETRIEVAL ---
+                // If window.allAssetKinds is empty, we must wait or retry once.
+                const ensureDataAndPopulate = () => {
+                    const allKinds = window.allAssetKinds || [];
+                    const allFolders = window.allFolders || [];
                     
-                    if (parentKind) {
-                        // Current Type is a Brand
-                        folderSelect.value = prefillData.ParentFolder || parentKind.ParentName || '';
-                        folderSelect.dispatchEvent(new Event('change'));
-                        kindSelect.value = parentKind.Name || parentKind.name;
-                        kindSelect.dispatchEvent(new Event('change'));
-                        brandSelect.value = kindObj.Name || kindObj.name;
-                    } else {
-                        // Current Type is a Base Kind
-                        folderSelect.value = prefillData.ParentFolder || kindObj.ParentName || '';
-                        folderSelect.dispatchEvent(new Event('change'));
-                        kindSelect.value = kindObj.Name || kindObj.name;
-                        kindSelect.dispatchEvent(new Event('change'));
+                    if (allKinds.length === 0) {
+                        console.warn('[Hierarchy] window.allAssetKinds is empty. Retrying population in 300ms...');
+                        setTimeout(ensureDataAndPopulate, 300);
+                        return;
                     }
-                } else if (prefillData.ParentFolder) {
-                    // Fallback: If Type is not in allKinds, at least set the folder
-                    folderSelect.value = prefillData.ParentFolder;
-                    folderSelect.dispatchEvent(new Event('change'));
-                }
+
+                    const kindObj = allKinds.find(k => (k.Name || k.name) === currentType);
+                    
+                    if (kindObj) {
+                        // Is this a brand-level category?
+                        const parentKind = allKinds.find(k => (k.Name || k.name) === kindObj.ParentName);
+                        
+                        if (parentKind) {
+                            // Current Type is a Brand
+                            folderSelect.value = prefillData.ParentFolder || parentKind.ParentName || '';
+                            folderSelect.dispatchEvent(new Event('change'));
+                            kindSelect.value = parentKind.Name || parentKind.name;
+                            kindSelect.dispatchEvent(new Event('change'));
+                            brandSelect.value = kindObj.Name || kindObj.name;
+                        } else {
+                            // Current Type is a Base Kind
+                            folderSelect.value = prefillData.ParentFolder || kindObj.ParentName || '';
+                            folderSelect.dispatchEvent(new Event('change'));
+                            kindSelect.value = kindObj.Name || kindObj.name;
+                            kindSelect.dispatchEvent(new Event('change'));
+                        }
+                    } else if (prefillData.ParentFolder) {
+                        // Fallback: If Type is not in allKinds, at least set the folder
+                        folderSelect.value = prefillData.ParentFolder;
+                        folderSelect.dispatchEvent(new Event('change'));
+                    }
+                };
+
+                ensureDataAndPopulate();
             }
         }
         // ---------------------------------

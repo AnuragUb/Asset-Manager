@@ -46,6 +46,7 @@ function writeJson(file, data) {
     try {
         fs.writeFileSync(file, JSON.stringify(data, null, 2));
     } catch (err) {
+        console.error('Audit Log Error:', err);
     }
 }
 
@@ -95,6 +96,7 @@ async function appendAudit(entry) {
         };
         await db('audit_log').insert(record);
     } catch (err) {
+        console.error('Audit Log Error:', err);
     }
 }
 

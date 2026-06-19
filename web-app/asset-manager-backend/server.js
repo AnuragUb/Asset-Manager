@@ -1034,6 +1034,7 @@ app.get('/api/auth/me', async (req, res) => {
                 user = normalizeResult(user);
 
                 if (user) {
+                    const permissions = Array.from(rolePermissionCache[decoded.role] || []);
                     return res.json({
                         ok: true,
                         user: {
@@ -1041,6 +1042,7 @@ app.get('/api/auth/me', async (req, res) => {
                             username: user.username,
                             fullname: user.fullname,
                             role: decoded.role,
+                            permissions: permissions,
                             projectId: user.project_id,
                             clientId: user.client_id,
                             category: decoded.company_id
@@ -1069,6 +1071,8 @@ app.get('/api/auth/me', async (req, res) => {
                         maxAge: JWT_EXPIRES_IN_SECONDS * 1000
                     });
 
+                    const permissions = Array.from(rolePermissionCache[claims.role] || []);
+
                     return res.json({
                         ok: true,
                         user: {
@@ -1076,6 +1080,7 @@ app.get('/api/auth/me', async (req, res) => {
                             username: user.username,
                             fullname: user.fullname,
                             role: claims.role,
+                            permissions: permissions,
                             projectId: user.project_id,
                             clientId: user.client_id,
                             category: category
@@ -5488,9 +5493,27 @@ app.post('/api/assets/bulk', async (req, res) => {
       const existingParent = allKinds.find(k => k.name.toLowerCase() === finalType.toLowerCase()) ||
                              allFolders.find(f => f.name.toLowerCase() === finalType.toLowerCase());
 
+      if (!existingParent) {
+          // STRICT POLICY: No category, no upload. 
+          throw new Error(`[BULK] Category "${finalType}" not found in system. Row skipped to protect data integrity.`);
+      }
+
+      // --- HIERARCHY SANCTITY CHECK (SYSTEM ALWAYS WINS) ---
+      // We treat the Excel Folder as a "Suggestion" but the Database as the "Law".
+      const providedFolder = (asset.itemFolder || asset.Folder || '').trim();
+      const actualParentName = (existingParent.parentname || existingParent.ParentName || '').trim();
+
+      let definitiveFolder = actualParentName || baseParent || '';
+      
+      if (providedFolder && actualParentName && providedFolder.toLowerCase() !== actualParentName.toLowerCase()) {
+          // Mismatch detected! 
+          // Instead of blocking, we auto-correct to the system's parent to ensure data integrity.
+          console.log(`[BULK] Auto-Correcting hierarchy: Category "${finalType}" belongs to "${actualParentName}", ignoring Excel suggestion "${providedFolder}".`);
+      }
+      // -----------------------------------------------------
+
       if (asset.Make && existingParent) {
           // Rule: Only create sub-category (Brand) if the parent exists.
-          // This sub-category (e.g. Netgear) will be locked under its parent (e.g. Switch).
           const parentName = existingParent.name || existingParent.id;
           kindToCreate = {
               name: asset.Make,
@@ -5498,34 +5521,12 @@ app.post('/api/assets/bulk', async (req, res) => {
               module: finalModule,
               icon: existingParent.icon || '📦'
           };
-          // The asset itself is classified by the Brand for grouping
           recordType = asset.Make;
-          // finalType remains the parent category (Switch) for ID generation
-      } else if (!existingParent) {
-          // STRICT POLICY: No category, no upload. 
-          // We throw an error here to prevent 'ghost' assets from being created.
-          throw new Error(`[BULK] Category "${finalType}" not found in system. Please create the category first or check for typos (e.g. "Laptops" vs "Laptop"). Row skipped to protect data integrity.`);
       }
 
-      // 4. Ensure Parent Hierarchy is consistent for standard IT categories
-      // If finalType is a known base kind (Monitor, Laptop, etc.), ensure its parent is correct
-      const standardHierarchy = {
-          'monitor': 'Hardware',
-          'laptop': 'Hardware',
-          'desktop': 'Hardware',
-          'server': 'Hardware',
-          'router': 'Networking',
-          'switch': 'Networking',
-          'cables': 'Networking',
-          'video cables': 'Networking',
-          'access points': 'Networking',
-          'firewall': 'Networking',
-          'accessory': 'Media & Others',
-          'data drives': 'Media & Others',
-          'printer': 'Media & Others'
-      };
+      // 4. Ensure Parent Hierarchy is consistent
+      // The definitiveFolder was already calculated during the Sanctity Check above.
 
-      const baseParent = standardHierarchy[finalType.toLowerCase()];
       let baseKindToEnsure = null;
       if (baseParent) {
           baseKindToEnsure = {
@@ -5562,7 +5563,7 @@ app.post('/api/assets/bulk', async (req, res) => {
           finalModule, 
           kindToCreate, 
           baseKindToEnsure,
-          resolvedFolder: asset.itemFolder || baseParent || ''
+          resolvedFolder: definitiveFolder
       };
     }));
 
@@ -6070,9 +6071,9 @@ app.get('/api/templates/set-import', authenticateJWT, async (req, res) => {
         const type = req.query.type || 'general';
         let headers = [
             'ItemName', 'ItemDescription', 'Make', 'Model', 'SrNo', 
-            'Status', 'Category', 'asset_value', 'Currency', 
-            'CurrentLocation', 'Weight', 'PurchaseDate', 'PurchaseDetails', 'Remarks',
-            'Temporary Group Name' // The new magic column
+            'Status', 'Category', 'Parent Folder', 'asset_value', 'Currency', 
+            'CurrentLocation', 'Weight', 'HSN Code', 'PurchaseDate', 'PurchaseDetails', 'Remarks',
+            'ParentId', 'Temporary Group Name'
         ];
 
         if (type === 'it') {
@@ -6081,11 +6082,13 @@ app.get('/api/templates/set-import', authenticateJWT, async (req, res) => {
         }
 
         // Generate CSV content
-        const csvContent = headers.join(',') + '\n';
+        const csvContent = headers.map(h => `"${h}"`).join(',') + '\n';
         
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=Asset_Set_Import_Template_${type.toUpperCase()}.csv`);
-        res.send(csvContent);
+        console.log(`[TEMPLATE] Generated ${type} template with headers: ${headers.join(', ')}`);
+        
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=Asset_Import_Template_${type.toUpperCase()}.csv`);
+        res.status(200).send(csvContent);
     } catch (err) {
         console.error('[TEMPLATE] Generation Error:', err);
         res.status(500).send('Error generating template');
