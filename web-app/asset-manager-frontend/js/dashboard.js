@@ -1923,13 +1923,19 @@ function setupFolderHandlers() {
     const cancelBtn = document.getElementById('cancelAddFolder');
     const form = document.getElementById('addFolderForm');
 
+    // RBAC: Only show Add Folder button to authorized users
     if (btnAddFolder) {
-        btnAddFolder.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('Add Parent Folder button clicked');
-            if (modal) modal.style.display = 'flex';
-        };
+        if (hasPermission('manage.hierarchy')) {
+            btnAddFolder.style.display = 'flex';
+            btnAddFolder.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Add Parent Folder button clicked');
+                if (modal) modal.style.display = 'flex';
+            };
+        } else {
+            btnAddFolder.style.display = 'none';
+        }
     }
 
     const closeModal = () => {
@@ -2245,6 +2251,10 @@ export function setupDashboard() {
             
             // 2. Handle Add Asset Kind Button (top right)
             if (e.target.id === 'btnAddAssetKind' || e.target.closest('#btnAddAssetKind')) {
+                if (!hasPermission('manage.hierarchy')) {
+                    showToast('Unauthorized: You do not have permission to manage categories.', 'error');
+                    return;
+                }
                 console.log('Add Asset Kind button clicked');
                 openAddKindModal();
                 return;
@@ -2252,6 +2262,10 @@ export function setupDashboard() {
 
             // 2b. Handle Add Asset Item Button (top right)
             if (e.target.id === 'btnAddAssetItem' || e.target.closest('#btnAddAssetItem')) {
+                if (!hasPermission('user.manage') && !hasPermission('manage.hierarchy')) {
+                    showToast('Unauthorized: You do not have permission to add assets.', 'error');
+                    return;
+                }
                 console.log('Add Asset Item button clicked');
                 openAddItemModal(); // Open without a pre-filled kind
                 return;
@@ -2334,6 +2348,17 @@ export function setupDashboard() {
     }
 
     setupDCHistoryHandlers();
+
+    // RBAC: Manage Hierarchy Visibility
+    const btnAddAssetKind = document.getElementById('btnAddAssetKind');
+    if (btnAddAssetKind) {
+        btnAddAssetKind.style.display = hasPermission('manage.hierarchy') ? 'flex' : 'none';
+    }
+
+    const btnAddAssetItem = document.getElementById('btnAddAssetItem');
+    if (btnAddAssetItem) {
+        btnAddAssetItem.style.display = (hasPermission('user.manage') || hasPermission('manage.hierarchy')) ? 'flex' : 'none';
+    }
 }
 
 // --- Project View Functions ---
@@ -4885,9 +4910,14 @@ export function renderDashboard(assets, filteredAssets) {
         const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
         const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
+        const canManageHierarchy = hasPermission('manage.hierarchy');
+        const deleteBtnHtml = canManageHierarchy ? `
+            <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
+        ` : '';
+
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
-            <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
+            ${deleteBtnHtml}
             <div class="asset-card-icon">
                 ${isUrl 
                     ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
@@ -4934,8 +4964,26 @@ export function renderDashboard(assets, filteredAssets) {
 
                     if (response.ok) {
                         showToast(`${typeLabel} deleted successfully!`, 'success');
-                        if (window.loadFolders) await window.loadFolders();
-                        renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                        
+                        // --- FULL HIERARCHY REFRESH (Fix Ghost Presence) ---
+                        if (window.loadFolders) {
+                            await window.loadFolders(); // Fetches fresh data and updates window.allAssetKinds/allFolders
+                        }
+
+                        // Re-initialize the hierarchy manager with fresh data
+                        if (window.HierarchyManager) {
+                            window.hierarchyManager = new window.HierarchyManager();
+                        }
+
+                        // Re-render the dashboard
+                        const assets = window.allAssets || [];
+                        const filterFn = window.getFilteredAssets || (() => assets);
+                        renderDashboard(assets, filterFn);
+                        
+                        // Re-render sidebar tree (This removes the 'ghost' nodes)
+                        if (window.renderSidebarTree) {
+                            window.renderSidebarTree(assets, filterFn());
+                        }
                     } else {
                         const err = await response.text();
                         showToast(`Failed to delete: ${err}`, 'error');

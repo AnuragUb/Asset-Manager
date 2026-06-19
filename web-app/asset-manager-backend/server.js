@@ -3658,8 +3658,14 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
   }
 });
 
-app.delete('/api/folders/:id', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
+app.delete('/api/folders/:id', authenticateJWT, async (req, res) => {
   try {
+    // Check for specific hierarchy permission
+    const permissions = await getPermissionsForUser(req.user.id);
+    if (req.user.role !== 'superuser' && !permissions.includes('manage.hierarchy')) {
+        return res.status(403).send('Unauthorized: You do not have permission to delete folders.');
+    }
+
     const { id } = req.params;
     
     // Check if there are any child kinds (categories) linked to this folder
@@ -3679,8 +3685,14 @@ app.delete('/api/folders/:id', authenticateJWT, authorizeRoles('superuser', 'adm
   }
 });
 
-app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
+app.delete('/api/asset_kinds/:name', authenticateJWT, async (req, res) => {
   try {
+    // Check for specific hierarchy permission
+    const permissions = await getPermissionsForUser(req.user.id);
+    if (req.user.role !== 'superuser' && !permissions.includes('manage.hierarchy')) {
+        return res.status(403).send('Unauthorized: You do not have permission to delete categories.');
+    }
+
     const { name } = req.params;
 
     // Check if any assets are using this category
