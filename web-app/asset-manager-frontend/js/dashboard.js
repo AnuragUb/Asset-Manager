@@ -2365,9 +2365,9 @@ export function setupDashboard() {
         btnAddAssetFolder.style.display = 'flex'; // Restore visibility
     }
 
-    const btnBatchPrintQr = document.getElementById('btnBatchPrintQr');
-    if (btnBatchPrintQr) {
-        btnBatchPrintQr.style.display = 'flex';
+    const btnBatchPrintQr_visibility = document.getElementById('btnBatchPrintQr');
+    if (btnBatchPrintQr_visibility) {
+        btnBatchPrintQr_visibility.style.display = 'flex';
     }
 
     const btnKanban = document.getElementById('btnAssetKanban'); // Assuming ID based on common patterns
