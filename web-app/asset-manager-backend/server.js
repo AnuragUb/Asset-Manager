@@ -3474,16 +3474,16 @@ app.post('/api/employees', async (req, res) => {
     // UPSERT LOGIC: Check if EmployeeID already exists
     const existing = await db('employees').where('employeeid', EmployeeID).first();
     
-    const data = normalizeDBData({
-        EmployeeID,
-        Name,
-        Department: Department || '',
-        Designation: Designation || '',
-        Email: Email || '',
-        Phone: Phone || '',
-        Status: Status || 'ACTIVE',
-        LastUpdated: new Date().toISOString()
-    });
+    const data = {
+        employeeid: EmployeeID,
+        name: Name,
+        department: Department || '',
+        designation: Designation || '',
+        email: Email || '',
+        phone: Phone || '',
+        status: Status || 'ACTIVE',
+        timestamp: new Date().toISOString()
+    };
 
     if (existing) {
         // Update existing
@@ -3493,7 +3493,7 @@ app.post('/api/employees', async (req, res) => {
     } else {
         // Create new
         const id = `EMP${Date.now()}`;
-        await db('employees').insert({ ...data, ID: id });
+        await db('employees').insert({ ...data, id });
         await invalidateEmployeesCache();
         return res.json({ success: true, id, created: true });
     }
@@ -3518,16 +3518,16 @@ app.post('/api/employees/bulk', async (req, res) => {
     for (const emp of employees) {
         if (!emp.EmployeeID) continue; // Skip records without an ID anchor
 
-        const data = normalizeDBData({
-            EmployeeID: emp.EmployeeID,
-            Name: emp.Name || '',
-            Department: emp.Department || '',
-            Designation: emp.Designation || '',
-            Email: emp.Email || '',
-            Phone: emp.Phone || '',
-            Status: emp.Status || 'ACTIVE',
-            LastUpdated: timestamp
-        });
+        const data = {
+            employeeid: emp.EmployeeID,
+            name: emp.Name || '',
+            department: emp.Department || '',
+            designation: emp.Designation || '',
+            email: emp.Email || '',
+            phone: emp.Phone || '',
+            status: emp.Status || 'ACTIVE',
+            timestamp: timestamp
+        };
 
         // Check if exists
         const existing = await db('employees').where('employeeid', emp.EmployeeID).first();
@@ -3536,7 +3536,7 @@ app.post('/api/employees/bulk', async (req, res) => {
             updatedCount++;
         } else {
             const id = `EMP${Date.now()}${createdCount}`;
-            await db('employees').insert({ ...data, ID: id });
+            await db('employees').insert({ ...data, id });
             createdCount++;
         }
     }
@@ -3556,16 +3556,16 @@ app.put('/api/employees/:id', async (req, res) => {
 
     const result = await db('employees')
         .where('id', id)
-        .update(normalizeDBData({
-            EmployeeID,
-            Name,
-            Department,
-            Designation,
-            Email,
-            Phone,
-            Status,
-            LastUpdated: new Date().toISOString()
-        }));
+        .update({
+            employeeid: EmployeeID,
+            name: Name,
+            department: Department,
+            designation: Designation,
+            email: Email,
+            phone: Phone,
+            status: Status,
+            timestamp: new Date().toISOString()
+        });
     if (result === 0) return res.status(404).send('Employee not found');
     await invalidateEmployeesCache();
     res.json({ success: true });

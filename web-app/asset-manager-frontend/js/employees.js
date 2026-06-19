@@ -456,23 +456,29 @@ export function renderEmployeeCards() {
 
     const searchTerm = document.getElementById('employeeSearch')?.value.toLowerCase() || '';
     const deptTerm = document.getElementById('deptFilter')?.value || 'all';
+    
+    let filtered = window.allEmployees || [];
+    
+    if (searchTerm) {
+        filtered = filtered.filter(e => 
+            (e.Name || '').toLowerCase().includes(searchTerm) || 
+            (e.EmployeeID || '').toLowerCase().includes(searchTerm) ||
+            (e.Department || '').toLowerCase().includes(searchTerm)
+        );
+    }
+    
+    if (deptTerm !== 'all') {
+        filtered = filtered.filter(e => (e.Department || '') === deptTerm);
+    }
 
-    const filtered = window.allEmployees.filter(emp => {
-        const nameParts = emp.Name.toLowerCase().split(' ');
-        // Check if any part of the name STARTS with the search term
-        const matchesName = nameParts.some(part => part.startsWith(searchTerm));
-        
-        // OR matches ID (contains is fine for ID) OR matches Department (contains is fine)
-        const matchesOther = emp.EmployeeID.toLowerCase().includes(searchTerm) ||
-                             (emp.Department || '').toLowerCase().includes(searchTerm);
-        
-        const matchesSearch = matchesName || matchesOther;
-        const matchesDept = deptTerm === 'all' || emp.Department === deptTerm;
-        return matchesSearch && matchesDept;
-    });
-
+    console.log(`[EMPLOYEES] Rendering ${filtered.length} out of ${window.allEmployees?.length || 0} employees`);
+    
     if (filtered.length === 0) {
-        container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 100px; color: #999;">No employees found matching your criteria.</div>';
+        container.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 50px; color: #999;">
+                <p>No employees found matching your criteria.</p>
+            </div>
+        `;
         return;
     }
 
