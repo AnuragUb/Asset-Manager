@@ -418,7 +418,7 @@ function renderBulkAssignList() {
 
 export async function loadEmployees() {
     try {
-        const response = await fetch('/api/employees');
+        const response = await fetch('/api/employees?all=true');
         let employees = await response.json();
         
         // Handle paginated response or wrapped data
