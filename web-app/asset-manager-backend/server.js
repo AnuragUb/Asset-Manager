@@ -3658,6 +3658,52 @@ app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin
   }
 });
 
+app.delete('/api/folders/:id', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if there are any child kinds (categories) linked to this folder
+    const folder = await db('folders').where('id', id).first();
+    if (!folder) return res.status(404).send('Folder not found');
+
+    const children = await db('asset_kinds').where('parentname', folder.name).count('name as count').first();
+    if (parseInt(children.count) > 0) {
+        return res.status(400).send(`Cannot delete folder. It still contains ${children.count} categories. Move or delete them first.`);
+    }
+
+    await db('folders').where('id', id).del();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to delete folder:', err);
+    res.status(500).send('Database error');
+  }
+});
+
+app.delete('/api/asset_kinds/:name', authenticateJWT, authorizeRoles('superuser', 'admin'), async (req, res) => {
+  try {
+    const { name } = req.params;
+
+    // Check if any assets are using this category
+    const assetsCount = await db('assets').where('type', name).count('id as count').first();
+    if (parseInt(assetsCount.count) > 0) {
+        return res.status(400).send(`Cannot delete category. It is currently assigned to ${assetsCount.count} assets.`);
+    }
+
+    // Check for sub-categories (Brands)
+    const subCategories = await db('asset_kinds').where('parentname', name).count('name as count').first();
+    if (parseInt(subCategories.count) > 0) {
+        return res.status(400).send(`Cannot delete category. It has ${subCategories.count} sub-categories (Brands).`);
+    }
+
+    await db('asset_kinds').where('name', name).del();
+    await invalidateAssetKindsCache();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to delete asset kind:', err);
+    res.status(500).send('Database error');
+  }
+});
+
 // Projects API
 app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), async (req, res) => {
     try {

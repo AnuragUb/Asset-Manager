@@ -4887,6 +4887,7 @@ export function renderDashboard(assets, filteredAssets) {
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
+            <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
             <div class="asset-card-icon">
                 ${isUrl 
                     ? `<img src="${displayImg}" style="width: 48px; height: 48px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
@@ -4917,6 +4918,33 @@ export function renderDashboard(assets, filteredAssets) {
                     openAddItemModal(nodeName);
                 };
             }
+        }
+
+        // Add handler for the Delete button
+        const delBtn = assetCard.querySelector('.asset-card-delete-button');
+        if (delBtn) {
+            delBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const typeLabel = isKind ? 'Category' : 'Folder';
+                if (!confirm(`Are you sure you want to delete this ${typeLabel}: "${nodeName}"? This action cannot be undone.`)) return;
+
+                try {
+                    const url = isKind ? `/api/asset_kinds/${encodeURIComponent(nodeName)}` : `/api/folders/${encodeURIComponent(node.ID)}`;
+                    const response = await fetch(url, { method: 'DELETE' });
+
+                    if (response.ok) {
+                        showToast(`${typeLabel} deleted successfully!`, 'success');
+                        if (window.loadFolders) await window.loadFolders();
+                        renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                    } else {
+                        const err = await response.text();
+                        showToast(`Failed to delete: ${err}`, 'error');
+                    }
+                } catch (err) {
+                    console.error('Deletion error:', err);
+                    showToast('Error during deletion', 'error');
+                }
+            };
         }
 
         assetGrid.appendChild(assetCard);
