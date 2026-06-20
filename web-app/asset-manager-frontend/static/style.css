@@ -153,15 +153,20 @@ body {
     box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
     padding: 20px 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 #app-sidebar.collapsed {
-    width: 0;
-    padding: 20px 0; /* Keep vertical padding or remove? Better remove horizontal padding */
-    padding-left: 0;
-    padding-right: 0;
-    overflow: hidden;
-    border: none; /* Remove border/shadow if any */
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+    margin: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+    display: none !important;
 }
 
 .sidebar-search {
@@ -169,14 +174,19 @@ body {
     padding: 0 15px 15px;
     border-bottom: 1px solid #eee;
     margin-bottom: 15px;
+    flex-shrink: 0; /* Prevent search area from expanding */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .sidebar-search input {
+    width: 0; /* Allow flex to control width */
     flex: 1;
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
     margin-right: 5px;
+    font-size: 13px;
 }
 
 .sidebar-search .icon-button {
