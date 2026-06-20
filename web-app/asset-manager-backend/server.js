@@ -3482,7 +3482,7 @@ app.post('/api/employees', async (req, res) => {
         email: Email || '',
         phone: Phone || '',
         status: Status || 'ACTIVE',
-        timestamp: new Date().toISOString()
+        lastupdated: new Date().toISOString()
     };
 
     if (existing) {
@@ -3526,7 +3526,7 @@ app.post('/api/employees/bulk', async (req, res) => {
             email: emp.Email || '',
             phone: emp.Phone || '',
             status: emp.Status || 'ACTIVE',
-            timestamp: timestamp
+            lastupdated: timestamp
         };
 
         // Check if exists
@@ -3564,7 +3564,7 @@ app.put('/api/employees/:id', async (req, res) => {
             email: Email,
             phone: Phone,
             status: Status,
-            timestamp: new Date().toISOString()
+            lastupdated: new Date().toISOString()
         });
     if (result === 0) return res.status(404).send('Employee not found');
     await invalidateEmployeesCache();
