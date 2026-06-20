@@ -99,6 +99,10 @@ body {
     background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), rgba(222, 35, 39, 0.6) !important;
     backdrop-filter: blur(10px); /* Glassmorphism effect */
     color: #ffffff !important;
+    
+    /* RE-THEME RAUL DRUNK BUBBLES */
+    --sidebar-bubble-active: #000000;
+    --sidebar-bubble-hover: rgba(136, 136, 136, 0.6);
 }
 
 #app-sidebar.dev-sidebar-theme *, 
@@ -115,13 +119,13 @@ body {
 #app-sidebar.dev-sidebar-theme .tree-node:hover,
 #app-sidebar.dev-sidebar-theme .tree-item-wrapper:hover,
 #app-sidebar.dev-sidebar-theme .menu-item-wrapper:hover {
-    background-color: rgba(136, 136, 136, 0.4) !important; /* Stage 2: Stone Grey Hover */
+    background-color: transparent !important; /* Let the bubble handle the background */
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node.active,
 #app-sidebar.dev-sidebar-theme .tree-item-wrapper.active,
 #app-sidebar.dev-sidebar-theme .menu-item-wrapper.active {
-    background-color: #000000 !important; /* Stage 4: Black (Selected) */
+    background-color: transparent !important; /* Let the bubble handle the background */
     font-weight: bold;
 }
 
@@ -130,13 +134,13 @@ body {
 #app-sidebar.dev-sidebar-theme .tree-item-wrapper.intermediate,
 #app-sidebar.dev-sidebar-theme .menu-item-wrapper.intermediate {
     background-color: rgba(255, 255, 255, 0.2) !important;
+    z-index: 3; /* Ensure flash is above bubble */
 }
 
-/* KILL LEGACY BUBBLES IN DEV THEME */
+/* RESTORE BUBBLES IN DEV THEME */
 #app-sidebar.dev-sidebar-theme .sidebar-bubble {
-    display: none !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
+    display: block !important;
+    opacity: 0.8;
 }
 
 #app-sidebar.dev-sidebar-theme .sidebar-search input {
