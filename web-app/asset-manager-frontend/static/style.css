@@ -94,65 +94,6 @@ body {
     border-radius: 50%;
 }
 
-/* Development Theme for Sidebar (9090 Only) */
-#app-sidebar.dev-sidebar-theme {
-    background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), rgba(0, 128, 128, 0.6) !important; /* Teal #008080 at 60% transparency */
-    backdrop-filter: blur(10px); /* Glassmorphism effect */
-    color: #ffffff !important;
-    
-    /* RE-THEME RAUL DRUNK BUBBLES */
-    --sidebar-bubble-active: #000000;
-    --sidebar-bubble-hover: rgba(136, 136, 136, 0.6);
-}
-
-#app-sidebar.dev-sidebar-theme *, 
-#app-sidebar.dev-sidebar-theme .tree-node,
-#app-sidebar.dev-sidebar-theme .tree-text,
-#app-sidebar.dev-sidebar-theme .sidebar-title,
-#app-sidebar.dev-sidebar-theme .tree-item-wrapper,
-#app-sidebar.dev-sidebar-theme .menu-item-wrapper,
-#app-sidebar.dev-sidebar-theme .tree-link,
-#app-sidebar.dev-sidebar-theme .menu-item {
-    color: #ffffff !important;
-}
-
-#app-sidebar.dev-sidebar-theme .tree-node:hover,
-#app-sidebar.dev-sidebar-theme .tree-item-wrapper:hover,
-#app-sidebar.dev-sidebar-theme .menu-item-wrapper:hover {
-    background-color: transparent !important; /* Let the bubble handle the background */
-}
-
-#app-sidebar.dev-sidebar-theme .tree-node.active,
-#app-sidebar.dev-sidebar-theme .tree-item-wrapper.active,
-#app-sidebar.dev-sidebar-theme .menu-item-wrapper.active {
-    background-color: transparent !important; /* Let the bubble handle the background */
-    font-weight: bold;
-}
-
-/* Stage 3: Transparent White Flash (Intermediate Click State) */
-#app-sidebar.dev-sidebar-theme .tree-node.intermediate,
-#app-sidebar.dev-sidebar-theme .tree-item-wrapper.intermediate,
-#app-sidebar.dev-sidebar-theme .menu-item-wrapper.intermediate {
-    background-color: rgba(255, 255, 255, 0.2) !important;
-    z-index: 3; /* Ensure flash is above bubble */
-}
-
-/* RESTORE BUBBLES IN DEV THEME */
-#app-sidebar.dev-sidebar-theme .sidebar-bubble {
-    display: block !important;
-    opacity: 0.8;
-}
-
-#app-sidebar.dev-sidebar-theme .sidebar-search input {
-    background-color: rgba(255, 255, 255, 0.9);
-    color: #333;
-    border: none;
-}
-
-#app-sidebar.dev-sidebar-theme .sidebar-search input::placeholder {
-    color: #666;
-}
-
 .user-avatar {
     border-radius: 50%;
     margin-left: 15px;

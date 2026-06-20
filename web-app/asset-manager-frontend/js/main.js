@@ -1,20 +1,20 @@
-console.log('MAIN.JS: Entry point (v6.58)');
-import { showView } from './utils.js?v=6.58';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.58';
+console.log('MAIN.JS: Entry point (v6.59)');
+import { showView } from './utils.js?v=6.59';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.59';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.58';
-import { setupAuth, checkSession } from './auth.js?v=6.58';
-import { HierarchyManager } from './hierarchy.js?v=6.58';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.58';
+import { renderItAssets } from './itAssets.js?v=6.59';
+import { setupAuth, checkSession } from './auth.js?v=6.59';
+import { HierarchyManager } from './hierarchy.js?v=6.59';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.59';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.58';
-import { initProjectsView } from './projects.js?v=6.58';
-import { initSettingsView } from './settings.js?v=6.58';
-import { initCompanyTemplates } from './companyTemplates.js?v=6.58';
-import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.58';
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.58';
-import { initFormAutosave } from './formAutosave.js?v=6.58';
-import { initContextMenu } from './contextMenu.js?v=6.58';
+import { initWarrantyView } from './warranty.js?v=6.59';
+import { initProjectsView } from './projects.js?v=6.59';
+import { initSettingsView } from './settings.js?v=6.59';
+import { initCompanyTemplates } from './companyTemplates.js?v=6.59';
+import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.59';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.59';
+import { initFormAutosave } from './formAutosave.js?v=6.59';
+import { initContextMenu } from './contextMenu.js?v=6.59';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -632,15 +632,6 @@ function switchDashboardSubView(subViewName) {
 
 // Initialize Context Menu
 initContextMenu();
-
-// DEV THEORY: Apply Teal Sidebar Theme on Port 9090
-if (window.location.port === '9090') {
-    console.log('[DEV] Applying Teal Sidebar Theme (#008080)');
-    const sidebar = document.getElementById('app-sidebar');
-    if (sidebar) {
-        sidebar.classList.add('dev-sidebar-theme');
-    }
-}
 
 // Mark modules as loaded for watchdog
 window.mainLoaded = true;

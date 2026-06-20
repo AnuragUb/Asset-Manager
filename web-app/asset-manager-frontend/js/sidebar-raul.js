@@ -71,17 +71,6 @@
             });
 
             // Click Effects
-            treeContainer.addEventListener('mousedown', (e) => {
-                const node = e.target.closest('.tree-node');
-                if (node && !node.classList.contains('active')) {
-                    node.classList.add('intermediate');
-                }
-            });
-
-            treeContainer.addEventListener('mouseup', () => {
-                document.querySelectorAll('.tree-node.intermediate').forEach(n => n.classList.remove('intermediate'));
-            });
-
             treeContainer.addEventListener('click', (e) => {
                 const wrapper = e.target.closest('.tree-item-wrapper, .menu-item-wrapper');
                 if (wrapper) {
