@@ -109,7 +109,7 @@ body {
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node:hover {
-    background-color: rgba(255, 255, 255, 0.2) !important; /* Stage 2: Transparent White 20% */
+    background-color: rgba(136, 136, 136, 0.4) !important; /* Stage 2: Stone Grey Hover */
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node.active {
@@ -117,9 +117,9 @@ body {
     font-weight: bold;
 }
 
-/* Stage 3: Stone Grey (Intermediate State) */
+/* Stage 3: Transparent White Flash (Intermediate Click State) */
 #app-sidebar.dev-sidebar-theme .tree-node.intermediate {
-    background-color: rgba(136, 136, 136, 0.6) !important;
+    background-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 #app-sidebar.dev-sidebar-theme .sidebar-search input {
