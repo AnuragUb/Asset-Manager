@@ -104,22 +104,39 @@ body {
 #app-sidebar.dev-sidebar-theme *, 
 #app-sidebar.dev-sidebar-theme .tree-node,
 #app-sidebar.dev-sidebar-theme .tree-text,
-#app-sidebar.dev-sidebar-theme .sidebar-title {
+#app-sidebar.dev-sidebar-theme .sidebar-title,
+#app-sidebar.dev-sidebar-theme .tree-item-wrapper,
+#app-sidebar.dev-sidebar-theme .menu-item-wrapper,
+#app-sidebar.dev-sidebar-theme .tree-link,
+#app-sidebar.dev-sidebar-theme .menu-item {
     color: #ffffff !important;
 }
 
-#app-sidebar.dev-sidebar-theme .tree-node:hover {
+#app-sidebar.dev-sidebar-theme .tree-node:hover,
+#app-sidebar.dev-sidebar-theme .tree-item-wrapper:hover,
+#app-sidebar.dev-sidebar-theme .menu-item-wrapper:hover {
     background-color: rgba(136, 136, 136, 0.4) !important; /* Stage 2: Stone Grey Hover */
 }
 
-#app-sidebar.dev-sidebar-theme .tree-node.active {
+#app-sidebar.dev-sidebar-theme .tree-node.active,
+#app-sidebar.dev-sidebar-theme .tree-item-wrapper.active,
+#app-sidebar.dev-sidebar-theme .menu-item-wrapper.active {
     background-color: #000000 !important; /* Stage 4: Black (Selected) */
     font-weight: bold;
 }
 
 /* Stage 3: Transparent White Flash (Intermediate Click State) */
-#app-sidebar.dev-sidebar-theme .tree-node.intermediate {
+#app-sidebar.dev-sidebar-theme .tree-node.intermediate,
+#app-sidebar.dev-sidebar-theme .tree-item-wrapper.intermediate,
+#app-sidebar.dev-sidebar-theme .menu-item-wrapper.intermediate {
     background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* KILL LEGACY BUBBLES IN DEV THEME */
+#app-sidebar.dev-sidebar-theme .sidebar-bubble {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 #app-sidebar.dev-sidebar-theme .sidebar-search input {
