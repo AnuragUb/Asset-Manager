@@ -1,20 +1,20 @@
-console.log('MAIN.JS: Entry point (v6.50)');
-import { showView } from './utils.js?v=6.50';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.50';
+console.log('MAIN.JS: Entry point (v6.51)');
+import { showView } from './utils.js?v=6.51';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.51';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.50';
-import { setupAuth, checkSession } from './auth.js?v=6.50';
-import { HierarchyManager } from './hierarchy.js?v=6.50';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.50';
+import { renderItAssets } from './itAssets.js?v=6.51';
+import { setupAuth, checkSession } from './auth.js?v=6.51';
+import { HierarchyManager } from './hierarchy.js?v=6.51';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.51';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.50';
-import { initProjectsView } from './projects.js?v=6.50';
-import { initSettingsView } from './settings.js?v=6.50';
-import { initCompanyTemplates } from './companyTemplates.js?v=6.50';
-import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.50';
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.50';
-import { initFormAutosave } from './formAutosave.js?v=6.50';
-import { initContextMenu } from './contextMenu.js?v=6.50';
+import { initWarrantyView } from './warranty.js?v=6.51';
+import { initProjectsView } from './projects.js?v=6.51';
+import { initSettingsView } from './settings.js?v=6.51';
+import { initCompanyTemplates } from './companyTemplates.js?v=6.51';
+import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.51';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.51';
+import { initFormAutosave } from './formAutosave.js?v=6.51';
+import { initContextMenu } from './contextMenu.js?v=6.51';
 
 // Expose showView to global scope for other modules
 window.showView = showView;

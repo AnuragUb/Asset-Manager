@@ -96,7 +96,8 @@ body {
 
 /* Development Theme for Sidebar (9090 Only) */
 #app-sidebar.dev-sidebar-theme {
-    background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), #de2327 !important;
+    background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), rgba(222, 35, 39, 0.6) !important;
+    backdrop-filter: blur(10px); /* Glassmorphism effect */
     color: #ffffff !important;
 }
 
