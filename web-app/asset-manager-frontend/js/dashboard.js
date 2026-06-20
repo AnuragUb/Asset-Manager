@@ -1,7 +1,7 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.42';
-import { HierarchyManager } from './hierarchy.js?v=6.42';
-import { DataProcessor } from './dataProcessor.js?v=6.42';
-import { initScannerView } from './networkScanner.js?v=6.42';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.45';
+import { HierarchyManager } from './hierarchy.js?v=6.45';
+import { DataProcessor } from './dataProcessor.js?v=6.45';
+import { initScannerView } from './networkScanner.js?v=6.45';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
@@ -5184,6 +5184,13 @@ export function openAddKindModal() {
                     group.appendChild(opt);
                 });
                 parentSelect.appendChild(group);
+            }
+
+            // --- Context Menu Integration ---
+            if (window.contextMenuTargetFolder) {
+                console.log(`[ContextMenu] Auto-selecting folder: ${window.contextMenuTargetFolder}`);
+                parentSelect.value = window.contextMenuTargetFolder;
+                window.contextMenuTargetFolder = null; // Clear it
             }
         }
     } else {
