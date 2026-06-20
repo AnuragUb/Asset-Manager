@@ -113,7 +113,7 @@ body {
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node.active {
-    background-color: rgba(0, 0, 0, 0.3) !important;
+    background-color: rgba(136, 136, 136, 0.6) !important; /* Stone Grey Active */
     font-weight: bold;
 }
 
