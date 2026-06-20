@@ -109,12 +109,17 @@ body {
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node:hover {
-    background-color: rgba(136, 136, 136, 0.4) !important; /* Stone Grey hover */
+    background-color: rgba(255, 255, 255, 0.2) !important; /* Stage 2: Transparent White 20% */
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node.active {
-    background-color: rgba(136, 136, 136, 0.6) !important; /* Stone Grey Active */
+    background-color: #000000 !important; /* Stage 4: Black (Selected) */
     font-weight: bold;
+}
+
+/* Stage 3: Stone Grey (Intermediate State) */
+#app-sidebar.dev-sidebar-theme .tree-node.intermediate {
+    background-color: rgba(136, 136, 136, 0.6) !important;
 }
 
 #app-sidebar.dev-sidebar-theme .sidebar-search input {

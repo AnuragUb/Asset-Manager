@@ -1,7 +1,7 @@
-import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.53';
-import { HierarchyManager } from './hierarchy.js?v=6.53';
-import { DataProcessor } from './dataProcessor.js?v=6.53';
-import { initScannerView } from './networkScanner.js?v=6.53';
+import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.54';
+import { HierarchyManager } from './hierarchy.js?v=6.54';
+import { DataProcessor } from './dataProcessor.js?v=6.54';
+import { initScannerView } from './networkScanner.js?v=6.54';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
