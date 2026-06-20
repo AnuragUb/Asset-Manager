@@ -1,20 +1,20 @@
-console.log('MAIN.JS: Entry point (v6.46)');
-import { showView } from './utils.js?v=6.46';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.46';
+console.log('MAIN.JS: Entry point (v6.47)');
+import { showView } from './utils.js?v=6.47';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.47';
 // import { initScannerView } from './networkScanner.js?v=5.50';
-import { renderItAssets } from './itAssets.js?v=6.46';
-import { setupAuth, checkSession } from './auth.js?v=6.46';
-import { HierarchyManager } from './hierarchy.js?v=6.46';
-import { initEmployeeView, loadEmployees } from './employees.js?v=6.46';
+import { renderItAssets } from './itAssets.js?v=6.47';
+import { setupAuth, checkSession } from './auth.js?v=6.47';
+import { HierarchyManager } from './hierarchy.js?v=6.47';
+import { initEmployeeView, loadEmployees } from './employees.js?v=6.47';
 // import { setupOcr } from './ocr.js?v=5.50';
-import { initWarrantyView } from './warranty.js?v=6.46';
-import { initProjectsView } from './projects.js?v=6.46';
-import { initSettingsView } from './settings.js?v=6.46';
-import { initCompanyTemplates } from './companyTemplates.js?v=6.46';
-import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.46';
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.46';
-import { initFormAutosave } from './formAutosave.js?v=6.46';
-import { initContextMenu } from './contextMenu.js?v=6.46';
+import { initWarrantyView } from './warranty.js?v=6.47';
+import { initProjectsView } from './projects.js?v=6.47';
+import { initSettingsView } from './settings.js?v=6.47';
+import { initCompanyTemplates } from './companyTemplates.js?v=6.47';
+import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.47';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.47';
+import { initFormAutosave } from './formAutosave.js?v=6.47';
+import { initContextMenu } from './contextMenu.js?v=6.47';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -1297,12 +1297,12 @@ function setupNavigation() {
                         // THEORY TEST: Show sidebar ONLY on Home/Dashboard sub-view
                         const sidebar = document.getElementById('app-sidebar');
                         if (sidebar) {
-                            if (config.subView === 'home-view') {
+                            if (config.subView === 'home-view' || config.subView === 'dashboard') {
                                 sidebar.classList.remove('hidden');
-                                sidebar.style.display = 'flex';
+                                sidebar.style.setProperty('display', 'flex', 'important');
                             } else {
                                 sidebar.classList.add('hidden');
-                                sidebar.style.display = 'none';
+                                sidebar.style.setProperty('display', 'none', 'important');
                             }
                         }
                     } else {
@@ -1310,7 +1310,7 @@ function setupNavigation() {
                         const sidebar = document.getElementById('app-sidebar');
                         if (sidebar) {
                             sidebar.classList.add('hidden');
-                            sidebar.style.display = 'none';
+                            sidebar.style.setProperty('display', 'none', 'important');
                         }
                     }
 
