@@ -4943,9 +4943,12 @@ export function renderDashboard(assets, filteredAssets) {
         const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
         const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
-        const deleteBtnHtml = `
+        const user = window.currentUser || {};
+        const isAdmin = user.role === 'admin' || user.role === 'superuser';
+        
+        const deleteBtnHtml = isAdmin ? `
             <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
-        `;
+        ` : '';
 
         assetCard.innerHTML = `
             ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}

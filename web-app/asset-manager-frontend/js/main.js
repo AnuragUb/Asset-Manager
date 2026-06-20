@@ -381,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const handleLoginSuccess = async (user) => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
+        window.currentUser = user; // Expose to window for global RBAC checks in other modules
         localStorage.setItem('username', user.username); // Store for legacy module support
         if (window.location.hash) {
             window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
