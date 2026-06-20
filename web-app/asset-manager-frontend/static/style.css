@@ -94,6 +94,35 @@ body {
     border-radius: 50%;
 }
 
+/* Development Theme for Sidebar (9090 Only) */
+#app-sidebar.dev-sidebar-theme {
+    background-color: #de2327 !important;
+    color: #ffffff !important;
+}
+
+#app-sidebar.dev-sidebar-theme .tree-node {
+    color: #ffffff !important;
+}
+
+#app-sidebar.dev-sidebar-theme .tree-node:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#app-sidebar.dev-sidebar-theme .tree-node.active {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    font-weight: bold;
+}
+
+#app-sidebar.dev-sidebar-theme .sidebar-search input {
+    background-color: rgba(255, 255, 255, 0.9);
+    color: #333;
+}
+
+#app-sidebar.dev-sidebar-theme .sidebar-title,
+#app-sidebar.dev-sidebar-theme .tree-text {
+    color: #ffffff !important;
+}
+
 .user-avatar {
     border-radius: 50%;
     margin-left: 15px;

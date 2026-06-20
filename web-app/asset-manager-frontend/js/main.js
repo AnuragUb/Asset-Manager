@@ -633,6 +633,15 @@ function switchDashboardSubView(subViewName) {
 // Initialize Context Menu
 initContextMenu();
 
+// DEV THEORY: Apply Red Sidebar Theme on Port 9090
+if (window.location.port === '9090') {
+    console.log('[DEV] Applying Red Sidebar Theme (#de2327)');
+    const sidebar = document.getElementById('app-sidebar');
+    if (sidebar) {
+        sidebar.classList.add('dev-sidebar-theme');
+    }
+}
+
 // Mark modules as loaded for watchdog
 window.mainLoaded = true;
 console.log('MAIN.JS: All modules initialized and loaded.');
