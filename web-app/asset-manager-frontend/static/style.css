@@ -109,7 +109,7 @@ body {
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node:hover {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: rgba(136, 136, 136, 0.4) !important; /* Stone Grey hover */
 }
 
 #app-sidebar.dev-sidebar-theme .tree-node.active {
