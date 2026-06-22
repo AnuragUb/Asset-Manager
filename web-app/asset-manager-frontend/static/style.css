@@ -382,6 +382,7 @@ body {
 .action-button.indigo { background-color: #3f51b5; }
 .action-button.green { background-color: #2ecc71; }
 .action-button.red { background-color: #e74c3c; }
+.action-button.grey { background-color: #555; }
 
 .action-button.small {
     padding: 4px 10px;
