@@ -84,9 +84,17 @@
 
         // Override stub with real implementation
         window.syncSidebarBubbles = function() {
-            const activeItem = sidebar.querySelector('.tree-item-wrapper.active, .menu-item-wrapper.active, .nav-link.active');
+            // Look for active items in both tree and system menu
+            const activeItem = sidebar.querySelector('.tree-item-wrapper.active, .menu-item-wrapper.active');
+            
             if (activeItem) {
-                moveBubbleTo(activeBubble, activeItem);
+                // Check if the item's parent container is hidden
+                const parentMenu = activeItem.closest('.sidebar-menu');
+                if (parentMenu && parentMenu.classList.contains('hidden')) {
+                    activeBubble.style.opacity = '0';
+                } else {
+                    moveBubbleTo(activeBubble, activeItem);
+                }
             } else {
                 activeBubble.style.opacity = '0';
             }

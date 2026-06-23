@@ -641,6 +641,23 @@ function switchDashboardSubView(subViewName) {
             }
         }
     });
+
+    // Update active nav link using configuration map
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.menu-item-wrapper').forEach(w => w.classList.remove('active'));
+    
+    const navId = APP_VIEWS[subViewName].navId;
+    if (navId) {
+        const navLink = document.getElementById(navId);
+        if (navLink) {
+            navLink.classList.add('active');
+            // Also activate wrapper if in system menu
+            const wrapper = navLink.closest('.menu-item-wrapper');
+            if (wrapper) wrapper.classList.add('active');
+        }
+    }
+
+    if (window.syncSidebarBubbles) window.syncSidebarBubbles();
 }
 
 // Initialize Context Menu
@@ -704,10 +721,20 @@ window.addEventListener('popstate', (event) => {
         
         // Update active nav link using configuration map
         document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+        document.querySelectorAll('.menu-item-wrapper').forEach(w => w.classList.remove('active'));
+        
         const navId = APP_VIEWS[subViewName].navId;
         if (navId) {
-            document.getElementById(navId)?.classList.add('active');
+            const navLink = document.getElementById(navId);
+            if (navLink) {
+                navLink.classList.add('active');
+                // Also activate wrapper if in system menu
+                const wrapper = navLink.closest('.menu-item-wrapper');
+                if (wrapper) wrapper.classList.add('active');
+            }
         }
+
+        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
 
     } else {
         // Fallback if no state (e.g. initial load or empty hash)
@@ -1359,6 +1386,14 @@ function setupNavigation() {
             el.style.cursor = 'pointer';
 
             el.addEventListener('click', (e) => {
+                // Check if this is a system menu link
+                const wrapper = el.closest('.menu-item-wrapper');
+                if (wrapper) {
+                    // Update active state on wrappers for Raul Drunk Bubbles
+                    document.querySelectorAll('.menu-item-wrapper').forEach(w => w.classList.remove('active'));
+                    wrapper.classList.add('active');
+                }
+
                 e.preventDefault();
                 console.log(`[CLICK EVENT] Element ${id} clicked!`);
                 

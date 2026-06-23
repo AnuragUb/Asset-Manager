@@ -30,15 +30,33 @@
     transition: color 0.2s;
     background-color: transparent !important; /* Override inline/old styles */
     border-right: none !important;
-    margin: 2px 8px; /* Add some spacing for the bubble look */
-    border-radius: 999px; /* Pill shape */
+    margin: 4px 12px; /* Increased margin for better pill look */
+    border-radius: 12px; /* More rounded corners */
     
     /* Structural styles moved from inline */
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px; /* Increased gap */
     cursor: pointer;
-    padding: 8px 20px 8px 0; /* padding-left is set inline via JS */
+    padding: 10px 16px; /* Standardized padding */
+}
+
+#app-sidebar .menu-item-wrapper .tree-icon {
+    font-size: 18px; /* Slightly larger emojis for system menu */
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#app-sidebar .menu-item-wrapper .nav-link {
+    color: inherit !important;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0.3px;
+    padding: 0 !important;
 }
 
 #app-sidebar .tree-item-wrapper:hover,

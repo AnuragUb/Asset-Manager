@@ -461,9 +461,18 @@
             </ul>
             <ul class="sidebar-menu hidden" id="system-menu">
                 <li class="menu-header">System</li>
-                <li class="menu-item-wrapper"><a href="#" class="nav-link" id="nav-admin">Admin</a></li>
-                <li class="menu-item-wrapper"><a href="#" class="nav-link" id="nav-settings">Settings</a></li>
-                <li class="menu-item-wrapper"><a href="#" class="nav-link" id="nav-releases">Releases</a></li>
+                <li class="menu-item-wrapper" onclick="document.getElementById('nav-admin').click()">
+                    <span class="tree-icon">🛡️</span>
+                    <a href="#" class="nav-link" id="nav-admin">Admin</a>
+                </li>
+                <li class="menu-item-wrapper" onclick="document.getElementById('nav-settings').click()">
+                    <span class="tree-icon">⚙️</span>
+                    <a href="#" class="nav-link" id="nav-settings">Settings</a>
+                </li>
+                <li class="menu-item-wrapper" onclick="document.getElementById('nav-releases').click()">
+                    <span class="tree-icon">🚀</span>
+                    <a href="#" class="nav-link" id="nav-releases">Releases</a>
+                </li>
             </ul>
         </aside>
 
