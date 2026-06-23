@@ -242,6 +242,46 @@ body {
     padding-left: 40px;
 }
 
+/* System Menu Styles */
+.menu-header {
+    padding: 24px 24px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 1.5px;
+}
+
+.menu-item-wrapper {
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    z-index: 2;
+}
+
+.menu-item-wrapper:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.menu-item-wrapper .nav-link {
+    display: flex;
+    align-items: center;
+    padding: 12px 24px;
+    color: #475569;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.menu-item-wrapper .nav-link.active {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.sidebar-menu.hidden {
+    display: none !important;
+}
+
 /* Tree Styles */
 .tree-item-wrapper:hover {
     background-color: #f0f7ff;

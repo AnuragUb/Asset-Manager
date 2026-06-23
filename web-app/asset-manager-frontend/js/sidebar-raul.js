@@ -50,10 +50,13 @@
         }
 
         // Event Delegation
-        const treeContainer = document.getElementById('sidebar-tree');
-        if (treeContainer) {
+        const sidebarContent = [document.getElementById('sidebar-tree'), document.getElementById('system-menu')];
+        
+        sidebarContent.forEach(container => {
+            if (!container) return;
+            
             // Hover Effects
-            treeContainer.addEventListener('mouseover', (e) => {
+            container.addEventListener('mouseover', (e) => {
                 const wrapper = e.target.closest('.tree-item-wrapper, .menu-item-wrapper');
                 if (wrapper) {
                     if (wrapper.classList.contains('active')) {
@@ -66,18 +69,18 @@
                 }
             });
 
-            treeContainer.addEventListener('mouseout', (e) => {
+            container.addEventListener('mouseout', (e) => {
                 hoverBubble.style.opacity = '0';
             });
 
             // Click Effects
-            treeContainer.addEventListener('click', (e) => {
+            container.addEventListener('click', (e) => {
                 const wrapper = e.target.closest('.tree-item-wrapper, .menu-item-wrapper');
                 if (wrapper) {
                     moveBubbleTo(activeBubble, wrapper);
                 }
             });
-        }
+        });
 
         // Override stub with real implementation
         window.syncSidebarBubbles = function() {

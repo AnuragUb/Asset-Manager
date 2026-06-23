@@ -568,13 +568,13 @@ const APP_VIEWS = {
     'sheet-view': { id: 'sheet-view', navId: 'nav-sheet', sidebar: true },
     'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: false },
     'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: true },
-    'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: false },
+    'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: true },
     'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
     'projects-view': { id: 'projects-view', navId: 'nav-projects', sidebar: true },
     'ocr-view': { id: 'ocr-view', navId: 'nav-ocr', sidebar: false },
     'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: true },
     'settings-view': { id: 'settings-view', navId: 'nav-settings', sidebar: true },
-    'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: false }
+    'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: true }
 };
 
 // Expose for external access if needed
@@ -606,6 +606,19 @@ function switchDashboardSubView(subViewName) {
         if (APP_VIEWS[subViewName].sidebar) {
             sidebar.classList.remove('hidden');
             sidebar.style.display = 'block';
+
+            // Revert to correct sidebar mode
+            const tree = document.getElementById('sidebar-tree');
+            const systemMenu = document.getElementById('system-menu');
+            if (tree && systemMenu) {
+                if (['admin-view', 'settings-view', 'releases-view'].includes(subViewName)) {
+                    tree.classList.add('hidden');
+                    systemMenu.classList.remove('hidden');
+                } else {
+                    tree.classList.remove('hidden');
+                    systemMenu.classList.add('hidden');
+                }
+            }
         } else {
             sidebar.classList.add('hidden');
             sidebar.style.display = 'none';
@@ -653,6 +666,19 @@ window.addEventListener('popstate', (event) => {
             if (APP_VIEWS[subViewName].sidebar) {
                 sidebar.classList.remove('hidden');
                 sidebar.style.display = 'block';
+
+                // Revert to correct sidebar mode
+                const tree = document.getElementById('sidebar-tree');
+                const systemMenu = document.getElementById('system-menu');
+                if (tree && systemMenu) {
+                    if (['admin-view', 'settings-view', 'releases-view'].includes(subViewName)) {
+                        tree.classList.add('hidden');
+                        systemMenu.classList.remove('hidden');
+                    } else {
+                        tree.classList.remove('hidden');
+                        systemMenu.classList.add('hidden');
+                    }
+                }
             } else {
                 sidebar.classList.add('hidden');
                 sidebar.style.display = 'none';
@@ -1158,6 +1184,50 @@ function setupNavigation() {
             updateCompactLayout();
         };
 
+        window.toggleSystemMenu = () => {
+            const sidebar = document.getElementById('app-sidebar');
+            const tree = document.getElementById('sidebar-tree');
+            const systemMenu = document.getElementById('system-menu');
+            
+            if (!sidebar || !tree || !systemMenu) return;
+
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            const isSystemMenuVisible = !systemMenu.classList.contains('hidden');
+
+            if (isCollapsed) {
+                // Open sidebar and show system menu
+                sidebar.classList.remove('collapsed');
+                tree.classList.add('hidden');
+                systemMenu.classList.remove('hidden');
+                setStage(4);
+            } else {
+                if (isSystemMenuVisible) {
+                    // Already in system menu? Close sidebar or revert?
+                    // User said: "clicking on it should hide the hierarchy pane... and open a list of pages"
+                    // If we click again, we probably want to close it or revert to tree if on a tree view.
+                    const currentView = window.location.hash.replace('#', '') || 'home-view';
+                    const viewConfig = window.APP_VIEWS[currentView];
+                    
+                    if (viewConfig && viewConfig.sidebar) {
+                        // Revert to tree
+                        tree.classList.remove('hidden');
+                        systemMenu.classList.add('hidden');
+                    } else {
+                        // Close sidebar
+                        sidebar.classList.add('collapsed');
+                        setStage(0);
+                    }
+                } else {
+                    // In tree mode, switch to system menu
+                    tree.classList.add('hidden');
+                    systemMenu.classList.remove('hidden');
+                }
+            }
+            
+            if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+            updateCompactLayout();
+        };
+
         const onStart = (y) => {
             startY = y;
             isDragging = false;
@@ -1188,8 +1258,14 @@ function setupNavigation() {
             const timeElapsed = Date.now() - dragStartTime;
             
             if (!isDragging && timeElapsed < 300) {
-                console.log('Toggle Click - Top Bar');
-                toggleTopBar();
+                console.log('Toggle Click - System Menu');
+                // Toggle the System Menu in the Sidebar
+                if (typeof toggleSystemMenu === 'function') {
+                    toggleSystemMenu();
+                } else {
+                    // Fallback to old behavior if not defined
+                    toggleTopBar();
+                }
                 
                 if (isSidebarOpen()) {
                     setStage(4);
@@ -1295,10 +1371,11 @@ function setupNavigation() {
                     if (config.view === 'dashboardView') {
                         switchDashboardSubView(config.subView);
 
-                        // THEORY TEST: Show sidebar ONLY on Home/Dashboard sub-view
+                        // Respect APP_VIEWS sidebar configuration
                         const sidebar = document.getElementById('app-sidebar');
                         if (sidebar) {
-                            if (config.subView === 'home-view' || config.subView === 'dashboard') {
+                            const viewConfig = APP_VIEWS[config.subView];
+                            if (viewConfig && viewConfig.sidebar) {
                                 // Only show it if it wasn't manually collapsed by the user
                                 if (!sidebar.classList.contains('collapsed')) {
                                     sidebar.classList.remove('hidden');
@@ -1308,6 +1385,7 @@ function setupNavigation() {
                                 }
                             } else {
                                 sidebar.classList.add('hidden');
+                                sidebar.style.setProperty('display', 'none', 'important');
                             }
                         }
                     } else {
