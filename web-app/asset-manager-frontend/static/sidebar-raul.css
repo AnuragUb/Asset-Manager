@@ -22,6 +22,18 @@
     z-index: 0; 
 }
 
+#app-sidebar .menu-header {
+    padding: 20px 0 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 2px;
+    text-align: center;
+    width: 100%;
+    display: block;
+}
+
 #app-sidebar .tree-item-wrapper, 
 #app-sidebar .menu-item-wrapper {
     position: relative;
