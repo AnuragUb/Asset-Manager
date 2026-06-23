@@ -658,7 +658,42 @@ function switchDashboardSubView(subViewName) {
     }
 
     if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+});
 }
+
+// --- GLOBAL QoL: ESC KEY TO CLOSE MODALS ---
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        console.log('[QoL] Esc key pressed, checking for open modals...');
+        // Find all visible modals
+        const modals = Array.from(document.querySelectorAll('.modal, .login-modal-overlay'));
+        const visibleModals = modals.filter(m => {
+            const style = window.getComputedStyle(m);
+            return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        });
+
+        if (visibleModals.length > 0) {
+            // Sort by z-index to close the top-most one if multiple are open
+            visibleModals.sort((a, b) => {
+                const zA = parseInt(window.getComputedStyle(a).zIndex) || 0;
+                const zB = parseInt(window.getComputedStyle(b).zIndex) || 0;
+                return zB - zA;
+            });
+
+            const topModal = visibleModals[0];
+            console.log('[QoL] Closing top-most modal:', topModal.id || 'unnamed-modal');
+            
+            // 1. Check if there's a cancel/close button inside and click it (to trigger any cleanup logic)
+            const closeBtn = topModal.querySelector('.close-modal, .close, .cancel-button, .action-button.grey, .action-button.light-grey');
+            if (closeBtn) {
+                closeBtn.click();
+            } else {
+                // 2. Fallback: just hide it
+                topModal.style.display = 'none';
+            }
+        }
+    }
+});
 
 // Initialize Context Menu
 initContextMenu();
