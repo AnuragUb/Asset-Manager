@@ -619,7 +619,7 @@ function renderAssetKanban(assets) {
 
     kanban.innerHTML = '';
 
-    const statuses = ['In Store', 'Under Inspection', 'Project', 'Owned', 'Sold', 'Demo', 'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped'];
+    const statuses = ['Owned', 'In-Use', 'Stand By', 'Rental'];
     
     statuses.forEach(status => {
         const statusAssets = assets.filter(a => (a.Status || 'In Store') === status);
@@ -4263,11 +4263,7 @@ function renderAssetHealthWidget(assets, title) {
         'Owned': { count: validAssets.filter(a => a.Status === 'Owned').length, color: '#36b37e' },
         'In-Use': { count: validAssets.filter(a => a.Status === 'In-Use').length, color: '#0052cc' },
         'Stand By': { count: validAssets.filter(a => a.Status === 'Stand By').length, color: '#42526e' },
-        'In-Repair': { count: validAssets.filter(a => a.Status === 'In-Repair').length, color: '#ff8b00' },
-        'Demo': { count: validAssets.filter(a => a.Status === 'Demo').length, color: '#ffab00' },
-        'Rental': { count: validAssets.filter(a => a.Status === 'Rental').length, color: '#6554c0' },
-        'Sold': { count: validAssets.filter(a => a.Status === 'Sold').length, color: '#ff5630' },
-        'Scraped': { count: validAssets.filter(a => a.Status === 'Scraped').length, color: '#bf2600' }
+        'Rental': { count: validAssets.filter(a => a.Status === 'Rental').length, color: '#6554c0' }
     };
 
     let html = `
@@ -4278,15 +4274,13 @@ function renderAssetHealthWidget(assets, title) {
     `;
 
     Object.entries(stats).forEach(([status, data]) => {
-        if (data.count > 0 || ['Owned', 'In-Use', 'Stand By'].includes(status)) {
-            const percentage = total > 0 ? Math.round((data.count / total) * 100) : 0;
-            html += `
-                <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid ${data.color}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">${status}</div>
-                    <div style="font-size: 24px; font-weight: bold; color: ${data.color};">${data.count} <span style="font-size: 12px; color: #999; font-weight: normal;">(${percentage}%)</span></div>
-                </div>
-            `;
-        }
+        const percentage = total > 0 ? Math.round((data.count / total) * 100) : 0;
+        html += `
+            <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid ${data.color}; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: bold;">${status}</div>
+                <div style="font-size: 24px; font-weight: bold; color: ${data.color};">${data.count} <span style="font-size: 12px; color: #999; font-weight: normal;">(${percentage}%)</span></div>
+            </div>
+        `;
     });
 
     healthWidget.innerHTML = html;
