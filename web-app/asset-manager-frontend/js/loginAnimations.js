@@ -139,12 +139,14 @@ export function initSignupModal() {
         modal.style.display = 'none';
     });
 
-    // Close on click outside
+    // Close on outside click - DISABLED as per QoL requirements
+    /*
     window.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.style.display = 'none';
         }
     });
+    */
 
     // Handle form submission
     if (signupForm) {

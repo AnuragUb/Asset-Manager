@@ -2017,12 +2017,14 @@ async function showAssignAssetModal() {
         document.getElementById('btnCloseAssignAsset_v2').onclick = () => modal.style.display = 'none';
         document.getElementById('btnCancelAssignAsset_v2').onclick = () => modal.style.display = 'none';
         
-        // Close on outside click
+        // Close on outside click - DISABLED as per QoL requirements
+        /*
         window.addEventListener('click', (event) => {
             if (event.target == modal) {
                 modal.style.display = 'none';
             }
         });
+        */
     }
 
     const input = document.getElementById('assignAssetInput_v2');

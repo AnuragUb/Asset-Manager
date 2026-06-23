@@ -754,14 +754,16 @@ function setupNavigation() {
             subView: 'home-view', 
             init: () => {
                 console.log('nav-dashboard init');
-                // Reset "Ghost" views (Retired, Temporary) when navigating via sidebar
-                if (window.currentDashboardParent && (window.currentDashboardParent.ID === 'RETIRED_VIEW' || window.currentDashboardParent.ID === 'TEMP_VIEW')) {
-                    console.log(`[Navigation] Resetting ghost view: ${window.currentDashboardParent.ID}`);
-                    window.currentDashboardParent = null;
-                }
+                // Reset to main dashboard (All Assets) when clicking the Dashboard tab
+                window.currentDashboardParent = null;
+                window.filteredAssets = [...window.assets];
+                
                 if (typeof renderDashboard === 'function') {
-                    renderDashboard(assets, filteredAssets);
+                    renderDashboard(window.assets, window.assets);
                 }
+                
+                // Ensure we are in home-view not sheet-view
+                switchDashboardSubView('home-view');
             } 
         },
 /* 

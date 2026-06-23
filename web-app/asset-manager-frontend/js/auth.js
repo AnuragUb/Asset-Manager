@@ -170,12 +170,14 @@ export function setupAuth(onLoginSuccess) {
         });
     }
 
-    // Click outside to close
+    // Click outside to close - DISABLED as per QoL requirements
+    /*
     window.addEventListener('click', (e) => {
         if (e.target === forgotModal) {
             forgotModal.style.display = 'none';
         }
     });
+    */
 
     if (forgotForm) {
         forgotForm.addEventListener('submit', async (e) => {

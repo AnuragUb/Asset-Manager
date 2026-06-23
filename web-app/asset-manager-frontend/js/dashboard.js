@@ -164,11 +164,13 @@ function setupDCHistoryHandlers() {
     }
 
     // Close on outside click (avoiding conflict by checking target)
+    /* 
     window.addEventListener('click', (event) => {
         if (event.target == dcHistoryModal) {
             dcHistoryModal.style.display = 'none';
         }
     });
+    */
 }
 
 // Asset Lifecycle UI Functions
@@ -2239,10 +2241,12 @@ export function setupDashboard() {
                 if (modal) modal.style.display = 'none';
                 return;
             }
+            /* 
             if (e.target.classList.contains('modal')) {
                 e.target.style.display = 'none';
                 return;
             }
+            */
             
             // 2. Handle Add Asset Kind Button (top right)
             if (e.target.id === 'btnAddAssetKind' || e.target.closest('#btnAddAssetKind')) {
