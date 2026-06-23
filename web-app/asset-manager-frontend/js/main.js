@@ -567,12 +567,12 @@ const APP_VIEWS = {
     'home-view': { id: 'home-view', navId: 'nav-dashboard', sidebar: true, default: true },
     'sheet-view': { id: 'sheet-view', navId: 'nav-sheet', sidebar: true },
     'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: false },
-    'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: true },
+    'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: false },
     'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: true },
     'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
-    'projects-view': { id: 'projects-view', navId: 'nav-projects', sidebar: true },
+    'projects-view': { id: 'projects-view', navId: 'nav-projects', sidebar: false },
     'ocr-view': { id: 'ocr-view', navId: 'nav-ocr', sidebar: false },
-    'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: true },
+    'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: false },
     'settings-view': { id: 'settings-view', navId: 'nav-settings', sidebar: true },
     'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: true }
 };
@@ -1217,6 +1217,19 @@ function setupNavigation() {
             const systemMenu = document.getElementById('system-menu');
             
             if (!sidebar || !tree || !systemMenu) return;
+
+            // Handle the case where sidebar is physically hidden (e.g. on DC/Warranty tab)
+            if (sidebar.classList.contains('hidden')) {
+                sidebar.classList.remove('hidden');
+                sidebar.style.display = 'block';
+                sidebar.classList.remove('collapsed'); // Ensure it starts expanded
+                tree.classList.add('hidden');
+                systemMenu.classList.remove('hidden');
+                setStage(4);
+                if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+                updateCompactLayout();
+                return;
+            }
 
             const isCollapsed = sidebar.classList.contains('collapsed');
             const isSystemMenuVisible = !systemMenu.classList.contains('hidden');
