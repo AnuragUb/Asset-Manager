@@ -7384,6 +7384,63 @@ window.generateKindSummaryReport = generateKindSummaryReport;
             }
         };
     }
+
+    // --- HIERARCHY BUTTONS FIX ---
+    const btnAddAsset = document.getElementById('btnAddAsset');
+    if (btnAddAsset) {
+        btnAddAsset.onclick = () => {
+            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
+            if (typeof window.openAddItemModal === 'function') {
+                window.openAddItemModal(currentCategory);
+            }
+        };
+    }
+
+    const btnAddCategory = document.getElementById('btnAddCategory');
+    if (btnAddCategory) {
+        btnAddCategory.onclick = () => {
+            const modal = document.getElementById('addKindModal');
+            if (modal) {
+                // Clear form
+                const form = document.getElementById('addKindForm');
+                if (form) form.reset();
+                
+                // Prefill module
+                const moduleSelect = document.getElementById('newKindModule');
+                if (moduleSelect) {
+                    moduleSelect.value = localStorage.getItem('selectedAssetCategory') || 'IT';
+                }
+                
+                modal.style.display = 'flex';
+            }
+        };
+    }
+
+    const btnRefreshHierarchy = document.getElementById('btnRefreshHierarchy');
+    if (btnRefreshHierarchy) {
+        btnRefreshHierarchy.onclick = async () => {
+            const icon = btnRefreshHierarchy.querySelector('span') || btnRefreshHierarchy;
+            icon.style.transition = 'transform 0.5s ease';
+            icon.style.transform = 'rotate(360deg)';
+            
+            try {
+                if (window.loadAssetKinds) {
+                    await window.loadAssetKinds();
+                }
+                if (window.renderSidebarTree) {
+                    window.renderSidebarTree();
+                }
+                showToast('Hierarchy refreshed', 'success');
+            } catch (err) {
+                console.error('Refresh failed:', err);
+                showToast('Refresh failed', 'error');
+            } finally {
+                setTimeout(() => {
+                    icon.style.transform = 'rotate(0deg)';
+                }, 500);
+            }
+        };
+    }
 }
 
 // Unified QR Code Modal Functions
