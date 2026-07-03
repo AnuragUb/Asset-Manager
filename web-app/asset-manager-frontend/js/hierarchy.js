@@ -91,7 +91,7 @@ export class HierarchyManager {
     }
 
     /**
-     * Filters the tree for a specific module (IT, In-House, etc.)
+     * Filters the tree for a specific module (IT, Service, etc.)
      */
     getModuleTree(moduleName) {
         return this.tree.filter(node => node.Module === moduleName);

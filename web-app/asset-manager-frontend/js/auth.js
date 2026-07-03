@@ -72,12 +72,12 @@ export function setupAuth(onLoginSuccess) {
     */
 
     if (loginForm) {
-        // Remove existing listener to avoid duplicates
-        const newLoginForm = loginForm.cloneNode(true);
-        loginForm.parentNode.replaceChild(newLoginForm, loginForm);
+        // Use a flag to avoid multiple listeners instead of cloning (which breaks external listeners)
+        if (loginForm.dataset.authInitialized) return;
+        loginForm.dataset.authInitialized = "true";
         
         // Handle clicks on the form (Event Delegation)
-        newLoginForm.addEventListener('click', (e) => {
+        loginForm.addEventListener('click', (e) => {
             // Handle Forgot Password Click
             if (e.target.matches('#forgotPasswordLink')) {
                 e.preventDefault();
@@ -87,12 +87,15 @@ export function setupAuth(onLoginSuccess) {
             }
         });
 
-        newLoginForm.addEventListener('submit', async (e) => {
+        loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const username = newLoginForm.username.value;
-            const password = newLoginForm.password.value;
+            const username = loginForm.username.value;
+            const password = loginForm.password.value;
             const rememberMe = document.getElementById('rememberMe').checked;
-            const category = moduleSelect ? moduleSelect.value : 'IT';
+            
+            // Re-query the module select to get the current one in DOM
+            const currentModuleSelect = document.getElementById('assetCategory');
+            const category = currentModuleSelect ? currentModuleSelect.value : 'IT';
 
             console.log('[Auth] Attempting login:', { username, category, rememberMe });
             console.log('[Auth] Current Cookies before login:', document.cookie);

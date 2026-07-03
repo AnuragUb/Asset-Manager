@@ -4568,7 +4568,7 @@ export function renderDashboard(assets, filteredAssets) {
         dashboardTitle.innerHTML = `
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>' : ''}
-                <span>${parentNode ? parentNode.Name : `${category} Assets`}</span>
+                <span>${parentNode ? parentNode.Name : (category === 'In-House' ? 'Service Assets' : `${category} Assets`)}</span>
                 ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
                 <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
             </div>
@@ -4634,7 +4634,7 @@ export function renderDashboard(assets, filteredAssets) {
             assetGrid.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
                     <div style="font-size: 48px; margin-bottom: 20px;">📂</div>
-                    <p>No categories found for <b>${category}</b> assets.</p>
+                    <p>No categories found for <b>${category === 'In-House' ? 'Service' : category}</b> assets.</p>
                     <p style="font-size: 13px;">Check if the Hierarchy Manager is properly initialized.</p>
                 </div>
             `;

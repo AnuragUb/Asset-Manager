@@ -198,7 +198,58 @@ body {
 .sidebar-menu {
     list-style: none;
     padding: 0;
+}
+
+/* ARRI Search Input */
+.arri-search-input {
+    width: 100%;
+    padding: 8px 12px 8px 32px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: all 0.2s ease;
+    background: #f8fafc;
+}
+
+.arri-search-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    background: #fff;
+}
+
+/* Tabulator Filter Inputs visibility */
+.tabulator-header-filter input {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    background: #f8fafc !important;
+    transition: all 0.2s ease !important;
+}
+
+.tabulator-header-filter input:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1) !important;
+    background: #fff !important;
+    outline: none !important;
+}
+
+.sidebar-menu {
+    list-style: none;
+    padding: 0;
     margin: 0;
+}
+
+/* ARRI Sub-tabs */
+.arri-sub-tab:hover {
+    background: #e2e8f0 !important;
+}
+
+.arri-sub-tab.active {
+    background: white !important;
+    color: #1e293b !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
 }
 
 .sidebar-menu li a {
@@ -2144,6 +2195,62 @@ body.login-page #searchPanel {
     #app-header.top-bar-collapsed .top-nav,
     #app-header.top-bar-collapsed .header-right {
         display: none !important;
+    }
+}
+
+/* Job Card Highlight */
+.cineom-job-card-modal input:focus,
+.cineom-job-card-modal textarea:focus {
+    border: 2px solid #6366f1 !important;
+    background: #f5f7ff !important;
+    outline: none !important;
+}
+
+.cineom-job-card-modal input,
+.cineom-job-card-modal textarea {
+    border: 1px solid #cbd5e1;
+    transition: all 0.2s ease;
+}
+
+/* Print Optimization for A4 */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    .cineom-job-card-modal, .cineom-job-card-modal * {
+        visibility: visible;
+    }
+    .cineom-job-card-modal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        height: auto !important;
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        display: block !important;
+    }
+    .job-card-paper {
+        width: 210mm !important; /* A4 Width */
+        min-height: 297mm !important; /* A4 Height */
+        margin: 0 auto !important;
+        padding: 10mm !important;
+        box-sizing: border-box !important;
+        transform: scale(0.95); /* Slight scale down to ensure fit */
+        transform-origin: top center;
+    }
+    .no-print {
+        display: none !important;
+    }
+    .modal-footer-actions {
+        display: none !important;
+    }
+    /* Force single page if possible */
+    html, body {
+        height: auto !important;
+        overflow: visible !important;
     }
 }
 

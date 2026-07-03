@@ -14,7 +14,28 @@ const dataDir = getDataDir();
 const environment = process.env.NODE_ENV || 'development';
 const db = require('knex')(knexConfig[environment]);
 
+// Service Database configuration
+const serviceConfig = { ...knexConfig[environment] };
+if (serviceConfig.connection) {
+    serviceConfig.connection = { ...serviceConfig.connection };
+    serviceConfig.connection.database = process.env.DB_SERVICE_NAME || (environment === 'test' ? 'asset_manager_service_test' : 'asset_manager_service');
+}
+const dbService = require('knex')(serviceConfig);
+
 console.log(`[DB] Knex initialized for environment: ${environment}`);
+console.log(`[DB] Service DB initialized: ${serviceConfig.connection.database}`);
+
+/**
+ * Returns the appropriate database connection based on the category/module.
+ * @param {string} category - The module category (e.g., 'IT', 'In-House')
+ * @returns {Object} Knex database instance
+ */
+function getDbForCategory(category) {
+    if (category === 'In-House' || category === 'SERVICE') {
+        return dbService;
+    }
+    return db;
+}
 
 // File paths (for legacy support or specific data)
 // Use DATA_DIR for these JSON files if possible, or fall back to relative
@@ -585,6 +606,8 @@ module.exports = {
     TALLY_CONFIG,
     getTallyConfig,
     normalizeDBData,
+    getDbForCategory,
+    dbService,
     STATIC_IP,
     getDataDir
 };

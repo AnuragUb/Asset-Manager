@@ -15,6 +15,7 @@ import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.60';
 import { initFormAutosave } from './formAutosave.js?v=6.60';
 import { initContextMenu } from './contextMenu.js?v=6.60';
+import { initServicePortal } from './servicePortal.js?v=6.60';
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -397,6 +398,10 @@ document.addEventListener('DOMContentLoaded', () => {
                  user.category = 'IT'; // correct the user object too
                  localStorage.setItem('selectedAssetCategory', 'IT');
             }
+            
+            // Map 'In-House' to 'Service' for display
+            if (displayCategory === 'In-House') displayCategory = 'Service';
+            
             appTitle.textContent = `${displayCategory} Asset Manager`;
         }
 
@@ -574,7 +579,8 @@ const APP_VIEWS = {
     'ocr-view': { id: 'ocr-view', navId: 'nav-ocr', sidebar: false },
     'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: false },
     'settings-view': { id: 'settings-view', navId: 'nav-settings', sidebar: true },
-    'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: true }
+    'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: true },
+    'arri-view': { id: 'arri-view', navId: 'nav-arri', sidebar: false }
 };
 
 // Expose for external access if needed
@@ -695,9 +701,12 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Initialize Context Menu
-initContextMenu();
+    initContextMenu();
 
-// Mark modules as loaded for watchdog
+    // Initialize Service Portal
+    initServicePortal();
+
+    // Mark modules as loaded for watchdog
 window.mainLoaded = true;
 console.log('MAIN.JS: All modules initialized and loaded.');
 window.switchDashboardSubView = switchDashboardSubView;
@@ -793,12 +802,20 @@ function setupNavigation() {
                 window.filteredAssets = [...window.assets];
                 
                 if (typeof renderDashboard === 'function') {
-                    renderDashboard(window.assets, window.assets);
+                    renderDashboard(window.assets, () => window.assets);
                 }
                 
                 // Ensure we are in home-view not sheet-view
                 switchDashboardSubView('home-view');
             } 
+        },
+        'nav-arri': {
+            view: 'dashboardView',
+            subView: 'arri-view',
+            init: () => {
+                console.log('nav-arri init');
+                if (typeof initServicePortal === 'function') initServicePortal();
+            }
         },
 /* 
         'nav-sheet': { 
@@ -1392,15 +1409,17 @@ function setupNavigation() {
     // --- RBAC TAB VISIBILITY ENFORCEMENT ---
     const userPermissions = (currentUser && currentUser.permissions) ? currentUser.permissions : [];
     const isSuper = (currentUser && currentUser.role === 'superuser');
+    const userCategory = (currentUser && currentUser.category) ? currentUser.category : 'IT';
 
     const checkTabPermission = (perm) => isSuper || userPermissions.includes(perm);
 
     const navVisibility = {
         'nav-dashboard': checkTabPermission('view.dashboard'),
-        'nav-projects': checkTabPermission('view.projects'),
-        'nav-dc': checkTabPermission('view.dc'),
+        'nav-arri': userCategory === 'In-House',
+        'nav-projects': checkTabPermission('view.projects') && userCategory !== 'In-House',
+        'nav-dc': checkTabPermission('view.dc') && userCategory !== 'In-House',
         'nav-employees': checkTabPermission('user.manage'), // Map Employees tab to user.manage permission
-        'nav-warranty': checkTabPermission('view.warranty'),
+        'nav-warranty': checkTabPermission('view.warranty') && userCategory !== 'In-House',
         'nav-releases': checkTabPermission('view.releases'),
         'nav-admin': checkTabPermission('view.admin')
     };
@@ -1408,12 +1427,16 @@ function setupNavigation() {
     Object.entries(navVisibility).forEach(([id, isVisible]) => {
         const el = document.getElementById(id);
         if (el) {
+            const parentLi = el.closest('li');
+            const target = parentLi || el;
+            
             if (isVisible) {
-                el.style.display = '';
-                el.classList.remove('hidden-by-rbac');
+                target.style.display = '';
+                target.classList.remove('hidden-by-rbac');
+                target.classList.remove('hidden');
             } else {
-                el.style.display = 'none';
-                el.classList.add('hidden-by-rbac');
+                target.style.display = 'none';
+                target.classList.add('hidden-by-rbac');
             }
         }
     });

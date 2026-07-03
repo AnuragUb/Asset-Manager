@@ -68,12 +68,15 @@ const {
   parseTallyXml, 
   TALLY_CONFIG,
   getTallyConfig,
-  normalizeDBData
+  normalizeDBData,
+  getDbForCategory,
+  dbService
 } = require('./utils')
 const crypto = require('crypto');
 const tokenService = require('./services/tokenService');
 const passwordService = require('./services/passwordService');
 const emailService = require('./services/emailService');
+const googleSheetsService = require('./services/googleSheetsService');
 const encryptionService = require('./services/encryptionService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
@@ -201,6 +204,32 @@ function normalizeResult(data) {
     'vendorcontact': 'VendorContact',
     'vendoremail': 'VendorEmail',
     'vendorgst': 'VendorGST',
+    // ARRI Mappings
+    'jobcardno': 'JobCardNo',
+    'jobdate': 'Date',
+    'customername': 'CustomerName',
+    'customeraddress': 'CustomerAddress',
+    'contactperson': 'ContactPerson',
+    'contactno': 'ContactNo',
+    'brandmake': 'BrandMake',
+    'modelname': 'ModelName',
+    'serialno': 'SerialNo',
+    'receivingengineer': 'ReceivingEngineer',
+    'typeamc': 'TypeAMC',
+    'typewarranty': 'TypeWarranty',
+    'typenowarranty': 'TypeNoWarranty',
+    'typeother': 'TypeOther',
+    'reportedproblem': 'ReportedProblem',
+    'actiontaken': 'ActionTaken',
+    'faultfound': 'FaultFound',
+    'faultsn': 'FaultSN',
+    'partsreplaced': 'PartsReplaced',
+    'partssn': 'PartsSN',
+    'conclusion': 'Conclusion',
+    'invoiceto': 'InvoiceTo',
+    'invoiceno': 'InvoiceNo',
+    'invoicedate': 'InvoiceDate',
+    'estimatedvalue': 'EstimatedValue',
     // History Mappings
     'oldvalue': 'OldValue',
     'newvalue': 'NewValue',
@@ -907,6 +936,128 @@ async function initializeHierarchyFolders() {
 }
 initializeHierarchyFolders();
 
+// --- SERVICE PORTAL: Job Card API ---
+app.post('/api/service/job-cards', authenticateJWT, async (req, res) => {
+    try {
+        const { category } = req.user;
+        const targetDb = getDbForCategory(category);
+        
+        const jobData = {
+            job_card_no: req.body.jobCardNo,
+            job_date: req.body.jobDate,
+            customer_name: req.body.customerName,
+            customer_address: req.body.customerAddress,
+            contact_person: req.body.contactPerson,
+            contact_no: req.body.contactNo,
+            brand_make: req.body.brandMake,
+            model_name: req.body.modelName,
+            serial_no: req.body.serialNo,
+            acc1: req.body.acc1,
+            acc2: req.body.acc2,
+            acc3: req.body.acc3,
+            acc4: req.body.acc4,
+            receiving_engineer: req.body.receivingEngineer,
+            type_amc: req.body.typeAMC === 'on' || req.body.typeAMC === true,
+            type_warranty: req.body.typeWarranty === 'on' || req.body.typeWarranty === true,
+            type_no_warranty: req.body.typeNoWarranty === 'on' || req.body.typeNoWarranty === true,
+            type_other: req.body.typeOther === 'on' || req.body.typeOther === true,
+            reported_problem: req.body.reportedProblem,
+            action_taken: req.body.actionTaken,
+            fault_found: req.body.faultFound,
+            fault_sn: req.body.faultSN,
+            parts_replaced: req.body.partsReplaced,
+            parts_sn: req.body.partsSN,
+            conclusion: req.body.conclusion,
+            status: 'Pending',
+            created_at: new Date().toISOString()
+        };
+
+        const [id] = await targetDb('job_cards').insert(jobData).returning('id');
+        
+        await logAudit(req.user.username, 'CREATE_JOB_CARD', `Created job card ${jobData.job_card_no} for ${jobData.customer_name}`);
+        
+        res.status(201).json({ success: true, id, jobCardNo: jobData.job_card_no });
+    } catch (err) {
+        console.error('[SERVICE] Failed to save job card:', err);
+        res.status(500).json({ error: 'Database error', details: err.message });
+    }
+});
+
+app.get('/api/service/job-cards', authenticateJWT, async (req, res) => {
+    try {
+        const { category } = req.user;
+        const targetDb = getDbForCategory(category);
+        const cards = await targetDb('job_cards').orderBy('created_at', 'desc');
+        res.json(cards);
+    } catch (err) {
+        console.error('[SERVICE] Failed to fetch job cards:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+app.get('/api/service/next-job-number', authenticateJWT, async (req, res) => {
+    try {
+        const { category } = req.user;
+        const targetDb = getDbForCategory(category);
+        
+        // Find the highest counter for the current year
+        const currentYear = new Date().getFullYear().toString().slice(-2);
+        const prefix = `JC_%_%_${currentYear}`;
+        
+        const lastCard = await targetDb('job_cards')
+            .where('job_card_no', 'like', prefix)
+            .orderBy('job_card_no', 'desc')
+            .first();
+            
+        let nextNo = 1;
+        if (lastCard) {
+            // Extract the XXXX part from JC_XXXX_YY
+            const parts = lastCard.job_card_no.split('_');
+            if (parts.length === 3) {
+                nextNo = parseInt(parts[1]) + 1;
+            }
+        }
+        
+        res.json({ nextNo });
+    } catch (err) {
+        console.error('[SERVICE] Failed to get next job number:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// --- CUSTOMERS API ---
+app.get('/api/service/customers', authenticateJWT, async (req, res) => {
+    try {
+        const { category } = req.user;
+        const targetDb = getDbForCategory(category);
+        const customers = await targetDb('customers').orderBy('name', 'asc');
+        res.json(customers);
+    } catch (err) {
+        console.error('[SERVICE] Failed to fetch customers:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+app.post('/api/service/customers', authenticateJWT, async (req, res) => {
+    try {
+        const { category } = req.user;
+        const targetDb = getDbForCategory(category);
+        const customerData = {
+            name: req.body.name,
+            address: req.body.address,
+            contact_person: req.body.contactPerson,
+            contact_no: req.body.contactNo,
+            email: req.body.email,
+            created_at: new Date().toISOString()
+        };
+        const [id] = await targetDb('customers').insert(customerData).returning('id');
+        res.status(201).json({ success: true, id });
+    } catch (err) {
+        console.error('[SERVICE] Failed to save customer:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 // --- Auth Endpoints ---
 
 app.post('/api/auth/login', async (req, res) => {
@@ -917,23 +1068,28 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required' });
   }
   try {
-    const user = await getUserFromDb(username);
+    const user = await getUserFromDb(username, category);
     if (!user) {
-      console.log(`[AUTH] User not found: ${username}`);
+      console.log(`[AUTH] User not found: ${username} in category: ${category}`);
       return res.status(401).json({ error: 'Invalid credentials', message: 'Invalid credentials' });
     }
     
+    const targetDb = getDbForCategory(category);
     const stored = user.password || '';
     let passwordMatch = false;
     
+    console.log(`[AUTH] Comparing for ${username}: Stored type=${typeof stored}, input length=${password.length}`);
+    
     if (stored && typeof stored === 'string' && (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$'))) {
       passwordMatch = await bcrypt.compare(password, stored);
+      console.log(`[AUTH] Bcrypt match result for ${username}: ${passwordMatch}`);
     } else {
-      if (stored === password) {
-        passwordMatch = true;
+      passwordMatch = (stored === password);
+      console.log(`[AUTH] Plaintext match result for ${username}: ${passwordMatch} (Stored: "${stored}", Input: "${password}")`);
+      if (passwordMatch) {
         console.log(`[AUTH] Plaintext match for ${username}. Upgrading to bcrypt.`);
         const newHash = await bcrypt.hash(password, 12);
-        await db('users').whereRaw('LOWER(username) = LOWER(?)', [user.username]).update({ password: newHash });
+        await targetDb('users').whereRaw('LOWER(username) = LOWER(?)', [user.username]).update({ password: newHash });
       }
     }
 
@@ -1163,7 +1319,8 @@ function signJwtForUser(user, category) {
     user_id: claims.user_id,
     role: claims.role,
     company_id: claims.company_id,
-    department: claims.department
+    department: claims.department,
+    category: claims.category
   };
   const token = jwt.sign(payload, JWT_SECRET, {
     algorithm: 'HS256',
@@ -1198,7 +1355,8 @@ function authenticateJWT(req, res, next) {
       user_id: String(decoded.user_id),
       role: String(decoded.role),
       company_id: String(decoded.company_id),
-      department: decoded.department || null
+      department: decoded.department || null,
+      category: decoded.category || null
     };
     return next();
   } catch (err) {
@@ -1298,9 +1456,10 @@ function getRequestActor(req) {
   return req.headers['x-user'] || 'web'
 }
 
-async function getUserFromDb(username) {
+async function getUserFromDb(username, category = 'IT') {
   if (!username) return null
-  const user = await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
+  const targetDb = getDbForCategory(category);
+  const user = await targetDb('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
   return normalizeResult(user);
 }
 
@@ -5590,12 +5749,12 @@ app.post('/api/assets/bulk', async (req, res) => {
       }
 
       // 2. Dynamic Category/Module Resolution
-      // If the providedCategory is a known Module (IT, In-House, etc.), use it.
+      // If the providedCategory is a known Module (IT, Service, etc.), use it.
       // Otherwise, look up which module the finalType belongs to.
       let finalModule = 'IT'; // Default
       const normalizedProvided = providedCategory.toUpperCase();
-      if (['IT', 'IN-HOUSE', 'LOGISTICS', 'OPERATIONS'].includes(normalizedProvided)) {
-          finalModule = normalizedProvided;
+      if (['IT', 'IN-HOUSE', 'SERVICE', 'LOGISTICS', 'OPERATIONS'].includes(normalizedProvided)) {
+          finalModule = normalizedProvided === 'SERVICE' ? 'IN-HOUSE' : normalizedProvided;
       } else {
           finalModule = kindModuleMap[finalType.toLowerCase()] || folderModuleMap[finalType.toLowerCase()] || 'IT';
       }
@@ -8488,6 +8647,185 @@ setInterval(runNetworkMonitor, MONITOR_INTERVAL);
 // Initial run after server starts
 setTimeout(runNetworkMonitor, 15000);
 */
+
+app.get('/api/arri/customers', async (req, res) => {
+    console.log('[ARRI] Fetching customers from arri_clients...');
+    try {
+        const { search } = req.query;
+        let query = db('arri_clients');
+        
+        if (search) {
+            query = query.where(function() {
+                this.where('name', 'ilike', `%${search}%`)
+                    .orWhere('contactperson', 'ilike', `%${search}%`)
+                    .orWhere('contactno', 'ilike', `%${search}%`)
+                    .orWhere('email', 'ilike', `%${search}%`);
+            });
+        }
+        
+        const customers = await query.orderBy('name', 'asc');
+        res.json(normalizeResult(customers));
+    } catch (err) {
+        console.error('Failed to fetch ARRI customers:', err);
+        res.status(500).send('Database error');
+    }
+});
+
+// ARRI Job Card Endpoints
+app.get('/api/arri/job-cards', async (req, res) => {
+    console.log('[ARRI] Fetching job cards...');
+    try {
+        const { search } = req.query;
+        let query = db('arri_job_cards');
+        
+        if (search) {
+            query = query.where(function() {
+                this.where('jobcardno', 'ilike', `%${search}%`)
+                    .orWhere('customername', 'ilike', `%${search}%`)
+                    .orWhere('serialno', 'ilike', `%${search}%`);
+            });
+        }
+        
+        const jobCards = await query.orderBy('created_at', 'desc');
+        res.json(normalizeResult(jobCards));
+    } catch (err) {
+        console.error('Failed to fetch Job Cards:', err);
+        res.status(500).send('Database error');
+    }
+});
+
+app.get('/api/arri/job-cards/:no', async (req, res) => {
+    try {
+        const jc = await db('arri_job_cards').where('jobcardno', req.params.no).first();
+        if (!jc) return res.status(404).send('Job Card not found');
+        res.json(normalizeResult(jc));
+    } catch (err) {
+        res.status(500).send('Database error');
+    }
+});
+
+// Google Sheets Sync Endpoint
+app.post('/api/arri/sync-sheets', async (req, res) => {
+    console.log('[ARRI] Syncing to Google Sheets...');
+    try {
+        const jobCards = await db('arri_job_cards').orderBy('created_at', 'desc');
+        const result = await googleSheetsService.syncJobCards(normalizeResult(jobCards));
+        res.json(result);
+    } catch (err) {
+        console.error('[ARRI] Sheets Sync Error:', err.message);
+        res.status(500).send('Google Sheets Sync Failed: ' + err.message);
+    }
+});
+
+app.get('/api/arri/next-jc-id', async (req, res) => {
+    try {
+        // Find the latest job card by looking at the highest sequence number for the current year
+        const currentYear = new Date().getFullYear().toString().slice(-2);
+        const jobCards = await db('arri_job_cards')
+            .where('jobcardno', 'like', `JC_%_${currentYear}`)
+            .select('jobcardno');
+        
+        let maxId = 0;
+
+        jobCards.forEach(jc => {
+            if (jc.jobcardno) {
+                const parts = jc.jobcardno.split('_');
+                if (parts.length >= 3) {
+                    const seq = parseInt(parts[1]);
+                    const yearPart = parts[2];
+                    if (!isNaN(seq) && yearPart === currentYear && seq > maxId) {
+                        maxId = seq;
+                    }
+                }
+            }
+        });
+
+        const nextId = maxId + 1;
+        res.json({ id: nextId.toString().padStart(4, '0') });
+    } catch (err) {
+        console.error('[ARRI] ID Error:', err);
+        res.status(500).send('Database error');
+    }
+});
+
+app.post('/api/arri/job-cards', async (req, res) => {
+    try {
+        const rawData = req.body;
+        
+        // Sanitize numeric values to prevent 500 errors
+        let estValue = parseFloat(rawData.estimatedValue);
+        if (isNaN(estValue)) estValue = 0;
+
+        const dbData = {
+            jobcardno: rawData.jobCardNo,
+            date: rawData.jobDate,
+            customername: rawData.customerName,
+            customeraddress: rawData.customerAddress,
+            contactperson: rawData.contactPerson,
+            contactno: rawData.contactNo,
+            brandmake: rawData.brandMake,
+            modelname: rawData.modelName,
+            serialno: rawData.serialNo,
+            receivingengineer: rawData.receivingEngineer,
+            acc1: rawData.acc1,
+            acc2: rawData.acc2,
+            acc3: rawData.acc3,
+            acc4: rawData.acc4,
+            typeamc: rawData.typeAMC === true || rawData.typeAMC === 'true',
+            typewarranty: rawData.typeWarranty === true || rawData.typeWarranty === 'true',
+            typenowarranty: rawData.typeNoWarranty === true || rawData.typeNoWarranty === 'true',
+            typeother: rawData.typeOther === true || rawData.typeOther === 'true',
+            reportedproblem: rawData.reportedProblem,
+            actiontaken: rawData.actionTaken,
+            faultfound: rawData.faultFound,
+            faultsn: rawData.faultSN,
+            partsreplaced: rawData.partsReplaced,
+            partssn: rawData.partsSN,
+            conclusion: rawData.conclusion,
+            invoiceto: rawData.invoiceTo,
+            invoiceno: rawData.invoiceNo,
+            invoicedate: rawData.invoiceDate,
+            estimatedvalue: estValue,
+            status: rawData.status || 'Pending'
+        };
+
+        // 2. Handle Client Upsert
+        if (dbData.customername) {
+            const existingClient = await db('arri_clients')
+                .whereRaw('LOWER(name) = LOWER(?)', [dbData.customername.trim()])
+                .first();
+            
+            const clientData = {
+                name: dbData.customername.trim(),
+                address: dbData.customeraddress,
+                contactperson: dbData.contactperson,
+                contactno: dbData.contactno
+            };
+            
+            if (existingClient) {
+                await db('arri_clients').where('id', existingClient.id).update(clientData);
+            } else {
+                await db('arri_clients').insert(clientData);
+            }
+        }
+
+        // 3. Handle Job Card Upsert
+        const existingJC = await db('arri_job_cards')
+            .where('jobcardno', dbData.jobcardno)
+            .first();
+
+        if (existingJC) {
+            await db('arri_job_cards').where('jobcardno', dbData.jobcardno).update(dbData);
+            res.json({ success: true, action: 'updated' });
+        } else {
+            await db('arri_job_cards').insert(dbData);
+            res.json({ success: true, action: 'created' });
+        }
+    } catch (err) {
+        console.error('[ARRI] Save failed:', err);
+        res.status(500).send('Database error: ' + err.message);
+    }
+});
 
 const PORT = process.env.PORT || 9090
 // 5. Update Project (e.g., for Kanban status moves or details editing)

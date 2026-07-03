@@ -432,6 +432,7 @@
                     <div class="bubble bubble-active"></div>
                     <ul>
                         <li><a href="#" class="nav-link active" id="nav-dashboard">Dashboard</a></li>
+                        <li><a href="#" class="nav-link" id="nav-arri">ARRI Service</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-sheet">Sheet</a></li>
                         <li><a href="#" class="nav-link" id="nav-employees">Employees</a></li>
                         <li><a href="#" class="nav-link" id="nav-dc">Create DC</a></li>
@@ -520,7 +521,7 @@
                                         <div class="bubble bubble-active"></div>
                                         <ul class="module-list">
                                             <li class="module-option" data-value="IT">IT Assets</li>
-                                            <li class="module-option" data-value="In-House">In-House</li>
+                                            <li class="module-option" data-value="In-House">Service</li>
                                             <li class="module-option" data-value="Rental">Rental</li>
                                             <li class="module-option" data-value="Inventory">Inventory</li>
                                         </ul>
@@ -627,6 +628,132 @@
                             </div>
                         </div>
                         <div id="employee-grid" style="display: none;"></div>
+                    </div>
+
+                    <!-- ARRI Service View -->
+                    <div id="arri-view" class="view hidden" style="flex: 1; padding: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                            <div style="display: flex; align-items: center; gap: 30px;">
+                                <h2 class="view-title" style="margin: 0;">ARRI Service Portal</h2>
+                                <div class="arri-sub-tabs" style="display: flex; gap: 5px; background: #f1f5f9; padding: 4px; border-radius: 8px;">
+                                    <button class="arri-sub-tab active" data-target="arri-job-cards-section" style="padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">📋 Job Cards</button>
+                                    <button class="arri-sub-tab" data-target="arri-clients-section" style="padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">👥 Clients</button>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="action-button green" id="btnNewJobCard">
+                                    <span>➕ New Job Card</span>
+                                </button>
+                                <button class="action-button indigo" id="btnArriSync">
+                                    <span>🔄 Sync Data</span>
+                                </button>
+                                <button class="action-button" id="btnGoogleSheetsSync" style="background: #107c10; color: white;">
+                                    <span>📊 Google Sheets Sync</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ARRI Sections -->
+                        <div id="arri-job-cards-section" class="arri-section">
+                            <div style="display: flex; gap: 20px; height: 100%; min-height: 0;">
+                                <!-- Left: Job Cards Table -->
+                                <div style="flex: 2; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 20px; display: flex; flex-direction: column;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                        <h3 style="margin: 0; font-size: 16px;">Active Job Cards</h3>
+                                        <div class="search-box" style="position: relative; width: 300px;">
+                                            <input type="text" id="arriSearch" class="arri-search-input" placeholder="Search JC No, Customer or S/N...">
+                                            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #999;">🔍</span>
+                                        </div>
+                                        <button class="btn-primary" id="btnArriFetchAll" style="margin-left: 10px; background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                                            <span class="sync-icon">🔄</span> Fetch All
+                                        </button>
+                                    </div>
+                                    <div id="arri-table-container" style="flex: 1; min-height: 300px;">
+                                        <!-- Tabulator will be initialized here -->
+                                    </div>
+                                </div>
+
+                                <!-- Right: Statistics/Status -->
+                                <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                                    <div style="background: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
+                                        <h3 style="margin: 0 0 15px 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Service Status</h3>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                            <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;">
+                                                <div style="font-size: 24px; font-weight: 700; color: #3b82f6;" id="stat-pending">0</div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">PENDING</div>
+                                            </div>
+                                            <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;">
+                                                <div style="font-size: 24px; font-weight: 700; color: #10b981;" id="stat-completed">0</div>
+                                                <div style="font-size: 11px; color: #64748b; margin-top: 5px;">COMPLETED</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; flex: 1;">
+                                        <h3 style="margin: 0 0 15px 0; font-size: 16px;">Service Activities</h3>
+                                        <div id="arri-activity-log" style="font-size: 13px; color: #666;">
+                                            <p style="text-align: center; margin-top: 40px; color: #999;">No recent activity</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="arri-clients-section" class="arri-section hidden">
+                            <div style="background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 20px; display: flex; flex-direction: column; height: 100%;">
+                                <!-- Client Stats Row -->
+                                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+                                    <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: 700; color: #6366f1;" id="client-stat-total">0</div>
+                                        <div style="font-size: 11px; color: #64748b; margin-top: 5px;">TOTAL CLIENTS</div>
+                                    </div>
+                                    <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+                                        <div style="font-size: 24px; font-weight: 700; color: #3b82f6;" id="client-stat-new">0</div>
+                                        <div style="font-size: 11px; color: #64748b; margin-top: 5px;">NEW THIS MONTH</div>
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <h3 style="margin: 0; font-size: 16px;">Registered Clients</h3>
+                                    <div style="display: flex; gap: 10px;">
+                                        <div class="search-box" style="position: relative; width: 300px;">
+                                            <input type="text" id="arriClientSearch" class="arri-search-input" placeholder="Search by name, contact or email...">
+                                            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #999;">🔍</span>
+                                        </div>
+                                        <button class="btn-primary" id="btnArriRefreshClients" style="background: #6366f1; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                                            <span>🔄</span> Refresh List
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="arri-clients-table-container" class="hidden">
+                                    <!-- Old table container hidden -->
+                                </div>
+                                <div id="arri-clients-cards-container" style="flex: 1; min-height: 400px; overflow-y: auto; padding: 10px;">
+                                    <div class="employee-cards-grid" id="arri-client-cards-grid">
+                                        <!-- Client Cards will be rendered here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Client Job History Modal -->
+                        <div id="clientHistoryModal" class="modal">
+                            <div class="modal-content" style="max-width: 900px; width: 90%;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                    <h3 id="historyModalTitle" style="margin: 0;">Client Job History</h3>
+                                    <span class="close-modal" onclick="document.getElementById('clientHistoryModal').style.display='none'">&times;</span>
+                                </div>
+                                <div id="client-history-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+                                    <!-- Stats for this specific client -->
+                                </div>
+                                <div id="client-history-table-container" style="min-height: 300px;">
+                                    <!-- Tabulator for client-specific job cards -->
+                                </div>
+                                <div class="modal-footer-actions" style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                                    <button class="action-button indigo" onclick="document.getElementById('clientHistoryModal').style.display='none'">Close</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Consignments View (Placeholder) -->
@@ -1363,7 +1490,7 @@
                                 <label>Module / Category</label>
                                 <select id="folderModule" name="folderModule" class="form-input">
                                     <option value="IT">IT Assets</option>
-                                    <option value="In-House">In-House</option>
+                                    <option value="In-House">Service</option>
                                     <option value="Rental">Rental</option>
                                     <option value="Inventory">Inventory</option>
                                 </select>
@@ -2506,6 +2633,198 @@
     </div>
 </div>
 
+<!-- New Job Card Modal -->
+<div id="newJobCardModal" class="modal">
+    <div class="modal-content cineom-job-card-modal">
+        <div class="job-card-paper">
+            <!-- Header Section -->
+            <div class="job-card-header">
+                <div class="header-left">
+                    <img src="/static/cineom-logo.png" alt="CINEOM" class="cineom-logo-img">
+                </div>
+                <div class="header-right">
+                    <div class="company-address-info">
+                        Unit 4C, 4th Floor, Goldline Business Centre,<br>
+                        Malad New Link Road, Malad (W), Mumbai - 400 064.<br>
+                        Phone: +91 22 4210 9000<br>
+                        E-mail: support@cineom.in / service@cineom.in<br>
+                        Website: www.cineom.in
+                    </div>
+                </div>
+            </div>
+
+            <div class="job-card-title-row">
+                <h1 class="job-card-main-title">JOB CARD</h1>
+            </div>
+
+            <form id="newJobCardForm">
+                <div class="job-card-top-meta">
+                    <div class="job-card-no-row">
+                        <label>Job Card No.:</label>
+                        <span class="job-card-number-val" id="displayJobCardNo">15623</span>
+                        <input type="hidden" name="jobCardNo" value="15623">
+                    </div>
+                    <div class="job-card-date-row">
+                        <label>Date:</label>
+                        <input type="date" name="jobDate" required class="inline-input">
+                    </div>
+                </div>
+
+                <div class="job-card-grid-section">
+                    <div class="grid-left-col">
+                        <div class="field-row">
+                            <label>Customer Name:</label>
+                            <div style="flex: 1; position: relative;">
+                                <input type="text" name="customerName" id="jobCardCustomerSearch" required class="full-width-input" autocomplete="off" placeholder="Type to search or add new...">
+                                <div id="customerSuggestions" class="suggestions-dropdown hidden"></div>
+                            </div>
+                        </div>
+                        <div class="field-row address-row">
+                            <label>Address:</label>
+                            <textarea name="customerAddress" class="full-width-input no-resize"></textarea>
+                        </div>
+                        <div class="field-row">
+                            <label>Contact Person:</label>
+                            <input type="text" name="contactPerson" class="full-width-input">
+                        </div>
+                        <div class="field-row">
+                            <label>Contact No.:</label>
+                            <input type="text" name="contactNo" class="full-width-input">
+                        </div>
+                        <div class="field-row signature-row">
+                            <label>Customer's Signature:</label>
+                            <div class="signature-line"></div>
+                        </div>
+                    </div>
+                    <div class="grid-right-col">
+                        <table class="equipment-table">
+                            <tr>
+                                <th>Brand/Make</th>
+                                <td><input type="text" name="brandMake"></td>
+                            </tr>
+                            <tr>
+                                <th>Model No./Name</th>
+                                <td><input type="text" name="modelName"></td>
+                            </tr>
+                            <tr>
+                                <th>Serial No.</th>
+                                <td><input type="text" name="serialNo"></td>
+                            </tr>
+                            <tr>
+                                <th rowspan="4" class="valign-top">Description of<br>Accessories</th>
+                                <td><div class="acc-row"><span>1</span><input type="text" name="acc1"></div></td>
+                            </tr>
+                            <tr>
+                                <td><div class="acc-row"><span>2</span><input type="text" name="acc2"></div></td>
+                            </tr>
+                            <tr>
+                                <td><div class="acc-row"><span>3</span><input type="text" name="acc3"></div></td>
+                            </tr>
+                            <tr>
+                                <td><div class="acc-row"><span>4</span><input type="text" name="acc4"></div></td>
+                            </tr>
+                        </table>
+                        <div class="field-row eng-name-row">
+                            <label>Receiving Engineer Name:</label>
+                            <input type="text" name="receivingEngineer" class="full-width-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Warranty Type Section -->
+                <div class="warranty-checkboxes">
+                    <label class="check-item"><input type="checkbox" name="typeAMC"> AMC</label>
+                    <label class="check-item"><input type="checkbox" name="typeWarranty"> Warranty</label>
+                    <label class="check-item"><input type="checkbox" name="typeNoWarranty"> No Warranty</label>
+                    <label class="check-item"><input type="checkbox" name="typeOther"> Other</label>
+                </div>
+
+                <!-- Large Text Sections -->
+                <div class="job-card-memo-section">
+                    <div class="memo-title">Reported Problem:</div>
+                    <textarea name="reportedProblem" class="memo-textarea lined-bg" rows="5"></textarea>
+                </div>
+
+                <div class="job-card-memo-section">
+                    <div class="memo-title">Action Taken:</div>
+                    <textarea name="actionTaken" class="memo-textarea lined-bg" rows="10"></textarea>
+                </div>
+
+                <div class="job-card-footer-grid">
+                    <div class="footer-col">
+                        <div class="footer-field">
+                            <label>Fault Found:</label>
+                            <input type="text" name="faultFound" class="full-width-input underline-input">
+                        </div>
+                        <div class="footer-field">
+                            <label>S/N:</label>
+                            <input type="text" name="faultSN" class="full-width-input underline-input">
+                        </div>
+                    </div>
+                    <div class="footer-col">
+                        <div class="footer-field">
+                            <label>Parts Replaced:</label>
+                            <input type="text" name="partsReplaced" class="full-width-input underline-input">
+                        </div>
+                        <div class="footer-field">
+                            <label>S/N:</label>
+                            <input type="text" name="partsSN" class="full-width-input underline-input">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="job-card-memo-section">
+                    <div class="memo-title">Conclusion:</div>
+                    <textarea name="conclusion" class="memo-textarea underline-only" rows="3"></textarea>
+                </div>
+
+                <div class="eng-signature-section">
+                    <div class="sig-row">
+                        <label>Engineer's Name with Signature:</label>
+                        <div class="signature-line-long"></div>
+                    </div>
+                </div>
+
+                <div class="job-card-bottom-row">
+                    <div class="bottom-left">
+                        <label>Receiver's / Customer's<br>Name with Signature:</label>
+                        <div class="signature-box-small"></div>
+                    </div>
+                    <div class="bottom-right">
+                        <div class="inline-field">
+                            <label>Date:</label>
+                            <div class="date-underline"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Office Purpose Section -->
+                <div class="office-purpose-section">
+                    <div class="office-title">(For Office Purpose Only)</div>
+                    <div class="office-subtitle">Invoice Details</div>
+                    
+                    <div class="office-grid">
+                        <div class="office-col">
+                            <div class="office-field"><label>Invoice To:</label><div class="office-line"></div></div>
+                            <div class="office-field"><label>Invoice No.:</label><div class="office-line"></div></div>
+                        </div>
+                        <div class="office-col">
+                            <div class="office-field"><label>Invoice Date:</label><div class="office-line"></div></div>
+                            <div class="office-field"><label>Estimated Value (₹)</label><div class="office-line"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer-actions no-print">
+                    <button type="button" class="action-button grey" id="btnCancelJobCard">Close</button>
+                    <button type="button" class="action-button indigo" onclick="window.print()">Print Job Card</button>
+                    <button type="submit" class="action-button blue" id="btnSaveJobCard">Save to Database</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Unified QR Print Modal -->
 <div id="qrPrintModal" class="modal">
     <div class="modal-content" style="max-width: 900px; width: 95%; height: 90vh; display: flex; flex-direction: column; padding: 0;">
@@ -2688,37 +3007,64 @@
 
 <style>
     /* Unified Print Styles - Root Level Isolation */
+    @page {
+        size: A4;
+        margin: 5mm;
+    }
+
     @media print {
         body > *:not(.modal) { display: none !important; }
-        body, html { background: white !important; margin: 0 !important; padding: 0 !important; width: 100% !important; height: auto !important; overflow: visible !important; }
-        #qrPrintModal, #dcPreviewModal { 
-            display: block !important; 
-            position: static !important; 
-            width: 100% !important; 
-            height: auto !important;
+        body, html { 
             background: white !important; 
-            opacity: 1 !important; 
-            visibility: visible !important;
-            box-shadow: none !important;
-        }
-        .no-print, .modal-header, .close-modal, .size-btn, .login-button, .action-button, .batch-print-overlay { display: none !important; }
-        #qrPrintModal .modal-content, #dcPreviewModal .modal-content { 
-            width: 100% !important; 
-            max-width: none !important; 
-            height: auto !important; 
-            border: none !important; 
-            box-shadow: none !important; 
-            padding: 0 !important; 
             margin: 0 !important; 
-            display: block !important; 
-            background: white !important; 
-        }
-        #qrPrintModal .modal-body, #dcPreviewModal .modal-body { 
             padding: 0 !important; 
-            background: white !important; 
-            display: block !important; 
+            width: 210mm !important; 
+            height: 297mm !important; 
             overflow: visible !important; 
         }
+        
+        #newJobCardModal {
+            display: block !important;
+            position: relative !important;
+            width: 210mm !important;
+            height: auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+            visibility: visible !important;
+            overflow: visible !important;
+        }
+
+        #newJobCardModal .modal-content {
+            width: 210mm !important;
+            max-width: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+            transform: scale(0.95);
+            transform-origin: top center;
+        }
+
+        #newJobCardModal .cineom-job-card-modal {
+            background: white !important;
+            padding: 0 !important;
+        }
+
+        #newJobCardModal .job-card-paper {
+            box-shadow: none !important;
+            padding: 5mm !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            box-sizing: border-box !important;
+            margin: 0 !important;
+        }
+
+        .no-print, .modal-header, .close-modal, .size-btn, .login-button, .action-button, .batch-print-overlay, .modal-footer-actions { 
+            display: none !important; 
+        }
+    }
         #qrPrintContainer, #printableDC { 
             display: block !important; 
             width: 100% !important; 
