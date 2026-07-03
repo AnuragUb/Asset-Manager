@@ -51,14 +51,19 @@ export function initContextMenu() {
         menu.style.display = 'block';
 
         // Check what we clicked on
-        const folderItem = e.target.closest('.tree-node[data-type="folder"]');
-        const kindItem = e.target.closest('.tree-node[data-type="kind"]');
+        const treeItem = e.target.closest('.tree-item-wrapper');
+        const nodeDiv = e.target.closest('.tree-node');
+        
+        const contextType = treeItem ? treeItem.dataset.type : (nodeDiv ? nodeDiv.dataset.type : 'none');
+        const contextName = treeItem ? treeItem.dataset.name : (nodeDiv ? nodeDiv.dataset.name : '');
+        const contextId = treeItem ? treeItem.dataset.id : (nodeDiv ? nodeDiv.dataset.id : '');
 
         // Store context data for actions
-        menu.dataset.contextType = folderItem ? 'folder' : (kindItem ? 'kind' : 'none');
-        menu.dataset.contextName = folderItem ? folderItem.dataset.name : (kindItem ? kindItem.dataset.name : '');
+        menu.dataset.contextType = contextType || 'none';
+        menu.dataset.contextName = contextName || '';
+        menu.dataset.contextId = contextId || '';
         
-        console.log(`[ContextMenu] Clicked on: ${menu.dataset.contextType} (${menu.dataset.contextName})`);
+        console.log(`[ContextMenu] Clicked on: ${menu.dataset.contextType} (${menu.dataset.contextName}) ID: ${menu.dataset.contextId}`);
     });
 
     // Handle Menu Item Clicks
@@ -69,26 +74,35 @@ export function initContextMenu() {
         const action = item.dataset.action;
         const contextType = menu.dataset.contextType;
         const contextName = menu.dataset.contextName;
+        const contextId = menu.dataset.contextId;
 
         switch (action) {
             case 'add-folder':
                 const addFolderBtn = document.getElementById('btnAddAssetFolder');
-                if (addFolderBtn) addFolderBtn.click();
+                if (addFolderBtn) {
+                    addFolderBtn.click();
+                }
                 break;
 
             case 'add-category':
                 // If we clicked on a folder, we can pre-select it in the modal
                 if (contextType === 'folder' && contextName) {
                     console.log(`[ContextMenu] Pre-selecting folder: ${contextName}`);
-                    // We'll need a way to pass this to the modal
                     window.contextMenuTargetFolder = contextName;
                 }
-                const addCategoryBtn = document.getElementById('btnAddAssetKind');
-                if (addCategoryBtn) addCategoryBtn.click();
+                const addCategoryBtn = document.getElementById('btnAddCategory');
+                if (addCategoryBtn) {
+                    addCategoryBtn.click();
+                }
                 break;
 
             case 'refresh':
-                if (window.loadFolders) window.loadFolders();
+                const refreshBtn = document.getElementById('btnRefreshHierarchy');
+                if (refreshBtn) {
+                    refreshBtn.click();
+                } else if (window.loadFolders) {
+                    window.loadFolders();
+                }
                 break;
         }
 

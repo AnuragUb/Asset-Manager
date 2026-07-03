@@ -7389,9 +7389,30 @@ window.generateKindSummaryReport = generateKindSummaryReport;
     const btnAddAsset = document.getElementById('btnAddAsset');
     if (btnAddAsset) {
         btnAddAsset.onclick = () => {
-            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
             if (typeof window.openAddItemModal === 'function') {
-                window.openAddItemModal(currentCategory);
+                window.openAddItemModal();
+            } else if (typeof openAddItemModal === 'function') {
+                openAddItemModal();
+            }
+        };
+    }
+
+    const btnAddAssetFolder = document.getElementById('btnAddAssetFolder');
+    if (btnAddAssetFolder) {
+        btnAddAssetFolder.onclick = () => {
+            const modal = document.getElementById('addFolderModal');
+            if (modal) {
+                // Clear form
+                const form = document.getElementById('addFolderForm');
+                if (form) form.reset();
+                
+                // Prefill module
+                const moduleSelect = document.getElementById('folderModule');
+                if (moduleSelect) {
+                    moduleSelect.value = localStorage.getItem('selectedAssetCategory') || 'IT';
+                }
+                
+                modal.style.display = 'flex';
             }
         };
     }
@@ -7399,19 +7420,10 @@ window.generateKindSummaryReport = generateKindSummaryReport;
     const btnAddCategory = document.getElementById('btnAddCategory');
     if (btnAddCategory) {
         btnAddCategory.onclick = () => {
-            const modal = document.getElementById('addKindModal');
-            if (modal) {
-                // Clear form
-                const form = document.getElementById('addKindForm');
-                if (form) form.reset();
-                
-                // Prefill module
-                const moduleSelect = document.getElementById('newKindModule');
-                if (moduleSelect) {
-                    moduleSelect.value = localStorage.getItem('selectedAssetCategory') || 'IT';
-                }
-                
-                modal.style.display = 'flex';
+            if (typeof window.openAddKindModal === 'function') {
+                window.openAddKindModal();
+            } else if (typeof openAddKindModal === 'function') {
+                openAddKindModal();
             }
         };
     }

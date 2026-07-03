@@ -174,8 +174,8 @@ export class HierarchyManager {
             const activeClass = isActive ? 'active' : '';
             
             return `
-                <div class="tree-node" data-id="${node.ID}" style="user-select: none;">
-                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" style="padding-left: ${paddingLeft}px;">
+                <div class="tree-node" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" style="user-select: none;">
+                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" style="padding-left: ${paddingLeft}px;">
                         <span class="tree-toggle" style="visibility: ${hasChildren ? 'visible' : 'hidden'}">
                             ${hasChildren ? '▶' : ''}
                         </span>
@@ -190,7 +190,7 @@ export class HierarchyManager {
                                             ? `<i class="material-icons" style="font-size: 16px;">${node.Icon}</i>`
                                             : (node.type === 'folder' ? '📁' : '📦'))}
                         </span>
-                        <span class="tree-link ${activeClass}" data-id="${node.ID}">${node.Name}</span>
+                        <span class="tree-link ${activeClass}" data-id="${node.ID}" data-type="${node.type}">${node.Name}</span>
                         ${node.type === 'kind' ? `
                             <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category">✏️</span>
                             <span class="delete-kind-btn" data-id="${node.ID}" title="Delete Category">🗑️</span>
