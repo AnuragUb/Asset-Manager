@@ -78,9 +78,11 @@ export function initContextMenu() {
 
         switch (action) {
             case 'add-folder':
-                const addFolderBtn = document.getElementById('btnAddAssetFolder');
-                if (addFolderBtn) {
-                    addFolderBtn.click();
+                if (typeof window.openAddFolderModal === 'function') {
+                    window.openAddFolderModal();
+                } else {
+                    const modal = document.getElementById('addFolderModal');
+                    if (modal) modal.style.display = 'flex';
                 }
                 break;
 
@@ -90,19 +92,23 @@ export function initContextMenu() {
                     console.log(`[ContextMenu] Pre-selecting folder: ${contextName}`);
                     window.contextMenuTargetFolder = contextName;
                 }
-                const addCategoryBtn = document.getElementById('btnAddCategory');
-                if (addCategoryBtn) {
-                    addCategoryBtn.click();
+                
+                if (typeof window.openAddKindModal === 'function') {
+                    window.openAddKindModal();
+                } else {
+                    const modal = document.getElementById('addAssetKindModal');
+                    if (modal) modal.style.display = 'flex';
                 }
                 break;
 
             case 'refresh':
-                const refreshBtn = document.getElementById('btnRefreshHierarchy');
-                if (refreshBtn) {
-                    refreshBtn.click();
-                } else if (window.loadFolders) {
-                    window.loadFolders();
+                if (window.loadAssetKinds) {
+                    await window.loadAssetKinds();
                 }
+                if (window.renderSidebarTree) {
+                    window.renderSidebarTree();
+                }
+                showToast('Hierarchy refreshed', 'success');
                 break;
         }
 
