@@ -344,6 +344,11 @@ export function initServicePortal() {
             pagination: "local",
             paginationSize: 10,
             selectable: 1,
+            rowDblClick: (e, row) => {
+                const jcNo = row.getData().JobCardNo;
+                console.log('[ARRI] Double-click detected on JC:', jcNo);
+                openExistingJobCard(jcNo);
+            },
             columns: [
                 { title: "JC No", field: "JobCardNo", width: 100, headerFilter: "input" },
                 { title: "Date", field: "Date", width: 120 },
