@@ -200,6 +200,7 @@ function normalizeResult(data) {
     'is_quantity_tracked': 'IsQuantityTracked',
     'is_set': 'IsSet',
     'set_price_mode': 'SetPriceMode',
+    'client_label': 'ClientLabel',
     'vendoraddress': 'VendorAddress',
     'vendorcontact': 'VendorContact',
     'vendoremail': 'VendorEmail',
@@ -422,22 +423,28 @@ function performDatabaseBackup() {
     const filename = `pg_backup_${ts}.sql`;
     const backupPath = path.join(targetDir, filename);
     
-    // Use pg_dump via Docker
+    // Use pg_dump directly (now installed in container)
     const dbName = process.env.DB_NAME || 'asset_manager';
     const dbUser = process.env.DB_USER || 'postgres';
-    const containerName = 'asset-manager-db';
+    const dbPassword = process.env.DB_PASSWORD || 'password';
+    const dbHost = process.env.DB_HOST || 'postgres';
 
     console.log(`[BACKUP] Starting PostgreSQL backup for ${dbName}...`);
     
-    // Command: docker exec asset-manager-db pg_dump -U postgres asset_manager > path/to/backup.sql
     try {
-      // FIX: Use absolute path without the c: special character issues in some environments
-      // We use a simpler path joining for the execSync command
       const absoluteBackupPath = path.resolve(backupPath);
-      execSync(`docker exec ${containerName} pg_dump -U ${dbUser} ${dbName} > "${absoluteBackupPath}"`);
+      // Use pg_dump with environment variables for credentials
+      execSync(`PGPASSWORD="${dbPassword}" pg_dump -h ${dbHost} -U ${dbUser} ${dbName} > "${absoluteBackupPath}"`);
       console.log(`[BACKUP] Success! Saved to: ${absoluteBackupPath}`);
     } catch (dumpErr) {
       console.error('[BACKUP] pg_dump failed:', dumpErr.message);
+      // Fallback for non-docker environments if docker is available on host
+      try {
+        console.log('[BACKUP] Retrying with docker exec fallback...');
+        execSync(`docker exec asset-manager-db pg_dump -U ${dbUser} ${dbName} > "${path.resolve(backupPath)}"`);
+      } catch (dockerErr) {
+        console.error('[BACKUP] All backup methods failed.');
+      }
       return;
     }
     
@@ -8652,7 +8659,7 @@ app.get('/api/arri/customers', async (req, res) => {
     console.log('[ARRI] Fetching customers from arri_clients...');
     try {
         const { search } = req.query;
-        let query = db('arri_clients');
+        let query = dbService('arri_clients');
         
         if (search) {
             query = query.where(function() {
@@ -8676,7 +8683,7 @@ app.get('/api/arri/job-cards', async (req, res) => {
     console.log('[ARRI] Fetching job cards...');
     try {
         const { search } = req.query;
-        let query = db('arri_job_cards');
+        let query = dbService('arri_job_cards');
         
         if (search) {
             query = query.where(function() {
@@ -8696,7 +8703,7 @@ app.get('/api/arri/job-cards', async (req, res) => {
 
 app.get('/api/arri/job-cards/:no', async (req, res) => {
     try {
-        const jc = await db('arri_job_cards').where('jobcardno', req.params.no).first();
+        const jc = await dbService('arri_job_cards').where('jobcardno', req.params.no).first();
         if (!jc) return res.status(404).send('Job Card not found');
         res.json(normalizeResult(jc));
     } catch (err) {
@@ -8708,7 +8715,7 @@ app.get('/api/arri/job-cards/:no', async (req, res) => {
 app.post('/api/arri/sync-sheets', async (req, res) => {
     console.log('[ARRI] Syncing to Google Sheets...');
     try {
-        const jobCards = await db('arri_job_cards').orderBy('created_at', 'desc');
+        const jobCards = await dbService('arri_job_cards').orderBy('created_at', 'desc');
         const result = await googleSheetsService.syncJobCards(normalizeResult(jobCards));
         res.json(result);
     } catch (err) {
@@ -8721,7 +8728,7 @@ app.get('/api/arri/next-jc-id', async (req, res) => {
     try {
         // Find the latest job card by looking at the highest sequence number for the current year
         const currentYear = new Date().getFullYear().toString().slice(-2);
-        const jobCards = await db('arri_job_cards')
+        const jobCards = await dbService('arri_job_cards')
             .where('jobcardno', 'like', `JC_%_${currentYear}`)
             .select('jobcardno');
         
@@ -8791,7 +8798,7 @@ app.post('/api/arri/job-cards', async (req, res) => {
 
         // 2. Handle Client Upsert
         if (dbData.customername) {
-            const existingClient = await db('arri_clients')
+            const existingClient = await dbService('arri_clients')
                 .whereRaw('LOWER(name) = LOWER(?)', [dbData.customername.trim()])
                 .first();
             
@@ -8803,22 +8810,22 @@ app.post('/api/arri/job-cards', async (req, res) => {
             };
             
             if (existingClient) {
-                await db('arri_clients').where('id', existingClient.id).update(clientData);
+                await dbService('arri_clients').where('id', existingClient.id).update(clientData);
             } else {
-                await db('arri_clients').insert(clientData);
+                await dbService('arri_clients').insert(clientData);
             }
         }
 
         // 3. Handle Job Card Upsert
-        const existingJC = await db('arri_job_cards')
+        const existingJC = await dbService('arri_job_cards')
             .where('jobcardno', dbData.jobcardno)
             .first();
 
         if (existingJC) {
-            await db('arri_job_cards').where('jobcardno', dbData.jobcardno).update(dbData);
+            await dbService('arri_job_cards').where('jobcardno', dbData.jobcardno).update(dbData);
             res.json({ success: true, action: 'updated' });
         } else {
-            await db('arri_job_cards').insert(dbData);
+            await dbService('arri_job_cards').insert(dbData);
             res.json({ success: true, action: 'created' });
         }
     } catch (err) {

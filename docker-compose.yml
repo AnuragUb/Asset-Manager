@@ -51,7 +51,7 @@ services:
       - /app/web-app/asset-manager-frontend/node_modules
       - ./input:/app/input
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PORT=8080
       - DB_CLIENT=postgresql
       - DB_HOST=postgres
@@ -82,11 +82,11 @@ services:
       - /app/web-app/asset-manager-frontend/node_modules
       - ./input:/app/input
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=test
       - PORT=9090
       - DB_CLIENT=postgresql
       - DB_HOST=postgres
-      - DB_NAME=asset_manager
+      - DB_NAME=asset_manager_test
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-password}
       - DB_PORT=5432

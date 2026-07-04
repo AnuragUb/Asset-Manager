@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     g++ \
     libsqlite3-dev \
+    postgresql-client \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
