@@ -67,51 +67,48 @@ export function initContextMenu() {
     });
 
     // Handle Menu Item Clicks
-    menu.addEventListener('click', (e) => {
+    menu.onclick = async (e) => {
         const item = e.target.closest('.menu-item');
         if (!item) return;
 
         const action = item.dataset.action;
         const contextType = menu.dataset.contextType;
         const contextName = menu.dataset.contextName;
-        const contextId = menu.dataset.contextId;
 
-        switch (action) {
-            case 'add-folder':
-                if (typeof window.openAddFolderModal === 'function') {
-                    window.openAddFolderModal();
-                } else {
-                    const modal = document.getElementById('addFolderModal');
-                    if (modal) modal.style.display = 'flex';
-                }
-                break;
+        console.log(`[ContextMenu] Executing action: ${action} on ${contextType}`);
 
-            case 'add-category':
-                // If we clicked on a folder, we can pre-select it in the modal
-                if (contextType === 'folder' && contextName) {
-                    console.log(`[ContextMenu] Pre-selecting folder: ${contextName}`);
-                    window.contextMenuTargetFolder = contextName;
-                }
-                
-                if (typeof window.openAddKindModal === 'function') {
-                    window.openAddKindModal();
-                } else {
-                    const modal = document.getElementById('addAssetKindModal');
-                    if (modal) modal.style.display = 'flex';
-                }
-                break;
-
-            case 'refresh':
-                if (window.loadAssetKinds) {
-                    await window.loadAssetKinds();
-                }
-                if (window.renderSidebarTree) {
-                    window.renderSidebarTree();
-                }
+        if (action === 'add-folder') {
+            if (typeof window.openAddFolderModal === 'function') {
+                window.openAddFolderModal();
+            } else {
+                const modal = document.getElementById('addFolderModal');
+                if (modal) modal.style.display = 'flex';
+            }
+        } else if (action === 'add-category') {
+            // If we clicked on a folder, we can pre-select it in the modal
+            if (contextType === 'folder' && contextName) {
+                console.log(`[ContextMenu] Pre-selecting folder: ${contextName}`);
+                window.contextMenuTargetFolder = contextName;
+            }
+            
+            if (typeof window.openAddKindModal === 'function') {
+                window.openAddKindModal();
+            } else {
+                const modal = document.getElementById('addAssetKindModal');
+                if (modal) modal.style.display = 'flex';
+            }
+        } else if (action === 'refresh') {
+            if (window.loadAssetKinds) {
+                await window.loadAssetKinds();
+            }
+            if (window.renderSidebarTree) {
+                window.renderSidebarTree();
+            }
+            if (typeof showToast === 'function') {
                 showToast('Hierarchy refreshed', 'success');
-                break;
+            }
         }
 
         menu.style.display = 'none';
-    });
+    };
 }
