@@ -5125,6 +5125,26 @@ window.openPrintPreview = function(assetsToPrint) {
     modal.style.display = 'flex';
 };
 
+export function openAddFolderModal() {
+    console.log('openAddFolderModal() called');
+    const modal = document.getElementById('addFolderModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        
+        // Reset the form
+        const form = document.getElementById('addFolderForm');
+        if (form) form.reset();
+        
+        // Pre-fill current module
+        const moduleSelect = document.getElementById('folderModule');
+        if (moduleSelect) {
+            moduleSelect.value = localStorage.getItem('selectedAssetCategory') || 'IT';
+        }
+    } else {
+        console.error('CRITICAL: addFolderModal NOT found in DOM');
+    }
+}
+
 export function openAddKindModal() {
     console.log('openAddKindModal() called');
     const modal = document.getElementById('addAssetKindModal');
@@ -5597,6 +5617,8 @@ export function openAddItemModal(kind, prefillData = null) {
     }
 }
 window.openAddItemModal = openAddItemModal;
+window.openAddFolderModal = openAddFolderModal;
+window.openAddKindModal = openAddKindModal;
 
 // Add this to window so projects.js can call it
 window.showEditAssetModal = async function(assetId) {
