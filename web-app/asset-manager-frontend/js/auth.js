@@ -54,22 +54,27 @@ export function setupAuth(onLoginSuccess) {
     const logoutBtn = document.getElementById('logout-btn');
     const moduleSelect = document.getElementById('assetCategory');
 
-    // Auto-login removed as per user request to ensure login page is usable
-    /*
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-        try {
-            const user = JSON.parse(savedUser);
-            if (user && user.username) {
-                console.log('Found saved session for:', user.username);
-                onLoginSuccess(user);
+    // Attempt to restore session on initialization
+    checkSession().then(user => {
+        if (user) {
+            console.log('Session restored for:', user.username);
+            
+            // Restore category if missing or default
+            if (!user.category || user.category === 'IT') {
+                let savedCategory = localStorage.getItem('selectedAssetCategory');
+                // Validate category - prevent UUIDs or invalid strings
+                if (savedCategory && (savedCategory.length > 20 || savedCategory.includes('-'))) {
+                    console.warn('Invalid category in localStorage:', savedCategory);
+                    localStorage.removeItem('selectedAssetCategory');
+                    savedCategory = null;
+                }
+                user.category = savedCategory || user.category || 'IT';
             }
-        } catch (e) {
-            console.error('Error parsing saved user:', e);
-            localStorage.removeItem('currentUser');
+            
+            console.log(`[SessionRestore] Final category for user: ${user.category}`);
+            onLoginSuccess(user);
         }
-    }
-    */
+    });
 
     if (loginForm) {
         // Use a flag to avoid multiple listeners instead of cloning (which breaks external listeners)
@@ -119,6 +124,8 @@ export function setupAuth(onLoginSuccess) {
                     // No longer using localStorage for session persistence, relying on cookie
                     // localStorage.setItem('currentUser', JSON.stringify(user)); 
                     localStorage.setItem('selectedAssetCategory', category);
+                    
+                    console.log(`[Auth] User category set to: ${category}`);
                     
                     // Handle returnTo logic
                     const returnTo = sessionStorage.getItem('returnTo');

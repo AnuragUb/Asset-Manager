@@ -445,6 +445,20 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const dashboardView = document.getElementById('dashboardView');
         if (dashboardView) {
+            // --- REDIRECT TO SERVICE PORTAL IF MODULE IS SERVICE ---
+            if (user.category === 'SERVICE') {
+                console.log('[Login] Redirecting to Service Portal (arri-view)...');
+                showView('arri-view');
+                
+                // Set nav-arri as active
+                document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+                document.getElementById('nav-arri')?.classList.add('active');
+                
+                // We still want to load assets in the background, but the view is arri-view
+                return; 
+            }
+            // ------------------------------------------------------
+
             // --- SMART DEFAULT VIEW (RBAC AWARE) ---
             const userPermissions = (user && user.permissions) ? user.permissions : [];
             const isSuper = (user && user.role === 'superuser');
@@ -546,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (user) {
             console.log('Session restored for:', user.username);
             // Restore category if missing
-            if (!user.category) {
+            if (!user.category || user.category === 'IT') {
                 let savedCategory = localStorage.getItem('selectedAssetCategory');
                 // Validate category - prevent UUIDs or invalid strings
                 if (savedCategory && (savedCategory.length > 20 || savedCategory.includes('-'))) {
@@ -554,8 +568,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.removeItem('selectedAssetCategory');
                     savedCategory = null;
                 }
-                user.category = savedCategory || 'IT';
+                user.category = savedCategory || user.category || 'IT';
             }
+            console.log(`[MainSessionRestore] Final category: ${user.category}`);
             handleLoginSuccess(user);
         } else {
             console.log('No active session found.');
