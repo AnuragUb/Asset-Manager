@@ -1,6 +1,47 @@
 # --- PostgreSQL Redundancy & Streaming Replication Setup ---
 
-This guide explains how to set up **Real-Time Streaming Replication** between your two servers to ensure zero data loss failsafe protection.
+This guide explains the current server-role relationship and the future path to stronger redundancy.
+
+## 0. Current Environment Relationship
+
+These roles are now the reference model for this project:
+
+- `59:9090` = gold-standard test environment and schema reference
+- `118:8080` = primary live production server for real users
+- `59:8080` = local disaster-recovery / backup production environment
+
+Target operating model:
+
+- New schema decisions are validated first on `59:9090`
+- Production-safe schema parity is then applied to `118:8080`
+- `59:8080` is kept aligned as the disaster-recovery mirror of the accepted production-safe state
+
+Important distinction:
+
+- `59:9090` is the **strict structural gold standard**
+- `118:8080` and `59:8080` are currently maintained in **safe parity**
+- Safe parity means production-safe foreign keys and cleanup are enforced, while intentionally risky mismatches may remain until code semantics are fixed
+
+Current parity status after the July 2026 alignment work:
+
+- `118.asset_manager`
+  - Safe-parity alignment applied
+  - Production-safe FK set added
+  - Intentional exception: `audit_log.assetid -> assets.id` is **not enforced** because live audit rows store non-asset IDs too
+  - Structural difference: `layout_markers` is not present in this database
+- `59:8080` / local `asset_manager`
+  - Safe-parity alignment applied
+  - All `27` FK preflight checks currently pass cleanly
+  - Includes `layout_markers` enforcement because the local DB has that table and its data was cleaned successfully
+
+Operational rule going forward:
+
+- Use `web-app/asset-manager-backend/scripts/audit_fk_preflight.js` before any production or DR schema rollout
+- Do not assume `9090` changes can be copied blindly into `118` or `59:8080` without preflight + cleanup
+
+---
+
+This guide also explains how to set up **Real-Time Streaming Replication** between your two servers to ensure zero data loss failsafe protection.
 
 ## 1. Primary Server Setup (.118)
 

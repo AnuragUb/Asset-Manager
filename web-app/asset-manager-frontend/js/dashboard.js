@@ -3942,6 +3942,12 @@ export function renderSidebarTree() {
                             <a href="#" class="tree-link" id="tempAssetsLink">Temporary Assets</a>
                         </div>
                     </div>
+                    <div class="tree-node" style="user-select: none;">
+                        <div class="tree-item-wrapper" style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px;">
+                            <span class="tree-icon">🦊</span>
+                            <a href="#" class="tree-link" id="zohoCatalogLink">Zoho Reference Catalog</a>
+                        </div>
+                    </div>
                     ${treeHTML || '<p class="no-categories">No categories found</p>'}
                 </div>
             </li>
@@ -4039,6 +4045,38 @@ export function renderSidebarTree() {
                         });
                     }
                     renderDashboard(window.allAssets, () => []); 
+                }
+            };
+        }
+
+        const zohoCatalogLink = document.getElementById('zohoCatalogLink');
+        if (zohoCatalogLink) {
+            zohoCatalogLink.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.currentDashboardParent = { ID: 'ZOHO_CATALOG', Name: 'Zoho Reference Catalog', type: 'virtual' };
+                
+                // Set active state
+                sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
+                sidebarMenu.querySelectorAll('.tree-link, .menu-item').forEach(l => {
+                    l.classList.remove('active');
+                    l.style.color = '';
+                    l.style.fontWeight = '';
+                });
+
+                const wrapper = zohoCatalogLink.closest('.tree-item-wrapper');
+                if (wrapper) wrapper.classList.add('active');
+                zohoCatalogLink.classList.add('active');
+
+                // Load and render Zoho Catalog
+                try {
+                    const response = await fetch('/api/zoho/catalog');
+                    if (response.ok) {
+                        const data = await response.json();
+                        renderZohoCatalog(data.catalog);
+                    }
+                } catch (err) {
+                    console.error('Failed to load Zoho Catalog:', err);
                 }
             };
         }
@@ -4351,6 +4389,95 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+/**
+ * Renders the Zoho Reference Catalog (Non-Native Inventory)
+ */
+function renderZohoCatalog(catalog) {
+    console.log('[Catalog] Rendering Zoho Catalog:', catalog.length, 'items');
+    
+    const container = document.getElementById('assetCardsContainer') || document.getElementById('assetGrid');
+    const header = document.getElementById('dashboardHeader');
+    const stats = document.getElementById('dashboardStats');
+    
+    if (header) {
+        header.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div>
+                    <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">🦊</span> Zoho Reference Catalog
+                    </h2>
+                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #666;">
+                        Non-native products imported from Zoho CRM. These are reference items only.
+                    </p>
+                </div>
+                <button onclick="window.syncZohoCatalog()" class="action-button" style="background: #f59e0b; color: white; padding: 8px 16px; border-radius: 6px; font-weight: 600;">
+                    🔄 Refresh from Zoho
+                </button>
+            </div>
+        `;
+    }
+
+    if (stats) stats.style.display = 'none';
+    if (container) {
+        container.style.display = 'grid';
+        container.innerHTML = (catalog || []).map(item => `
+            <div class="asset-card catalog-item" style="border-left: 4px solid #f59e0b; opacity: 0.9;">
+                <div style="display: flex; gap: 15px;">
+                    <div style="font-size: 32px; background: #fffbeb; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid #fef3c7;">
+                        🏷️
+                    </div>
+                    <div style="flex: 1; overflow: hidden;">
+                        <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.product_name}">
+                            ${item.product_name}
+                        </div>
+                        <div style="font-size: 12px; color: #666; font-family: monospace; margin-bottom: 8px;">
+                            SKU: ${item.sku || 'N/A'} • Zoho ID: ${item.zoho_product_id.substring(item.zoho_product_id.length - 8)}
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div>
+                                <div style="font-size: 9px; text-transform: uppercase; color: #999; font-weight: 700;">Make</div>
+                                <div style="font-size: 12px; font-weight: 600;">${item.make || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 9px; text-transform: uppercase; color: #999; font-weight: 700;">Model</div>
+                                <div style="font-size: 12px; font-weight: 600;">${item.model || 'N/A'}</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6;">
+                            <div style="font-weight: 700; color: #059669; font-size: 16px;">
+                                ₹${parseFloat(item.unit_price).toLocaleString()}
+                            </div>
+                            <button class="action-button small" style="background: #f3f4f6; color: #4b5563; font-size: 11px;" onclick="window.openZohoProduct('${item.zoho_product_id}')">
+                                View in Zoho 🔗
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+window.openZohoProduct = (id) => {
+    window.open(`https://crm.zoho.in/crm/org60021949576/tab/Products/${id}`, '_blank');
+};
+
+window.syncZohoCatalog = async () => {
+    if (!confirm('Sync catalog from Zoho CRM?')) return;
+    try {
+        const response = await fetch('/api/zoho/sync-products', { method: 'POST' });
+        const result = await response.json();
+        if (response.ok) {
+            alert(`Sync complete: ${result.message}`);
+            // Reload the view
+            const link = document.getElementById('zohoCatalogLink');
+            if (link) link.click();
+        }
+    } catch (e) {
+        alert('Sync failed');
+    }
+};
+
 export function renderDashboard(assets, filteredAssets) {
     window.allAssets = assets;
     console.log('[Dashboard] renderDashboard() called');
@@ -4568,7 +4695,7 @@ export function renderDashboard(assets, filteredAssets) {
         dashboardTitle.innerHTML = `
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>' : ''}
-                <span>${parentNode ? parentNode.Name : (category === 'In-House' ? 'Service Assets' : `${category} Assets`)}</span>
+                <span>${parentNode ? parentNode.Name : (category === 'In-House' || category === 'SERVICE' ? 'Service Assets' : `${category} Assets`)}</span>
                 ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
                 <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
             </div>
@@ -4634,7 +4761,7 @@ export function renderDashboard(assets, filteredAssets) {
             assetGrid.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
                     <div style="font-size: 48px; margin-bottom: 20px;">📂</div>
-                    <p>No categories found for <b>${category === 'In-House' ? 'Service' : category}</b> assets.</p>
+                    <p>No categories found for <b>${category === 'In-House' || category === 'SERVICE' ? 'Service' : category}</b> assets.</p>
                     <p style="font-size: 13px;">Check if the Hierarchy Manager is properly initialized.</p>
                 </div>
             `;
@@ -5596,6 +5723,7 @@ export function openAddItemModal(kind, prefillData = null) {
             setVal('itemPurchaseDate', pDate);
             
             setVal('itemRemarks', prefillData.Remarks);
+            setVal('itemDescription', prefillData.ItemDescription);
             setVal('itemQtyUnit', prefillData.UOM);
             setVal('itemQtyTotal', prefillData.QtyOrdered);
             
@@ -5681,6 +5809,7 @@ export async function editAsset(asset) {
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
     document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
     document.getElementById('itemWeight').value = asset.Weight || asset.weight || '';
+    document.getElementById('itemDescription').value = asset.ItemDescription || '';
 
     // Populate Assignment Fields
     const assignedToVal = asset.AssignedTo || '';
@@ -6875,6 +7004,8 @@ export function setupDashboardFormHandlers() {
                 }
 
                 // Collect basic fields
+                const rawParentId = formData.get('itemParentId');
+                const cleanedParentId = rawParentId && String(rawParentId).trim() !== '' ? String(rawParentId).trim() : null;
                 const asset = {
                     ID: assetId || null,
                     itemFolder: formData.get('itemFolder'),
@@ -6882,6 +7013,7 @@ export function setupDashboardFormHandlers() {
                     itemBrandCategory: formData.get('itemBrandCategory'),
                     Type: formData.get('itemBrandCategory') || formData.get('itemKind'),
                     ItemName: formData.get('itemName'),
+                    ItemDescription: formData.get('itemDescription'),
                     Icon: formData.get('itemIcon'),
                     Status: formData.get('itemStatus'),
                     Make: formData.get('itemMake'),
@@ -6898,7 +7030,7 @@ export function setupDashboardFormHandlers() {
                     Weight: formData.get('itemWeight'),
                     itemHsnCode: formData.get('itemHsnCode'),
                     AssignedTo: assignedToValue,
-                    ParentId: formData.get('itemParentId'),
+                    ParentId: cleanedParentId,
                     Category: category,
                     
                     // PO Linking

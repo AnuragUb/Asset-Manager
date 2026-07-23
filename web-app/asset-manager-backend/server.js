@@ -78,6 +78,7 @@ const passwordService = require('./services/passwordService');
 const emailService = require('./services/emailService');
 const googleSheetsService = require('./services/googleSheetsService');
 const encryptionService = require('./services/encryptionService');
+const zohoService = require('./services/zohoService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
 const JWT_EXPIRES_IN_SECONDS = parseInt(process.env.JWT_EXPIRES_IN_SECONDS || '3600', 10);
@@ -405,7 +406,8 @@ async function invalidateAssetsCache() {
 function performDatabaseBackup() {
   try {
     const isProd = __dirname.includes('AssetManager_Prod');
-    const backupBaseDir = 'c:/Users/Admin/AssetManager/backups';
+    // Use a relative path to ensure backups work regardless of the drive (C: or F:)
+    const backupBaseDir = path.resolve(__dirname, '../../backups');
     const subDir = isProd ? '8080_prod' : '9090_dev';
     const targetDir = path.join(backupBaseDir, subDir);
     
@@ -1217,7 +1219,7 @@ app.get('/api/auth/me', async (req, res) => {
                             permissions: permissions,
                             projectId: user.project_id,
                             clientId: user.client_id,
-                            category: decoded.company_id
+                            category: decoded.category || decoded.company_id
                         }
                     });
                 }
@@ -2438,6 +2440,108 @@ app.get('/api/public/assets/:label', async (req, res) => {
     }
 });
 
+// --- ZOHO CRM INTEGRATION ENDPOINTS ---
+
+/**
+ * Pushes a Superset (Box Set) to Zoho CRM as a Product.
+ * Returns the Zoho Product ID and sync status.
+ */
+app.post('/api/zoho/sync-asset/:id', authenticateJWT, async (req, res) => {
+    const assetId = req.params.id;
+    console.log(`[ZOHO-SYNC] Triggering sync for asset: ${assetId}`);
+
+    try {
+        const result = await zohoService.syncAssetToZoho(assetId);
+        res.json({
+            success: true,
+            message: `Successfully ${result.mode}d record in Zoho`,
+            zohoId: result.zohoId
+        });
+    } catch (error) {
+        console.error(`[ZOHO-SYNC] Error syncing asset ${assetId}:`, error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to sync with Zoho'
+        });
+    }
+});
+
+/**
+ * Pulls recent Deals from Zoho and syncs them to the local Projects table.
+ */
+app.post('/api/zoho/sync-deals', authenticateJWT, async (req, res) => {
+    console.log('[ZOHO-SYNC] Triggering Deals sync from Zoho...');
+
+    try {
+        const result = await zohoService.syncDealsFromZoho();
+        res.json({
+            success: true,
+            message: `Successfully synced ${result.syncCount} new deals from Zoho.`,
+            totalFound: result.totalFound
+        });
+    } catch (error) {
+        console.error('[ZOHO-SYNC] Error syncing deals:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to sync deals'
+        });
+    }
+});
+
+/**
+ * Pulls Products from Zoho CRM and syncs them to the local Assets catalog.
+ */
+app.post('/api/zoho/sync-products', authenticateJWT, async (req, res) => {
+    console.log('[ZOHO-SYNC] Triggering Products sync from Zoho...');
+
+    try {
+        const result = await zohoService.syncProductsFromZoho();
+        res.json({
+            success: true,
+            message: `Successfully synced ${result.syncCount} products from Zoho.`,
+            totalFound: result.totalFound
+        });
+    } catch (error) {
+        console.error('[ZOHO-SYNC] Error syncing products:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to sync products'
+        });
+    }
+});
+
+/**
+ * Returns the non-native Zoho Catalog (Reference only)
+ */
+app.get('/api/zoho/catalog', authenticateJWT, async (req, res) => {
+    try {
+        const catalog = await db('zoho_catalog').orderBy('product_name', 'asc');
+        res.json({ success: true, catalog });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * Returns the health status of the Zoho CRM connection and recent sync logs.
+ */
+app.get('/api/zoho/status', authenticateJWT, async (req, res) => {
+    try {
+        const health = await zohoService.checkConnection();
+        const logs = await db('zoho_sync_logs')
+            .orderBy('created_at', 'desc')
+            .limit(10);
+            
+        res.json({ 
+            success: true, 
+            health, 
+            logs 
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/assets', authenticateJWT, async (req, res) => {
   try {
     const { projectId, all } = req.query;
@@ -2626,21 +2730,22 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     if (typeof filters === 'string') filters = JSON.parse(filters);
 
     // Build the dynamic query using Knex
-    let query = db('assets as a')
-      .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
-      .leftJoin(
-        db('project_assets')
-          .select('assetid')
-          .max('projectid as projectid')
-          .groupBy('assetid')
-          .as('pa_raw'),
-        'a.id',
-        'pa_raw.assetid'
-      )
-      .leftJoin('projects as p', 'pa_raw.projectid', 'p.id')
-      .where(function() {
-        this.where('a.is_deleted', 0).orWhereNull('a.is_deleted');
-      });
+    // ADVANCED SQL: Using a CTE and Window Function to get the LATEST project for every asset
+    // This is much more efficient than the previous subquery/max/groupby approach.
+    let query = db.with('latest_project_assignments', (qb) => {
+        qb.select('assetid', 'projectid')
+          .from('project_assets')
+          .select(db.raw('ROW_NUMBER() OVER (PARTITION BY assetid ORDER BY projectid DESC) as rn'));
+    })
+    .from('assets as a')
+    .leftJoin('asset_it_details as it', 'a.id', 'it.assetid')
+    .leftJoin('latest_project_assignments as lpa', function() {
+        this.on('a.id', '=', 'lpa.assetid').andOn('lpa.rn', '=', db.raw(1));
+    })
+    .leftJoin('projects as p', 'lpa.projectid', 'p.id')
+    .where(function() {
+      this.where('a.is_deleted', 0).orWhereNull('a.is_deleted');
+    });
 
     // Apply Department Segregation for non-admins
     if (!isAdmin && userDept) {
@@ -2651,7 +2756,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
 
     // 1. Project Filter
     if (projectId) {
-      query.where('pa_raw.projectid', projectId);
+      query.where('lpa.projectid', projectId);
     }
 
     // 1.2 Status Filter
@@ -3838,6 +3943,40 @@ app.post('/api/folders', async (req, res) => {
   }
 });
 
+/**
+ * ADVANCED SQL EXAMPLE: Recursive CTE for Hierarchy
+ * Fetches the entire folder/category tree with flattened paths in one query.
+ * Offloads tree-building logic from Node.js to PostgreSQL.
+ */
+app.get('/api/hierarchy/tree', authenticateJWT, async (req, res) => {
+    try {
+        const module = req.query.module || 'IT';
+        
+        const rawQuery = `
+            WITH RECURSIVE folder_tree AS (
+                -- Base Case: Top-level folders
+                SELECT id, name, parentid, icon, 1 as depth, CAST(name AS TEXT) as path
+                FROM folders
+                WHERE parentid IS NULL AND module = ?
+                
+                UNION ALL
+                
+                -- Recursive Step: Subfolders
+                SELECT f.id, f.name, f.parentid, f.icon, ft.depth + 1, ft.path || ' > ' || f.name
+                FROM folders f
+                JOIN folder_tree ft ON f.parentid = ft.id
+            )
+            SELECT * FROM folder_tree ORDER BY path;
+        `;
+
+        const tree = await db.raw(rawQuery, [module]);
+        res.json({ success: true, tree: tree.rows });
+    } catch (err) {
+        console.error('[CTE-ERROR]', err);
+        res.status(500).json({ error: 'Failed to fetch hierarchy tree' });
+    }
+});
+
 app.post('/api/asset_kinds', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
   try {
     const { Name, Module, Icon, ParentName, ParentID, DisplayImage, Identifier } = req.body;
@@ -4706,6 +4845,7 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
     await db('assets').insert(normalizeDBData({
       ID: newId,
       ItemName: itemName,
+      ItemDescription: asset.ItemDescription || asset.itemdescription || '',
       Status: asset.Status || asset.status || 'In Store',
       Make: asset.Make || asset.make || '',
       Model: asset.Model || asset.model || '',
@@ -7377,6 +7517,7 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     let updateObj = {
         ItemName: asset.ItemName || existing.itemname || '',
+        ItemDescription: asset.ItemDescription !== undefined ? asset.ItemDescription : (existing.itemdescription || ''),
         Status: asset.Status || existing.status || 'In Store',
         Make: asset.Make || existing.make || '',
         Model: asset.Model || existing.model || '',
@@ -7385,7 +7526,15 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         Category: asset.Category || existing.category || '',
         parent_folder: asset.itemFolder || existing.parent_folder || '',
         Icon: asset.Icon || existing.icon || '',
-        ParentId: asset.ParentId !== undefined ? asset.ParentId : (existing.parentid || null),
+        ParentId: (() => {
+            const incoming = asset.ParentId !== undefined ? asset.ParentId : asset.parentid;
+            if (incoming !== undefined) {
+                const v = String(incoming || '').trim();
+                return v === '' ? null : v;
+            }
+            const existingVal = String(existing.parentid || '').trim();
+            return existingVal === '' ? null : existingVal;
+        })(),
         CurrentLocation: asset.CurrentLocation || existing.currentlocation || '',
         DispatchReceiveDt: asset.DispatchReceiveDt || existing.dispatchreceivedt || '',
         PurchaseDetails: asset.PurchaseDetails || existing.purchasedetails || '',
