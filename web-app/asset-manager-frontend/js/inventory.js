@@ -16,7 +16,7 @@ const state = {
 window.currentInventorySidebar = window.currentInventorySidebar || null;
 
 function isInventoryPreviewEnabled() {
-    return String(window.location.port || '') === '9090';
+    return true; // Always enabled on frontend; backend uses FEATURE_INVENTORY_ENABLED to opt-out globally.
 }
 
 function getEl(id) {
@@ -217,7 +217,7 @@ function setWorkspaceChrome(mode = 'inventory') {
     }
 
     if (workspaceTitle) workspaceTitle.textContent = 'Inventory Workspace';
-    if (workspaceBadge) workspaceBadge.textContent = '9090 Preview';
+    if (workspaceBadge) workspaceBadge.textContent = 'Inventory';
     if (workspaceBadge) workspaceBadge.style.background = '#eef6ff';
     if (workspaceBadge) workspaceBadge.style.color = '#0f5ea8';
     if (actions) actions.style.display = 'flex';

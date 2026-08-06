@@ -3908,13 +3908,13 @@ export function renderSidebarTree() {
         return active ? active.id : null;
     };
 
-    const isInventoryPreview = String(window.location.port || '') === '9090';
+    const isInventoryPreview = true; // Always enabled; server backend uses FEATURE_INVENTORY_ENABLED to opt-out.
 
     return Promise.all([
         fetch('/api/folders').then(r => r.ok ? r.json() : []),
         fetch('/api/asset_kinds').then(r => r.ok ? r.json() : []),
-        isInventoryPreview ? fetch('/api/inventory/folders').then(r => r.ok ? r.json() : { folders: [] }) : Promise.resolve({ folders: [] }),
-        isInventoryPreview ? fetch('/api/inventory/kinds').then(r => r.ok ? r.json() : { kinds: [] }) : Promise.resolve({ kinds: [] })
+        fetch('/api/inventory/folders').then(r => r.ok ? r.json() : { folders: [] }),
+        fetch('/api/inventory/kinds').then(r => r.ok ? r.json() : { kinds: [] })
     ]).then(([folders, kinds, inventoryFoldersResp, inventoryKindsResp]) => {
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
         const inventoryFolders = inventoryFoldersResp.folders || [];
@@ -3956,7 +3956,7 @@ export function renderSidebarTree() {
         const treeHTML = manager.generateSidebarHTML(moduleTree, 0, activeId);
         console.log('[Sidebar] Generated Tree HTML length:', treeHTML.length);
         const inventoryActiveId = window.currentInventorySidebar?.type === 'node' ? window.currentInventorySidebar.id : null;
-        const inventoryTreeHTML = isInventoryPreview ? inventoryManager.generateSidebarHTML(inventoryManager.tree, 0, inventoryActiveId) : '';
+        const inventoryTreeHTML = inventoryManager.generateSidebarHTML(inventoryManager.tree, 0, inventoryActiveId);
         const assetsRootActive = !window.currentInventorySidebar && (!window.currentDashboardParent || window.currentDashboardParent.ID === null);
         const inventoryRootActive = window.currentInventorySidebar?.type === 'root';
         const catalogRootActive = window.currentInventorySidebar?.type === 'catalog';
@@ -3977,7 +3977,6 @@ export function renderSidebarTree() {
                     ${treeHTML || '<p class="no-categories">No categories found</p>'}
                 </div>
             </li>
-            ${isInventoryPreview ? `
             <li style="list-style: none; margin-top: 10px;">
                 <div class="menu-item-wrapper ${inventoryRootActive ? 'active' : ''}" id="inventoryRootWrapper">
                     <span class="tree-toggle-main" id="inventoryToggleMain">▼</span>
@@ -3993,7 +3992,6 @@ export function renderSidebarTree() {
                     <a href="#" class="menu-item ${catalogRootActive ? 'active' : ''}" id="zohoCatalogStandaloneLink">Zoho Reference Catalog</a>
                 </div>
             </li>
-            ` : ''}
         `;
 
         // Bridge UI and UX Bubbles
@@ -4127,42 +4125,40 @@ export function renderSidebarTree() {
             };
         }
 
-        if (isInventoryPreview) {
-            const inventoryTreeHost = document.getElementById('sidebar-inventory-container');
-            if (inventoryTreeHost) {
-                inventoryTreeHost.querySelectorAll('.tree-toggle').forEach(toggle => {
-                    toggle.onclick = (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const nodeDiv = toggle.closest('.tree-node');
-                        const childrenDiv = nodeDiv?.querySelector('.tree-children');
-                        if (!childrenDiv) return;
-                        const isHidden = childrenDiv.style.display === 'none';
-                        childrenDiv.style.display = isHidden ? 'block' : 'none';
-                        toggle.textContent = isHidden ? '▼' : '▶';
-                        toggle.style.color = isHidden ? '#333' : '#999';
-                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
-                    };
+        const inventoryTreeHost = document.getElementById('sidebar-inventory-container');
+        if (inventoryTreeHost) {
+            inventoryTreeHost.querySelectorAll('.tree-toggle').forEach(toggle => {
+                toggle.onclick = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const nodeDiv = toggle.closest('.tree-node');
+                    const childrenDiv = nodeDiv?.querySelector('.tree-children');
+                    if (!childrenDiv) return;
+                    const isHidden = childrenDiv.style.display === 'none';
+                    childrenDiv.style.display = isHidden ? 'block' : 'none';
+                    toggle.textContent = isHidden ? '▼' : '▶';
+                    toggle.style.color = isHidden ? '#333' : '#999';
+                    if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+                };
+            });
+            inventoryTreeHost.querySelectorAll('.tree-link[data-id], .tree-item-wrapper[data-id]').forEach(node => {
+                if (node.dataset.inventorySidebarBound === 'true') return;
+                node.dataset.inventorySidebarBound = 'true';
+                node.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const id = node.dataset.id;
+                    if (!id) return;
+                    window.currentDashboardParent = null;
+                    window.currentInventorySidebar = { type: 'node', id };
+                    if (window.showView) window.showView('dashboardView');
+                    if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
+                    if (typeof window.openInventoryNode === 'function') {
+                        await window.openInventoryNode(id);
+                    }
+                    if (window.syncSidebarBubbles) window.syncSidebarBubbles();
                 });
-                inventoryTreeHost.querySelectorAll('.tree-link[data-id], .tree-item-wrapper[data-id]').forEach(node => {
-                    if (node.dataset.inventorySidebarBound === 'true') return;
-                    node.dataset.inventorySidebarBound = 'true';
-                    node.addEventListener('click', async (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const id = node.dataset.id;
-                        if (!id) return;
-                        window.currentDashboardParent = null;
-                        window.currentInventorySidebar = { type: 'node', id };
-                        if (window.showView) window.showView('dashboardView');
-                        if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
-                        if (typeof window.openInventoryNode === 'function') {
-                            await window.openInventoryNode(id);
-                        }
-                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
-                    });
-                });
-            }
+            });
         }
 
         const catalogStandaloneLink = document.getElementById('zohoCatalogStandaloneLink');
@@ -4569,7 +4565,7 @@ window.syncZohoCatalog = async () => {
         const result = await response.json();
         if (response.ok) {
             alert(`Sync complete: ${result.message}`);
-            if (typeof window.refreshInventoryCatalog === 'function' && String(window.location.port || '') === '9090') {
+            if (typeof window.refreshInventoryCatalog === 'function') {
                 await window.refreshInventoryCatalog();
                 return;
             }
