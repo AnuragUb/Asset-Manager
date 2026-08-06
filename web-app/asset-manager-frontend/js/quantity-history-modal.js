@@ -294,10 +294,84 @@
         }
     };
 
+    window.showInventoryQuantityHistoryModal = async function(itemId) {
+        init();
+
+        const modal = document.getElementById('sharedQtyHistoryModal');
+        const loading = document.getElementById('sharedQtyHistoryLoading');
+        const body = document.getElementById('sharedQtyHistoryBody');
+        const tbody = document.getElementById('sharedQtyHistoryTableBody');
+        const empty = document.getElementById('sharedQtyHistoryEmpty');
+        const titleName = document.getElementById('sharedQtyHistoryAssetName');
+
+        if (!modal) return;
+
+        titleName.textContent = `(ID: ${itemId})`;
+        modal.style.display = 'block';
+        loading.style.display = 'block';
+        body.style.display = 'none';
+        tbody.innerHTML = '';
+        empty.style.display = 'none';
+
+        try {
+            const response = await fetch(`/api/inventory/quantity/events/${encodeURIComponent(itemId)}`);
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+            const payload = await response.json();
+            const events = Array.isArray(payload?.events) ? payload.events : [];
+            if (events.length === 0) {
+                loading.style.display = 'none';
+                body.style.display = 'block';
+                empty.style.display = 'block';
+                return;
+            }
+
+            tbody.innerHTML = events.map(e => {
+                const lines = Array.isArray(e.lines) ? e.lines : [];
+                const myLines = lines.filter(l => String(l.item_id || l.itemId) === String(itemId));
+                let changeStr = '';
+                if (myLines.length > 0) {
+                    changeStr = myLines.map(l => {
+                        const val = (typeof l.delta_total === 'number' && l.delta_total !== 0) ? l.delta_total : (l.delta_available || 0);
+                        const color = val > 0 ? '#16a34a' : (val < 0 ? '#dc2626' : '#64748b');
+                        const sign = val > 0 ? '+' : '';
+                        return `<span style="color:${color}; font-weight:600;">${sign}${val} ${l.unit || ''}</span>`;
+                    }).join('<br>');
+                } else {
+                    changeStr = '<span style="color:#64748b;">-</span>';
+                }
+                const metaObj = e.metadata ?? (e.metadata_json ? (() => { try { return JSON.parse(e.metadata_json); } catch { return null; } })() : null);
+                const metaHtml = metaObj ? Object.entries(metaObj)
+                    .map(([k, v]) => `<div><strong style="color: #475569">${k}:</strong> ${v}</div>`)
+                    .join('') : '';
+                return `
+                  <tr>
+                    <td style="white-space: nowrap; color: #64748b; font-size: 11px;">${formatDate(e.timestamp)}</td>
+                    <td><span class="qty-badge ${getEventTypeClass(e.type)}">${e.type}</span></td>
+                    <td style="font-weight: 500;">${e.actor || '-'}</td>
+                    <td>${changeStr}</td>
+                    <td style="font-size: 11px; color: #64748b;">
+                        ${e.note ? `<div style="font-weight: 600;">${e.note}</div>` : ''}
+                        ${metaHtml}
+                    </td>
+                  </tr>
+                `;
+            }).join('');
+
+            loading.style.display = 'none';
+            body.style.display = 'block';
+        } catch (err) {
+            console.error('Error loading inventory history:', err);
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: #ef4444; padding: 20px;">Error loading history: ${err.message}</td></tr>`;
+            loading.style.display = 'none';
+            body.style.display = 'block';
+        }
+    };
+
     // --- Global Interceptor ---
     document.addEventListener('click', (e) => {
-        // Find closest anchor tag with the specific href pattern
-        const link = e.target.closest('a[href^="/api/quantity/events/"]');
+        const qtyLink = e.target.closest('a[href^="/api/quantity/events/"]');
+        const invLink = e.target.closest('a[href^="/api/inventory/quantity/events/"]');
+        const link = qtyLink || invLink;
         if (link) {
             if (e.ctrlKey || e.metaKey || e.shiftKey) return; // Allow new tab
 
@@ -305,10 +379,13 @@
             e.stopPropagation();
             
             const href = link.getAttribute('href');
-            const assetId = href.split('/').pop();
-            if (assetId) {
-                window.showQuantityHistoryModal(assetId);
+            const id = href.split('/').pop();
+            if (!id) return;
+            if (href.startsWith('/api/inventory/quantity/events/')) {
+                window.showInventoryQuantityHistoryModal(id);
+                return;
             }
+            window.showQuantityHistoryModal(id);
         }
     });
 

@@ -431,7 +431,8 @@
                     <div class="bubble bubble-hover"></div>
                     <div class="bubble bubble-active"></div>
                     <ul>
-                        <li><a href="#" class="nav-link active" id="nav-dashboard">Dashboard</a></li>
+                        <li><a href="#" class="nav-link active" id="nav-dashboard">Assets</a></li>
+                        <li><a href="#" class="nav-link" id="nav-inventory">Inventory</a></li>
                         <li><a href="#" class="nav-link" id="nav-arri">ARRI Service</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-sheet">Sheet</a></li>
                         <li><a href="#" class="nav-link" id="nav-employees">Employees</a></li>
@@ -1057,6 +1058,32 @@
                         </div>
                     </div>
 
+                    <div id="inventory-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" id="inventoryWorkspaceTitle" style="margin: 0;">Inventory Workspace</h2>
+                                <span id="inventoryWorkspaceBadge" style="background: #eef6ff; color: #0f5ea8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">9090 Preview</span>
+                            </div>
+                            <div class="view-actions" id="inventoryWorkspaceActions" style="display: flex; gap: 10px;">
+                                <button class="action-button grey" id="btnInventoryReload">Refresh</button>
+                                <button class="action-button blue" id="btnInventoryShowItems">Inventory</button>
+                                <button class="action-button purple" id="btnAddInventoryFolder">Add Folder</button>
+                                <button class="action-button indigo" id="btnAddInventoryCategory">Add Category</button>
+                                <button class="action-button green" id="btnAddInventoryItem">Add Inventory Item</button>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0;">
+                            <div class="card-panel" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                                <div>
+                                    <h3 id="inventoryPanelTitle" style="margin: 0 0 6px 0;">All Inventory</h3>
+                                    <p id="inventoryPanelSubtitle" style="margin: 0; color: #667085;">Inventory navigation is driven from the left sidebar.</p>
+                                </div>
+                                <div id="inventoryStats" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;"></div>
+                            </div>
+                            <div id="inventoryContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+
                     <!-- Projects View -->
                     <div id="projects-view" class="view hidden" style="flex: 1; flex-direction: column; overflow: hidden; padding: 20px; height: 100%;">
                         <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
@@ -1517,6 +1544,9 @@
                     <div id="editAssetActions" style="display: none; margin-bottom: 15px; padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; align-items: center; justify-content: space-between;">
                         <span style="font-size: 12px; color: #64748b; font-weight: 600;">Asset Lifecycle Tools:</span>
                         <div style="display: flex; gap: 10px;">
+                            <button type="button" id="btnUnassignEmployeeFromAsset" style="display: none; align-items: center; gap: 5px; background: #ecfdf5; color: #047857; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #a7f3d0; cursor: pointer;">
+                                Return To Store
+                            </button>
                             <a id="btnViewAssetHistory" href="#" target="_blank" style="text-decoration: none; display: flex; align-items: center; gap: 5px; background: #eef2ff; color: #6366f1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #e0e7ff; transition: all 0.2s;">
                                 📜 View Full History & Details
                             </a>
@@ -1709,9 +1739,9 @@
                                 <label for="itemParentId">Parent Asset ID (Optional)</label>
                                 <input type="text" id="itemParentId" name="itemParentId" placeholder="e.g. LAP2312310001">
                             </div>
-                            <div class="form-group" style="grid-column: span 2; background: #fdf2f2; padding: 10px; border-radius: 8px; border: 1px solid #fee2e2; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
-                                <input type="checkbox" id="itemIsQtyTracked" name="itemIsQtyTracked" style="width: 20px; height: 20px; cursor: pointer;">
-                                <label for="itemIsQtyTracked" style="font-weight: 700; color: #991b1b; cursor: pointer; margin-bottom: 0;">Enable Quantity Tracking for this Asset</label>
+                            <div class="form-group" style="grid-column: span 2; background: #f0fdf4; padding: 10px; border-radius: 8px; border: 1px solid #bbf7d0; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" id="itemIsQtyTracked" name="itemIsQtyTracked" checked disabled style="width: 20px; height: 20px; cursor: not-allowed;">
+                                <label for="itemIsQtyTracked" style="font-weight: 700; color: #166534; cursor: default; margin-bottom: 0;">Quantity Tracking is enabled by default for all Assets and Inventory items</label>
                             </div>
                             <div id="qtyFieldsContainer" style="display: none; grid-column: span 2; grid-template-columns: 1fr 1fr; gap: 15px;">
                                 <div class="form-group">
@@ -1893,52 +1923,6 @@
             </div>
 
 
-
-            <!-- Quantity History Modal -->
-            <div id="qtyHistoryModal" class="modal">
-                <div class="modal-content" style="max-width: 900px; width: 95%;">
-                    <div class="modal-header">
-                        <h2 style="margin: 0; font-size: 1.25rem;">Quantity History & Timeline</h2>
-                        <span class="close" onclick="document.getElementById('qtyHistoryModal').style.display='none'">&times;</span>
-                    </div>
-                    <div class="modal-body">
-                        <div id="qtyHistoryLoading" style="text-align: center; padding: 40px; display: none;">
-                            <div class="spinner"></div>
-                            <p style="margin-top: 10px; color: #666;">Loading events...</p>
-                        </div>
-                        <div id="qtyHistoryContent">
-                            <div class="header-card" style="margin-bottom: 20px; padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 15px;">
-                                <div id="qtyModalAssetIcon" style="font-size: 24px;">📦</div>
-                                <div>
-                                    <h3 id="qtyModalAssetName" style="margin: 0 0 5px 0; font-size: 16px;">Asset Name</h3>
-                                    <div id="qtyModalAssetId" style="font-size: 12px; color: #64748b; font-family: monospace;">ID: ...</div>
-                                </div>
-                                <div style="margin-left: auto; text-align: right;">
-                                     <div id="qtyModalCurrentStock" style="font-weight: 700; color: #0f172a; font-size: 18px;">0</div>
-                                     <div style="font-size: 11px; color: #64748b;">Current Available</div>
-                                </div>
-                            </div>
-
-                            <div style="max-height: 500px; overflow-y: auto;">
-                                <table class="report-table" style="width: 100%; border-collapse: collapse;">
-                                    <thead>
-                                        <tr style="background: #f1f5f9; text-align: left;">
-                                            <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #475569;">Timestamp</th>
-                                            <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #475569;">Type</th>
-                                            <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #475569;">Actor</th>
-                                            <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #475569;">Change</th>
-                                            <th style="padding: 10px; border-bottom: 2px solid #e2e8f0; font-size: 12px; color: #475569;">Note & Metadata</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="qtyHistoryTableBody">
-                                        <!-- Rows injected via JS -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Asset Details Modal -->
             <div id="assetDetailsModal" class="modal">
@@ -2492,7 +2476,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=6.60"></script>
+<script type="module" src="/js/main.js?v=6.78"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {
@@ -2606,34 +2590,6 @@
                 💡 Tip: Search by <strong>Asset ID</strong> to see history for a specific item.
             </div>
             <button type="button" class="action-button" id="btnCloseDcHistory" style="background: #fff; color: #64748b; border: 1px solid #e2e8f0; padding: 8px 20px; border-radius: 50px; font-weight: 600; cursor: pointer;">Close</button>
-        </div>
-    </div>
-</div>
-
-<!-- Quantity History Modal -->
-<div id="qtyHistoryModal" class="modal" style="z-index: 10005;">
-    <div class="modal-content" style="max-width: 700px; padding: 0; overflow: hidden; border-radius: 12px;">
-        <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0; color: #1e293b; display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 20px;">⚖️</span> Quantity & Batch History
-            </h3>
-            <span class="close-modal" onclick="document.getElementById('qtyHistoryModal').style.display='none'" style="font-size: 24px; cursor: pointer;">&times;</span>
-        </div>
-        
-        <div id="qtyHistoryLoading" style="padding: 40px; text-align: center; color: #64748b;">
-            <div class="spinner" style="margin: 0 auto 10px; border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;"></div>
-            Loading history...
-        </div>
-
-        <div id="qtyHistoryContent" style="display: none; padding: 20px; max-height: 500px; overflow-y: auto; background: #fff;">
-            <div id="qtySummaryHeader" style="margin-bottom: 20px; padding: 15px; background: #eff6ff; border-radius: 8px; border: 1px solid #dbeafe; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <!-- Filled by JS -->
-            </div>
-            
-            <div style="margin-bottom: 10px; font-weight: 700; color: #475569; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Activity Timeline</div>
-            <div id="qtyTimelineContainer" style="display: flex; flex-direction: column; gap: 12px;">
-                <!-- Filled by JS -->
-            </div>
         </div>
     </div>
 </div>

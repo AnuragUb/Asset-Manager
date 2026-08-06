@@ -246,7 +246,7 @@ function initBulkAssignment() {
         if (confirm(`Assign ${selectedBulkAssets.length} assets to ${empName}?`)) {
             try {
                 for (const asset of selectedBulkAssets) {
-                    const updated = { ...asset, AssignedTo: empName, Status: 'Assigned' };
+                    const updated = { ...asset, AssignedTo: empName, Status: 'In-Use' };
                     await fetch(`/api/assets/${asset.ID}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },

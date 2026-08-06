@@ -1,6 +1,6 @@
-console.log('MAIN.JS: Entry point (v6.60)');
+console.log('MAIN.JS: Entry point (v6.78)');
 import { showView } from './utils.js?v=6.60';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.60';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=6.78';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
 import { setupAuth, checkSession } from './auth.js?v=6.60';
@@ -9,12 +9,13 @@ import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 // import { setupOcr } from './ocr.js?v=5.50';
 import { initWarrantyView } from './warranty.js?v=6.60';
 import { initProjectsView } from './projects.js?v=6.60';
+import { initInventoryView } from './inventory.js?v=6.77';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.60';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.60';
 import { initFormAutosave } from './formAutosave.js?v=6.60';
-import { initContextMenu } from './contextMenu.js?v=6.60';
+import { initContextMenu } from './contextMenu.js?v=6.77';
 import { initServicePortal } from './servicePortal.js?v=6.60';
 
 // Expose showView to global scope for other modules
@@ -232,6 +233,10 @@ async function loadAssets() {
 }
 
 async function saveAsset(asset) {
+    if (asset && Object.prototype.hasOwnProperty.call(asset, 'ParentId')) {
+        const normalizedParentId = String(asset.ParentId || '').trim();
+        asset.ParentId = normalizedParentId === '' ? null : normalizedParentId;
+    }
     console.log('saveAsset() payload:', JSON.stringify(asset, null, 2));
     const username = currentUser ? currentUser.username : (localStorage.getItem('username') || 'web');
     
@@ -399,8 +404,8 @@ document.addEventListener('DOMContentLoaded', () => {
                  localStorage.setItem('selectedAssetCategory', 'IT');
             }
             
-            // Map 'In-House' to 'Service' for display
-            if (displayCategory === 'In-House') displayCategory = 'Service';
+            // Map 'In-House' or 'SERVICE' to 'Service' for display
+            if (displayCategory === 'In-House' || displayCategory === 'SERVICE') displayCategory = 'Service';
             
             appTitle.textContent = `${displayCategory} Asset Manager`;
         }
@@ -446,13 +451,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const dashboardView = document.getElementById('dashboardView');
         if (dashboardView) {
             // --- REDIRECT TO SERVICE PORTAL IF MODULE IS SERVICE ---
-            if (user.category === 'SERVICE') {
+            if (user.category === 'SERVICE' || user.category === 'In-House') {
                 console.log('[Login] Redirecting to Service Portal (arri-view)...');
                 showView('arri-view');
                 
                 // Set nav-arri as active
                 document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-                document.getElementById('nav-arri')?.classList.add('active');
+                const navArri = document.getElementById('nav-arri');
+                if (navArri) navArri.classList.add('active');
                 
                 // We still want to load assets in the background, but the view is arri-view
                 return; 
@@ -473,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('nav-dashboard')?.classList.add('active');
 
                 // Show home-view subview by default
-                const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
+                const subViews = ['home-view', 'sheet-view', 'employee-view', 'inventory-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
                 subViews.forEach(sv => {
                     const el = document.getElementById(sv);
                     if (el) {
@@ -547,7 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             console.error('Could NOT find dashboardView element!');
-            alert('Error: Dashboard view not found in the page.');
+            alert('Error: Assets view not found in the page.');
         }
     };
 
@@ -587,6 +593,7 @@ const APP_VIEWS = {
     'home-view': { id: 'home-view', navId: 'nav-dashboard', sidebar: true, default: true },
     'sheet-view': { id: 'sheet-view', navId: 'nav-sheet', sidebar: true },
     'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: false },
+    'inventory-view': { id: 'inventory-view', navId: 'nav-inventory', sidebar: true },
     'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: false },
     'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: true },
     'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
@@ -812,7 +819,7 @@ function setupNavigation() {
             subView: 'home-view', 
             init: () => {
                 console.log('nav-dashboard init');
-                // Reset to main dashboard (All Assets) when clicking the Dashboard tab
+                // Reset to main asset board (All Assets) when clicking the Assets tab
                 window.currentDashboardParent = null;
                 window.filteredAssets = [...window.assets];
                 
@@ -846,6 +853,11 @@ function setupNavigation() {
             view: 'dashboardView', 
             subView: 'employee-view', 
             init: () => typeof initEmployeeView === 'function' && initEmployeeView() 
+        },
+        'nav-inventory': {
+            view: 'dashboardView',
+            subView: 'inventory-view',
+            init: () => typeof initInventoryView === 'function' && initInventoryView()
         },
         'nav-dc': { 
             view: 'dashboardView', 
@@ -1427,14 +1439,16 @@ function setupNavigation() {
     const userCategory = (currentUser && currentUser.category) ? currentUser.category : 'IT';
 
     const checkTabPermission = (perm) => isSuper || userPermissions.includes(perm);
+    const isInventoryPreviewEnabled = String(window.location.port || '') === '9090';
 
     const navVisibility = {
-        'nav-dashboard': checkTabPermission('view.dashboard'),
-        'nav-arri': userCategory === 'In-House',
-        'nav-projects': checkTabPermission('view.projects') && userCategory !== 'In-House',
-        'nav-dc': checkTabPermission('view.dc') && userCategory !== 'In-House',
-        'nav-employees': checkTabPermission('user.manage'), // Map Employees tab to user.manage permission
-        'nav-warranty': checkTabPermission('view.warranty') && userCategory !== 'In-House',
+        'nav-dashboard': checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-arri': userCategory === 'SERVICE' || userCategory === 'In-House',
+        'nav-projects': checkTabPermission('view.projects') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-dc': checkTabPermission('view.dc') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-employees': checkTabPermission('user.manage') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'), 
+        'nav-inventory': isInventoryPreviewEnabled && checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-warranty': checkTabPermission('view.warranty') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-releases': checkTabPermission('view.releases'),
         'nav-admin': checkTabPermission('view.admin')
     };

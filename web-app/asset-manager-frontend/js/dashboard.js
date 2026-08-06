@@ -3908,18 +3908,45 @@ export function renderSidebarTree() {
         return active ? active.id : null;
     };
 
-    // Fetch folders and kinds
+    const isInventoryPreview = String(window.location.port || '') === '9090';
+
     return Promise.all([
         fetch('/api/folders').then(r => r.ok ? r.json() : []),
-        fetch('/api/asset_kinds').then(r => r.ok ? r.json() : [])
-    ]).then(([folders, kinds]) => {
+        fetch('/api/asset_kinds').then(r => r.ok ? r.json() : []),
+        isInventoryPreview ? fetch('/api/inventory/folders').then(r => r.ok ? r.json() : { folders: [] }) : Promise.resolve({ folders: [] }),
+        isInventoryPreview ? fetch('/api/inventory/kinds').then(r => r.ok ? r.json() : { kinds: [] }) : Promise.resolve({ kinds: [] })
+    ]).then(([folders, kinds, inventoryFoldersResp, inventoryKindsResp]) => {
         const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+        const inventoryFolders = inventoryFoldersResp.folders || [];
+        const inventoryKinds = inventoryKindsResp.kinds || [];
         
         // Merge folders and kinds into a single hierarchy structure using standardized mapping
         const allNodes = HierarchyManager.mapNodes(folders, kinds);
 
         const manager = new HierarchyManager(allNodes);
         window.hierarchyManager = manager; // Store for dashboard use
+
+        const inventoryNodes = [
+            ...inventoryFolders.map(folder => ({
+                ...folder,
+                ID: folder.ID || folder.id,
+                Name: folder.Name || folder.name,
+                ParentID: folder.ParentId || folder.parentid || null,
+                Module: 'Inventory',
+                Icon: folder.Icon || folder.icon || '📦',
+                type: 'folder'
+            })),
+            ...inventoryKinds.map(kind => ({
+                ...kind,
+                ID: kind.ID || kind.id,
+                Name: kind.Name || kind.name,
+                ParentID: kind.ParentId || kind.parentid || kind.FolderId || kind.folderid || null,
+                Module: 'Inventory',
+                Icon: kind.Icon || kind.icon || '📦',
+                type: 'kind'
+            }))
+        ];
+        const inventoryManager = new HierarchyManager(inventoryNodes);
         
         const moduleTree = manager.getModuleTree(category);
         console.log('[Sidebar] Category:', category, 'Module Tree Size:', moduleTree.length);
@@ -3928,12 +3955,17 @@ export function renderSidebarTree() {
         const activeId = window.currentDashboardParent ? window.currentDashboardParent.ID : null;
         const treeHTML = manager.generateSidebarHTML(moduleTree, 0, activeId);
         console.log('[Sidebar] Generated Tree HTML length:', treeHTML.length);
+        const inventoryActiveId = window.currentInventorySidebar?.type === 'node' ? window.currentInventorySidebar.id : null;
+        const inventoryTreeHTML = isInventoryPreview ? inventoryManager.generateSidebarHTML(inventoryManager.tree, 0, inventoryActiveId) : '';
+        const assetsRootActive = !window.currentInventorySidebar && (!window.currentDashboardParent || window.currentDashboardParent.ID === null);
+        const inventoryRootActive = window.currentInventorySidebar?.type === 'root';
+        const catalogRootActive = window.currentInventorySidebar?.type === 'catalog';
 
         sidebarMenu.innerHTML = `
             <li style="list-style: none;">
-                <div class="menu-item-wrapper active">
+                <div class="menu-item-wrapper ${assetsRootActive ? 'active' : ''}">
                     <span class="tree-toggle-main">▼</span>
-                    <a href="#" class="menu-item toggle-submenu active" id="allAssetsLink">All Assets</a>
+                    <a href="#" class="menu-item toggle-submenu ${assetsRootActive ? 'active' : ''}" id="allAssetsLink">All Assets</a>
                 </div>
                 <div id="sidebar-hierarchy-container" style="display: block;">
                     <div class="tree-node" style="user-select: none;">
@@ -3942,15 +3974,26 @@ export function renderSidebarTree() {
                             <a href="#" class="tree-link" id="tempAssetsLink">Temporary Assets</a>
                         </div>
                     </div>
-                    <div class="tree-node" style="user-select: none;">
-                        <div class="tree-item-wrapper" style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px;">
-                            <span class="tree-icon">🦊</span>
-                            <a href="#" class="tree-link" id="zohoCatalogLink">Zoho Reference Catalog</a>
-                        </div>
-                    </div>
                     ${treeHTML || '<p class="no-categories">No categories found</p>'}
                 </div>
             </li>
+            ${isInventoryPreview ? `
+            <li style="list-style: none; margin-top: 10px;">
+                <div class="menu-item-wrapper ${inventoryRootActive ? 'active' : ''}" id="inventoryRootWrapper">
+                    <span class="tree-toggle-main" id="inventoryToggleMain">▼</span>
+                    <a href="#" class="menu-item toggle-submenu ${inventoryRootActive ? 'active' : ''}" id="inventoryRootLink">Inventory</a>
+                </div>
+                <div id="sidebar-inventory-container" style="display: block;">
+                    ${inventoryTreeHTML || '<p class="no-categories">No inventory nodes found</p>'}
+                </div>
+            </li>
+            <li style="list-style: none; margin-top: 10px;">
+                <div class="menu-item-wrapper ${catalogRootActive ? 'active' : ''}" id="zohoCatalogRootWrapper">
+                    <span class="tree-icon">🦊</span>
+                    <a href="#" class="menu-item ${catalogRootActive ? 'active' : ''}" id="zohoCatalogStandaloneLink">Zoho Reference Catalog</a>
+                </div>
+            </li>
+            ` : ''}
         `;
 
         // Bridge UI and UX Bubbles
@@ -3973,7 +4016,10 @@ export function renderSidebarTree() {
         if (allAssetsLink) {
             allAssetsLink.onclick = (e) => {
                 e.preventDefault();
+                window.currentInventorySidebar = null;
                 window.currentDashboardParent = null;
+                if (window.showView) window.showView('dashboardView');
+                if (window.switchDashboardSubView) window.switchDashboardSubView('home-view');
                 
                 // Determine which view to refresh
                 const activeSubViewId = getActiveDashboardSubView();
@@ -4006,6 +4052,7 @@ export function renderSidebarTree() {
                 const wrapper = allAssetsLink.closest('.menu-item-wrapper');
                 if (wrapper) wrapper.classList.add('active');
                 allAssetsLink.classList.add('active');
+                if (window.syncSidebarBubbles) window.syncSidebarBubbles();
             };
         }
 
@@ -4015,6 +4062,7 @@ export function renderSidebarTree() {
                 e.preventDefault();
                 e.stopPropagation();
                 window.currentDashboardParent = { ID: 'TEMP_VIEW', Name: 'Temporary Assets', type: 'virtual' };
+                window.currentInventorySidebar = null;
                 
                 // Set active state
                 sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
@@ -4046,38 +4094,90 @@ export function renderSidebarTree() {
                     }
                     renderDashboard(window.allAssets, () => []); 
                 }
+                if (window.syncSidebarBubbles) window.syncSidebarBubbles();
             };
         }
 
-        const zohoCatalogLink = document.getElementById('zohoCatalogLink');
-        if (zohoCatalogLink) {
-            zohoCatalogLink.onclick = async (e) => {
+        const inventoryRootLink = document.getElementById('inventoryRootLink');
+        const inventoryRootWrapper = document.getElementById('inventoryRootWrapper');
+        const inventoryContainer = document.getElementById('sidebar-inventory-container');
+        const inventoryToggleMain = document.getElementById('inventoryToggleMain');
+        if (inventoryToggleMain && inventoryContainer) {
+            inventoryToggleMain.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                window.currentDashboardParent = { ID: 'ZOHO_CATALOG', Name: 'Zoho Reference Catalog', type: 'virtual' };
-                
-                // Set active state
-                sidebarMenu.querySelectorAll('.tree-item-wrapper, .menu-item-wrapper').forEach(el => el.classList.remove('active'));
-                sidebarMenu.querySelectorAll('.tree-link, .menu-item').forEach(l => {
-                    l.classList.remove('active');
-                    l.style.color = '';
-                    l.style.fontWeight = '';
-                });
-
-                const wrapper = zohoCatalogLink.closest('.tree-item-wrapper');
-                if (wrapper) wrapper.classList.add('active');
-                zohoCatalogLink.classList.add('active');
-
-                // Load and render Zoho Catalog
-                try {
-                    const response = await fetch('/api/zoho/catalog');
-                    if (response.ok) {
-                        const data = await response.json();
-                        renderZohoCatalog(data.catalog);
-                    }
-                } catch (err) {
-                    console.error('Failed to load Zoho Catalog:', err);
+                const isHidden = inventoryContainer.style.display === 'none';
+                inventoryContainer.style.display = isHidden ? 'block' : 'none';
+                inventoryToggleMain.textContent = isHidden ? '▼' : '▶';
+            };
+        }
+        if (inventoryRootLink) {
+            inventoryRootLink.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.currentDashboardParent = null;
+                window.currentInventorySidebar = { type: 'root' };
+                if (window.showView) window.showView('dashboardView');
+                if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
+                if (typeof window.openInventoryRoot === 'function') {
+                    await window.openInventoryRoot();
                 }
+                if (inventoryRootWrapper) inventoryRootWrapper.classList.add('active');
+                if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+            };
+        }
+
+        if (isInventoryPreview) {
+            const inventoryTreeHost = document.getElementById('sidebar-inventory-container');
+            if (inventoryTreeHost) {
+                inventoryTreeHost.querySelectorAll('.tree-toggle').forEach(toggle => {
+                    toggle.onclick = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const nodeDiv = toggle.closest('.tree-node');
+                        const childrenDiv = nodeDiv?.querySelector('.tree-children');
+                        if (!childrenDiv) return;
+                        const isHidden = childrenDiv.style.display === 'none';
+                        childrenDiv.style.display = isHidden ? 'block' : 'none';
+                        toggle.textContent = isHidden ? '▼' : '▶';
+                        toggle.style.color = isHidden ? '#333' : '#999';
+                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+                    };
+                });
+                inventoryTreeHost.querySelectorAll('.tree-link[data-id], .tree-item-wrapper[data-id]').forEach(node => {
+                    if (node.dataset.inventorySidebarBound === 'true') return;
+                    node.dataset.inventorySidebarBound = 'true';
+                    node.addEventListener('click', async (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const id = node.dataset.id;
+                        if (!id) return;
+                        window.currentDashboardParent = null;
+                        window.currentInventorySidebar = { type: 'node', id };
+                        if (window.showView) window.showView('dashboardView');
+                        if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
+                        if (typeof window.openInventoryNode === 'function') {
+                            await window.openInventoryNode(id);
+                        }
+                        if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+                    });
+                });
+            }
+        }
+
+        const catalogStandaloneLink = document.getElementById('zohoCatalogStandaloneLink');
+        if (catalogStandaloneLink) {
+            catalogStandaloneLink.onclick = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.currentDashboardParent = null;
+                window.currentInventorySidebar = { type: 'catalog' };
+                if (window.showView) window.showView('dashboardView');
+                if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
+                if (typeof window.openInventoryCatalog === 'function') {
+                    await window.openInventoryCatalog();
+                }
+                if (window.syncSidebarBubbles) window.syncSidebarBubbles();
             };
         }
 
@@ -4469,7 +4569,10 @@ window.syncZohoCatalog = async () => {
         const result = await response.json();
         if (response.ok) {
             alert(`Sync complete: ${result.message}`);
-            // Reload the view
+            if (typeof window.refreshInventoryCatalog === 'function' && String(window.location.port || '') === '9090') {
+                await window.refreshInventoryCatalog();
+                return;
+            }
             const link = document.getElementById('zohoCatalogLink');
             if (link) link.click();
         }
@@ -5421,6 +5524,10 @@ export function openAddItemModal(kind, prefillData = null) {
         const form = document.getElementById('addAssetItemForm');
         if (form) {
             form.reset();
+            form.dataset.entity = 'asset';
+            delete form.dataset.inventoryEditId;
+            delete form.dataset.inventoryAvailableCurrent;
+            delete form.dataset.inventoryWasQtyTracked;
             delete form.dataset.linkedPoItemId;
             delete form.dataset.boughtAgainstPo;
             if (window.updateIconPreview) window.updateIconPreview('📦');
@@ -5428,6 +5535,9 @@ export function openAddItemModal(kind, prefillData = null) {
         
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
+
+        const bulkActions = document.querySelector('#addAssetItemModal form > div[style*="position: sticky"] div:last-child');
+        if (bulkActions) bulkActions.style.display = 'flex';
 
         // Hide lifecycle actions for new assets
         const editActions = document.getElementById('editAssetActions');
@@ -5463,6 +5573,9 @@ export function openAddItemModal(kind, prefillData = null) {
         if (qtyTotal) qtyTotal.disabled = false;
         if (qtyPrecision) qtyPrecision.disabled = false;
         if (qtyNote) qtyNote.disabled = false;
+        if (qtyUnit && !qtyUnit.value) qtyUnit.value = 'Nos';
+        if (qtyTotal && !qtyTotal.value) qtyTotal.value = '1';
+        if (qtyPrecision && !qtyPrecision.value) qtyPrecision.value = '0';
 
         const convUnit = document.getElementById('itemConvUnit');
         const convFactor = document.getElementById('itemConvFactor');
@@ -5632,6 +5745,22 @@ export function openAddItemModal(kind, prefillData = null) {
         }
         // ---------------------------------
 
+        const syncAssignmentStatus = () => {
+            const assignedField = document.getElementById('itemAssignedTo');
+            const projectField = document.getElementById('itemProjectAssignedTo');
+            const statusField = document.getElementById('itemStatus');
+            if (!assignedField || !statusField) return;
+
+            const hasEmployeeAssignment = String(assignedField.value || '').trim() !== '';
+            const hasProjectAssignment = projectField && String(projectField.value || '').trim() !== '';
+
+            if (hasEmployeeAssignment) {
+                statusField.value = 'In-Use';
+            } else if (hasProjectAssignment && statusField.value === 'In-Use') {
+                statusField.value = 'Project';
+            }
+        };
+
         // Populate Assigned To dropdown
         const assignedSelect = document.getElementById('itemAssignedTo');
         if (assignedSelect) {
@@ -5643,6 +5772,12 @@ export function openAddItemModal(kind, prefillData = null) {
                 opt.textContent = `${emp.Name} (${emp.EmployeeID})`;
                 assignedSelect.appendChild(opt);
             });
+            assignedSelect.onchange = syncAssignmentStatus;
+        }
+
+        const projectAssignedInput = document.getElementById('itemProjectAssignedTo');
+        if (projectAssignedInput) {
+            projectAssignedInput.onchange = syncAssignmentStatus;
         }
 
         // Setup Batch S/N Toggle
@@ -5651,8 +5786,16 @@ export function openAddItemModal(kind, prefillData = null) {
         const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
 
         if (isQtyTrackedToggle && qtyFieldsContainer) {
+            isQtyTrackedToggle.checked = true;
+            isQtyTrackedToggle.disabled = true;
+            qtyFieldsContainer.style.display = 'grid';
             isQtyTrackedToggle.onchange = () => {
                 qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+                if (isQtyTrackedToggle.checked) {
+                    if (qtyUnit && !String(qtyUnit.value || '').trim()) qtyUnit.value = 'Nos';
+                    if (qtyTotalField && !String(qtyTotalField.value || '').trim()) qtyTotalField.value = '1';
+                    if (qtyPrecision && !String(qtyPrecision.value || '').trim()) qtyPrecision.value = '0';
+                }
             };
         }
 
@@ -5686,6 +5829,10 @@ export function openAddItemModal(kind, prefillData = null) {
                     srNoInput.style.display = 'block';
                     srNoBatch.style.display = 'none';
                     btnToggleBatch.textContent = 'Enable Batch S/N';
+                    if (qtyTotalField && (!qtyTotalField.value || Number(qtyTotalField.value) <= 0)) {
+                        qtyTotalField.value = '1';
+                        qtyTotalField.dispatchEvent(new Event('input'));
+                    }
                 }
             };
 
@@ -5785,6 +5932,7 @@ export async function editAsset(asset) {
     // Show lifecycle actions
     const editActions = document.getElementById('editAssetActions');
     const historyBtn = document.getElementById('btnViewAssetHistory');
+    const unassignBtn = document.getElementById('btnUnassignEmployeeFromAsset');
     if (editActions && historyBtn) {
         editActions.style.display = 'flex';
         historyBtn.href = `/asset/${encodeURIComponent(asset.ID)}`;
@@ -5814,13 +5962,33 @@ export async function editAsset(asset) {
     // Populate Assignment Fields
     const assignedToVal = asset.AssignedTo || '';
     const assignedProjectName = asset.AssignedProjectName || '';
+    const isProjectAssigned = assignedToVal.startsWith('Project: ') || !!assignedProjectName;
     
-    if (assignedToVal.startsWith('Project: ') || assignedProjectName) {
+    if (isProjectAssigned) {
         document.getElementById('itemProjectAssignedTo').value = assignedProjectName || assignedToVal.replace('Project: ', '');
         document.getElementById('itemAssignedTo').value = ''; 
     } else {
         document.getElementById('itemProjectAssignedTo').value = '';
         document.getElementById('itemAssignedTo').value = assignedToVal;
+    }
+
+    if (unassignBtn) {
+        const hasEmployeeAssignment = !isProjectAssigned && assignedToVal.trim() !== '';
+        unassignBtn.style.display = hasEmployeeAssignment ? 'inline-flex' : 'none';
+        unassignBtn.onclick = async () => {
+            if (!hasEmployeeAssignment) return;
+            if (!confirm(`Return asset ${asset.ID} from ${assignedToVal} back to store?`)) return;
+
+            try {
+                document.getElementById('itemAssignedTo').value = '';
+                document.getElementById('itemStatus').value = 'In Store';
+                const form = document.getElementById('addAssetItemForm');
+                form?.requestSubmit();
+            } catch (err) {
+                console.error('Failed to trigger unassign from edit modal:', err);
+                alert('Failed to return asset to store.');
+            }
+        };
     }
     
     // Populate IsSet checkbox
@@ -6204,12 +6372,21 @@ export async function editAsset(asset) {
     const isQtyTrackedToggle = document.getElementById('itemIsQtyTracked');
     const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
     if (isQtyTrackedToggle && qtyFieldsContainer) {
-      isQtyTrackedToggle.checked = asset.is_quantity_tracked === 1;
+      const shouldDefaultQtyTracking = asset.is_quantity_tracked === 1 || (
+        !asset.quantity_root_id &&
+        !String(asset.quantity_unit || '').trim() &&
+        (asset.quantity_total === null || asset.quantity_total === undefined || Number(asset.quantity_total || 0) === 0)
+      );
+      isQtyTrackedToggle.checked = true;
+      isQtyTrackedToggle.disabled = true;
+      if (qtyUnit && !String(qtyUnit.value || '').trim()) qtyUnit.value = 'Nos';
+      if (qtyTotalInput && !String(qtyTotalInput.value || '').trim()) qtyTotalInput.value = '1';
+      if (qtyPrecision && !String(qtyPrecision.value || '').trim()) qtyPrecision.value = '0';
       // Show/hide quantity fields based on toggle state
-      qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+      qtyFieldsContainer.style.display = 'grid';
       // Add event listener for toggle changes to handle UI visibility
       isQtyTrackedToggle.onchange = () => {
-        qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
+        qtyFieldsContainer.style.display = 'grid';
       };
     }
     
@@ -6967,6 +7144,149 @@ export function setupDashboardFormHandlers() {
                 const formData = new FormData(form);
                 const assetId = document.getElementById('assetDbId').value;
                 const category = localStorage.getItem('selectedAssetCategory') || 'IT';
+                const entityMode = form.dataset.entity || 'asset';
+
+                if (entityMode === 'inventory') {
+                    const folderValue = String(formData.get('itemFolder') || '').trim();
+                    const kindValue = String(formData.get('itemKind') || '').trim();
+                    if (!folderValue) throw new Error('Folder is required for inventory items.');
+                    if (!kindValue) throw new Error('Category is required for inventory items.');
+
+                    const srNoInput = document.getElementById('itemSrNo');
+                    const srNoBatch = document.getElementById('itemSrNoBatch');
+                    const batchList = document.getElementById('batchSnListContainer');
+                    let inventorySrNoValue = String(formData.get('itemSrNo') || '').trim();
+                    let inventoryIsBatch = 0;
+
+                    if (srNoInput && srNoInput.style.display === 'none' && srNoBatch && srNoBatch.style.display !== 'none') {
+                        inventorySrNoValue = String(srNoBatch.value || '').trim();
+                        inventoryIsBatch = 1;
+                    } else if (batchList && batchList.style.display === 'block') {
+                        inventorySrNoValue = String(formData.get('itemSrNo') || '').trim();
+                        inventoryIsBatch = 1;
+                    }
+
+                    const isQtyTracked = document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0;
+                    const batchSerialCount = inventoryIsBatch
+                        ? String(inventorySrNoValue || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean).length
+                        : 0;
+                    let qtyTotalRaw = String(formData.get('itemQtyTotal') || '').trim();
+                    const qtyPrecisionRaw = String(formData.get('itemQtyPrecision') || '0').trim();
+                    if (isQtyTracked && inventoryIsBatch) {
+                        qtyTotalRaw = String(batchSerialCount || 0);
+                    } else if (isQtyTracked && (!qtyTotalRaw || Number(qtyTotalRaw) <= 0)) {
+                        qtyTotalRaw = '1';
+                    }
+                    const qtyTotal = isQtyTracked ? Number(qtyTotalRaw || 0) : 0;
+                    const qtyPrecision = isQtyTracked ? Math.max(0, Number(qtyPrecisionRaw || 0)) : 0;
+                    if (isQtyTracked && (!Number.isFinite(qtyTotal) || qtyTotal <= 0)) {
+                        throw new Error('Quantity total must be greater than 0 when quantity tracking is enabled.');
+                    }
+
+                    const existingAvailableRaw = String(form.dataset.inventoryAvailableCurrent || '').trim();
+                    const wasQtyTracked = Number(form.dataset.inventoryWasQtyTracked || 0) === 1;
+                    const previousAvailable = existingAvailableRaw === '' ? null : Number(existingAvailableRaw);
+                    const quantityAvailable = isQtyTracked
+                        ? (previousAvailable === null || !Number.isFinite(previousAvailable) || !wasQtyTracked
+                            ? qtyTotal
+                            : Math.min(qtyTotal, Math.max(0, previousAvailable)))
+                        : 0;
+
+                    const inventoryPayload = {
+                        ID: form.dataset.inventoryEditId || undefined,
+                        FolderID: folderValue,
+                        KindID: kindValue,
+                        ItemName: formData.get('itemName'),
+                        ItemDescription: formData.get('itemDescription') || '',
+                        Icon: formData.get('itemIcon') || '📦',
+                        Status: formData.get('itemStatus') || 'In Store',
+                        Make: formData.get('itemMake') || '',
+                        Model: formData.get('itemModel') || '',
+                        SrNo: inventorySrNoValue,
+                        is_batch: inventoryIsBatch,
+                        CurrentLocation: formData.get('itemLocation') || 'Mumbai',
+                        DispatchReceiveDt: formData.get('itemDate') || '',
+                        PurchaseDetails: formData.get('itemPurchase') || '',
+                        HSNCode: formData.get('itemHsnCode') || '',
+                        Remarks: formData.get('itemRemarks') || '',
+                        Weight: formData.get('itemWeight') || '',
+                        Purpose: formData.get('itemPurpose') || 'Owned',
+                        ParentId: (() => {
+                            const v = String(formData.get('itemParentId') || '').trim();
+                            return v || null;
+                        })(),
+                        warranty_months: Number(formData.get('itemWarranty') || 0),
+                        amc_months: Number(formData.get('itemAMC') || 0),
+                        AssetValue: canEditPrice() ? Number(formData.get('itemValue') || 0) : 0,
+                        Currency: canEditPrice() ? (formData.get('itemCurrency') || 'INR') : 'INR',
+                        PurchaseDate: formData.get('itemPurchaseDate') || '',
+                        warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
+                        is_quantity_tracked: isQtyTracked,
+                        is_set: document.getElementById('itemIsSet')?.checked ? 1 : 0,
+                        quantity_unit: formData.get('itemQtyUnit') || 'Nos',
+                        quantity_total: qtyTotal,
+                        quantity_available: quantityAvailable,
+                        quantity_precision: Math.floor(qtyPrecision),
+                        quantity_note: formData.get('itemQtyNote') || '',
+                        conversion_unit: formData.get('itemConvUnit') || '',
+                        conversion_factor: (() => {
+                            const raw = String(formData.get('itemConvFactor') || '').trim();
+                            if (!raw) return null;
+                            const parsed = Number(raw);
+                            return Number.isFinite(parsed) ? parsed : null;
+                        })(),
+                        conversion_mode: formData.get('itemConvMode') || 'multiply',
+                        MACAddress: formData.get('itemMAC') || '',
+                        IPAddress: formData.get('itemIP') || '',
+                        NetworkType: formData.get('itemNetworkType') || 'DHCP',
+                        PhysicalPort: formData.get('itemPhysicalPort') || '',
+                        VLAN: formData.get('itemVLAN') || '',
+                        SocketID: formData.get('itemSocketID') || '',
+                        UserID: formData.get('itemUserID') || '',
+                        ZohoProductId: String(form.dataset.catalogZohoProductId || '').trim() || null,
+                        CatalogUUID: String(form.dataset.catalogUuid || '').trim() || null,
+                        components: Array.from(document.querySelectorAll('#childrenListContainer .child-asset-row')).map(row => ({
+                            ID: row.querySelector('.child-id')?.value || undefined,
+                            ItemName: row.querySelector('.child-name')?.value || '',
+                            Make: row.querySelector('.child-make')?.value || '',
+                            Model: row.querySelector('.child-model')?.value || '',
+                            SrNo: row.querySelector('.child-srno')?.value || '',
+                            NoQR: 1
+                        })).filter(c => String(c.ItemName || '').trim() !== ''),
+                        linkedIds: Array.from(document.querySelectorAll('#linkedComponentsList .linked-component-tag'))
+                            .map(el => el.getAttribute('data-id'))
+                            .filter(Boolean)
+                    };
+
+                    const endpoint = inventoryPayload.ID
+                        ? `/api/inventory/items/${encodeURIComponent(inventoryPayload.ID)}`
+                        : '/api/inventory/items';
+
+                    const response = await fetch(endpoint, {
+                        method: inventoryPayload.ID ? 'PUT' : 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(inventoryPayload)
+                    });
+                    const responseText = await response.text();
+                    let responseData = {};
+                    if (responseText) {
+                        try {
+                            responseData = JSON.parse(responseText);
+                        } catch (err) {
+                            responseData = { message: responseText };
+                        }
+                    }
+                    if (!response.ok) {
+                        throw new Error(responseData.error || responseData.message || responseText || `Inventory save failed (${response.status})`);
+                    }
+
+                    alert('Inventory item saved successfully!');
+                    document.getElementById('addAssetItemModal').style.display = 'none';
+                    if (typeof window.loadInventoryWorkspace === 'function') {
+                        await window.loadInventoryWorkspace();
+                    }
+                    return;
+                }
                 
                 // Determine SrNo and is_batch based on which UI is visible
                 const srNoInput = document.getElementById('itemSrNo');
@@ -7005,7 +7325,32 @@ export function setupDashboardFormHandlers() {
 
                 // Collect basic fields
                 const rawParentId = formData.get('itemParentId');
-                const cleanedParentId = rawParentId && String(rawParentId).trim() !== '' ? String(rawParentId).trim() : null;
+                let cleanedParentId = rawParentId && String(rawParentId).trim() !== '' ? String(rawParentId).trim() : null;
+                if (cleanedParentId) {
+                    const currentId = String(assetId || '').trim();
+                    const normalizedIncoming = cleanedParentId.toLowerCase();
+                    const normalizedCurrent = currentId.toLowerCase();
+
+                    if (normalizedIncoming === normalizedCurrent) {
+                        cleanedParentId = null;
+                        const parentInput = document.getElementById('itemParentId');
+                        if (parentInput) parentInput.value = '';
+                    } else {
+                        const match = (window.allAssets || []).find(a => String(a.ID || a.id || '').trim().toLowerCase() === normalizedIncoming);
+                        if (!match) {
+                            cleanedParentId = null;
+                            const parentInput = document.getElementById('itemParentId');
+                            if (parentInput) parentInput.value = '';
+                            showToast('Parent ID not found in Assets. Clearing Parent ID to prevent an invalid link.', 'warning');
+                        } else {
+                            cleanedParentId = String(match.ID || match.id || '').trim() || null;
+                            const parentInput = document.getElementById('itemParentId');
+                            if (parentInput) parentInput.value = cleanedParentId || '';
+                        }
+                    }
+                }
+                const hasEmployeeAssignment = String(assignedToValue || '').trim() !== '' && !String(assignedToValue).startsWith('Project: ');
+                const normalizedStatus = hasEmployeeAssignment ? 'In-Use' : formData.get('itemStatus');
                 const asset = {
                     ID: assetId || null,
                     itemFolder: formData.get('itemFolder'),
@@ -7015,7 +7360,7 @@ export function setupDashboardFormHandlers() {
                     ItemName: formData.get('itemName'),
                     ItemDescription: formData.get('itemDescription'),
                     Icon: formData.get('itemIcon'),
-                    Status: formData.get('itemStatus'),
+                    Status: normalizedStatus,
                     Make: formData.get('itemMake'),
                     Model: formData.get('itemModel'),
                     SrNo: srNoValue,
@@ -7055,7 +7400,7 @@ export function setupDashboardFormHandlers() {
                 const qtyPrecisionEl = document.getElementById('itemQtyPrecision');
                 
                 const qtyUnitValue = qtyUnitEl ? qtyUnitEl.value.trim() : '';
-                const qtyTotalValue = qtyTotalEl ? qtyTotalEl.value.trim() : '';
+                let qtyTotalValue = qtyTotalEl ? qtyTotalEl.value.trim() : '';
                 const qtyPrecisionValue = qtyPrecisionEl ? qtyPrecisionEl.value.trim() : '';
                 const qtyNote = String(formData.get('itemQtyNote') || '').trim();
 
@@ -7070,14 +7415,23 @@ export function setupDashboardFormHandlers() {
                 const isQtyTracked = document.getElementById('itemIsQtyTracked')?.checked;
 
                 if (isQtyTracked) {
+                    const batchSerialCount = isBatchValue === 1 && typeof srNoValue === 'string'
+                        ? srNoValue.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).length
+                        : 0;
+                    const normalizedQtyUnitValue = qtyUnitValue || 'Nos';
+                    if (isBatchValue === 1) {
+                        qtyTotalValue = String(batchSerialCount || 0);
+                    } else if (!qtyTotalValue || Number(qtyTotalValue) <= 0) {
+                        qtyTotalValue = '1';
+                    }
+
                     // Validation
-                    if (!qtyUnitValue) throw new Error('Quantity unit is required when quantity tracking is enabled.');
                     const qtyTotal = Number(qtyTotalValue);
                     if (!Number.isFinite(qtyTotal) || qtyTotal <= 0) throw new Error('Quantity total must be a number > 0.');
                     const qtyPrecision = qtyPrecisionValue === '' ? 0 : Number(qtyPrecisionValue);
                     if (!Number.isFinite(qtyPrecision) || qtyPrecision < 0) throw new Error('Quantity precision must be a number >= 0.');
 
-                    asset.quantity_unit = qtyUnitValue;
+                    asset.quantity_unit = normalizedQtyUnitValue;
                     asset.quantity_total = qtyTotal;
                     asset.quantity_precision = Math.floor(qtyPrecision);
                     if (qtyNote) asset.quantity_note = qtyNote;

@@ -187,6 +187,10 @@ function normalizeResult(data) {
     'payloadjson': 'PayloadJSON',
     'createdby': 'CreatedBy',
     'module': 'Module',
+    'folderid': 'FolderId',
+    'kindid': 'KindId',
+    'catalog_uuid': 'CatalogUUID',
+    'zoho_product_id': 'ZohoProductId',
     'parentname': 'ParentName',
     'parent_folder': 'ParentFolder',
     'displayimage': 'DisplayImage',
@@ -266,6 +270,18 @@ function normalizeResult(data) {
 
         return result;
     }
+
+function isInventoryPreviewPort() {
+    return String(process.env.PORT || '').trim() === '9090';
+}
+
+function rejectInventoryPreviewOnNonTest(res) {
+    if (!isInventoryPreviewPort()) {
+        res.status(404).json({ error: 'Inventory preview is only enabled on 9090.' });
+        return true;
+    }
+    return false;
+}
 
 /**
  * ATOMIC PROMOTION LOGIC: Moves an item from 'components' to 'assets'.
@@ -405,7 +421,9 @@ async function invalidateAssetsCache() {
 // --- Automated Backup System ---
 function performDatabaseBackup() {
   try {
-    const isProd = __dirname.includes('AssetManager_Prod');
+    const runtimeEnv = String(process.env.NODE_ENV || '').toLowerCase();
+    const runtimePort = String(process.env.PORT || '').trim();
+    const isProd = runtimeEnv === 'production' || runtimePort === '8080';
     // Use a relative path to ensure backups work regardless of the drive (C: or F:)
     const backupBaseDir = path.resolve(__dirname, '../../backups');
     const subDir = isProd ? '8080_prod' : '9090_dev';
@@ -432,6 +450,7 @@ function performDatabaseBackup() {
     const dbHost = process.env.DB_HOST || 'postgres';
 
     console.log(`[BACKUP] Starting PostgreSQL backup for ${dbName}...`);
+    console.log(`[BACKUP] Target directory: ${targetDir}`);
     
     try {
       const absoluteBackupPath = path.resolve(backupPath);
@@ -3943,6 +3962,606 @@ app.post('/api/folders', async (req, res) => {
   }
 });
 
+app.get('/api/inventory/folders', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const folders = await db('inventory_folders')
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .orderBy('name', 'asc');
+
+    res.json({ folders: normalizeResult(folders) });
+  } catch (err) {
+    console.error('Failed to fetch inventory folders:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory/folders', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const { Name, ParentID, Icon } = req.body;
+    if (!Name) return res.status(400).json({ error: 'Name is required' });
+
+    const id = `IF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    await db('inventory_folders')
+      .insert(normalizeDBData({
+        ID: id,
+        Name,
+        ParentId: ParentID || null,
+        Icon: Icon || '📦',
+        Module: 'INVENTORY',
+        CreatedBy: req.user?.username || req.user?.user_id || 'system',
+        Timestamp: new Date().toISOString()
+      }));
+
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('Failed to save inventory folder:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/inventory/kinds', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const kinds = await db('inventory_kinds')
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .orderBy('name', 'asc');
+
+    res.json({ kinds: normalizeResult(kinds) });
+  } catch (err) {
+    console.error('Failed to fetch inventory kinds:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory/kinds', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const { Name, FolderID, ParentID, Icon } = req.body;
+    if (!Name) return res.status(400).json({ error: 'Name is required' });
+
+    const id = `IK-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const parentKind = ParentID
+      ? await db('inventory_kinds').where('id', ParentID).first()
+      : null;
+    const actualFolderId = FolderID || parentKind?.folderid || null;
+    if (!actualFolderId) {
+      return res.status(400).json({ error: 'Folder is required for inventory categories.' });
+    }
+
+    await db('inventory_kinds')
+      .insert(normalizeDBData({
+        ID: id,
+        Name,
+        FolderId: actualFolderId,
+        ParentId: ParentID || null,
+        Module: 'INVENTORY',
+        Icon: Icon || '📦',
+        LastUpdated: new Date().toISOString()
+      }));
+
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('Failed to save inventory kind:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function recordInventoryQuantityEvent({ rootId, type, actor, note, metadata, lines }) {
+  const timestamp = new Date().toISOString();
+  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+
+  const inserted = await db('inventory_quantity_events')
+    .insert({
+      root_id: rootId,
+      type,
+      actor: actor || null,
+      timestamp,
+      note: note || null,
+      metadata_json: metadataJson
+    })
+    .returning('id');
+
+  const eventId = Array.isArray(inserted)
+    ? (inserted[0]?.id ?? inserted[0])
+    : (inserted?.id ?? inserted);
+
+  if (eventId && Array.isArray(lines) && lines.length > 0) {
+    await db('inventory_quantity_event_lines').insert(
+      lines.map(line => ({
+        event_id: eventId,
+        item_id: line.itemId,
+        unit: line.unit || null,
+        delta_available: Number(line.deltaAvailable || 0),
+        delta_total: Number(line.deltaTotal || 0)
+      }))
+    );
+  }
+
+  return eventId;
+}
+
+app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const items = await db('inventory_items')
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .orderBy('itemname', 'asc');
+
+    res.json({ items: normalizeResult(items) });
+  } catch (err) {
+    console.error('Failed to fetch inventory items:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/inventory/item-details/:id', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const itemId = String(req.params.id || '').trim();
+    if (!itemId) return res.status(400).json({ error: 'Inventory ID is required.' });
+
+    const itemRow = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [itemId]).first();
+    if (!itemRow) return res.status(404).json({ error: `Inventory item ${itemId} not found.` });
+
+    const item = normalizeResult(itemRow);
+
+    const childItems = await db('inventory_items')
+      .where('parentid', itemId)
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .orderBy('itemname', 'asc');
+
+    const childComponents = await db('inventory_components')
+      .where('parentid', itemId)
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .orderBy('itemname', 'asc');
+
+    const mergedChildren = [...normalizeResult(childItems), ...normalizeResult(childComponents)];
+
+    const rootId = item.quantity_root_id || item.QuantityRootId || itemId;
+    const events = await db('inventory_quantity_events')
+      .where('root_id', rootId)
+      .orderBy('timestamp', 'desc')
+      .limit(50);
+
+    const quantityEvents = normalizeResult(events).map(e => {
+      let metadataObj = null;
+      if (e.metadata_json || e.MetadataJSON) {
+        const raw = e.metadata_json || e.MetadataJSON;
+        try {
+          metadataObj = raw ? JSON.parse(raw) : null;
+        } catch {
+          metadataObj = null;
+        }
+      }
+      return {
+        ...e,
+        metadata: metadataObj
+      };
+    });
+
+    res.json({
+      item,
+      children: mergedChildren,
+      quantityEvents
+    });
+  } catch (err) {
+    console.error('Failed to fetch inventory item details:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/inventory/quantity/events/:rootId', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const rootId = String(req.params.rootId || '').trim();
+    if (!rootId) return res.status(400).json({ error: 'Root ID is required.' });
+
+    const events = await db('inventory_quantity_events')
+      .where('root_id', rootId)
+      .orderBy('timestamp', 'desc')
+      .limit(2000);
+
+    const eventIds = events.map(e => e.id);
+    const lines = eventIds.length
+      ? await db('inventory_quantity_event_lines').whereIn('event_id', eventIds)
+      : [];
+
+    const byEventId = new Map();
+    lines.forEach(line => {
+      const key = String(line.event_id);
+      const existing = byEventId.get(key) || [];
+      existing.push(line);
+      byEventId.set(key, existing);
+    });
+
+    const payload = normalizeResult(events).map(e => {
+      let metadataObj = null;
+      if (e.metadata_json || e.MetadataJSON) {
+        const raw = e.metadata_json || e.MetadataJSON;
+        try {
+          metadataObj = raw ? JSON.parse(raw) : null;
+        } catch {
+          metadataObj = null;
+        }
+      }
+      return {
+        ...e,
+        metadata: metadataObj,
+        lines: (byEventId.get(String(e.ID || e.id)) || []).map(l => normalizeResult(l))
+      };
+    });
+
+    res.json({ events: payload });
+  } catch (err) {
+    console.error('Failed to fetch inventory quantity events:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const item = req.body || {};
+    if (!item.ItemName && !item.itemname) {
+      return res.status(400).json({ error: 'Item Name is required' });
+    }
+
+    const kindId = item.KindID || item.kindid || null;
+    const folderId = item.FolderID || item.folderid || null;
+    if (!folderId) return res.status(400).json({ error: 'Folder is required for inventory items.' });
+    if (!kindId) return res.status(400).json({ error: 'Category is required for inventory items.' });
+
+    const kindRow = await db('inventory_kinds').where('id', kindId).first();
+    if (!kindRow) return res.status(400).json({ error: 'Invalid inventory category.' });
+
+    const normalizedKind = normalizeResult(kindRow);
+    const kindFolderId = normalizedKind?.FolderId || normalizedKind?.folderid || null;
+    if (kindFolderId && String(kindFolderId) !== String(folderId)) {
+      return res.status(400).json({ error: 'Selected category does not belong to the selected folder.' });
+    }
+    const resolvedFolderId = folderId;
+    const resolvedType = item.Type || item.type || normalizedKind?.Name || normalizedKind?.name || 'Inventory';
+    const resolvedCategory = item.Category || item.category || normalizedKind?.Name || normalizedKind?.name || 'Inventory';
+    const location = item.CurrentLocation || item.currentlocation || 'Mumbai';
+    const isQtyTracked = Number(item.IsQuantityTracked ?? item.is_quantity_tracked ?? 0) === 1;
+    const normalizedQtyUnit = isQtyTracked ? normalizeQtyUnit(item.quantity_unit || item.QuantityUnit || 'Nos') : null;
+    const normalizedQtyTotal = isQtyTracked ? Number(item.QuantityTotal || item.quantity_total || 1) : 0;
+    const normalizedQtyAvailable = isQtyTracked ? Number(item.QuantityAvailable || item.quantity_available || normalizedQtyTotal || 0) : 0;
+    const inventoryIsBatch = Number(item.IsBatch ?? item.is_batch ?? 0);
+
+    let newId = item.ID || item.id || item.Id;
+    if (!newId) {
+      newId = generateModernAssetId(location, resolvedType);
+    }
+
+    const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [String(newId).toLowerCase()]).first();
+    if (existing) {
+      return res.status(409).json({ error: `Inventory ID ${newId} already exists.` });
+    }
+
+    await db('inventory_items').insert({
+      id: newId,
+      itemname: item.ItemName || item.itemname,
+      itemdescription: item.ItemDescription || item.itemdescription || '',
+      icon: item.Icon || item.icon || '📦',
+      status: item.Status || item.status || 'In Store',
+      make: item.Make || item.make || '',
+      model: item.Model || item.model || '',
+      srno: item.SrNo || item.srno || null,
+      type: resolvedType,
+      category: resolvedCategory,
+      parentid: item.ParentId || item.parentid || null,
+      folderid: resolvedFolderId,
+      kindid: kindId,
+      currentlocation: location,
+      dispatchreceivedt: item.DispatchReceiveDt || item.dispatchreceivedt || null,
+      purchasedetails: item.PurchaseDetails || item.purchasedetails || '',
+      purpose: item.Purpose || item.purpose || 'Owned',
+      remarks: item.Remarks || item.remarks || '',
+      lastupdated: new Date().toISOString(),
+      currency: item.Currency || item.currency || 'INR',
+      asset_value: Number(item.AssetValue || item.asset_value || 0),
+      purchasedate: item.PurchaseDate || item.purchasedate || null,
+      warranty_tracking: Number(item.warranty_tracking ?? item.WarrantyTracking ?? 1),
+      quantity_total: normalizedQtyTotal,
+      quantity_available: normalizedQtyAvailable,
+      quantity_precision: Number(item.QuantityPrecision || item.quantity_precision || 0),
+      is_quantity_tracked: Number(item.IsQuantityTracked ?? item.is_quantity_tracked ?? 0),
+      quantity_unit: normalizedQtyUnit,
+      quantity_note: item.quantity_note || item.QuantityNote || null,
+      conversion_unit: item.conversion_unit || item.ConversionUnit || null,
+      conversion_factor: item.conversion_factor !== undefined ? Number(item.conversion_factor) : (item.ConversionFactor !== undefined ? Number(item.ConversionFactor) : null),
+      conversion_mode: item.conversion_mode || item.ConversionMode || null,
+      is_batch: inventoryIsBatch,
+      is_set: Number(item.IsSet ?? item.is_set ?? 0),
+      set_price_mode: item.SetPriceMode || item.set_price_mode || null,
+      hsn_code: item.HSNCode || item.hsn_code || null,
+      weight: Number(item.Weight || item.weight || 0),
+      warranty_months: Number(item.warranty_months ?? item.WarrantyMonths ?? 0),
+      amc_months: Number(item.amc_months ?? item.AMCMonths ?? 0),
+      macaddress: item.MACAddress || item.macaddress || null,
+      ipaddress: item.IPAddress || item.ipaddress || null,
+      networktype: item.NetworkType || item.networktype || null,
+      physicalport: item.PhysicalPort || item.physicalport || null,
+      vlan: item.VLAN || item.vlan || null,
+      socketid: item.SocketID || item.socketid || null,
+      userid: item.UserID || item.userid || null,
+      zoho_product_id: item.ZohoProductId || item.zoho_product_id || null,
+      catalog_uuid: item.CatalogUUID || item.catalog_uuid || null,
+      quantity_parent_id: null,
+      quantity_root_id: isQtyTracked ? newId : null,
+      quantity_updated_at: new Date().toISOString()
+    });
+
+    if (Array.isArray(item.components) && item.components.length > 0) {
+      for (const comp of item.components) {
+        const compId = generateModernAssetId(location, comp.Type || comp.type || 'Component');
+        await db('inventory_components').insert({
+          id: compId,
+          parentid: newId,
+          itemname: comp.ItemName || comp.itemname || '',
+          itemdescription: comp.ItemDescription || comp.itemdescription || '',
+          status: comp.Status || comp.status || item.Status || item.status || 'In Store',
+          make: comp.Make || comp.make || '',
+          model: comp.Model || comp.model || '',
+          srno: comp.SrNo || comp.srno || '',
+          type: comp.Type || comp.type || 'Component',
+          category: comp.Category || comp.category || resolvedCategory,
+          lastupdated: new Date().toISOString(),
+          noqr: 1
+        });
+      }
+    }
+
+    if (Array.isArray(item.linkedIds) && item.linkedIds.length > 0) {
+      for (const linkId of item.linkedIds) {
+        const child = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [String(linkId).trim().toLowerCase()]).first();
+        if (!child) continue;
+        if (child.parentid && String(child.parentid) !== String(newId)) {
+          return res.status(400).json({ error: `Inventory item ${linkId} is already assigned to parent ${child.parentid}.` });
+        }
+        await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [String(linkId).trim().toLowerCase()]).update({ parentid: newId });
+      }
+    }
+
+    if (isQtyTracked) {
+      await recordInventoryQuantityEvent({
+        rootId: newId,
+        type: 'INIT',
+        actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
+        note: 'Initialized quantity tracking',
+        metadata: { quantity_total: normalizedQtyTotal, quantity_available: normalizedQtyAvailable },
+        lines: [{ itemId: newId, unit: normalizedQtyUnit, deltaTotal: normalizedQtyTotal, deltaAvailable: normalizedQtyAvailable }]
+      });
+    }
+
+    res.json({ success: true, id: newId });
+  } catch (err) {
+    console.error('Failed to save inventory item:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const originalId = String(req.params.id || '').trim();
+    if (!originalId) return res.status(400).json({ error: 'Inventory ID is required.' });
+
+    const item = req.body || {};
+    if (!item.ItemName && !item.itemname) {
+      return res.status(400).json({ error: 'Item Name is required' });
+    }
+
+    const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [originalId]).first();
+    if (!existing) {
+      return res.status(404).json({ error: `Inventory item ${originalId} not found.` });
+    }
+
+    const kindId = item.KindID || item.kindid || null;
+    const folderId = item.FolderID || item.folderid || null;
+    if (!folderId) return res.status(400).json({ error: 'Folder is required for inventory items.' });
+    if (!kindId) return res.status(400).json({ error: 'Category is required for inventory items.' });
+
+    const kindRow = await db('inventory_kinds').where('id', kindId).first();
+    if (!kindRow) return res.status(400).json({ error: 'Invalid inventory category.' });
+
+    const normalizedKind = normalizeResult(kindRow);
+    const kindFolderId = normalizedKind?.FolderId || normalizedKind?.folderid || null;
+    if (kindFolderId && String(kindFolderId) !== String(folderId)) {
+      return res.status(400).json({ error: 'Selected category does not belong to the selected folder.' });
+    }
+
+    const resolvedType = item.Type || item.type || normalizedKind?.Name || normalizedKind?.name || existing.type || 'Inventory';
+    const resolvedCategory = item.Category || item.category || normalizedKind?.Name || normalizedKind?.name || existing.category || 'Inventory';
+    const location = item.CurrentLocation || item.currentlocation || existing.currentlocation || 'Mumbai';
+    const isQtyTracked = Number(item.IsQuantityTracked ?? item.is_quantity_tracked ?? 0) === 1;
+    const existingWasQtyTracked = Number(existing.is_quantity_tracked || 0) === 1;
+    const prevQtyTotal = Number(existing.quantity_total || 0);
+    const prevQtyAvailable = Number(existing.quantity_available || 0);
+    const normalizedQtyUnit = isQtyTracked ? normalizeQtyUnit(item.quantity_unit || item.QuantityUnit || existing.quantity_unit || 'Nos') : null;
+    const nextQtyTotal = isQtyTracked ? Number(item.QuantityTotal || item.quantity_total || 1) : 0;
+    const nextQtyAvailable = isQtyTracked ? Number(item.QuantityAvailable || item.quantity_available || nextQtyTotal || 0) : 0;
+    const inventoryIsBatch = Number(item.IsBatch ?? item.is_batch ?? existing.is_batch ?? 0);
+    const shouldInitRoot = isQtyTracked && !existing.quantity_root_id;
+
+    await db('inventory_items')
+      .whereRaw('LOWER(id) = LOWER(?)', [originalId])
+      .update({
+        itemname: item.ItemName || item.itemname,
+        itemdescription: item.ItemDescription || item.itemdescription || '',
+        icon: item.Icon || item.icon || '📦',
+        status: item.Status || item.status || 'In Store',
+        make: item.Make || item.make || '',
+        model: item.Model || item.model || '',
+        srno: item.SrNo || item.srno || null,
+        type: resolvedType,
+        category: resolvedCategory,
+        parentid: item.ParentId || item.parentid || null,
+        folderid: folderId,
+        kindid: kindId,
+        currentlocation: location,
+        dispatchreceivedt: item.DispatchReceiveDt || item.dispatchreceivedt || null,
+        purchasedetails: item.PurchaseDetails || item.purchasedetails || '',
+        purpose: item.Purpose || item.purpose || 'Owned',
+        remarks: item.Remarks || item.remarks || '',
+        lastupdated: new Date().toISOString(),
+        currency: item.Currency || item.currency || 'INR',
+        asset_value: Number(item.AssetValue || item.asset_value || 0),
+        purchasedate: item.PurchaseDate || item.purchasedate || null,
+        warranty_tracking: Number(item.warranty_tracking ?? item.WarrantyTracking ?? 1),
+        quantity_total: nextQtyTotal,
+        quantity_available: nextQtyAvailable,
+        quantity_precision: Number(item.QuantityPrecision || item.quantity_precision || 0),
+        is_quantity_tracked: Number(item.IsQuantityTracked ?? item.is_quantity_tracked ?? 0),
+        quantity_unit: normalizedQtyUnit,
+        quantity_note: item.quantity_note || item.QuantityNote || null,
+        conversion_unit: item.conversion_unit || item.ConversionUnit || null,
+        conversion_factor: item.conversion_factor !== undefined ? Number(item.conversion_factor) : (item.ConversionFactor !== undefined ? Number(item.ConversionFactor) : null),
+        conversion_mode: item.conversion_mode || item.ConversionMode || null,
+        is_batch: inventoryIsBatch,
+        is_set: Number(item.IsSet ?? item.is_set ?? 0),
+        set_price_mode: item.SetPriceMode || item.set_price_mode || null,
+        hsn_code: item.HSNCode || item.hsn_code || null,
+        weight: Number(item.Weight || item.weight || 0),
+        warranty_months: Number(item.warranty_months ?? item.WarrantyMonths ?? 0),
+        amc_months: Number(item.amc_months ?? item.AMCMonths ?? 0),
+        macaddress: item.MACAddress || item.macaddress || null,
+        ipaddress: item.IPAddress || item.ipaddress || null,
+        networktype: item.NetworkType || item.networktype || null,
+        physicalport: item.PhysicalPort || item.physicalport || null,
+        vlan: item.VLAN || item.vlan || null,
+        socketid: item.SocketID || item.socketid || null,
+        userid: item.UserID || item.userid || null,
+        zoho_product_id: item.ZohoProductId || item.zoho_product_id || null,
+        catalog_uuid: item.CatalogUUID || item.catalog_uuid || null,
+        quantity_root_id: shouldInitRoot ? originalId : existing.quantity_root_id,
+        quantity_updated_at: new Date().toISOString()
+      });
+
+    if (Array.isArray(item.components)) {
+      const current = await db('inventory_components')
+        .where('parentid', originalId)
+        .where(function () {
+          this.where('is_deleted', 0).orWhereNull('is_deleted');
+        });
+
+      const currentIds = new Set(current.map(c => String(c.id)));
+      const incoming = item.components || [];
+      const incomingIds = new Set(incoming.map(c => String(c.ID || c.id || '')).filter(Boolean));
+
+      for (const comp of incoming) {
+        const compId = String(comp.ID || comp.id || '').trim();
+        if (compId && currentIds.has(compId)) {
+          await db('inventory_components')
+            .where('id', compId)
+            .update({
+              itemname: comp.ItemName || comp.itemname || '',
+              itemdescription: comp.ItemDescription || comp.itemdescription || '',
+              status: comp.Status || comp.status || item.Status || item.status || 'In Store',
+              make: comp.Make || comp.make || '',
+              model: comp.Model || comp.model || '',
+              srno: comp.SrNo || comp.srno || '',
+              type: comp.Type || comp.type || 'Component',
+              category: comp.Category || comp.category || resolvedCategory,
+              lastupdated: new Date().toISOString(),
+              noqr: 1
+            });
+        } else {
+          const newCompId = generateModernAssetId(location, comp.Type || comp.type || 'Component');
+          await db('inventory_components').insert({
+            id: newCompId,
+            parentid: originalId,
+            itemname: comp.ItemName || comp.itemname || '',
+            itemdescription: comp.ItemDescription || comp.itemdescription || '',
+            status: comp.Status || comp.status || item.Status || item.status || 'In Store',
+            make: comp.Make || comp.make || '',
+            model: comp.Model || comp.model || '',
+            srno: comp.SrNo || comp.srno || '',
+            type: comp.Type || comp.type || 'Component',
+            category: comp.Category || comp.category || resolvedCategory,
+            lastupdated: new Date().toISOString(),
+            noqr: 1
+          });
+        }
+      }
+
+      const toDelete = current.filter(c => !incomingIds.has(String(c.id)));
+      if (toDelete.length > 0) {
+        await db('inventory_components').whereIn('id', toDelete.map(c => c.id)).del();
+      }
+    }
+
+    if (Array.isArray(item.linkedIds)) {
+      const linkedIds = item.linkedIds.map(x => String(x || '').trim()).filter(Boolean);
+      const currentLinkedRows = await db('inventory_items').where('parentid', originalId).select('id');
+      const currentLinked = currentLinkedRows.map(r => String(r.id));
+
+      const toUnlink = currentLinked.filter(id => !linkedIds.includes(id));
+      if (toUnlink.length > 0) {
+        await db('inventory_items').whereIn('id', toUnlink).update({ parentid: null });
+      }
+
+      const toLink = linkedIds.filter(id => !currentLinked.includes(id));
+      for (const linkId of toLink) {
+        const child = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [linkId.toLowerCase()]).first();
+        if (!child) continue;
+        if (child.parentid && String(child.parentid) !== String(originalId)) {
+          return res.status(400).json({ error: `Inventory item ${linkId} is already assigned to parent ${child.parentid}.` });
+        }
+        await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [linkId.toLowerCase()]).update({ parentid: originalId });
+      }
+    }
+
+    if (isQtyTracked && (shouldInitRoot || prevQtyTotal !== nextQtyTotal || prevQtyAvailable !== nextQtyAvailable || !existingWasQtyTracked)) {
+      await recordInventoryQuantityEvent({
+        rootId: existing.quantity_root_id || originalId,
+        type: shouldInitRoot ? 'INIT' : 'ADJUST',
+        actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
+        note: shouldInitRoot ? 'Initialized quantity tracking' : 'Updated quantity',
+        metadata: {
+          prev_quantity_total: prevQtyTotal,
+          new_quantity_total: nextQtyTotal,
+          prev_quantity_available: prevQtyAvailable,
+          new_quantity_available: nextQtyAvailable
+        },
+        lines: [{
+          itemId: originalId,
+          unit: normalizedQtyUnit,
+          deltaTotal: nextQtyTotal - prevQtyTotal,
+          deltaAvailable: nextQtyAvailable - prevQtyAvailable
+        }]
+      });
+    }
+
+    res.json({ success: true, id: originalId });
+  } catch (err) {
+    console.error('Failed to update inventory item:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * ADVANCED SQL EXAMPLE: Recursive CTE for Hierarchy
  * Fetches the entire folder/category tree with flattened paths in one query.
@@ -4842,6 +5461,17 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       qrCode = await qrcode.toDataURL(urlText, { width: 512 });
     }
 
+    const normalizedCreateIsQtyTracked = asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 1;
+    const normalizedCreateQtyUnit = normalizedCreateIsQtyTracked
+      ? normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit || 'Nos')
+      : null;
+    const normalizedCreateQtyTotal = normalizedCreateIsQtyTracked
+      ? Math.max(1, (parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal) ?? 1))
+      : 0;
+    const normalizedCreateQtyPrecision = normalizedCreateIsQtyTracked
+      ? (parseQtyNumber(asset.quantity_precision ?? asset.quantityPrecision ?? asset.qty_precision ?? asset.qtyPrecision) ?? 0)
+      : 0;
+
     await db('assets').insert(normalizeDBData({
       ID: newId,
       ItemName: itemName,
@@ -4867,13 +5497,14 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
       NoQR: noQR ? 1 : 0,
       warranty_months: asset.warranty_months || 0,
       amc_months: asset.amc_months || 0,
+      warranty_tracking: asset.warranty_tracking !== undefined ? (asset.warranty_tracking ? 1 : 0) : 0,
       asset_value: asset.asset_value || 0,
       Currency: asset.Currency || asset.currency || 'USD',
       PurchaseDate: asset.PurchaseDate || asset.purchasedate || '',
       conversion_unit: asset.conversion_unit || null,
       conversion_factor: asset.conversion_factor || null,
       conversion_mode: asset.conversion_mode || 'multiply',
-      is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0,
+      is_quantity_tracked: normalizedCreateIsQtyTracked,
       is_batch: asset.is_batch || 0,
       is_set: asset.is_set || 0,
       set_price_mode: asset.set_price_mode || 'SUM_OF_CHILDREN'
@@ -4890,10 +5521,10 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
     // Log to asset history
     await logAssetHistory(newId, 'CREATE', null, asset.Status || asset.status || 'In Store', req.headers['x-user'] || 'web', `Initial assignment to: ${asset.AssignedTo || asset.assignedto || 'None'}`);
 
-    const qtyUnit = normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit)
-    const qtyTotal = parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal)
-    const qtyPrecision = parseQtyNumber(asset.quantity_precision ?? asset.quantityPrecision ?? asset.qty_precision ?? asset.qtyPrecision)
-    const isQtyTracked = asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : 0;
+    const qtyUnit = normalizedCreateQtyUnit
+    const qtyTotal = normalizedCreateQtyTotal
+    const qtyPrecision = normalizedCreateQtyPrecision
+    const isQtyTracked = normalizedCreateIsQtyTracked;
 
     if (isQtyTracked && qtyUnit && qtyTotal !== null && qtyTotal > 0) {
       await db('assets')
@@ -4970,20 +5601,6 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
           const actualParent = existingParentInAssets || existingParentInComps;
           return res.status(400).send(`Asset ${linkId} is already assigned to parent ${actualParent}. Remove it from its current parent first.`);
         }
-
-        await db('components').insert(normalizeDBData({
-          ID: linkId,
-          ParentId: newId,
-          ItemName: existingAsset.itemname,
-          Make: existingAsset.make || '',
-          Model: existingAsset.model || '',
-          SrNo: existingAsset.srno || '',
-          Status: existingAsset.status || 'In Store',
-          Type: existingAsset.type || 'Component',
-          Category: existingAsset.category || '',
-          LastUpdated: new Date().toISOString(),
-          NoQR: 0
-        })).onConflict('id').merge();
         
         await db('assets').where('id', linkId).update({ parentid: newId });
       }
@@ -7506,10 +8123,21 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
       }
     }
 
+    const normalizedRequestedQtyTracking = asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0);
+    const normalizedRequestedQtyUnit = normalizedRequestedQtyTracking
+      ? normalizeQtyUnit(asset.quantity_unit !== undefined ? asset.quantity_unit : (asset.quantityUnit !== undefined ? asset.quantityUnit : (existing.quantity_unit || 'Nos')))
+      : null;
+    const normalizedRequestedQtyTotal = normalizedRequestedQtyTracking
+      ? Math.max(1, Number(asset.quantity_total !== undefined ? asset.quantity_total : (asset.quantityTotal !== undefined ? asset.quantityTotal : ((existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0) ? existing.quantity_total : 1))))
+      : 0;
+    const normalizedRequestedQtyPrecision = normalizedRequestedQtyTracking
+      ? Math.max(0, Number(asset.quantity_precision !== undefined ? asset.quantity_precision : (asset.quantityPrecision !== undefined ? asset.quantityPrecision : (existing.quantity_precision || 0))))
+      : 0;
+
     // Calculate delta for quantity_available if quantity_total is changed on a root asset
     let qtyAvailableDelta = 0;
-    if (asset.quantity_total !== undefined && existing.quantity_total !== null && existing.quantity_total !== undefined) {
-      const newTotal = Number(asset.quantity_total || 0);
+    if ((asset.quantity_total !== undefined || (isInitializingQuantity && normalizedRequestedQtyTracking)) && existing.quantity_total !== null && existing.quantity_total !== undefined) {
+      const newTotal = normalizedRequestedQtyTracking ? normalizedRequestedQtyTotal : Number(asset.quantity_total || 0);
       const oldTotal = Number(existing.quantity_total || 0);
       qtyAvailableDelta = newTotal - oldTotal;
       console.log(`Qty update for root ${id}: total ${oldTotal} -> ${newTotal}, delta ${qtyAvailableDelta}`);
@@ -7544,16 +8172,17 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         NoQR: asset.NoQR !== undefined ? (asset.NoQR ? 1 : 0) : (existing.noqr || 0),
         warranty_months: asset.warranty_months !== undefined ? asset.warranty_months : (existing.warranty_months || 0),
         amc_months: asset.amc_months !== undefined ? asset.amc_months : (existing.amc_months || 0),
+        warranty_tracking: asset.warranty_tracking !== undefined ? (asset.warranty_tracking ? 1 : 0) : (existing.warranty_tracking || 0),
         asset_value: asset.asset_value !== undefined ? asset.asset_value : (existing.asset_value || 0),
         Currency: asset.Currency !== undefined ? asset.Currency : (existing.currency || 'INR'),
         PurchaseDate: asset.PurchaseDate !== undefined ? normalizeDate(asset.PurchaseDate) : (existing.purchasedate || null),
         conversion_unit: asset.conversion_unit !== undefined ? asset.conversion_unit : (existing.conversion_unit || null),
         conversion_factor: asset.conversion_factor !== undefined ? asset.conversion_factor : (existing.conversion_factor || null),
         conversion_mode: asset.conversion_mode !== undefined ? asset.conversion_mode : (existing.conversion_mode || 'multiply'),
-        quantity_unit: asset.quantity_unit !== undefined ? asset.quantity_unit : (existing.quantity_unit || null),
-        quantity_total: asset.quantity_total !== undefined ? asset.quantity_total : (existing.quantity_total || 0),
-        quantity_precision: asset.quantity_precision !== undefined ? asset.quantity_precision : (existing.quantity_precision || 0),
-        is_quantity_tracked: asset.is_quantity_tracked !== undefined ? (asset.is_quantity_tracked ? 1 : 0) : (existing.is_quantity_tracked || 0),
+        quantity_unit: normalizedRequestedQtyUnit,
+        quantity_total: normalizedRequestedQtyTotal,
+        quantity_precision: normalizedRequestedQtyPrecision,
+        is_quantity_tracked: normalizedRequestedQtyTracking,
         is_batch: asset.is_batch !== undefined ? (asset.is_batch ? 1 : 0) : (existing.is_batch || 0),
         is_set: asset.is_set !== undefined ? (asset.is_set ? 1 : 0) : (existing.is_set || 0),
         set_price_mode: asset.set_price_mode !== undefined ? asset.set_price_mode : (existing.set_price_mode || 'SUM_OF_CHILDREN'),
@@ -7561,6 +8190,24 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         hsn_code: asset.itemHsnCode !== undefined ? asset.itemHsnCode : (existing.hsn_code || ''),
         is_retired: (asset.Status === 'Sold' || asset.Status === 'Scraped') ? 1 : (asset.is_retired !== undefined ? asset.is_retired : (existing.is_retired || 0))
     };
+
+    if (updateObj.ParentId) {
+        const candidate = String(updateObj.ParentId || '').trim();
+        const canonicalParent = await db('assets')
+            .select('id')
+            .whereRaw('LOWER(id) = LOWER(?)', [candidate])
+            .first();
+
+        if (!canonicalParent) {
+            updateObj.ParentId = null;
+        } else {
+            const canonicalId = String(canonicalParent.id || '').trim();
+            updateObj.ParentId = canonicalId || null;
+            if (String(canonicalId).toLowerCase() === String(id).trim().toLowerCase()) {
+                updateObj.ParentId = null;
+            }
+        }
+    }
 
     // Only update quantity_available if it's a quantity tracked asset OR if there was an actual total change
     if ((asset.is_quantity_tracked || existing.is_quantity_tracked) || qtyAvailableDelta !== 0) {
@@ -7638,9 +8285,9 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     // Handle quantity initialization if applicable
     if (isInitializingQuantity) {
-      const qtyUnit = normalizeQtyUnit(asset.quantity_unit || asset.quantityUnit || asset.qty_unit || asset.qtyUnit)
-      const qtyTotal = parseQtyNumber(asset.quantity_total ?? asset.quantityTotal ?? asset.qty_total ?? asset.qtyTotal)
-      const qtyPrecision = parseQtyNumber(asset.quantity_precision ?? asset.quantityPrecision ?? asset.qty_precision ?? asset.qtyPrecision)
+      const qtyUnit = normalizedRequestedQtyUnit
+      const qtyTotal = normalizedRequestedQtyTotal
+      const qtyPrecision = normalizedRequestedQtyPrecision
 
       if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
         await db('assets')
@@ -7757,14 +8404,15 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
 
     // Handle linked existing assets
     if (Array.isArray(asset.linkedIds)) {
-      // 1. Identify currently linked assets (NoQR = 0)
-      const rows = await db('components').where('parentid', id).andWhere('noqr', 0).select('id');
+      // 1. Identify currently linked assets from the assets table.
+      const rows = await db('assets')
+        .where('parentid', id)
+        .select('id');
       const currentLinked = rows.map(c => c.id);
       
       // 2. Unlink those that are no longer in linkedIds
       const toUnlink = currentLinked.filter(linkId => !asset.linkedIds.includes(linkId));
       for (const unlinkId of toUnlink) {
-        await db('components').where('id', unlinkId).andWhere('parentid', id).delete();
         await db('assets').where('id', unlinkId).update({ parentid: null });
         
         appendAudit({ 
@@ -7792,20 +8440,6 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
           const actualParent = existingParentInAssets || existingParentInComps;
           return res.status(400).send(`Asset ${linkId} is already assigned to parent ${actualParent}. Remove it from its current parent first.`);
         }
-
-        await db('components').insert({
-          id: linkId,
-          parentid: id,
-          itemname: existingAsset.itemname,
-          make: existingAsset.make || '',
-          model: existingAsset.model || '',
-          srno: existingAsset.srno || '',
-          status: existingAsset.status || 'In Store',
-          type: existingAsset.type || 'Component',
-          category: existingAsset.category || '',
-          lastupdated: new Date().toISOString(),
-          noqr: 0
-        }).onConflict('id').merge();
         
         await db('assets').where('id', linkId).update({ parentid: id });
       }

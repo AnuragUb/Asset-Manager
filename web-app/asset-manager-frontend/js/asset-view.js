@@ -390,6 +390,9 @@ async function renderAsset(data) {
         });
     }
 
+    // 6. ZOHO SYNC (New Integration)
+    // Temporarily removed to debug syntax error
+
     if (historyItems.length > 0) {
         // Sort history by timestamp descending
         const sortedHistory = historyItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
@@ -443,6 +446,42 @@ async function renderAsset(data) {
             </a>
         </div>
     `;
+
+    // Zoho Sync UI Block
+    const canSyncToZoho = currentUser && (
+        currentUser.role === 'admin' || 
+        currentUser.role === 'superuser' ||
+        currentUser.role === 'manager' ||
+        (Array.isArray(currentUser.role) && (currentUser.role.includes('admin') || currentUser.role.includes('superuser') || currentUser.role.includes('manager')))
+    );
+
+    if (canSyncToZoho) {
+        const zohoId = asset.zoho_product_id;
+        html += `
+            <div class="card" style="border-top: 4px solid #f59e0b;">
+                <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px;">🦊</span>
+                    Zoho CRM Integration
+                </h3>
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                    ${zohoId 
+                        ? 'This asset is linked to a Zoho Product. You can update its details and kit breakdown in Zoho.' 
+                        : 'Push this asset to Zoho CRM as a Product. If it is a Box Set, the kit breakdown will be automatically added to the description.'}
+                </p>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="btnSyncToZoho" style="background: #f59e0b; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; flex: 1; border: none; cursor: pointer;">
+                        ${zohoId ? '🔄 Update in Zoho' : '📤 Push to Zoho CRM'}
+                    </button>
+                    ${zohoId ? `
+                        <a href="https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}" target="_blank" style="background: #f3f4f6; color: #374151; padding: 10px; border-radius: 8px; text-decoration: none; display: flex; align-items: center; justify-content: center; min-width: 40px;" title="View in Zoho">
+                            🔗
+                        </a>
+                    ` : ''}
+                </div>
+                <div id="zohoSyncStatus" style="margin-top: 10px; font-size: 12px; display: none; padding: 8px; border-radius: 4px; background: #fffbeb;"></div>
+            </div>
+        `;
+    }
 
     app.innerHTML = html;
 
@@ -585,6 +624,59 @@ async function renderAsset(data) {
             } catch (err) {
                 console.error('Delete error:', err);
                 alert('Failed to delete asset');
+            }
+        };
+    }
+
+    // Zoho Sync Handler
+    const btnSyncToZoho = document.getElementById('btnSyncToZoho');
+    if (btnSyncToZoho) {
+        btnSyncToZoho.onclick = async () => {
+            const statusEl = document.getElementById('zohoSyncStatus');
+            const zohoId = asset.zoho_product_id;
+            
+            btnSyncToZoho.disabled = true;
+            btnSyncToZoho.style.opacity = '0.5';
+            btnSyncToZoho.textContent = '⏳ Syncing...';
+            
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.style.color = '#92400e';
+                statusEl.textContent = 'Connecting to Zoho CRM API...';
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetchWithAuth(`/api/zoho/sync-asset/${encodeURIComponent(assetId)}`, {
+                    method: 'POST',
+                    headers: headers
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (statusEl) {
+                        statusEl.style.color = '#065f46';
+                        statusEl.style.background = '#d1fae5';
+                        statusEl.textContent = `✅ ${result.message}`;
+                    }
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    throw new Error(result.error || 'Sync failed');
+                }
+            } catch (err) {
+                console.error('[ZohoSync] Error:', err);
+                btnSyncToZoho.disabled = false;
+                btnSyncToZoho.style.opacity = '1';
+                btnSyncToZoho.textContent = zohoId ? '🔄 Update in Zoho' : '📤 Push to Zoho CRM';
+                if (statusEl) {
+                    statusEl.style.color = '#991b1b';
+                    statusEl.style.background = '#fee2e2';
+                    statusEl.textContent = `❌ Sync Failed: ${err.message}`;
+                }
             }
         };
     }
