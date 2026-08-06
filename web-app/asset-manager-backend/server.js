@@ -272,12 +272,14 @@ function normalizeResult(data) {
     }
 
 function isInventoryPreviewPort() {
-    return String(process.env.PORT || '').trim() === '9090';
+    const disabled = String(process.env.FEATURE_INVENTORY_ENABLED || '').trim().toLowerCase() === 'false';
+    return !disabled;
 }
 
 function rejectInventoryPreviewOnNonTest(res) {
-    if (!isInventoryPreviewPort()) {
-        res.status(404).json({ error: 'Inventory preview is only enabled on 9090.' });
+    const allow = isInventoryPreviewPort();
+    if (!allow) {
+        res.status(404).json({ error: 'Inventory feature is disabled via FEATURE_INVENTORY_ENABLED=false.' });
         return true;
     }
     return false;
