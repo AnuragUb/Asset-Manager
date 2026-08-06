@@ -9,13 +9,13 @@ import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 // import { setupOcr } from './ocr.js?v=5.50';
 import { initWarrantyView } from './warranty.js?v=6.60';
 import { initProjectsView } from './projects.js?v=6.60';
-import { initInventoryView } from './inventory.js?v=6.77';
+import { initInventoryView } from './inventory.js?v=6.78';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.60';
 import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.60';
 import { initFormAutosave } from './formAutosave.js?v=6.60';
-import { initContextMenu } from './contextMenu.js?v=6.77';
+import { initContextMenu } from './contextMenu.js?v=6.78';
 import { initServicePortal } from './servicePortal.js?v=6.60';
 
 // Expose showView to global scope for other modules
