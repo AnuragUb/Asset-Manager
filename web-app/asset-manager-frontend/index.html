@@ -1749,7 +1749,12 @@
                                     <input type="text" id="itemQtyUnit" name="itemQtyUnit" placeholder="e.g. m, kg, pcs">
                                 </div>
                                 <div class="form-group">
-                                    <label for="itemQtyTotal">Quantity Total</label>
+                                    <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                        <label for="itemQtyTotal" style="margin:0;">Quantity Total</label>
+                                        <button type="button" id="btnOpenQtyHistory" style="display: none; background: #e0e7ff; color: #4338ca; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 5px; border: 1px solid #c7d2fe; cursor: pointer; align-items: center; gap: 4px;">
+                                            📅 History
+                                        </button>
+                                    </div>
                                     <input type="number" id="itemQtyTotal" name="itemQtyTotal" inputmode="decimal" step="any" placeholder="e.g. 100">
                                 </div>
                                 <div class="form-group">
@@ -2476,7 +2481,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=6.91"></script>
+<script type="module" src="/js/main.js?v=6.92"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {

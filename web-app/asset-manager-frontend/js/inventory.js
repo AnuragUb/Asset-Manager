@@ -313,6 +313,15 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function escapeAttr(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function formatInventoryStatus(status) {
     const normalized = String(status || 'In Store').trim();
     if (normalized.toLowerCase() === 'in store') return 'in-store';
@@ -398,14 +407,51 @@ function openInventorySharedModal(existingItem = null) {
     const splitAssetsSection = getEl('splitAssetsSection');
     const qtyHistorySection = getEl('qtyHistorySection');
     const bulkActions = document.querySelector('#addAssetItemModal form > div[style*="position: sticky"] div:last-child');
+    const btnOpenQtyHistory = getEl('btnOpenQtyHistory');
+    const qtyFieldsContainer = getEl('qtyFieldsContainer');
+    const qtyToggle = getEl('itemIsQtyTracked');
+    const qtyTotalEl = getEl('itemQtyTotal');
 
     if (!form || !modal) return;
+
+    const itemId = String(existingItem?.ID || existingItem?.id || '').trim();
+    const isEdit = !!itemId;
+
+    // ---------- 📅 INLINE QTY HISTORY BUTTON (next to Quantity Total) ----------
+    const showInlineHistoryBtn = (visible) => {
+        if (!btnOpenQtyHistory) return;
+        btnOpenQtyHistory.style.display = (visible && isEdit) ? 'inline-flex' : 'none';
+    };
+    const updateHistoryBtnVisibility = () => {
+        if (!qtyToggle) { showInlineHistoryBtn(true); return; }
+        showInlineHistoryBtn(qtyToggle.checked);
+    };
+    if (btnOpenQtyHistory) {
+        btnOpenQtyHistory.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isEdit) return;
+            if (typeof window.showQuantityHistoryModal === 'function') {
+                window.showQuantityHistoryModal(itemId);
+            } else {
+                import('./quantity-history-modal.js?v=6.92').then(m => {
+                    if (m && m.showQuantityHistoryModal) m.showQuantityHistoryModal(itemId);
+                    else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(itemId);
+                }).catch(err => console.error('[QTY-HISTORY-BTN] import err', err));
+            }
+        };
+    }
+    if (qtyToggle) {
+        qtyToggle.addEventListener('change', updateHistoryBtnVisibility);
+    }
+    // Show immediately by default on edit (since qty tracking default on)
+    updateHistoryBtnVisibility();
 
     window.__inventoryModalActive = true;
     form.dataset.entity = 'inventory';
     delete form.dataset.catalogZohoProductId;
     delete form.dataset.catalogUuid;
-    form.dataset.inventoryEditId = String(existingItem?.ID || existingItem?.id || '');
+    form.dataset.inventoryEditId = itemId;
     form.dataset.inventoryPriorTotal = existingItem
         ? String(existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? existingItem?.QtyOrdered ?? '')
         : '';
@@ -419,15 +465,24 @@ function openInventorySharedModal(existingItem = null) {
     if (title) title.textContent = existingItem ? `Edit Inventory: ${existingItem.ID || existingItem.id}` : 'Add Inventory Item';
     if (submitBtn) submitBtn.textContent = existingItem ? 'Save Inventory Item' : 'Add Inventory Item';
     if (assetDbId) assetDbId.value = '';
-    if (editActions) editActions.style.display = 'none';
+    if (editActions) {
+        editActions.style.display = isEdit ? 'flex' : 'none';
+        const viewHistoryFullBtn = getEl('btnViewAssetHistory');
+        if (viewHistoryFullBtn && isEdit) {
+            viewHistoryFullBtn.href = `/inventory/${encodeURIComponent(itemId)}`;
+            viewHistoryFullBtn.textContent = '📜 View Full Inventory Details';
+            viewHistoryFullBtn.target = '_blank';
+        }
+    }
     if (childrenSection) childrenSection.style.display = 'block';
     if (splitAssetsSection) splitAssetsSection.style.display = 'none';
-    if (qtyHistorySection) qtyHistorySection.style.display = 'block';
+    if (qtyHistorySection) qtyHistorySection.style.display = isEdit ? 'block' : 'none';
     if (bulkActions) bulkActions.style.display = 'none';
 
     populateInventoryHierarchyInSharedModal(existingItem);
 
     resetInventoryChildrenUI(existingItem);
+    // Pre-render empty placeholder (will populate after API fetch below)
     renderInventoryQtyTimeline(existingItem, []);
 
     const setVal = (id, value) => {
@@ -480,20 +535,18 @@ function openInventorySharedModal(existingItem = null) {
     setChecked('itemIsQtyTracked', existingTracked);
     setChecked('itemIsSet', Number(existingItem?.IsSet ?? existingItem?.is_set ?? 0) === 1);
 
-    const qtyToggle = getEl('itemIsQtyTracked');
     if (qtyToggle) {
         qtyToggle.disabled = false;
         const onToggle = () => {
-            const box = getEl('qtyFieldsContainer');
-            if (box) box.style.display = qtyToggle.checked ? 'grid' : 'none';
+            if (qtyFieldsContainer) qtyFieldsContainer.style.display = qtyToggle.checked ? 'grid' : 'none';
             if (qtyToggle.checked) {
                 const qtyUnitEl = getEl('itemQtyUnit');
-                const qtyTotalEl = getEl('itemQtyTotal');
                 const qtyPrecisionEl = getEl('itemQtyPrecision');
                 if (qtyUnitEl && !String(qtyUnitEl.value || '').trim()) qtyUnitEl.value = 'Nos';
                 if (qtyTotalEl && !String(qtyTotalEl.value || '').trim()) qtyTotalEl.value = String(Math.max(1, Number(existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? 1)));
                 if (qtyPrecisionEl && !String(qtyPrecisionEl.value || '').trim()) qtyPrecisionEl.value = '0';
             }
+            updateHistoryBtnVisibility();
         };
         qtyToggle.onchange = onToggle;
         onToggle();
@@ -525,25 +578,62 @@ function openInventorySharedModal(existingItem = null) {
 
     modal.style.display = 'flex';
 
-    if (existingItem && (existingItem.ID || existingItem.id)) {
-        const itemId = String(existingItem.ID || existingItem.id);
-        fetchJson(`/api/inventory/item-details/${encodeURIComponent(itemId)}`)
-            .then(data => {
-                const children = Array.isArray(data?.children) ? data.children : [];
+    if (isEdit) {
+        // ---------- LOAD QTY HISTORY EVENTS + CHILDREN ----------
+        // Primary: /api/inventory/item-details/:id  (if server endpoint added later)
+        // Fallback: /api/quantity/events?asset_id=<ID> (ALREADY EXISTS, used by showQuantityHistoryModal!)
+        const primaryPromise = (async () => {
+            try {
+                const res = await fetch(`/api/inventory/item-details/${encodeURIComponent(itemId)}`, {
+                    method: 'GET',
+                    headers: { 'x-user': window.currentUser || window.username || '' }
+                });
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) {
+                return null;
+            }
+        })();
+
+        const fallbackQtyPromise = (async () => {
+            try {
+                const res = await fetch(`/api/quantity/events?asset_id=${encodeURIComponent(itemId)}&limit=50`, {
+                    method: 'GET',
+                    headers: { 'x-user': window.currentUser || window.username || '' }
+                });
+                if (!res.ok) return [];
+                const data = await res.json();
+                const arr = data?.events || data?.rows || data?.data || data || [];
+                return Array.isArray(arr) ? arr : [];
+            } catch (e) {
+                return [];
+            }
+        })();
+
+        Promise.all([primaryPromise, fallbackQtyPromise]).then(([primaryData, fallbackQty]) => {
+            // ---------- CHILDREN (from primary response only) ----------
+            if (primaryData) {
+                const children = Array.isArray(primaryData?.children) ? primaryData.children : [];
                 resetInventoryChildrenUI(existingItem);
                 const noQrChildren = children.filter(c => c.NoQR === 1 || c.NoQR === true || c.noqr === 1);
                 const linkedChildren = children.filter(c => !(c.NoQR === 1 || c.NoQR === true || c.noqr === 1));
                 noQrChildren.forEach(child => addInventoryChildField(child));
                 linkedChildren.forEach(child => addInventoryLinkedItem(child));
+            }
 
-                const events = Array.isArray(data?.quantityEvents) ? data.quantityEvents : [];
-                renderInventoryQtyTimeline(existingItem, events);
-            })
-            .catch(err => {
-                showToast(err.message || 'Failed to load inventory item details.', 'error');
-            });
+            // ---------- QTY EVENTS (primary > fallback) ----------
+            const eventsFromPrimary = Array.isArray(primaryData?.quantityEvents) ? primaryData.quantityEvents : null;
+            const qtyEvents = (eventsFromPrimary && eventsFromPrimary.length > 0)
+                ? eventsFromPrimary
+                : fallbackQty || [];
+
+            renderInventoryQtyTimeline(existingItem, qtyEvents);
+        }).catch(err => {
+            console.warn('[Inventory Edit] Failed to load details/qty history:', err);
+        });
     }
 }
+window.openInventorySharedModal = openInventorySharedModal;
 
 function resetInventoryChildrenUI(existingItem = null) {
     const childrenContainer = getEl('childrenListContainer');
@@ -699,11 +789,12 @@ function renderInventoryQtyTimeline(existingItem, events) {
     const itemId = String(existingItem?.ID || existingItem?.id || '').trim();
     const historyHeader = historySection.querySelector('h4');
     if (historyHeader) {
-        if (itemId && typeof window.showInventoryQuantityHistoryModal === 'function') {
+        if (itemId) {
+            const openHistoryFnExists = (typeof window.showQuantityHistoryModal === 'function');
             historyHeader.innerHTML = `Quantity History & Timeline 
-                <a href="#" onclick="window.showInventoryQuantityHistoryModal('${itemId}'); return false;" 
-                   style="float: right; font-size: 11px; color: #0056b3; background: #e7f3ff; padding: 2px 8px; border-radius: 4px; text-decoration: none; border: 1px solid #b3d7ff;">
-                   🔗 Qty API
+                <a href="#" onclick="${openHistoryFnExists ? `window.showQuantityHistoryModal('${escapeAttr(itemId)}');` : ''} return false;" 
+                   style="float: right; font-size: 11px; color: #0056b3; background: #e7f3ff; padding: 2px 8px; border-radius: 4px; text-decoration: none; border: 1px solid #b3d7ff; cursor: ${openHistoryFnExists ? 'pointer' : 'not-allowed'}; opacity: ${openHistoryFnExists ? 1 : 0.55};">
+                   � Open Full History
                 </a>`;
         } else {
             historyHeader.textContent = 'Quantity History & Timeline';
