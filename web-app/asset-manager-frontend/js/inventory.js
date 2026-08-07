@@ -1159,7 +1159,11 @@ function openInventoryFromCatalog(catalogItem) {
     openInventorySharedModal(null);
 
     const form = getEl('addAssetItemForm');
+    const modal = getEl('addAssetItemModal');
+    const title = getEl('addItemModalTitle');
+    const submitBtn = form?.querySelector('button[type="submit"]');
     if (form) {
+        form.dataset.entity = 'inventory';
         form.dataset.catalogZohoProductId = String(catalogItem?.zoho_product_id || '');
         form.dataset.catalogUuid = catalogItem?.zoho_product_id ? `ZCAT-${String(catalogItem.zoho_product_id)}` : '';
     }
@@ -1168,6 +1172,10 @@ function openInventoryFromCatalog(catalogItem) {
         const el = getEl(id);
         if (el) el.value = value ?? '';
     };
+    const setChecked = (id, checked) => {
+        const el = getEl(id);
+        if (el) el.checked = !!checked;
+    };
 
     setVal('itemName', catalogItem?.product_name || '');
     setVal('itemDescription', catalogItem?.description || '');
@@ -1175,6 +1183,11 @@ function openInventoryFromCatalog(catalogItem) {
     setVal('itemModel', catalogItem?.model || '');
     setVal('itemHsnCode', catalogItem?.hsn_code || '');
     setVal('itemValue', Number(catalogItem?.unit_price || 0));
+
+    setVal('itemQtyTotal', '1');
+    setVal('itemQtyUnit', 'Nos');
+    setVal('itemQtyPrecision', '0');
+    setChecked('itemIsQtyTracked', false);
 
     const folderSelect = getEl('itemFolder');
     const kindSelect = getEl('itemKind');
@@ -1190,6 +1203,10 @@ function openInventoryFromCatalog(catalogItem) {
             kindSelect.value = String(miscKind.ID || miscKind.id);
         }
     }
+
+    if (form) form.dataset.entity = 'inventory';
+    if (title) title.textContent = 'Add Inventory Item from Zoho Catalog';
+    if (submitBtn) submitBtn.textContent = 'Add Inventory Item';
 }
 
 function openCrudModal(type, existingItem = null) {

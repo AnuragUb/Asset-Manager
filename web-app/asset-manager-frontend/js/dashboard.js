@@ -7140,7 +7140,21 @@ export function setupDashboardFormHandlers() {
                 const formData = new FormData(form);
                 const assetId = document.getElementById('assetDbId').value;
                 const category = localStorage.getItem('selectedAssetCategory') || 'IT';
-                const entityMode = form.dataset.entity || 'asset';
+                let entityMode = form.dataset.entity || 'asset';
+
+                const folderValue = String(formData.get('itemFolder') || '').trim();
+                const kindValue = String(formData.get('itemKind') || '').trim();
+                const hasCatalogZohoProductId = !!String(form.dataset.catalogZohoProductId || '').trim();
+                const hasCatalogUuid = !!String(form.dataset.catalogUuid || '').trim();
+                const hasInventoryEditId = !!String(form.dataset.inventoryEditId || '').trim();
+                const onInventoryView = String(window.location.hash || '').includes('inventory')
+                    || (typeof window.currentInventorySidebar === 'object' && window.currentInventorySidebar !== null);
+                if (entityMode !== 'inventory'
+                    && (folderValue && kindValue)
+                    && (hasCatalogZohoProductId || hasCatalogUuid || hasInventoryEditId || onInventoryView)) {
+                    entityMode = 'inventory';
+                    form.dataset.entity = 'inventory';
+                }
 
                 if (entityMode === 'inventory') {
                     const folderValue = String(formData.get('itemFolder') || '').trim();
