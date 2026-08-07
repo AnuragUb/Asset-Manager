@@ -4930,10 +4930,69 @@ export function renderDashboard(assets, filteredAssets) {
         window.currentDashboardParent = parentNode; // Update global reference
     }
 
+    let displayNodes = [];
+    let recursiveAssets = [];
+    let directAssets = []; // Assets belonging specifically to this node
+    let overviewTitle = '';
+
+    if (!parentNode) {
+        // "All Assets" view: Show Tier 1 categories as cards
+        displayNodes = manager.getModuleTree(category);
+        console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
+        
+        recursiveAssets = assets.filter(a => a.Category === category);
+        directAssets = []; // Root has no "direct" assets, they all belong to a Kind
+        overviewTitle = `${category} Assets`;
+        
+        if (displayNodes.length === 0) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📂</div>
+                    <p>No categories found for <b>${category === 'In-House' || category === 'SERVICE' ? 'Service' : category}</b> assets.</p>
+                    <p style="font-size: 13px;">Check if the Hierarchy Manager is properly initialized.</p>
+                </div>
+            `;
+            return;
+        }
+    } else {
+        // Specific Folder/Kind view
+        displayNodes = parentNode.children || [];
+        
+        const descendants = manager.getDescendants(parentNode.ID, true);
+        const descendantKindNames = descendants.map(d => d.Name);
+            
+        console.log(`[Dashboard] Selected Node: ${parentNode.Name} (${parentNode.type})`);
+        
+        // Filter assets for this hierarchy branch
+        const filteredByBranch = assets.filter(a => {
+            if (a.Category !== category) return false;
+            const assetType = (a.Type || '').toLowerCase().trim();
+            const assetName = (a.Name || '').toLowerCase().trim();
+            
+            return descendantKindNames.some(kindName => {
+                const k = kindName.toLowerCase().trim();
+                return assetType === k || assetName === k || assetType === k + 's' || assetType === k + 'es';
+            });
+        });
+
+        recursiveAssets = filteredByBranch;
+        
+        // Direct assets: match the current node's name exactly
+        const pName = parentNode.Name.toLowerCase().trim();
+        directAssets = filteredByBranch.filter(a => {
+            const t = (a.Type || '').toLowerCase().trim();
+            const n = (a.Name || '').toLowerCase().trim();
+            return t === pName || n === pName;
+        });
+
+        console.log(`[Dashboard] Branch Assets: ${recursiveAssets.length}, Direct Assets: ${directAssets.length}`);
+        overviewTitle = `${parentNode.Name} Assets`;
+    }
+
     const dashboardTitle = document.getElementById('dashboard-title');
     if (dashboardTitle) {
         const isLeafKindNode = parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0);
-        const haveAssets = (isLeafKindNode && assetsToRender.length > 0) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && assetsToRender.length > 0);
+        const haveAssets = (isLeafKindNode && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0)) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0));
         // Default view mode: leaf kinds / lists → TABLE; everything else → CARDS
         const autoMode = (isLeafKindNode || window.currentSearchQuery || (directAssets && directAssets.length > 0)) ? 'table' : 'cards';
         if (typeof window.dashboardViewMode === 'undefined' || !window.dashboardViewMode) {
@@ -5031,65 +5090,6 @@ export function renderDashboard(assets, filteredAssets) {
                 alert(`Hierarchy Debug: Check Console\nRoots for ${category}: ${manager.getModuleTree(category).length}`);
             };
         }
-    }
-
-    let displayNodes = [];
-    let recursiveAssets = [];
-    let directAssets = []; // Assets belonging specifically to this node
-    let overviewTitle = '';
-
-    if (!parentNode) {
-        // "All Assets" view: Show Tier 1 categories as cards
-        displayNodes = manager.getModuleTree(category);
-        console.log(`[Dashboard] Root nodes for ${category}:`, displayNodes.length);
-        
-        recursiveAssets = assets.filter(a => a.Category === category);
-        directAssets = []; // Root has no "direct" assets, they all belong to a Kind
-        overviewTitle = `${category} Assets`;
-        
-        if (displayNodes.length === 0) {
-            assetGrid.innerHTML = `
-                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
-                    <div style="font-size: 48px; margin-bottom: 20px;">📂</div>
-                    <p>No categories found for <b>${category === 'In-House' || category === 'SERVICE' ? 'Service' : category}</b> assets.</p>
-                    <p style="font-size: 13px;">Check if the Hierarchy Manager is properly initialized.</p>
-                </div>
-            `;
-            return;
-        }
-    } else {
-        // Specific Folder/Kind view
-        displayNodes = parentNode.children || [];
-        
-        const descendants = manager.getDescendants(parentNode.ID, true);
-        const descendantKindNames = descendants.map(d => d.Name);
-            
-        console.log(`[Dashboard] Selected Node: ${parentNode.Name} (${parentNode.type})`);
-        
-        // Filter assets for this hierarchy branch
-        const filteredByBranch = assets.filter(a => {
-            if (a.Category !== category) return false;
-            const assetType = (a.Type || '').toLowerCase().trim();
-            const assetName = (a.Name || '').toLowerCase().trim();
-            
-            return descendantKindNames.some(kindName => {
-                const k = kindName.toLowerCase().trim();
-                return assetType === k || assetName === k || assetType === k + 's' || assetType === k + 'es';
-            });
-        });
-
-        recursiveAssets = filteredByBranch;
-        
-        // Direct assets: match the current node's name exactly
-        const pName = parentNode.Name.toLowerCase().trim();
-        directAssets = filteredByBranch.filter(a => {
-            const t = (a.Type || '').toLowerCase().trim();
-            const n = (a.Name || '').toLowerCase().trim();
-            return t === pName || n === pName;
-        });
-
-        console.log(`[Dashboard] Branch Assets: ${recursiveAssets.length}, Direct Assets: ${directAssets.length}`);
-        overviewTitle = `${parentNode.Name} Assets`;
     }
 
     // --- UTIL: Cards/Table helpers (used by leaf-kind, direct-assets, search results) ---
@@ -5268,7 +5268,7 @@ export function renderDashboard(assets, filteredAssets) {
                 if (typeof window.showQuantityHistoryModal === 'function') {
                     window.showQuantityHistoryModal(id);
                 } else {
-                    import('./quantity-history-modal.js?v=6.97').then(m => {
+                    import('./quantity-history-modal.js?v=6.98').then(m => {
                         if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(id);
                         else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[DASH-QTY-HIST] import err', err));
@@ -7222,7 +7222,7 @@ function showAssetList(nodeOrKindName) {
                 if (typeof window.showQuantityHistoryModal === 'function' && id) {
                     window.showQuantityHistoryModal(id);
                 } else if (id) {
-                    import('./quantity-history-modal.js?v=6.97').then(m => {
+                    import('./quantity-history-modal.js?v=6.98').then(m => {
                         if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
                         else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[QTY-HISTORY] load err', err));
@@ -7250,7 +7250,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=6.97').then(() => {
+                    import('./inventory.js?v=6.98').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
