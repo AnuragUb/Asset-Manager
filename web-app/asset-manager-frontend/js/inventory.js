@@ -434,7 +434,7 @@ function openInventorySharedModal(existingItem = null) {
             if (typeof window.showQuantityHistoryModal === 'function') {
                 window.showQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.92').then(m => {
+                import('./quantity-history-modal.js?v=6.93').then(m => {
                     if (m && m.showQuantityHistoryModal) m.showQuantityHistoryModal(itemId);
                     else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-BTN] import err', err));
@@ -469,7 +469,7 @@ function openInventorySharedModal(existingItem = null) {
         editActions.style.display = isEdit ? 'flex' : 'none';
         const viewHistoryFullBtn = getEl('btnViewAssetHistory');
         if (viewHistoryFullBtn && isEdit) {
-            viewHistoryFullBtn.href = `/inventory/${encodeURIComponent(itemId)}`;
+            viewHistoryFullBtn.href = `/asset/${encodeURIComponent(itemId)}`;
             viewHistoryFullBtn.textContent = '📜 View Full Inventory Details';
             viewHistoryFullBtn.target = '_blank';
         }

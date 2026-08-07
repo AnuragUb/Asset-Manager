@@ -2376,6 +2376,20 @@ app.get('/asset/:id', (req, res) => {
     }
 });
 
+// Inventory Details View — alias to asset-view.html (client-side does double lookup: assets + inventory_items)
+// Added because inventory links used to 404 ("Cannot GET /inventory/INV-MUM-0726-JALDY0-R") when
+// front-end mistakenly routed to /inventory/:id instead of /asset/:id.  This way URLs/QRs for either
+// pattern both open the same SPA detail view that resolves the ID against both DB tables.
+app.get('/inventory/:id', (req, res) => {
+    const rootPath = useDist ? '../asset-manager-frontend/dist' : '../asset-manager-frontend';
+    const filePath = path.join(__dirname, rootPath, 'asset-view.html');
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        res.status(404).send('Asset View file not found on server.');
+    }
+});
+
 
 // Helper to check asset assignment status
 async function getAssetAssignmentStatus(assetId) {
