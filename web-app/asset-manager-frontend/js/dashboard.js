@@ -3249,8 +3249,101 @@ window.showTempAssetDetails = async function(assetId) {
     modal.style.display = 'flex';
 };
 
+// ============================================================
+// safeConfirm: UNSUPPRESSIBLE in-app confirmation modal
+//
+// Browser-native confirm() can be PERMANENTLY disabled by the
+// user checking "Prevent this page from creating additional
+// dialogs" after any confirm/alert. This leaves ZERO feedback
+// to user → they click "Delete" thinking "nothing happened" or
+// the browser-suppressed confirm returned false/true randomly.
+//
+// safeConfirm uses the app's own HTML modal which CANNOT be
+// blocked by browser settings. Always shows a Yes/No dialog
+// with title, message (supports newlines), and REQUIRES the
+// user to explicitly click a button. Returns a Promise<boolean>.
+// ============================================================
+window.safeConfirm = function(title, messageHtmlOrText, options) {
+    return new Promise(function(resolve) {
+        const opts = options || {};
+        const confirmBtnLabel = opts.confirmBtnLabel || 'Yes, Delete';
+        const cancelBtnLabel = opts.cancelBtnLabel || 'Cancel';
+        const dangerStyle = opts.danger !== false;  // default: yes = red/delete
+        const modalId = '__safeConfirmModal';
+        let modal = document.getElementById(modalId);
+
+        if (!modal) {
+            const wrap = document.createElement('div');
+            wrap.innerHTML =
+                '<div id="' + modalId + '" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999999; justify-content:center; align-items:center;">' +
+                '  <div style="background:#fff; border-radius:14px; padding:26px 28px; max-width:560px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.35);">' +
+                '    <h3 id="' + modalId + '_title" style="margin:0 0 14px 0; font-size:18px; color:#222; font-weight:700;"></h3>' +
+                '    <div id="' + modalId + '_msg" style="white-space:pre-wrap; color:#444; font-size:14px; line-height:1.55; margin:0 0 24px 0; max-height:300px; overflow-y:auto;"></div>' +
+                '    <div style="display:flex; justify-content:flex-end; gap:10px;">' +
+                '      <button id="' + modalId + '_cancel" type="button" style="padding:8px 18px; border-radius:8px; border:1px solid #ccc; background:#f7f7f7; font-weight:600; cursor:pointer; color:#333;">Cancel</button>' +
+                '      <button id="' + modalId + '_ok"     type="button" style="padding:8px 18px; border-radius:8px; border:none;              font-weight:600; cursor:pointer; color:#fff;">Yes</button>' +
+                '    </div>' +
+                '  </div>' +
+                '</div>';
+            document.body.appendChild(wrap.firstElementChild);
+            modal = document.getElementById(modalId);
+        }
+
+        const titleEl = document.getElementById(modalId + '_title');
+        const msgEl = document.getElementById(modalId + '_msg');
+        const okBtn = document.getElementById(modalId + '_ok');
+        const cancelBtn = document.getElementById(modalId + '_cancel');
+
+        titleEl.textContent = title;
+        if (typeof messageHtmlOrText === 'string' && (messageHtmlOrText.indexOf('<') === 0 || /<[^>]+>/.test(messageHtmlOrText))) {
+            msgEl.innerHTML = messageHtmlOrText;
+        } else {
+            msgEl.textContent = messageHtmlOrText;
+        }
+        okBtn.textContent = confirmBtnLabel;
+        cancelBtn.textContent = cancelBtnLabel;
+        if (dangerStyle) {
+            okBtn.style.background = '#dc3545';
+        } else {
+            okBtn.style.background = '#007bff';
+        }
+
+        modal.style.display = 'flex';
+
+        const cleanup = function() {
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            modal.style.display = 'none';
+        };
+        okBtn.onclick = function() { cleanup(); resolve(true); };
+        cancelBtn.onclick = function() { cleanup(); resolve(false); };
+    });
+};
+
 window.deleteAsset = async function(assetId) {
-    if (!confirm(`Are you sure you want to delete asset ${assetId}? \n\nThis will mark the asset as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+    const details = assetId ? await (async () => {
+        try {
+            const resp = await fetch(`/api/assets/${encodeURIComponent(assetId)}`);
+            if (resp.ok) {
+                const d = await resp.json();
+                return { AssetTag: d.AssetTag || assetId, Name: d.Name || d.ProductName || '(unnamed)' };
+            }
+        } catch (e) {}
+        return { AssetTag: assetId, Name: '' };
+    })() : { AssetTag: assetId, Name: '' };
+    const title = '⚠️  Permanent Deletion Warning';
+    const body = `Are you SURE you want to DELETE this asset?
+
+Asset Tag:  ${details.AssetTag}
+Name:       ${details.Name}
+
+This will:
+  • Mark the asset as deleted (soft-delete)
+  • Hide it from all dashboards and search
+  • PERMANENTLY purge it from the database after 30 days (no recovery)
+
+This action CANNOT be undone once the 30-day window closes.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: 'Yes, PERMANENTLY Mark Deleted' }))) return;
     
     try {
         const username = localStorage.getItem('username') || 'web';
@@ -3286,8 +3379,23 @@ window.bulkDeleteAssets = async function() {
     if (selectedData.length === 0) return;
     
     const ids = selectedData.map(d => d.ID);
-    
-    if (!confirm(`Are you sure you want to delete ${ids.length} selected assets? \n\nThese will be marked as deleted and hidden from the system. They will be PERMANENTLY removed from the database after 30 days.`)) return;
+    const tags = selectedData.map(d => d.AssetTag || d.ID).slice(0, 10);
+    const extra = selectedData.length > 10 ? `\n(Showing first 10 of ${selectedData.length} tags...` : '';
+    const title = `⚠️  BULK Permanent Deletion Warning (${selectedData.length} assets)`;
+    const body = `Are you SURE you want to PERMANENTLY DELETE ${selectedData.length} ASSETS?
+
+Selected asset tags:
+  • ${tags.join('\n  • ')}${extra}
+
+This will:
+  • Mark EVERY selected assets as deleted (soft-delete)
+  • Hide ALL of them from dashboards and search
+  • PERMANENTLY purge ALL selected assets from the database after 30 days (no recovery)
+
+This action CANNOT be undone once the 30-day window closes.
+
+Click "Cancel" to go back, or "Yes, Delete All" to confirm.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: `Yes, Delete ALL ${selectedData.length} Assets` }))) return;
     
     try {
         const username = localStorage.getItem('username') || 'web';
@@ -3320,7 +3428,16 @@ window.bulkDeleteAssets = async function() {
 };
 
 window.deleteAssetKind = async function(name) {
-    if (!confirm(`Are you sure you want to delete the category "${name}"? \n\nThis will hide the category and all its associated items. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+    const title = '⚠️  Delete Category Warning';
+    const body = `Are you SURE you want to DELETE category "${name}"?
+
+This will:
+  • Mark the category as deleted (soft-delete)
+  • Hide the category and all its associated items from sidebar + cards
+  • PERMANENTLY purge it after 30 days
+
+This action CANNOT be undone once the 30-day window closes.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: `Yes, Delete Category "${name}"` }))) return;
 
     try {
         const token = localStorage.getItem('token');
@@ -3355,7 +3472,11 @@ window.deleteAssetKind = async function(name) {
 };
 
 window.makeAssetPermanent = async function(id) {
-    if (!confirm('Convert this temporary asset to a permanent asset in the inventory?')) return;
+    const title = 'Convert Temporary Asset to Permanent?';
+    const body = `Are you SURE you want to permanently convert this temporary asset?
+
+This action CANNOT be undone. The temporary asset will be moved to the permanent inventory and deleted from the temporary list.`;
+    if (!(await window.safeConfirm(title, body, { danger: false, confirmBtnLabel: 'Yes, Convert to Permanent' }))) return;
     
     try {
         const response = await fetch(`/api/temporary-assets/${id}/make-permanent`, {
@@ -3390,7 +3511,16 @@ window.makeAssetPermanent = async function(id) {
 };
 
 window.deleteTempAsset = async function(id) {
-    if (!confirm('Are you sure you want to delete this temporary asset?')) return;
+    const title = '⚠️  Delete Temporary Asset Warning';
+    const body = `Are you SURE you want to DELETE this temporary asset?
+
+This will:
+  • Mark it as deleted (soft-delete)
+  • Hide it from all views
+  • PERMANENTLY purge it after 30 days
+
+This action CANNOT be undone once the 30-day window closes.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: 'Yes, Delete Temporary Asset' }))) return;
     
     try {
         const response = await fetch(`/api/temporary-assets/${id}`, {
@@ -5215,7 +5345,18 @@ export function renderDashboard(assets, filteredAssets) {
             delBtn.onclick = async (e) => {
                 e.stopPropagation();
                 const typeLabel = isKind ? 'Category' : 'Folder';
-                if (!confirm(`Are you sure you want to delete this ${typeLabel}: "${nodeName}"? This action cannot be undone.`)) return;
+                const title = `⚠️  Delete ${typeLabel}: "${nodeName}"`;
+                const body = `Are you SURE you want to DELETE this ${typeLabel}?
+
+Name:  "${nodeName}"
+
+This will:
+  • Remove the ${typeLabel} node
+  • Hide it from sidebar and cards
+  • PERMANENTLY purge after 30 days
+
+This action CANNOT be undone once the 30-day window closes.`;
+                if (!(await window.safeConfirm(title, body, { confirmBtnLabel: `Yes, Delete ${typeLabel} "${nodeName}"` }))) return;
 
                 try {
                     const url = isKind ? `/api/asset_kinds/${encodeURIComponent(nodeName)}` : `/api/folders/${encodeURIComponent(node.ID)}`;

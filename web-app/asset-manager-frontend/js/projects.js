@@ -310,7 +310,19 @@ window.loadPOFromPrevious = async function(orderId) {
 };
 
 window.deleteProject = async function(projectId) {
-    if (!confirm(`Are you sure you want to delete this project? \n\nThis will mark the project as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+    const title = '⚠️  Delete Project Warning';
+    const body = `Are you SURE you want to DELETE this project?
+
+Project ID: ${projectId}
+
+This will:
+  • Mark the project as deleted (soft-delete)
+  • Hide it from all project views and dashboards
+  • PERMANENTLY purge it after 30 days (no recovery)
+
+This action CANNOT be undone once the 30-day window closes.`;
+    const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m) => confirm(t + '\n\n' + m);
+    if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, Delete Project' }))) return;
 
     try {
         const token = localStorage.getItem('token');
@@ -1159,7 +1171,16 @@ window.showEditOrderModal = async function(projectId, orderId) {
 };
 
 window.deleteProjectOrder = async function(projectId, orderId) {
-    if (!confirm('Are you sure you want to delete this PO and all its line items?')) return;
+    const title = '⚠️  Delete Purchase Order Warning';
+    const body = `Are you SURE you want to DELETE this Purchase Order?
+
+Project ID: ${projectId}
+PO ID:      ${orderId}
+
+This will DELETE this PO and ALL its line items permanently.
+This action CANNOT be undone.`;
+    const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m) => confirm(t + '\n\n' + m);
+    if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, Delete PO' }))) return;
     try {
         const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders/${orderId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Failed to delete');
@@ -1958,7 +1979,19 @@ window.convertTempAsset = async function(id) {
 };
 
 window.deleteTempAsset = async function(id) {
-    if (!confirm('Delete this temporary asset?')) return;
+    const title = '⚠️  Delete Temporary Asset Warning';
+    const body = `Are you SURE you want to DELETE this temporary asset?
+
+Temp Asset ID: ${id}
+
+This will:
+  • Mark it as deleted (soft-delete)
+  • Hide it from all views
+  • PERMANENTLY purge it after 30 days (no recovery)
+
+This action CANNOT be undone once the 30-day window closes.`;
+    const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m) => confirm(t + '\n\n' + m);
+    if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, Delete Temporary Asset' }))) return;
     try {
         // We need a DELETE endpoint. 
         // Checking server.js... it might not have one explicit for temp assets?

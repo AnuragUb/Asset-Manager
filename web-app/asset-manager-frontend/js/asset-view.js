@@ -601,7 +601,21 @@ async function renderAsset(data) {
     const btnDelete = document.getElementById('btnDeleteStandalone');
     if (btnDelete) {
         btnDelete.onclick = async () => {
-            if (!confirm(`Are you sure you want to delete this asset (${asset.ID})?\n\nThis will mark the asset as deleted and hide it from the system. It will be PERMANENTLY removed from the database after 30 days.`)) return;
+            const title = '⚠️  Permanent Deletion Warning';
+            const body = `Are you SURE you want to DELETE this asset?
+
+Asset ID:    ${asset.ID}
+Asset Tag:   ${asset.AssetTag || asset.ID}
+Name:        ${asset.Name || asset.ProductName || asset.ItemName || '(unnamed)'}
+
+This will:
+  • Mark the asset as deleted (soft-delete)
+  • Hide it from the system
+  • PERMANENTLY remove it after 30 days (no recovery)
+
+This action CANNOT be undone once the 30-day window closes.`;
+            const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m, o) => confirm(t + '\n\n' + m);
+            if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, PERMANENTLY Mark Deleted' }))) return;
             
             try {
                 const username = currentUser ? currentUser.username : 'web';

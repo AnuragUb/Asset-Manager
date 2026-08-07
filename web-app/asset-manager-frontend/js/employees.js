@@ -849,7 +849,17 @@ function renderEmployeeTree(empName) {
 }
 
 async function deleteEmployee(id) {
-    if (!confirm('Are you sure you want to delete this employee? This will not delete their assigned assets, but they will be unlinked.')) return;
+    const title = '⚠️  Delete Employee Warning';
+    const body = `Are you SURE you want to DELETE this employee record?
+
+Employee ID: ${id}
+
+Note: This will NOT delete any of the employee's assigned assets.
+The assets will just be unlinked and returned to "In Store" status.
+
+This action CANNOT be undone.`;
+    const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m) => confirm(t + '\n\n' + m);
+    if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, Delete Employee' }))) return;
     try {
         const response = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
         if (response.ok) {
