@@ -7544,20 +7544,11 @@ export function setupDashboardFormHandlers() {
                         }
                     }
                     if (convModeEl) asset.conversion_mode = convModeEl.value;
-                } else {
-                    // If tracking is disabled, we might want to explicitly set fields to null/0
-                    // or just leave them as they are. Given the user's request, 
-                    // disabling tracking should probably hide the info.
-                    asset.quantity_unit = null;
-                    asset.quantity_total = 0;
-                    asset.quantity_available = 0;
-                    asset.is_quantity_tracked = 0;
-                }
 
                 // Collect conversion fields independently if they are NOT disabled (for non-root assets or initial setup)
                 // This ensures fields are captured if hasAnyQty logic is skipped
-                const convUnitEl = document.getElementById('itemConvUnit');
-                if (convUnitEl && !convUnitEl.disabled && !asset.conversion_unit) {
+                const convUnitEl2 = document.getElementById('itemConvUnit');
+                if (convUnitEl2 && !convUnitEl2.disabled && !asset.conversion_unit) {
                     const convUnit = String(formData.get('itemConvUnit') || '').trim();
                     const convFactorRaw = String(formData.get('itemConvFactor') || '').trim();
                     const convMode = formData.get('itemConvMode') || 'multiply';
