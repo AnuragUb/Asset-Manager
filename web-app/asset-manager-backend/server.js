@@ -8331,53 +8331,32 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         .update({ unit: newQtyUnit });
     }
 
-    // Handle quantity initialization if applicable
-    // IMPORTANT SAFETY GUARD: Only run the INIT block ONCE when the row is genuinely UNINITIALIZED.
-    // v6.86 bug saved some rows with quantity_root_id = '' (empty string) instead of NULL.
-    // Guard `!existing.quantity_root_id || trim===''` treated EMPTY as uninitialized → on EVERY edit
-    // save of COM-MUM-0726-QTFYUH-3 (which has empty root id but quantity_total=1 saved from before):
-    //   (1) main UPDATE SET quantity_total=2 correct → OK
-    //   (2) 1ms later THIS BLOCK ran UPDATE SET quantity_total=0 → WRONG
-    //   (3) applyQuantityEvent INIT ran, which floored or recalculated → ends at 1 (ALWAYS!)
-    // So: skip INIT if existing row ALREADY has any qty saved OR has a root_id (any form).
-    if (isInitializingQuantity) {
-      const existingAlreadyHasQty =
-        (existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0) ||
-        (existing.quantity_available !== null && existing.quantity_available !== undefined && Number(existing.quantity_available) > 0) ||
-        (String(existing.quantity_root_id || '').trim() !== '');
-
-      if (existingAlreadyHasQty) {
-        console.warn(`[QTY INIT BLOCK SKIPPED] Asset ${id} appears already initialized (existing.quantity_total=${existing.quantity_total}, quantity_root_id='${existing.quantity_root_id}'). Prevented accidental overwrite of quantity_total → 0.`);
-      } else {
-        const qtyUnit = normalizedRequestedQtyUnit
-        const qtyTotal = normalizedRequestedQtyTotal
-        const qtyPrecision = normalizedRequestedQtyPrecision
-
-        if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
-          await db('assets')
-            .where('id', id)
-            .update({
-              quantity_root_id: id,
-              quantity_unit: qtyUnit,
-              quantity_total: 0,
-              quantity_available: 0,
-              quantity_precision: qtyPrecision,
-              quantity_updated_at: new Date().toISOString()
-            });
-
-          await applyQuantityEvent({
-            rootId: id,
-            type: 'INIT',
-            actor: getRequestActor(req),
-            note: asset.quantity_note || asset.quantityNote || null,
-            metadata: { source: 'asset_update_init' },
-            lines: [
-              { assetId: id, unit: qtyUnit, deltaAvailable: qtyTotal, deltaTotal: qtyTotal, precision: qtyPrecision }
-            ]
-          })
-        }
-      }
-    }
+    // -----------------------------------------------------------------------
+    // QTY INITIALIZATION BLOCK REMOVED FROM PUT HANDLER (v=6.90 FIX)
+    // -----------------------------------------------------------------------
+    // The `if (isInitializingQuantity) { ... UPDATE SET quantity_total=0 +
+    // applyQuantityEvent(INIT) }` block was ONLY meant to run ONCE when a
+    // BRAND-NEW asset was created (POST /api/assets). It was NEVER safe to
+    // run on PUT /api/assets/:id (edit) because:
+    //
+    //   Bug 1: v6.86 stored quantity_root_id='' (empty string) not NULL on
+    //          some rows. Guard `!existing.quantity_root_id || trim===''`
+    //          triggered the block on EVERY edit save → total set to 0 →
+    //          INIT event floors to 1 → user enters ANY qty and gets 1.
+    //
+    //   Bug 2: If user intentionally saved qty=0 (consumable out of stock),
+    //          my previous `existingAlreadyHasQty` guard treated 0 as
+    //          UNINITIALIZED → ran INIT block again → 0→2 became 1.
+    //
+    //   Bug 3: Even an unrelated edit (change Status / AssignedTo) hit the
+    //          same INIT block because hasQuantityMutation checked form qty
+    //          fields (present in DOM even if unchanged).
+    //
+    // CORRECT BEHAVIOR on PUT (edit): just update quantity_total /
+    // quantity_available directly by delta (lines 8157-8162 + L8260-8263).
+    // For NEW asset creation (POST /api/assets), the POST handler runs its
+    // OWN initialization (we verify next in this commit chain).
+    // -----------------------------------------------------------------------
 
     // Update IT details if provided
     if (asset.MACAddress !== undefined || asset.IPAddress !== undefined || asset.NetworkType !== undefined || asset.PhysicalPort !== undefined || asset.VLAN !== undefined || asset.SocketID !== undefined || asset.UserID !== undefined) {
