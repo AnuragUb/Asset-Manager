@@ -4932,11 +4932,43 @@ export function renderDashboard(assets, filteredAssets) {
 
     const dashboardTitle = document.getElementById('dashboard-title');
     if (dashboardTitle) {
+        const isLeafKindNode = parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0);
+        const haveAssets = (isLeafKindNode && assetsToRender.length > 0) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && assetsToRender.length > 0);
+        // Default view mode: leaf kinds / lists → TABLE; everything else → CARDS
+        const autoMode = (isLeafKindNode || window.currentSearchQuery || (directAssets && directAssets.length > 0)) ? 'table' : 'cards';
+        if (typeof window.dashboardViewMode === 'undefined' || !window.dashboardViewMode) {
+            window.dashboardViewMode = autoMode;
+        } else if (window.dashboardViewMode === 'table' && !haveAssets && !displayNodes.length) {
+            window.dashboardViewMode = 'cards';
+        }
+
+        const activeTabBg = '#1d4ed8';
+        const activeTabFg = 'white';
+        const inactiveTabBg = 'white';
+        const inactiveTabFg = '#475569';
+        const cardsActive = window.dashboardViewMode === 'cards';
+        const tableActive = window.dashboardViewMode === 'table';
+        const viewToggleHtml = haveAssets ? `
+            <div id="dashViewToggleWrap" style="display: inline-flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-left: 12px;">
+                <button type="button" id="btnDashViewCards" style="
+                    display: inline-flex; align-items: center; gap: 4px;
+                    padding: 4px 12px; font-size: 11px; font-weight: 700; cursor: pointer;
+                    border: none; background: ${cardsActive ? activeTabBg : inactiveTabBg}; color: ${cardsActive ? activeTabFg : inactiveTabFg};
+                ">🗂️ Cards</button>
+                <button type="button" id="btnDashViewTable" style="
+                    display: inline-flex; align-items: center; gap: 4px;
+                    padding: 4px 12px; font-size: 11px; font-weight: 700; cursor: pointer;
+                    border: none; background: ${tableActive ? activeTabBg : inactiveTabBg}; color: ${tableActive ? activeTabFg : inactiveTabFg};
+                ">📋 Table</button>
+            </div>
+        ` : '';
+
         dashboardTitle.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
                 ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>' : ''}
                 <span>${parentNode ? parentNode.Name : (category === 'In-House' || category === 'SERVICE' ? 'Service Assets' : `${category} Assets`)}</span>
                 ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
+                ${viewToggleHtml}
                 <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
             </div>
         `;
@@ -4963,6 +4995,24 @@ export function renderDashboard(assets, filteredAssets) {
                 } else {
                     window.currentDashboardParent = null;
                 }
+                renderDashboard(window.allAssets, filteredAssets);
+            };
+        }
+
+        // Add View Toggle Handlers
+        const btnDashCards = document.getElementById('btnDashViewCards');
+        if (btnDashCards) {
+            btnDashCards.onclick = (e) => {
+                e.stopPropagation();
+                window.dashboardViewMode = 'cards';
+                renderDashboard(window.allAssets, filteredAssets);
+            };
+        }
+        const btnDashTable = document.getElementById('btnDashViewTable');
+        if (btnDashTable) {
+            btnDashTable.onclick = (e) => {
+                e.stopPropagation();
+                window.dashboardViewMode = 'table';
                 renderDashboard(window.allAssets, filteredAssets);
             };
         }
@@ -5042,6 +5092,250 @@ export function renderDashboard(assets, filteredAssets) {
         overviewTitle = `${parentNode.Name} Assets`;
     }
 
+    // --- UTIL: Cards/Table helpers (used by leaf-kind, direct-assets, search results) ---
+    function _dashEscapeHtml(v) {
+        return String(v ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function _dashEscapeAttr(v) {
+        return String(v ?? '')
+            .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function _dashFmtDate(v) {
+        if (!v) return '-';
+        let d = v instanceof Date ? v : new Date(v);
+        if (isNaN(d.getTime())) return _dashEscapeHtml(String(v || '-'));
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        return `${dd}-${mm}-${d.getFullYear()}`;
+    }
+    function renderAssetsTable(rows) {
+        if (!rows || !rows.length) {
+            return `
+                <div class="card-panel" style="padding: 30px; text-align: center; color: #667085;">
+                    No assets found.
+                </div>
+            `;
+        }
+        const bodyHtml = rows.map(asset => {
+            const id = String(asset.ID || asset.Id || '-');
+            const idAttr = _dashEscapeAttr(id);
+            const status = _dashEscapeHtml(asset.Status || 'Owned');
+            const statusLower = String(asset.Status || '').toLowerCase().trim();
+            const statusClass = statusLower || 'owned';
+            const statusColor = getStatusColor(asset.Status);
+            const displayImg = asset.Icon;
+            const isUrl = displayImg && (String(displayImg).startsWith('/') || String(displayImg).startsWith('http'));
+            const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(String(displayImg));
+            const isMaterialIcon = displayImg && !isUrl && !isEmoji;
+            const iconHtml = isUrl
+                ? `<img src="${_dashEscapeAttr(displayImg)}" style="width: 24px; height: 24px; object-fit: contain;">`
+                : (isMaterialIcon
+                    ? `<i class="material-icons" style="font-size: 22px; color: #007bff;">${_dashEscapeHtml(displayImg)}</i>`
+                    : `<span style="font-size: 22px;">${_dashEscapeHtml(displayImg || '📦')}</span>`);
+            const qtyTracked = !!(asset.IsQuantityTracked === 1 || asset.is_quantity_tracked === 1 || asset.quantity_unit || (asset.quantity_total !== undefined && Number(asset.quantity_total) > 0));
+            const qtyTotal = asset.QuantityTotal ?? asset.quantity_total ?? 0;
+            const qtyAvail = (asset.QuantityAvailable !== undefined || asset.quantity_available !== undefined)
+                ? Number(asset.QuantityAvailable ?? asset.quantity_available ?? 0)
+                : null;
+            const qtyUnit = asset.QuantityUnit || asset.quantity_unit || '';
+            const warranty = asset.WarrantyMonths != null ? `${Number(asset.WarrantyMonths)}m`
+                : (asset.warranty_months != null ? `${Number(asset.warranty_months)}m` : '-');
+            const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
+            const assigned = _dashEscapeHtml(asset.AssignedTo || asset.assignedto || asset.assigned_to || '');
+            const srno = _dashEscapeHtml(asset.SrNo || asset.srno || asset.Serial || asset.SerialNo || asset.serialno || '-');
+            const location = _dashEscapeHtml(asset.CurrentLocation || asset.currentlocation || '-');
+            const make = _dashEscapeHtml(asset.Make || asset.make || '-');
+            const model = _dashEscapeHtml(asset.Model || asset.model || '-');
+            const purchase = _dashFmtDate(asset.PurchaseDate || asset.purchasedate);
+            const parentId = _dashEscapeHtml(asset.ParentId || asset.parentid || '-');
+            const itemName = _dashEscapeHtml(asset.ItemName || asset.Name || '-');
+
+            return `
+                <tr class="dash-table-row" data-id="${idAttr}" style="cursor: pointer; ${isRetired ? 'opacity: 0.6; filter: grayscale(0.5);' : ''}">
+                    <td style="font-family: monospace; font-size: 11px; white-space: nowrap;">${_dashEscapeHtml(id)}</td>
+                    <td style="text-align:center;">${iconHtml}</td>
+                    <td>
+                        <div style="font-weight: 600;">${itemName}</div>
+                        ${qtyTracked ? `<button type="button" class="dash-row-qty-history" data-id="${idAttr}" style="margin-top:3px; color: #4338ca; background: #e0e7ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #c7d2fe; font-size: 10px; font-weight: 700; cursor: pointer;">📅 History</button>` : ''}
+                    </td>
+                    <td><span class="status-badge ${statusClass}" style="${statusColor ? `background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40;` : ''}">${status}</span></td>
+                    <td>${make}</td>
+                    <td>${model}</td>
+                    <td style="font-family: monospace; font-size: 11px;">${srno}</td>
+                    <td>${location}</td>
+                    <td>${assigned || '-'}</td>
+                    <td style="white-space: nowrap;">${purchase}</td>
+                    <td>${warranty}</td>
+                    <td>
+                        <div style="font-size: 11px;">
+                            ${qtyTracked ? `
+                                <strong style="color: #0078d4;">⚖️ ${Number(qtyTotal)}</strong> ${_dashEscapeHtml(qtyUnit || '')}
+                                ${qtyAvail !== null ? `<br><span style="color: #666;">Avail: ${Number(qtyAvail)}</span>` : ''}
+                            ` : '-'}
+                        </div>
+                    </td>
+                    <td style="font-family: monospace; font-size: 11px;">${parentId}</td>
+                    <td style="white-space: nowrap;">
+                        <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
+                            <button type="button" class="dash-row-edit" data-id="${idAttr}" title="Edit" style="background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Edit</button>
+                            <button type="button" class="dash-row-details" data-id="${idAttr}" title="View Full Details" style="background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Details</button>
+                            <button type="button" class="dash-row-print-qr" data-id="${idAttr}" title="Print QR / Label" style="background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">🖨️ QR</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="card-panel" style="padding: 0; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; min-width: 1600px;">
+                    <thead>
+                        <tr style="background: #f8fafc; position: sticky; top: 0; z-index: 1;">
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">ID</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Icon</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Item Name</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Status</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Make</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Model</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Serial No</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Location</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Assigned To</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Purchase Date</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Warranty</th>
+                            <th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Quantity</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Parent ID</th>
+                            <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bodyHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+    function wireDashboardTableRowHandlers(container, rows) {
+        if (!container) return;
+        container.querySelectorAll('tr.dash-table-row').forEach(tr => {
+            tr.addEventListener('click', () => {
+                const id = tr.getAttribute('data-id');
+                if (!id) return;
+                const asset = (Array.isArray(rows) ? rows : []).find(r => String(r.ID || r.Id || '') === String(id));
+                if (asset && typeof window.viewAssetDetails === 'function') {
+                    window.viewAssetDetails(asset);
+                }
+            });
+        });
+        container.querySelectorAll('.dash-row-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (!id) return;
+                const asset = (Array.isArray(rows) ? rows : []).find(r => String(r.ID || r.Id || '') === String(id));
+                if (asset && typeof editAsset === 'function') editAsset(asset);
+            });
+        });
+        container.querySelectorAll('.dash-row-details').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (!id) return;
+                window.open(`/asset/${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer');
+            });
+        });
+        container.querySelectorAll('.dash-row-print-qr').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (!id) return;
+                const asset = (Array.isArray(rows) ? rows : []).find(r => String(r.ID || r.Id || '') === String(id));
+                if (!asset) return;
+                if (typeof window.openPrintPreview === 'function') {
+                    window.openPrintPreview([asset]);
+                } else {
+                    alert('Print preview not available.');
+                }
+            });
+        });
+        container.querySelectorAll('.dash-row-qty-history').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (!id) return;
+                if (typeof window.showQuantityHistoryModal === 'function') {
+                    window.showQuantityHistoryModal(id);
+                } else {
+                    import('./quantity-history-modal.js?v=6.97').then(m => {
+                        if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(id);
+                        else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(id);
+                    }).catch(err => console.error('[DASH-QTY-HIST] import err', err));
+                }
+            });
+        });
+    }
+    function renderDashboardCardsGrid(grid, rows) {
+        if (!grid) return;
+        if (!rows || !rows.length) {
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #667085;">
+                    No assets found.
+                </div>
+            `;
+            return;
+        }
+        rows.forEach(asset => {
+            const card = document.createElement('div');
+            card.classList.add('asset-card');
+            const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
+            card.style.borderLeft = `4px solid ${getStatusColor(asset.Status)}`;
+            if (isRetired) {
+                card.style.opacity = '0.6';
+                card.style.filter = 'grayscale(0.5)';
+            }
+            card.onclick = (e) => {
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.tagName === 'A' || e.target.closest('a')) return;
+                if (typeof window.viewAssetDetails === 'function') window.viewAssetDetails(asset);
+            };
+            const displayImg = asset.Icon;
+            const isUrl = displayImg && (String(displayImg).startsWith('/') || String(displayImg).startsWith('http'));
+            const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(String(displayImg));
+            const isMaterialIcon = displayImg && !isUrl && !isEmoji;
+            const id = String(asset.ID || asset.Id || '-');
+            const sc = getStatusColor(asset.Status);
+            card.innerHTML = `
+                <div class="asset-card-icon" style="margin-bottom: 4px;">
+                    ${isUrl ? `<img src="${_dashEscapeAttr(displayImg)}" style="width: 48px; height: 48px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
+                      : (isMaterialIcon ? `<i class="material-icons" style="font-size: 48px; color: #007bff;">${_dashEscapeHtml(displayImg)}</i>`
+                                         : `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${_dashEscapeHtml(displayImg || '📦')}</span>`)}
+                </div>
+                <div class="asset-card-header" style="margin-bottom: 4px;">
+                    <span class="asset-card-title" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${_dashEscapeHtml(asset.ItemName || asset.Name || '-')}</span>
+                </div>
+                <div class="asset-card-status" style="grid-template-columns: 1fr; border-top: 1px solid #f0f0f0; margin-top: 2px; padding-top: 4px;">
+                    <div class="asset-card-status-item">
+                        <span class="asset-card-status-label" style="font-size: 8px;">ID</span>
+                        <span class="asset-card-status-value" style="font-family: monospace; font-size: 10px; color: #334155;">${_dashEscapeHtml(id)}</span>
+                    </div>
+                    <div class="asset-card-status-item">
+                        <span class="asset-card-status-label" style="font-size: 8px;">Status</span>
+                        <span class="asset-card-status-value" style="font-size: 10px; color: ${sc || '#333'};">${_dashEscapeHtml(asset.Status || 'Owned')}</span>
+                    </div>
+                </div>
+                <div style="position: absolute; bottom: 8px; left: 10px; right: 10px; display: flex; gap: 6px;">
+                    <button type="button" onclick="event.stopPropagation(); window.editAsset && window.editAsset(window.dashboardUtils?.findAsset ? window.dashboardUtils.findAsset('${_dashEscapeAttr(id)}') : null);" style="flex: 1; background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 4px; border-radius: 3px; font-size: 10px; color: #64748b; cursor: pointer;">✏️ Edit</button>
+                    <button type="button" onclick="event.stopPropagation(); window.open('/asset/${encodeURIComponent(id)}', '_blank', 'noopener,noreferrer');" style="flex: 1; background: #eef2ff; border: 1px solid #e0e7ff; padding: 3px 4px; border-radius: 3px; font-size: 10px; color: #6366f1; cursor: pointer;">📜 Details</button>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+    if (!window.dashboardUtils) window.dashboardUtils = {
+        findAsset: (id) => (window.allAssets || []).find(a => String(a.ID || a.Id || '') === String(id))
+    };
+
     // --- KANBAN VIEW LOGIC (Moved after hierarchy filtering) ---
     if (isAssetKanbanActive) {
         if (assetGrid) assetGrid.style.display = 'none';
@@ -5087,23 +5381,18 @@ export function renderDashboard(assets, filteredAssets) {
         if (toggleBtn) toggleBtn.style.display = 'none';
     }
 
-    // If it's a leaf kind (no children), show a message and automatically open the list
+    // If it's a leaf kind (no children), show assets ON PAGE directly (cards or table, just like inventory) instead of opening the list modal.
         if (parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0)) {
-            assetGrid.innerHTML = `
-                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; background: white; border-radius: 8px; border: 1px dashed #ccc;">
-                    <div style="font-size: 48px; margin-bottom: 20px;">📦</div>
-                    <h3 style="margin-bottom: 10px;">${parentNode.Name} Assets</h3>
-                    <p style="color: #666; margin-bottom: 20px;">Viewing inventory for this category.</p>
-                    <button id="btnOpenLeafList" style="padding: 10px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">View Full Inventory List</button>
-                </div>
-            `;
-            const btn = document.getElementById('btnOpenLeafList');
-            if (btn) btn.onclick = () => showAssetList(parentNode);
-            
-            // Auto-open list if it's not already open
-            const modal = document.getElementById('assetListModal');
-            if (modal && modal.style.display !== 'flex') {
-                showAssetList(parentNode);
+            assetGrid.innerHTML = '';
+            const viewMode = window.dashboardViewMode || 'table';
+            if (viewMode === 'table') {
+                const wrapper = document.createElement('div');
+                wrapper.style = 'grid-column: 1 / -1;';
+                wrapper.innerHTML = renderAssetsTable(assetsToRender.length ? assetsToRender : recursiveAssets);
+                assetGrid.appendChild(wrapper);
+                wireDashboardTableRowHandlers(wrapper, assetsToRender.length ? assetsToRender : recursiveAssets);
+            } else {
+                renderDashboardCardsGrid(assetGrid, assetsToRender.length ? assetsToRender : recursiveAssets);
             }
             return;
         }
@@ -5126,9 +5415,17 @@ export function renderDashboard(assets, filteredAssets) {
         searchResultsHeader.innerHTML = `<span>🔍 Search Results for "${query}"</span> <span style="font-weight: normal; font-size: 12px; color: #666;">(${assetsToRender.length} matches)</span>`;
         assetGrid.appendChild(searchResultsHeader);
 
-        // Show matches with "Load More" pagination (15 at a time)
-        let renderedCount = 0;
-        const BATCH_SIZE = 15;
+        const viewMode = window.dashboardViewMode || 'table';
+        if (viewMode === 'table') {
+            const wrapper = document.createElement('div');
+            wrapper.style = 'grid-column: 1 / -1;';
+            wrapper.innerHTML = renderAssetsTable(assetsToRender);
+            assetGrid.appendChild(wrapper);
+            wireDashboardTableRowHandlers(wrapper, assetsToRender);
+        } else {
+            // Show matches with "Load More" pagination (15 at a time)
+            let renderedCount = 0;
+            const BATCH_SIZE = 15;
 
         const renderBatch = () => {
             const batch = assetsToRender.slice(renderedCount, renderedCount + BATCH_SIZE);
@@ -5236,7 +5533,8 @@ export function renderDashboard(assets, filteredAssets) {
         };
 
         renderBatch(); // Initial render
-    }
+        } // close else { cards }
+    } // close if (query) {
 
     displayNodes.forEach(node => {
         const isKind = node.type === 'kind';
@@ -5419,47 +5717,16 @@ This action CANNOT be undone once the 30-day window closes.`;
             assetGrid.appendChild(header);
         }
 
-        directAssets.forEach(asset => {
-            const card = document.createElement('div');
-            card.classList.add('asset-card');
-            const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
-            card.style.borderLeft = `4px solid ${getStatusColor(asset.Status)}`;
-            if (isRetired) {
-                card.style.opacity = '0.6';
-                card.style.filter = 'grayscale(0.5)';
-            }
-            card.onclick = () => {
-                if (typeof editAsset === 'function') {
-                    editAsset(asset);
-                }
-            };
-
-            const isNoQr = asset.NoQR === 1 || asset.NoQR === true;
-            
-            const displayImg = asset.Icon;
-            const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
-            // Robust emoji check: if it contains non-ASCII characters and is not a URL, treat as Emoji/Text
-            const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
-            // Material icons are usually single words or snake_case strings
-            const isMaterialIcon = displayImg && !isUrl && !isEmoji && /^[a-z0-9_]+$/i.test(displayImg);
-            
-            card.innerHTML = `
-                <div class="asset-card-icon" style="font-size: 24px;">
-                    ${isUrl 
-                        ? `<img src="${displayImg}" style="width: 32px; height: 32px; object-fit: contain;" onerror="this.src='/static/icons/package.svg';">`
-                        : isMaterialIcon
-                            ? `<i class="material-icons" style="font-size: 24px; color: #007bff;">${displayImg}</i>`
-                            : `<span style="font-size: 24px;">${displayImg || '📦'}</span>`}
-                </div>
-                <div class="asset-card-header">
-                    <span class="asset-card-title">${asset.ItemName}</span>
-                    <div style="font-size: 10px; color: #666; margin-top: 2px;">
-                        ${asset.ID} • ${asset.Status}
-                    </div>
-                </div>
-            `;
-            assetGrid.appendChild(card);
-        });
+        const viewMode = window.dashboardViewMode || 'table';
+        if (viewMode === 'table') {
+            const wrapper = document.createElement('div');
+            wrapper.style = 'grid-column: 1 / -1;';
+            wrapper.innerHTML = renderAssetsTable(directAssets);
+            assetGrid.appendChild(wrapper);
+            wireDashboardTableRowHandlers(wrapper, directAssets);
+        } else {
+            renderDashboardCardsGrid(assetGrid, directAssets);
+        }
     }
 
     // Ensure Kanban is handled separately and correctly
@@ -6955,7 +7222,7 @@ function showAssetList(nodeOrKindName) {
                 if (typeof window.showQuantityHistoryModal === 'function' && id) {
                     window.showQuantityHistoryModal(id);
                 } else if (id) {
-                    import('./quantity-history-modal.js?v=6.96').then(m => {
+                    import('./quantity-history-modal.js?v=6.97').then(m => {
                         if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
                         else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[QTY-HISTORY] load err', err));
@@ -6983,7 +7250,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=6.96').then(() => {
+                    import('./inventory.js?v=6.97').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
