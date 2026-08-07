@@ -9,7 +9,7 @@ const state = {
     selectedNodeId: null,
     catalogMode: false,
     catalog: [],
-    pageSize: 12,
+    pageSize: 25,
     pageByKey: {},
     viewMode: null // 'cards' | 'table' | null (auto: TABLE for leaf kinds, CARDS for folders/root)
 };
@@ -435,7 +435,7 @@ function openInventorySharedModal(existingItem = null) {
             if (typeof window.showQuantityHistoryModal === 'function') {
                 window.showQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.95').then(m => {
+                import('./quantity-history-modal.js?v=6.96').then(m => {
                     if (m && m.showQuantityHistoryModal) m.showQuantityHistoryModal(itemId);
                     else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-BTN] import err', err));
@@ -1017,6 +1017,7 @@ function renderInventoryItemsTable(items) {
                     <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
                         <button type="button" class="inv-row-edit" data-id="${idAttr}" title="Edit" style="background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Edit</button>
                         <button type="button" class="inv-row-details" data-id="${idAttr}" title="View Full Details" style="background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Details</button>
+                        <button type="button" class="inv-row-print-qr" data-id="${idAttr}" title="Print QR / Label" style="background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">🖨️ QR</button>
                     </div>
                 </td>
             </tr>
@@ -1252,12 +1253,29 @@ function renderInventoryItems() {
             if (typeof window.showQuantityHistoryModal === 'function') {
                 window.showQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.95').then(m => {
+                import('./quantity-history-modal.js?v=6.96').then(m => {
                     if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(itemId);
                     else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-ROW] import err', err));
             }
         });
+    });
+
+    content.querySelectorAll('.inv-row-print-qr').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const itemId = btn.getAttribute('data-id');
+            if (!itemId) return;
+            const item = state.items.find(entry => String(entry.ID || entry.id) === String(itemId));
+            if (!item) return;
+            if (typeof window.openInventoryPrintPreview === 'function') {
+                window.openInventoryPrintPreview([item]);
+            } else if (typeof window.openPrintPreview === 'function') {
+                    window.openPrintPreview([item]);
+                } else {
+                    alert('Print preview not available.');
+                }
+            });
     });
 
     content.querySelectorAll('.inventory-page-btn').forEach(button => {

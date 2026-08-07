@@ -6955,7 +6955,7 @@ function showAssetList(nodeOrKindName) {
                 if (typeof window.showQuantityHistoryModal === 'function' && id) {
                     window.showQuantityHistoryModal(id);
                 } else if (id) {
-                    import('./quantity-history-modal.js?v=6.95').then(m => {
+                    import('./quantity-history-modal.js?v=6.96').then(m => {
                         if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
                         else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[QTY-HISTORY] load err', err));
@@ -6983,7 +6983,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=6.95').then(() => {
+                    import('./inventory.js?v=6.96').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
