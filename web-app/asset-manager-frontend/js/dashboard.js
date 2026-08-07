@@ -5782,12 +5782,29 @@ export function openAddItemModal(kind, prefillData = null) {
         const qtyFieldsContainer = document.getElementById('qtyFieldsContainer');
 
         if (isQtyTrackedToggle && qtyFieldsContainer) {
-            isQtyTrackedToggle.checked = true;
-            isQtyTrackedToggle.disabled = true;
-            qtyFieldsContainer.style.display = 'grid';
+            if (!prefillData) {
+                isQtyTrackedToggle.checked = true;
+                isQtyTrackedToggle.disabled = false;
+                qtyFieldsContainer.style.display = 'grid';
+            } else {
+                const prefTracked = String(prefillData.IsQuantityTracked ?? prefillData.is_quantity_tracked ?? prefillData.isQtyTracked ?? '');
+                const trackedFromPrefill = prefTracked === '1' || prefTracked === 'true' || prefTracked === true;
+                isQtyTrackedToggle.checked = !!trackedFromPrefill;
+                isQtyTrackedToggle.disabled = false;
+                qtyFieldsContainer.style.display = trackedFromPrefill ? 'grid' : 'none';
+                if (trackedFromPrefill) {
+                    const qtyUnit = document.getElementById('itemQtyUnit');
+                    const qtyPrecision = document.getElementById('itemQtyPrecision');
+                    if (qtyUnit && !String(qtyUnit.value || '').trim()) qtyUnit.value = 'Nos';
+                    if (qtyTotalField && !String(qtyTotalField.value || '').trim()) qtyTotalField.value = String(Math.max(1, Number(prefillData.QuantityTotal || prefillData.quantity_total || prefillData.QtyOrdered || 1)));
+                    if (qtyPrecision && !String(qtyPrecision.value || '').trim()) qtyPrecision.value = '0';
+                }
+            }
             isQtyTrackedToggle.onchange = () => {
                 qtyFieldsContainer.style.display = isQtyTrackedToggle.checked ? 'grid' : 'none';
                 if (isQtyTrackedToggle.checked) {
+                    const qtyUnit = document.getElementById('itemQtyUnit');
+                    const qtyPrecision = document.getElementById('itemQtyPrecision');
                     if (qtyUnit && !String(qtyUnit.value || '').trim()) qtyUnit.value = 'Nos';
                     if (qtyTotalField && !String(qtyTotalField.value || '').trim()) qtyTotalField.value = '1';
                     if (qtyPrecision && !String(qtyPrecision.value || '').trim()) qtyPrecision.value = '0';
@@ -7147,11 +7164,15 @@ export function setupDashboardFormHandlers() {
                 const hasCatalogZohoProductId = !!String(form.dataset.catalogZohoProductId || '').trim();
                 const hasCatalogUuid = !!String(form.dataset.catalogUuid || '').trim();
                 const hasInventoryEditId = !!String(form.dataset.inventoryEditId || '').trim();
+                const isInventoryFolderId = folderValue.startsWith('IF-') || folderValue.toLowerCase().includes('inbox') || folderValue === 'Inventory';
+                const isInventoryKindId = kindValue.startsWith('IK-') || kindValue.toLowerCase().includes('misc') || kindValue.toLowerCase().includes('inventory');
                 const onInventoryView = String(window.location.hash || '').includes('inventory')
                     || (typeof window.currentInventorySidebar === 'object' && window.currentInventorySidebar !== null);
                 if (entityMode !== 'inventory'
-                    && (folderValue && kindValue)
-                    && (hasCatalogZohoProductId || hasCatalogUuid || hasInventoryEditId || onInventoryView)) {
+                    && (hasInventoryEditId
+                        || isInventoryFolderId
+                        || isInventoryKindId
+                        || ((folderValue && kindValue) && (hasCatalogZohoProductId || hasCatalogUuid || onInventoryView)))) {
                     entityMode = 'inventory';
                     form.dataset.entity = 'inventory';
                 }
