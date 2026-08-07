@@ -347,6 +347,17 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function escapeAttr(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+window.escapeAttr = escapeAttr;
+window.escapeHtml = escapeHtml;
+
 function formatDisplayDate(val) {
     if (!val) return '-';
     
@@ -6702,16 +6713,19 @@ function showAssetList(nodeOrKindName) {
     const modal = document.getElementById('assetListModal');
     const title = document.getElementById('assetListTitle');
     const body = document.getElementById('tblBodyAssetList');
-    
+
     if (!modal || !body) return;
     if (!nodeOrKindName) {
         console.warn('showAssetList called with null/undefined nodeOrKindName');
         return;
     }
-    
+
     let kindName = '';
     let nodeKindNames = [];
+    let nodeKindIds = [];
+    let nodeFolderIds = [];
     const manager = window.hierarchyManager;
+    const invManager = window.inventoryManager;
 
     if (typeof nodeOrKindName === 'string') {
         kindName = nodeOrKindName;
@@ -6721,148 +6735,290 @@ function showAssetList(nodeOrKindName) {
         if (manager && nodeOrKindName.ID) {
             const descendants = manager.getDescendants(nodeOrKindName.ID, true);
             nodeKindNames = descendants.filter(d => d.type === 'kind').map(d => d.Name);
+            nodeKindIds = descendants.filter(d => d.type === 'kind').map(d => String(d.ID || ''));
+            nodeFolderIds = descendants.filter(d => d.type === 'folder').map(d => String(d.ID || ''));
         } else {
             nodeKindNames = [kindName];
         }
+        if (nodeOrKindName.ID) {
+            if (nodeOrKindName.type === 'kind') nodeKindIds.push(String(nodeOrKindName.ID));
+            if (nodeOrKindName.type === 'folder') nodeFolderIds.push(String(nodeOrKindName.ID));
+        }
     }
-    
+
+    if (invManager && nodeOrKindName && nodeOrKindName.ID) {
+        const invDesc = invManager.getDescendants(nodeOrKindName.ID, true);
+        invDesc.forEach(d => {
+            if (d.type === 'kind' && d.ID && !nodeKindIds.includes(String(d.ID))) nodeKindIds.push(String(d.ID));
+            if (d.type === 'folder' && d.ID && !nodeFolderIds.includes(String(d.ID))) nodeFolderIds.push(String(d.ID));
+            if (d.Name && !nodeKindNames.includes(String(d.Name))) nodeKindNames.push(String(d.Name));
+        });
+        if (nodeOrKindName.type === 'kind' && !nodeKindIds.includes(String(nodeOrKindName.ID))) nodeKindIds.push(String(nodeOrKindName.ID));
+        if (nodeOrKindName.type === 'folder' && !nodeFolderIds.includes(String(nodeOrKindName.ID))) nodeFolderIds.push(String(nodeOrKindName.ID));
+    }
+    nodeKindIds = nodeKindIds.filter(Boolean);
+    nodeFolderIds = nodeFolderIds.filter(Boolean);
+
     title.textContent = `${kindName} Inventory`;
     body.innerHTML = '';
-    
+
     const query = window.currentSearchQuery || '';
-    let assets = (window.allAssets || []).filter(a => {
-        // Robust matching logic (synced with renderDashboard)
-        const assetType = (a.Type || '').toLowerCase().trim();
-        const assetName = (a.Name || '').toLowerCase().trim();
-        
-        const typeMatch = nodeKindNames.some(kindName => {
-            const k = kindName.toLowerCase().trim();
-            const t = assetType;
-            
+    const matchesKind = (nameLower, typeLower, kList) => {
+        return kList.some(kName => {
+            const k = String(kName).toLowerCase().trim();
+            if (!k) return false;
+            const t = typeLower || '';
+            const n = nameLower || '';
             if (t === k) return true;
             if (t === k + 's' || t + 's' === k) return true;
             if (t === k + 'es' || t + 'es' === k) return true;
             if (k.endsWith('y') && t === k.slice(0, -1) + 'ies') return true;
             if (t.endsWith('y') && k === t.slice(0, -1) + 'ies') return true;
-            if (assetName === k) return true;
+            if (n === k) return true;
             return false;
         });
+    };
+
+    // ---------- ASSETS (Module = Assets / IT) ----------
+    let assetRows = (window.allAssets || []).filter(a => {
+        const assetType = (a.Type || '').toLowerCase().trim();
+        const assetName = (a.Name || '').toLowerCase().trim();
+        const typeMatch = nodeKindNames.length ? matchesKind(assetName, assetType, nodeKindNames) : false;
+
+        // If kind ID passed, also match via kindId (asset.KindId / kindid)
+        let kindIdMatch = false;
+        const assetKindId = String(a.KindId || a.kindid || '');
+        if (nodeKindIds.length && assetKindId && nodeKindIds.includes(assetKindId)) kindIdMatch = true;
+        // Folder ID match (if folder scope provided)
+        let folderIdMatch = false;
+        const assetFolderId = String(a.FolderId || a.folderid || '');
+        if (nodeFolderIds.length && assetFolderId && nodeFolderIds.includes(assetFolderId)) folderIdMatch = true;
 
         const isPlaceholder = (a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true');
         const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
-        return typeMatch && !isPlaceholder && !isComp;
-    });
+        return (typeMatch || kindIdMatch || folderIdMatch) && !isPlaceholder && !isComp;
+    }).map(a => ({ ...a, __entity: 'asset' }));
 
-    // Apply search filter if present
+    // ---------- INVENTORY ITEMS (Module = Inventory) ----------
+    const invAll = window.allInventoryItems || (window.inventoryManager && window.inventoryManager.items) || [];
+    let inventoryRows = invAll.filter(it => {
+        const itType = (it.Type || it.type || '').toLowerCase().trim();
+        const itName = (it.ItemName || it.Name || it.itemname || '').toLowerCase().trim();
+        const nameMatch = nodeKindNames.length ? matchesKind(itName, itType, nodeKindNames) : false;
+
+        const itKindId = String(it.KindId || it.kindid || it.KindID || '');
+        let kindIdMatch = false;
+        if (nodeKindIds.length && itKindId && nodeKindIds.includes(itKindId)) kindIdMatch = true;
+
+        const itFolderId = String(it.FolderId || it.folderid || it.FolderID || '');
+        let folderIdMatch = false;
+        if (nodeFolderIds.length && itFolderId && nodeFolderIds.includes(itFolderId)) folderIdMatch = true;
+
+        return nameMatch || kindIdMatch || folderIdMatch;
+    }).map(it => ({
+        ID: it.ID || it.id || '-',
+        Icon: it.Icon || it.icon || '📦',
+        ItemName: it.ItemName || it.Name || it.itemname || '-',
+        Status: it.Status || it.status || 'In Store',
+        Make: it.Make || it.make || '-',
+        Model: it.Model || it.model || '-',
+        SrNo: it.SrNo || it.srno || it.Serial || '-',
+        CurrentLocation: it.CurrentLocation || it.currentlocation || '-',
+        AssignedTo: it.AssignedTo || it.assignedto || '',
+        PurchaseDate: it.PurchaseDate || it.purchasedate || it.Purchase || '',
+        warranty_months: it.warranty_months ?? it.WarrantyMonths ?? null,
+        is_quantity_tracked: Number(it.IsQuantityTracked ?? it.is_quantity_tracked ?? 0),
+        quantity_total: Number(it.QuantityTotal ?? it.quantity_total ?? 0),
+        quantity_available: Number(it.QuantityAvailable ?? it.quantity_available ?? 0),
+        quantity_unit: it.QuantityUnit || it.quantity_unit || '',
+        ParentId: it.ParentId || it.parentid || '',
+        IsRetired: it.IsRetired || it.is_retired || 0,
+        __entity: 'inventory',
+        __raw: it
+    }));
+
+    // ---------- COMBINE ----------
+    const combinedRows = [...assetRows, ...inventoryRows];
+
+    let rows = combinedRows;
     if (query) {
-        assets = assets.filter(a => matchesQuery(a, query));
+        rows = rows.filter(r => matchesQuery(r, query));
     }
-    
-    if (assets.length === 0) {
-        body.innerHTML = `<tr><td colspan="13" style="text-align:center;">No ${query ? 'matching ' : ''}assets found for this kind.</td></tr>`;
+
+    if (rows.length === 0) {
+        const label = (inventoryRows.length && !assetRows.length)
+            ? 'inventory items'
+            : ((assetRows.length && !inventoryRows.length) ? 'assets' : 'assets / inventory items');
+        body.innerHTML = `<tr><td colspan="16" style="text-align:center; padding: 24px 8px; color:#666;">No ${query ? 'matching ' : ''}${label} found for this kind.</td></tr>`;
     } else {
-        assets.forEach(a => {
-            const isSelected = selectedBatchAssets.some(sa => sa.ID === a.ID);
+        rows.forEach(r => {
+            const id = String(r.ID || r.Id || '-');
+            const entity = r.__entity || 'asset';
+            const isInventory = entity === 'inventory';
+            const isSelected = selectedBatchAssets.some(sa => String(sa.ID || sa.Id || '') === id);
             const tr = document.createElement('tr');
+            tr.dataset.entity = entity;
+            tr.dataset.id = id;
             if (isSelected) tr.style.backgroundColor = '#e3f2fd';
-            
-            const isRetired = a.IsRetired == 1 || a.is_retired == 1 || a.Status === 'Sold' || a.Status === 'Scraped';
+
+            const isRetired = r.IsRetired == 1 || r.is_retired == 1 || r.Status === 'Sold' || r.Status === 'Scraped';
             if (isRetired) {
                 tr.style.opacity = '0.6';
                 tr.style.filter = 'grayscale(0.5)';
             }
-            
+
+            const qtyTracked = !!(r.is_quantity_tracked === 1 || r.quantity_unit || (r.quantity_total !== undefined && Number(r.quantity_total) > 0));
+            const qtyTotal = r.quantity_total ?? 0;
+            const qtyAvail = r.quantity_available !== undefined ? Number(r.quantity_available) : null;
+            const qtyUnit = r.quantity_unit || '';
+
+            const viewLink = isInventory
+                ? `/inventory/${encodeURIComponent(id)}`
+                : `/asset/${encodeURIComponent(id)}`;
+
+            const qrUrl = `${window.location.origin}${viewLink}`;
+
             tr.innerHTML = `
                 <td>
                     ${isSelectionMode ? `
-                        <input type="checkbox" class="selection-checkbox" data-id="${a.ID}" ${isSelected ? 'checked' : ''} style="position:static; width:16px; height:16px;">
-                    ` : (a.ID || a.Id || '-')}
+                        <input type="checkbox" class="selection-checkbox" data-id="${escapeAttr(id)}" ${isSelected ? 'checked' : ''} style="position:static; width:16px; height:16px;">
+                    ` : escapeHtml(id)}
                 </td>
                 <td style="text-align: center; font-size: 20px;">
-                    ${(a.Icon && (a.Icon.startsWith('/') || a.Icon.startsWith('http'))) 
-                        ? `<img src="${a.Icon}" style="width: 24px; height: 24px; object-fit: contain;">`
-                        : (a.Icon || '📦')}
+                    ${(r.Icon && (String(r.Icon).startsWith('/') || String(r.Icon).startsWith('http')))
+                        ? `<img src="${escapeAttr(r.Icon)}" style="width: 24px; height: 24px; object-fit: contain;">`
+                        : escapeHtml(r.Icon || '📦')}
                 </td>
-                <td>${a.ItemName || a.Name || '-'}</td>
-                <td><span class="status-badge ${a.Status ? a.Status.toLowerCase().replace(' ', '-') : ''}">${a.Status || 'In Store'}</span></td>
-                <td>${a.Make || '-'}</td>
-                <td>${a.Model || '-'}</td>
-                <td>${a.SrNo || '-'}</td>
-                <td>${a.CurrentLocation || '-'}</td>
+                <td>${escapeHtml(r.ItemName || r.Name || '-')}</td>
+                <td><span class="status-badge ${r.Status ? String(r.Status).toLowerCase().replace(' ', '-') : ''}">${escapeHtml(r.Status || 'In Store')}</span></td>
+                <td>${escapeHtml(r.Make || '-')}</td>
+                <td>${escapeHtml(r.Model || '-')}</td>
+                <td>${escapeHtml(r.SrNo || '-')}</td>
+                <td>${escapeHtml(r.CurrentLocation || '-')}</td>
                 <td>
-                    ${a.AssignedTo ? `
+                    ${r.AssignedTo ? `
                         <div style="display: flex; align-items: center; gap: 5px;">
-                            <span>${a.AssignedTo}</span>
-                            <button class="view-emp-small" data-name="${a.AssignedTo}" style="padding: 2px 5px; font-size: 10px; background: #eee; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;" title="View Employee Details">👤</button>
+                            <span>${escapeHtml(r.AssignedTo)}</span>
+                            <button class="view-emp-small" data-name="${escapeAttr(r.AssignedTo)}" style="padding: 2px 5px; font-size: 10px; background: #eee; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;" title="View Employee Details">👤</button>
                         </div>
                     ` : '-'}
                 </td>
-                <td style="font-size: 11px;">${formatDisplayDate(a.PurchaseDate)}</td>
-                <td>${a.warranty_months ? `${a.warranty_months}m` : '-'}</td>
+                <td style="font-size: 11px;">${formatDisplayDate(r.PurchaseDate)}</td>
+                <td>${r.warranty_months ? `${Number(r.warranty_months)}m` : '-'}</td>
                 <td>
                     <div style="font-size: 11px;">
-                        ${(a.is_quantity_tracked === 1 || a.quantity_unit || a.quantity_total) ? `
-                            <strong style="color: #0078d4;">⚖️ ${a.quantity_total ?? 0}</strong> ${a.quantity_unit || ''}
-                            ${a.quantity_available !== undefined ? `<br><span style="color: #666;">Avail: ${a.quantity_available}</span>` : ''}
-                        ` : ''}
-                        <br><a href="#" onclick="window.showQuantityHistoryModal('${a.ID}'); return false;" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 5px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px;">🔗 Qty API</a>
+                        ${qtyTracked ? `
+                            <strong style="color: #0078d4;">⚖️ ${Number(qtyTotal)}</strong> ${escapeHtml(qtyUnit || '')}
+                            ${qtyAvail !== null ? `<br><span style="color: #666;">Avail: ${Number(qtyAvail)}</span>` : ''}
+                        ` : '-'}
+                        <br><button class="qty-history-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; cursor: pointer;" title="View Quantity History">📅 History</button>
                     </div>
                 </td>
-                <td>${a.ParentId || '-'}</td>
+                <td>${escapeHtml(r.ParentId || r.ParentId || '-')}</td>
                 <td>
                     <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <a href="/asset/${a.ID}" target="_blank" class="view-link" style="color: var(--primary); text-decoration: none; font-weight: 600; font-size: 12px;">View Page</a>
-                        <button class="edit-asset-btn" data-id="${a.ID}" style="background: #0078d4; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">Edit Details</button>
-                        <button class="print-single-qr" data-id="${a.ID}" style="background: #17a2b8; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">Print QR</button>
+                        <a href="${viewLink}" target="_blank" class="view-link" style="color: var(--primary); text-decoration: none; font-weight: 600; font-size: 12px;">View Page</a>
+                        <button class="edit-entity-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="background: #0078d4; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">✏️ Edit Details</button>
+                        <button class="qty-history-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="background: #64748b; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">📅 History</button>
+                        <button class="print-single-qr" data-id="${escapeAttr(id)}" data-entity="${entity}" style="background: #17a2b8; color: white; border: none; border-radius: 3px; padding: 4px 8px; cursor: pointer; font-size: 12px;">🖨️ Print QR</button>
                     </div>
                 </td>
                 <td>
-                    <a href="/asset/${encodeURIComponent(a.ID)}" target="_blank" title="Smart Link QR - Click to View Page">
-                        <canvas class="dynamic-qr" data-id="${a.ID}" style="width: 100px; height: 100px; border: 1px solid #eee; padding: 2px; background: white; cursor: pointer;"></canvas>
+                    <a href="${viewLink}" target="_blank" title="Smart Link QR - Click to View Page">
+                        <canvas class="dynamic-qr" data-url="${escapeAttr(qrUrl)}" style="width: 100px; height: 100px; border: 1px solid #eee; padding: 2px; background: white; cursor: pointer;"></canvas>
                     </a>
                 </td>
             `;
             body.appendChild(tr);
         });
 
-        // Add checkbox handlers
+        // Checkbox handlers
         body.querySelectorAll('.selection-checkbox').forEach(cb => {
             cb.onclick = (e) => {
                 e.stopPropagation();
                 const id = cb.getAttribute('data-id');
-                const asset = assets.find(a => a.ID === id);
+                const asset = rows.find(r => String(r.ID || r.Id || '') === String(id));
                 if (asset) {
                     toggleAssetSelection(asset);
                     const tr = cb.closest('tr');
-                    if (cb.checked) {
-                        tr.style.backgroundColor = '#e3f2fd';
-                    } else {
-                        tr.style.backgroundColor = '';
-                    }
+                    if (cb.checked) tr.style.backgroundColor = '#e3f2fd';
+                    else tr.style.backgroundColor = '';
                 }
             };
         });
 
-        // Add Single Print Handler
+        // Quantity History (both asset & inventory)
+        body.querySelectorAll('.qty-history-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (typeof window.showQuantityHistoryModal === 'function' && id) {
+                    window.showQuantityHistoryModal(id);
+                } else if (id) {
+                    import('./quantity-history-modal.js?v=6.91').then(m => {
+                        if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
+                        else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
+                    }).catch(err => console.error('[QTY-HISTORY] load err', err));
+                }
+            };
+        });
+
+        // Edit Details (asset OR inventory -> correct function)
+        body.querySelectorAll('.edit-entity-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                const entity = btn.getAttribute('data-entity');
+                const row = rows.find(r => String(r.ID || r.Id || '') === String(id));
+                if (!row) return;
+                if (entity === 'inventory') {
+                    const raw = row.__raw || row;
+                    // Try inventory.js global openCrudModal (open edit)
+                    if (typeof window.openCrudModal === 'function') {
+                        window.openCrudModal('item', raw);
+                        return;
+                    }
+                    // Fallback: shared modal via inventory.js openInventorySharedModal
+                    if (typeof window.openInventorySharedModal === 'function') {
+                        window.openInventorySharedModal(raw, id);
+                        return;
+                    }
+                    import('./inventory.js?v=6.91').then(() => {
+                        if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
+                        else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
+                        else if (typeof editAsset === 'function') editAsset(row);
+                    }).catch(() => {
+                        if (typeof editAsset === 'function') editAsset(row);
+                    });
+                } else {
+                    if (typeof editAsset === 'function') editAsset(row);
+                }
+            };
+        });
+
+        // Print QR (both entity types)
         body.querySelectorAll('.print-single-qr').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 const id = btn.getAttribute('data-id');
-                const asset = assets.find(a => a.ID === id);
-                if (asset) {
-                    window.openPrintPreview([asset]);
+                const entity = btn.getAttribute('data-entity');
+                const row = rows.find(r => String(r.ID || r.Id || '') === String(id));
+                if (!row) return;
+                if (entity === 'inventory' && typeof window.openInventoryPrintPreview === 'function') {
+                    window.openInventoryPrintPreview([row]);
+                } else if (window.openPrintPreview) {
+                    window.openPrintPreview([row]);
                 }
             };
         });
 
-        // Add click events for "View Employee" buttons
+        // View employee
         body.querySelectorAll('.view-emp-small').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 const empName = btn.getAttribute('data-name');
                 const emp = (window.allEmployees || []).find(e => e.Name === empName);
                 if (emp) {
-                    // Switch to employee view and open modal
                     window.showView('dashboardView');
                     const subViews = ['home-view', 'sheet-view', 'employee-view', 'dc-view', 'releases-view'];
                     subViews.forEach(sv => {
@@ -6871,38 +7027,28 @@ function showAssetList(nodeOrKindName) {
                     });
                     document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
                     document.getElementById('nav-employees')?.classList.add('active');
-                    
-                    // Open the employee modal (need to import editEmployee or use a global)
-                    if (window.editEmployee) {
-                        window.editEmployee(emp);
-                    } else {
-                        // Fallback if not globally available
-                        import('./employees.js?v=3.3').then(m => m.initEmployeeView() || m.loadEmployees().then(() => {
-                            // This is a bit complex, let's just make editEmployee global in employees.js
-                        }));
-                    }
+                    if (window.editEmployee) window.editEmployee(emp);
+                    else import('./employees.js?v=3.3').catch(()=>{});
                 } else {
                     alert('Employee details not found in database.');
                 }
             };
         });
 
-        // Add click events for "Edit Asset" buttons
+        // Edit Asset handlers (old class for backward compatibility, not used on new buttons anymore)
         body.querySelectorAll('.edit-asset-btn').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 const assetId = btn.getAttribute('data-id');
-                const asset = (window.allAssets || []).find(a => a.ID === assetId);
-                if (asset) {
-                    editAsset(asset);
-                }
+                const asset = (window.allAssets || []).find(a => String(a.ID || a.Id || '') === String(assetId));
+                if (asset) editAsset(asset);
             };
         });
 
-        // Initialize Dynamic Smart QRs for the list
+        // Dynamic Smart QRs (uses direct URL on canvas data-url, not asset/id)
         body.querySelectorAll('.dynamic-qr').forEach(canvas => {
-            const id = canvas.getAttribute('data-id');
-            const url = `${window.location.origin}/asset/${encodeURIComponent(id)}`;
+            const url = canvas.getAttribute('data-url') || '';
+            if (!url) return;
             if (window.QRCode) {
                 QRCode.toCanvas(canvas, url, {
                     width: 100,
@@ -6912,9 +7058,10 @@ function showAssetList(nodeOrKindName) {
             }
         });
     }
-    
+
     modal.style.display = 'flex';
 }
+window.showAssetList = showAssetList;
 
 async function fetchAndPopulateIcons() {
     try {
