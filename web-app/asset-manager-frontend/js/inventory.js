@@ -401,6 +401,7 @@ function openInventorySharedModal(existingItem = null) {
 
     if (!form || !modal) return;
 
+    window.__inventoryModalActive = true;
     form.dataset.entity = 'inventory';
     delete form.dataset.catalogZohoProductId;
     delete form.dataset.catalogUuid;
@@ -472,15 +473,27 @@ function openInventorySharedModal(existingItem = null) {
     setVal('itemUserID', existingItem?.UserID || existingItem?.userid || '');
 
     setChecked('itemWarrantyTracking', (existingItem?.warranty_tracking ?? 1) !== 0);
-    setChecked('itemIsQtyTracked', true);
+    const existingTracked = Number(existingItem?.IsQuantityTracked ?? existingItem?.is_quantity_tracked ?? 1) !== 0;
+    setChecked('itemIsQtyTracked', existingTracked);
     setChecked('itemIsSet', Number(existingItem?.IsSet ?? existingItem?.is_set ?? 0) === 1);
 
     const qtyToggle = getEl('itemIsQtyTracked');
-    if (qtyToggle) qtyToggle.disabled = true;
-
-    const qtyFieldsContainer = getEl('qtyFieldsContainer');
-    if (qtyFieldsContainer) {
-        qtyFieldsContainer.style.display = 'grid';
+    if (qtyToggle) {
+        qtyToggle.disabled = false;
+        const onToggle = () => {
+            const box = getEl('qtyFieldsContainer');
+            if (box) box.style.display = qtyToggle.checked ? 'grid' : 'none';
+            if (qtyToggle.checked) {
+                const qtyUnitEl = getEl('itemQtyUnit');
+                const qtyTotalEl = getEl('itemQtyTotal');
+                const qtyPrecisionEl = getEl('itemQtyPrecision');
+                if (qtyUnitEl && !String(qtyUnitEl.value || '').trim()) qtyUnitEl.value = 'Nos';
+                if (qtyTotalEl && !String(qtyTotalEl.value || '').trim()) qtyTotalEl.value = String(Math.max(1, Number(existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? 1)));
+                if (qtyPrecisionEl && !String(qtyPrecisionEl.value || '').trim()) qtyPrecisionEl.value = '0';
+            }
+        };
+        qtyToggle.onchange = onToggle;
+        onToggle();
     }
 
     const srNoInput = getEl('itemSrNo');

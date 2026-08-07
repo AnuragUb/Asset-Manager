@@ -7159,6 +7159,9 @@ export function setupDashboardFormHandlers() {
                 const category = localStorage.getItem('selectedAssetCategory') || 'IT';
                 let entityMode = form.dataset.entity || 'asset';
 
+                if (window.__inventoryModalActive === true) entityMode = 'inventory';
+                if (entityMode === 'inventory' && form.dataset.entity !== 'inventory') form.dataset.entity = 'inventory';
+
                 const folderValue = String(formData.get('itemFolder') || '').trim();
                 const kindValue = String(formData.get('itemKind') || '').trim();
                 const hasCatalogZohoProductId = !!String(form.dataset.catalogZohoProductId || '').trim();
@@ -7172,6 +7175,7 @@ export function setupDashboardFormHandlers() {
                     && (hasInventoryEditId
                         || isInventoryFolderId
                         || isInventoryKindId
+                        || window.__inventoryModalActive === true
                         || ((folderValue && kindValue) && (hasCatalogZohoProductId || hasCatalogUuid || onInventoryView)))) {
                     entityMode = 'inventory';
                     form.dataset.entity = 'inventory';
@@ -7208,10 +7212,18 @@ export function setupDashboardFormHandlers() {
                     } else if (isQtyTracked && (!qtyTotalRaw || Number(qtyTotalRaw) <= 0)) {
                         qtyTotalRaw = '1';
                     }
-                    const qtyTotal = isQtyTracked ? Number(qtyTotalRaw || 0) : 0;
-                    const qtyPrecision = isQtyTracked ? Math.max(0, Number(qtyPrecisionRaw || 0)) : 0;
+                    const qtyTotalParsed = isQtyTracked ? Number(qtyTotalRaw || 0) : 0;
+                    const qtyPrecisionParsed = isQtyTracked ? Math.max(0, Number(qtyPrecisionRaw || 0)) : 0;
+                    let qtyTotal = qtyTotalParsed;
+                    let qtyPrecision = qtyPrecisionParsed;
                     if (isQtyTracked && (!Number.isFinite(qtyTotal) || qtyTotal <= 0)) {
-                        throw new Error('Quantity total must be greater than 0 when quantity tracking is enabled.');
+                        console.warn('[Inventory Submit] Quantity total invalid, falling back to 1. Raw:', qtyTotalRaw, 'Number:', qtyTotal);
+                        qtyTotal = 1;
+                        if (!String(qtyTotalRaw || '').trim()) qtyTotalRaw = '1';
+                    }
+                    if (isQtyTracked && !Number.isFinite(qtyPrecision)) {
+                        console.warn('[Inventory Submit] Quantity precision invalid, falling back to 0. Raw:', qtyPrecisionRaw);
+                        qtyPrecision = 0;
                     }
 
                     const existingAvailableRaw = String(form.dataset.inventoryAvailableCurrent || '').trim();
@@ -7456,11 +7468,17 @@ export function setupDashboardFormHandlers() {
                         qtyTotalValue = '1';
                     }
 
-                    // Validation
-                    const qtyTotal = Number(qtyTotalValue);
-                    if (!Number.isFinite(qtyTotal) || qtyTotal <= 0) throw new Error('Quantity total must be a number > 0.');
-                    const qtyPrecision = qtyPrecisionValue === '' ? 0 : Number(qtyPrecisionValue);
-                    if (!Number.isFinite(qtyPrecision) || qtyPrecision < 0) throw new Error('Quantity precision must be a number >= 0.');
+                    let qtyTotal = Number(qtyTotalValue);
+                    if (!Number.isFinite(qtyTotal) || qtyTotal <= 0) {
+                        console.warn('[Asset Submit] Quantity total invalid, fallback 1. Raw:', qtyTotalValue, 'Number:', qtyTotal);
+                        qtyTotal = 1;
+                        qtyTotalValue = '1';
+                    }
+                    let qtyPrecision = qtyPrecisionValue === '' ? 0 : Number(qtyPrecisionValue);
+                    if (!Number.isFinite(qtyPrecision) || qtyPrecision < 0) {
+                        console.warn('[Asset Submit] Quantity precision invalid, fallback 0. Raw:', qtyPrecisionValue);
+                        qtyPrecision = 0;
+                    }
 
                     asset.quantity_unit = normalizedQtyUnitValue;
                     asset.quantity_total = qtyTotal;
