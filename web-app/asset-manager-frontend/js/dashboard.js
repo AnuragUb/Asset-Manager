@@ -4993,11 +4993,11 @@ export function renderDashboard(assets, filteredAssets) {
     if (dashboardTitle) {
         const isLeafKindNode = parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0);
         const haveAssets = (isLeafKindNode && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0)) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0));
-        // Default view mode: leaf kinds / lists → TABLE; everything else → CARDS
+        const hasCards = (displayNodes && displayNodes.length > 0) || haveAssets;
         const autoMode = (isLeafKindNode || window.currentSearchQuery || (directAssets && directAssets.length > 0)) ? 'table' : 'cards';
         if (typeof window.dashboardViewMode === 'undefined' || !window.dashboardViewMode) {
             window.dashboardViewMode = autoMode;
-        } else if (window.dashboardViewMode === 'table' && !haveAssets && !displayNodes.length) {
+        } else if (window.dashboardViewMode === 'table' && !hasCards) {
             window.dashboardViewMode = 'cards';
         }
 
@@ -5007,7 +5007,7 @@ export function renderDashboard(assets, filteredAssets) {
         const inactiveTabFg = '#475569';
         const cardsActive = window.dashboardViewMode === 'cards';
         const tableActive = window.dashboardViewMode === 'table';
-        const viewToggleHtml = haveAssets ? `
+        const viewToggleHtml = hasCards ? `
             <div id="dashViewToggleWrap" style="display: inline-flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-left: 12px;">
                 <button type="button" id="btnDashViewCards" style="
                     display: inline-flex; align-items: center; gap: 4px;
@@ -5268,7 +5268,7 @@ export function renderDashboard(assets, filteredAssets) {
                 if (typeof window.showQuantityHistoryModal === 'function') {
                     window.showQuantityHistoryModal(id);
                 } else {
-                    import('./quantity-history-modal.js?v=6.98').then(m => {
+                    import('./quantity-history-modal.js?v=6.99').then(m => {
                         if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(id);
                         else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[DASH-QTY-HIST] import err', err));
@@ -7222,7 +7222,7 @@ function showAssetList(nodeOrKindName) {
                 if (typeof window.showQuantityHistoryModal === 'function' && id) {
                     window.showQuantityHistoryModal(id);
                 } else if (id) {
-                    import('./quantity-history-modal.js?v=6.98').then(m => {
+                    import('./quantity-history-modal.js?v=6.99').then(m => {
                         if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
                         else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[QTY-HISTORY] load err', err));
@@ -7250,7 +7250,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=6.98').then(() => {
+                    import('./inventory.js?v=6.99').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
