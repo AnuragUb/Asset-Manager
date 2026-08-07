@@ -7213,11 +7213,22 @@ export function setupDashboardFormHandlers() {
                     const batchSerialCount = inventoryIsBatch
                         ? String(inventorySrNoValue || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean).length
                         : 0;
-                    let qtyTotalRaw = String(formData.get('itemQtyTotal') || '').trim();
-                    const qtyPrecisionRaw = String(formData.get('itemQtyPrecision') || '0').trim();
-                    if (isQtyTracked && inventoryIsBatch) {
-                        qtyTotalRaw = String(batchSerialCount || 0);
-                    }
+
+                    // Use DOM directly (not FormData) for qty fields — matches asset branch, since FormData ignores disabled fields.
+                    // This is critical because inventoryIsQtyTracked toggle shows/hides fields, and some browsers/form states
+                    // can still cause FormData to skip values even when enabled.
+                    const qtyUnitDOM = document.getElementById('itemQtyUnit');
+                    const qtyTotalDOM = document.getElementById('itemQtyTotal');
+                    const qtyPrecisionDOM = document.getElementById('itemQtyPrecision');
+
+                    let qtyTotalRaw = inventoryIsBatch
+                        ? String(batchSerialCount || 0)
+                        : (qtyTotalDOM ? qtyTotalDOM.value.trim() : String(formData.get('itemQtyTotal') || '').trim());
+                    const qtyPrecisionRaw = qtyPrecisionDOM
+                        ? (qtyPrecisionDOM.value.trim() || '0')
+                        : (String(formData.get('itemQtyPrecision') || '0').trim());
+                    const inventoryQtyUnit = (qtyUnitDOM ? qtyUnitDOM.value.trim() : String(formData.get('itemQtyUnit') || 'Nos').trim()) || 'Nos';
+
                     const inventoryEditId = String(form.dataset.inventoryEditId || '').trim();
                     const isEdit = !!inventoryEditId || !!assetId;
                     const previousTotalRaw = String(form.dataset.inventoryPriorTotal || '').trim();
@@ -7231,11 +7242,11 @@ export function setupDashboardFormHandlers() {
                                 ? Number(previousTotalRaw)
                                 : NaN;
                             if (Number.isFinite(fallbackFromPrior) && fallbackFromPrior > 0) {
-                                console.warn('[Inventory Submit] Qty total invalid on EDIT: using prior saved value.', { prior: fallbackFromPrior, invalidRaw: qtyTotalRaw });
+                                console.warn('[Inventory Submit] Qty total invalid on EDIT: using prior saved value (not 1).', { prior: fallbackFromPrior, invalidRaw: qtyTotalRaw });
                                 qtyTotal = fallbackFromPrior;
                                 qtyTotalRaw = String(fallbackFromPrior);
                             } else {
-                                console.warn('[Inventory Submit] Qty total invalid on EDIT: preserving prior available qty.', { invalidRaw: qtyTotalRaw });
+                                console.warn('[Inventory Submit] Qty total invalid on EDIT: keeping previous DB values for qty_* (skip update keys)', { invalidRaw: qtyTotalRaw });
                             }
                         } else {
                             if (typeof showToast === 'function') showToast('Quantity total must be a number > 0 when creating new qty-tracked inventory item.', 'error');
