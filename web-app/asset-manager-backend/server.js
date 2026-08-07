@@ -4403,8 +4403,36 @@ app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser',
     const prevQtyTotal = Number(existing.quantity_total || 0);
     const prevQtyAvailable = Number(existing.quantity_available || 0);
     const normalizedQtyUnit = isQtyTracked ? normalizeQtyUnit(item.quantity_unit || item.QuantityUnit || existing.quantity_unit || 'Nos') : null;
-    const nextQtyTotal = isQtyTracked ? Number(item.QuantityTotal || item.quantity_total || 1) : 0;
-    const nextQtyAvailable = isQtyTracked ? Number(item.QuantityAvailable || item.quantity_available || nextQtyTotal || 0) : 0;
+
+    // NOTE qty floor override (same as assets PUT handler): Do NOT silent-floor to 1 via || operator
+    // because || treats 0 as falsy! Use explicit !== undefined checks so user can save qty=0
+    // (for consumables that ran out etc.) or qty=0.25 with precision >0. Default to 1 only when
+    // user sent NOTHING and existing has no good value (new qty-tracked item first save).
+    let nextQtyTotal = 0;
+    if (isQtyTracked) {
+      if (item.quantity_total !== undefined && item.quantity_total !== null) {
+        nextQtyTotal = Number(item.quantity_total || 0);
+      } else if (item.QuantityTotal !== undefined && item.QuantityTotal !== null) {
+        nextQtyTotal = Number(item.QuantityTotal || 0);
+      } else if (existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0) {
+        nextQtyTotal = Number(existing.quantity_total);
+      } else {
+        nextQtyTotal = 1;
+      }
+    }
+
+    // nextQtyAvailable: if user explicitly provided quantity_available / QuantityAvailable use it
+    // (even if 0). Else fall back to nextQtyTotal to keep old "available = total by default" behavior.
+    let nextQtyAvailable = 0;
+    if (isQtyTracked) {
+      if (item.quantity_available !== undefined && item.quantity_available !== null) {
+        nextQtyAvailable = Number(item.quantity_available || 0);
+      } else if (item.QuantityAvailable !== undefined && item.QuantityAvailable !== null) {
+        nextQtyAvailable = Number(item.QuantityAvailable || 0);
+      } else {
+        nextQtyAvailable = Number(nextQtyTotal || 0);
+      }
+    }
     const inventoryIsBatch = Number(item.IsBatch ?? item.is_batch ?? existing.is_batch ?? 0);
     const shouldInitRoot = isQtyTracked && !existing.quantity_root_id;
 
@@ -8119,9 +8147,16 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         (asset.quantity_precision === undefined || Number(asset.quantity_precision || 0) === Number(existing.quantity_precision || 0)) &&
         (asset.quantity_total === undefined || Number(asset.quantity_total || 0) === Number(existing.quantity_total || 0));
       
+      // NOTE(quantity UX override): Previously we BLOCKED any qty edits on non-root split 
+      // children (returned 400). This prevented legitimate user from doing exactly what 
+      // they requested: "Increase qty from 1 -> 2 for COM-MUM-0726-QTFYUH-3" where 
+      // COM-MUM is a split child (non-root). Users expect to be able to edit 
+      // qty fields directly on any asset child OR root, not just root. If 
+      // server/parent/child invariants break, the user fixes them manually via qty 
+      // events UI. So instead of blocking, just warn and proceed.
       if (!isRootAsset && !isRedundantUpdate) {
-        console.warn(`Quantity update rejected for ${id}. Not root asset and not redundant. Root ID: ${existing.quantity_root_id}`);
-        return res.status(400).send(`Quantity fields cannot be updated via /api/assets. Use /api/quantity/* endpoints for adjustments, or update the root asset (${existing.quantity_root_id}) directly.`)
+        console.warn(`[QTY OVERRIDE] Non-root asset ${id} qty change requested. Root ID: ${existing.quantity_root_id}. Permitting direct edit (user override).`);
+        // FALLTHROUGH_INTENDDO NOT return 400;
       }
     }
 
@@ -8129,14 +8164,25 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     const normalizedRequestedQtyUnit = normalizedRequestedQtyTracking
       ? normalizeQtyUnit(asset.quantity_unit !== undefined ? asset.quantity_unit : (asset.quantityUnit !== undefined ? asset.quantityUnit : (existing.quantity_unit || 'Nos')))
       : null;
+
+    // qty_total floor: ONLY if user passed qty_total explicitly, use it as-is (even 0.25 precision items).
+    // Do NOT Math.max(1,...) and silently round up! Users complained earlier: "qty always becomes 1 even if I enter 10".
+    // Only if user DID NOT pass qty_total AND existing has no good value, default to 1.
+    const rawQtyTotal = asset.quantity_total !== undefined
+      ? asset.quantity_total
+      : (asset.quantityTotal !== undefined
+          ? asset.quantityTotal
+          : ((existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0)
+              ? existing.quantity_total
+              : 1));
     const normalizedRequestedQtyTotal = normalizedRequestedQtyTracking
-      ? Math.max(1, Number(asset.quantity_total !== undefined ? asset.quantity_total : (asset.quantityTotal !== undefined ? asset.quantityTotal : ((existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0) ? existing.quantity_total : 1))))
+      ? Number(rawQtyTotal || 0)
       : 0;
     const normalizedRequestedQtyPrecision = normalizedRequestedQtyTracking
       ? Math.max(0, Number(asset.quantity_precision !== undefined ? asset.quantity_precision : (asset.quantityPrecision !== undefined ? asset.quantityPrecision : (existing.quantity_precision || 0))))
       : 0;
 
-    // Calculate delta for quantity_available if quantity_total is changed on a root asset
+    // Calculate delta for quantity_available if quantity_total changes on ANY asset (root OR child)
     let qtyAvailableDelta = 0;
     if ((asset.quantity_total !== undefined || (isInitializingQuantity && normalizedRequestedQtyTracking)) && existing.quantity_total !== null && existing.quantity_total !== undefined) {
       const newTotal = normalizedRequestedQtyTracking ? normalizedRequestedQtyTotal : Number(asset.quantity_total || 0);

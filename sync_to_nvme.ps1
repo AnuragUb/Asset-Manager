@@ -8,7 +8,8 @@ $DB_CONTAINER = "asset-manager-db-prod"
 $DB_NAME = "asset_manager"
 $DB_USER = "postgres"
 $NVME_TARGET_PATH = "\\192.168.6.118\AssetManager_Backups" # Remote path on the Workstation Server
-$LOCAL_BACKUP_PATH = "C:\AssetManager_Local_Backups"       # Local Black Box on .59 machine
+# Use relative path on F: drive
+$LOCAL_BACKUP_PATH = Join-Path $PSScriptRoot "backups\local_blackbox"
 
 # Ensure local path exists
 if (!(Test-Path -Path $LOCAL_BACKUP_PATH)) { New-Item -ItemType Directory -Path $LOCAL_BACKUP_PATH | Out-Null }

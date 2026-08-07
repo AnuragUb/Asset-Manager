@@ -5,7 +5,8 @@
 $DB_CONTAINER = "asset-manager-db"
 $DB_NAME = "asset_manager" # or "asset_manager_test" if applying to dev
 $DB_USER = "postgres"
-$BACKUP_PATH = "C:\AssetManager_Backups"
+# Use relative path on F: drive
+$BACKUP_PATH = Join-Path $PSScriptRoot "backups\replication"
 
 # Find the latest replication file
 $latestFile = Get-ChildItem $BACKUP_PATH -Filter "replication_*.sql" | Sort-Object LastWriteTime -Descending | Select-Object -First 1

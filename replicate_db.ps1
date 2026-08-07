@@ -9,7 +9,8 @@ $DB_USER = "postgres"
 # The IP of the machine you want to SEND the data TO (.59 server)
 $TARGET_IP = "192.168.6.59" 
 $TARGET_SHARE = "\\$TARGET_IP\AssetManager_Backups"
-$LOCAL_BACKUP_PATH = "C:\AssetManager_Replication_Backups"
+# Use a relative path to ensure backups work on F: drive
+$LOCAL_BACKUP_PATH = Join-Path $PSScriptRoot "backups\replication"
 
 # Ensure local path exists
 if (!(Test-Path -Path $LOCAL_BACKUP_PATH)) { 
