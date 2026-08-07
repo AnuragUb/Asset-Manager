@@ -5955,6 +5955,14 @@ export async function editAsset(asset) {
     const assetDbId = document.getElementById('assetDbId');
     if (assetDbId) assetDbId.value = asset.ID;
 
+    // Store prior saved qty for fallback on submit (if DOM qty fields are somehow wiped/cleared)
+    const form = document.getElementById('addAssetItemForm');
+    if (form) {
+        const prior = String(asset.QuantityTotal ?? asset.quantity_total ?? asset.QtyOrdered ?? '');
+        form.dataset.assetPriorTotal = prior;
+        form.dataset.assetPriorAvailable = String(asset.QuantityAvailable ?? asset.quantity_available ?? '');
+    }
+
     // Fill basic fields
     document.getElementById('itemKind').value = asset.Type || '';
     document.getElementById('itemName').value = asset.ItemName || '';
@@ -7209,20 +7217,34 @@ export function setupDashboardFormHandlers() {
                     const qtyPrecisionRaw = String(formData.get('itemQtyPrecision') || '0').trim();
                     if (isQtyTracked && inventoryIsBatch) {
                         qtyTotalRaw = String(batchSerialCount || 0);
-                    } else if (isQtyTracked && (!qtyTotalRaw || Number(qtyTotalRaw) <= 0)) {
-                        qtyTotalRaw = '1';
                     }
+                    const inventoryEditId = String(form.dataset.inventoryEditId || '').trim();
+                    const isEdit = !!inventoryEditId || !!assetId;
+                    const previousTotalRaw = String(form.dataset.inventoryPriorTotal || '').trim();
                     const qtyTotalParsed = isQtyTracked ? Number(qtyTotalRaw || 0) : 0;
                     const qtyPrecisionParsed = isQtyTracked ? Math.max(0, Number(qtyPrecisionRaw || 0)) : 0;
                     let qtyTotal = qtyTotalParsed;
                     let qtyPrecision = qtyPrecisionParsed;
                     if (isQtyTracked && (!Number.isFinite(qtyTotal) || qtyTotal <= 0)) {
-                        console.warn('[Inventory Submit] Quantity total invalid, falling back to 1. Raw:', qtyTotalRaw, 'Number:', qtyTotal);
-                        qtyTotal = 1;
-                        if (!String(qtyTotalRaw || '').trim()) qtyTotalRaw = '1';
+                        if (isEdit) {
+                            const fallbackFromPrior = previousTotalRaw
+                                ? Number(previousTotalRaw)
+                                : NaN;
+                            if (Number.isFinite(fallbackFromPrior) && fallbackFromPrior > 0) {
+                                console.warn('[Inventory Submit] Qty total invalid on EDIT: using prior saved value.', { prior: fallbackFromPrior, invalidRaw: qtyTotalRaw });
+                                qtyTotal = fallbackFromPrior;
+                                qtyTotalRaw = String(fallbackFromPrior);
+                            } else {
+                                console.warn('[Inventory Submit] Qty total invalid on EDIT: preserving prior available qty.', { invalidRaw: qtyTotalRaw });
+                            }
+                        } else {
+                            if (typeof showToast === 'function') showToast('Quantity total must be a number > 0 when creating new qty-tracked inventory item.', 'error');
+                            console.warn('[Inventory Submit] Cancelled: new qty-tracked item with invalid qty total. Raw:', qtyTotalRaw);
+                            return;
+                        }
                     }
                     if (isQtyTracked && !Number.isFinite(qtyPrecision)) {
-                        console.warn('[Inventory Submit] Quantity precision invalid, falling back to 0. Raw:', qtyPrecisionRaw);
+                        console.warn('[Inventory Submit] Qty precision invalid, fallback 0. Raw:', qtyPrecisionRaw);
                         qtyPrecision = 0;
                     }
 
@@ -7456,7 +7478,10 @@ export function setupDashboardFormHandlers() {
                 });
 
                 const isQtyTracked = document.getElementById('itemIsQtyTracked')?.checked;
+                const assetPriorTotalRaw = String(form.dataset.assetPriorTotal || form.dataset.inventoryPriorTotal || '').trim();
+                const isEditAsset = !!assetId || !!String(form.dataset.inventoryEditId || '').trim();
 
+                let skipQtyUpdate = false;
                 if (isQtyTracked) {
                     const batchSerialCount = isBatchValue === 1 && typeof srNoValue === 'string'
                         ? srNoValue.split(/[\n,]+/).map(s => s.trim()).filter(Boolean).length
@@ -7464,28 +7489,43 @@ export function setupDashboardFormHandlers() {
                     const normalizedQtyUnitValue = qtyUnitValue || 'Nos';
                     if (isBatchValue === 1) {
                         qtyTotalValue = String(batchSerialCount || 0);
-                    } else if (!qtyTotalValue || Number(qtyTotalValue) <= 0) {
-                        qtyTotalValue = '1';
                     }
 
                     let qtyTotal = Number(qtyTotalValue);
                     if (!Number.isFinite(qtyTotal) || qtyTotal <= 0) {
-                        console.warn('[Asset Submit] Quantity total invalid, fallback 1. Raw:', qtyTotalValue, 'Number:', qtyTotal);
-                        qtyTotal = 1;
-                        qtyTotalValue = '1';
+                        const prior = assetPriorTotalRaw ? Number(assetPriorTotalRaw) : NaN;
+                        if (isEditAsset && Number.isFinite(prior) && prior > 0) {
+                            console.warn('[Asset Submit] Qty total invalid on EDIT: using prior saved value.', { prior, invalidRaw: qtyTotalValue });
+                            qtyTotal = prior;
+                            qtyTotalValue = String(prior);
+                        } else if (isEditAsset) {
+                            console.warn('[Asset Submit] Qty total invalid on EDIT: skipping ALL qty_* field updates for this save (category/kind/brand change only).', { invalidRaw: qtyTotalValue });
+                            skipQtyUpdate = true;
+                        } else {
+                            if (typeof showToast === 'function') showToast('Quantity total must be a number > 0 for new qty-tracked asset. Please enter a valid quantity.', 'error');
+                            console.warn('[Asset Submit] Cancelled: new qty-tracked asset with invalid qty total. Raw:', qtyTotalValue);
+                            return;
+                        }
                     }
                     let qtyPrecision = qtyPrecisionValue === '' ? 0 : Number(qtyPrecisionValue);
                     if (!Number.isFinite(qtyPrecision) || qtyPrecision < 0) {
-                        console.warn('[Asset Submit] Quantity precision invalid, fallback 0. Raw:', qtyPrecisionValue);
+                        console.warn('[Asset Submit] Qty precision invalid, fallback 0. Raw:', qtyPrecisionValue);
                         qtyPrecision = 0;
                     }
 
-                    asset.quantity_unit = normalizedQtyUnitValue;
-                    asset.quantity_total = qtyTotal;
-                    asset.quantity_precision = Math.floor(qtyPrecision);
+                    if (!skipQtyUpdate) {
+                        asset.quantity_unit = normalizedQtyUnitValue;
+                        asset.quantity_total = qtyTotal;
+                        asset.quantity_precision = Math.floor(qtyPrecision);
+                    }
                     if (qtyNote) asset.quantity_note = qtyNote;
+                } else {
+                    asset.is_quantity_tracked = 0;
+                    asset.quantity_total = 0;
+                    asset.quantity_available = 0;
+                }
 
-                    console.log('Asset object with quantity:', asset);
+                console.log('Asset object with quantity:', asset);
 
                     // Also include conversion unit/factor if they are disabled (inherited)
                     // but we might want to update them if they were part of the conversion

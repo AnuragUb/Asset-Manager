@@ -406,6 +406,9 @@ function openInventorySharedModal(existingItem = null) {
     delete form.dataset.catalogZohoProductId;
     delete form.dataset.catalogUuid;
     form.dataset.inventoryEditId = String(existingItem?.ID || existingItem?.id || '');
+    form.dataset.inventoryPriorTotal = existingItem
+        ? String(existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? existingItem?.QtyOrdered ?? '')
+        : '';
     form.dataset.inventoryAvailableCurrent = existingItem
         ? String(existingItem?.QuantityAvailable ?? existingItem?.quantity_available ?? 0)
         : '';
