@@ -1972,14 +1972,25 @@ function setupFolderHandlers() {
                 });
 
                     if (response.ok) {
+                    const text = await response.text();
+                    let created = {};
+                    try { created = text ? JSON.parse(text) : {}; } catch(_) {}
+                    const createdId = String(created.ID || created.id || created.folder?.ID || created.folder?.id || '');
                     showToast('Parent Folder created successfully!', 'success');
                     closeModal();
                     // Refresh the folders globally
                     if (window.loadFolders) {
                         await window.loadFolders();
-                        // Re-render dashboard to show the new folder card
                         const assets = window.allAssets || [];
                         const filterFn = window.getFilteredAssets || (() => assets);
+                        // Auto-drill into the newly created folder (consistent with inventory behavior)
+                        if (createdId && window.hierarchyManager) {
+                            const newNode = window.hierarchyManager.findNode(createdId);
+                            if (newNode) {
+                                window.currentDashboardParent = newNode;
+                                window.dashboardViewMode = null; // auto mode
+                            }
+                        }
                         renderDashboard(assets, filterFn);
                         // Re-render sidebar if needed
                         if (window.renderSidebarTree) {
@@ -5268,7 +5279,7 @@ export function renderDashboard(assets, filteredAssets) {
                 if (typeof window.showQuantityHistoryModal === 'function') {
                     window.showQuantityHistoryModal(id);
                 } else {
-                    import('./quantity-history-modal.js?v=6.99').then(m => {
+                    import('./quantity-history-modal.js?v=7.00').then(m => {
                         if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(id);
                         else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[DASH-QTY-HIST] import err', err));
@@ -7222,7 +7233,7 @@ function showAssetList(nodeOrKindName) {
                 if (typeof window.showQuantityHistoryModal === 'function' && id) {
                     window.showQuantityHistoryModal(id);
                 } else if (id) {
-                    import('./quantity-history-modal.js?v=6.99').then(m => {
+                    import('./quantity-history-modal.js?v=7.00').then(m => {
                         if (m.showQuantityHistoryModal) m.showQuantityHistoryModal(id);
                         else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(id);
                     }).catch(err => console.error('[QTY-HISTORY] load err', err));
@@ -7250,7 +7261,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=6.99').then(() => {
+                    import('./inventory.js?v=7.00').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
@@ -8258,11 +8269,28 @@ export function setupDashboardFormHandlers() {
                 });
                 
                 if (response.ok) {
+                    const text = await response.text();
+                    let created = {};
+                    try { created = text ? JSON.parse(text) : {}; } catch(_) {}
+                    const createdId = String(created.ID || created.id || created.kind?.ID || created.kind?.id || '');
                     alert('Category saved successfully!');
                     document.getElementById('addAssetKindModal').style.display = 'none';
                     kindForm.reset();
                     if (window.loadAssets) await window.loadAssets();
+                    // Auto-drill into newly created category (kind) for consistent UX with inventory module
+                    if (createdId && window.hierarchyManager) {
+                        const newNode = window.hierarchyManager.findNode(createdId);
+                        if (newNode) {
+                            window.currentDashboardParent = newNode;
+                            window.dashboardViewMode = null; // auto mode (leaf kinds → table)
+                        }
+                    }
                     if (typeof renderSidebarTree === 'function') await renderSidebarTree();
+                    if (typeof renderDashboard === 'function') {
+                        const allAssets = window.allAssets || [];
+                        const filterFn = window.getFilteredAssets || (() => allAssets);
+                        renderDashboard(allAssets, filterFn);
+                    }
                 } else {
                     const err = await response.text();
                     alert('Error: ' + err);

@@ -1751,9 +1751,11 @@ function openCrudModal(type, existingItem = null) {
 
         form.onsubmit = async (event) => {
             event.preventDefault();
+            let createdId = null;
+            let createdType = type;
             try {
                 if (type === 'folder') {
-                    await fetchJson('/api/inventory/folders', {
+                    const res = await fetchJson('/api/inventory/folders', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1762,13 +1764,14 @@ function openCrudModal(type, existingItem = null) {
                             Icon: getEl('inventoryFolderIcon')?.value || '📦'
                         })
                     });
+                    createdId = String(res.ID || res.id || res.folder?.ID || res.folder?.id || '');
                 } else if (type === 'kind') {
                     const folderValue = getEl('inventoryKindFolder')?.value || '';
                     if (!folderValue) {
                         showToast('Folder is required.', 'error');
                         return;
                     }
-                    await fetchJson('/api/inventory/kinds', {
+                    const res = await fetchJson('/api/inventory/kinds', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1778,6 +1781,7 @@ function openCrudModal(type, existingItem = null) {
                             Icon: getEl('inventoryKindIcon')?.value || '📦'
                         })
                     });
+                    createdId = String(res.ID || res.id || res.kind?.ID || res.kind?.id || '');
                 } else {
                     const folderValue = getEl('inventoryItemFolder')?.value || '';
                     const kindValue = getEl('inventoryItemKind')?.value || '';
@@ -1789,7 +1793,7 @@ function openCrudModal(type, existingItem = null) {
                         showToast('Category is required.', 'error');
                         return;
                     }
-                    await fetchJson(existingItem ? `/api/inventory/items/${encodeURIComponent(existingItem.ID || existingItem.id)}` : '/api/inventory/items', {
+                    const res = await fetchJson(existingItem ? `/api/inventory/items/${encodeURIComponent(existingItem.ID || existingItem.id)}` : '/api/inventory/items', {
                         method: existingItem ? 'PUT' : 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1807,11 +1811,22 @@ function openCrudModal(type, existingItem = null) {
                             IsSet: Number(getEl('inventoryItemSet')?.value || 0)
                         })
                     });
+                    createdId = String(existingItem ? (existingItem.ID || existingItem.id) : (res.ID || res.id || res.item?.ID || res.item?.id || ''));
                 }
 
                 modal.style.display = 'none';
                 showToast(existingItem ? 'Inventory item updated' : `Inventory ${type} saved`, 'success');
                 await loadInventoryWorkspace();
+                // Auto-drill into the newly created folder/kind (matches Assets module drill-in behavior)
+                if (!existingItem && (createdType === 'folder' || createdType === 'kind') && createdId) {
+                    state.selectedNodeId = createdId;
+                    state.viewMode = null; // reset so auto mode kicks in (leaf kinds → table)
+                    renderInventoryTree();
+                    renderInventoryItems();
+                } else if (createdType === 'item' && createdId) {
+                    // Flash items view after item save (already onscreen, just re-render for fresh data)
+                    renderInventoryItems();
+                }
             } catch (error) {
                 showToast(error.message, 'error');
             }
