@@ -2947,8 +2947,20 @@ app.get('/api/asset-details/:id', async (req, res) => {
         if (asset) asset.isComponent = true;
     }
 
+    // Final fallback: inventory_items table (inventory IDs like INV-MUM-0726-JALDY0-R, COM-MUM etc.)
+    // Required because asset-view.html serves BOTH /asset/:id and /inventory/:id URL patterns now;
+    // entity may live in inventory_items instead of assets table.
     if (!asset) {
-      console.warn(`[API] Asset/Component not found: ${id}`);
+        asset = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [id]).first();
+        if (asset) {
+            asset.isInventory = true;
+            // Mark kind so UI knows (inventory rows often have folder_id / kind_id conventions from Inventory module)
+            if (!asset.kind) asset.kind = asset.folder_id ? 'Inventory Item' : 'Inventory Item';
+        }
+    }
+
+    if (!asset) {
+      console.warn(`[API] Asset/Component/Inventory not found: ${id}`);
       return res.status(404).send('Asset not found');
     }
 
@@ -3035,7 +3047,15 @@ app.get('/api/asset-details/:id', async (req, res) => {
 
     const auditHistory = await db('audit_log').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
     const structuredHistory = await db('asset_history').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
-    const parent = normalizedAsset.parentid ? await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.parentid]).first() : null;
+    // Parent lookup: try assets first, fallback to inventory_items (inventory rows can have parentid too)
+    let parent = null;
+    if (normalizedAsset.parentid) {
+        parent = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.parentid]).first();
+        if (!parent) {
+            parent = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.parentid]).first();
+            if (parent) parent.isInventory = true;
+        }
+    }
 
     console.log(`[API] Asset History fetch for ${id}: audit_log=${auditHistory.length}, asset_history=${structuredHistory.length}`);
 
@@ -3055,9 +3075,29 @@ app.get('/api/asset-details/:id', async (req, res) => {
         precision: normalizedAsset.quantity_precision ?? null
       }
 
-      quantityChildren = await db('assets').whereRaw('LOWER(quantity_parent_id) = LOWER(?)', [id]).orderBy('lastupdated', 'desc');
-      quantityParent = normalizedAsset.quantity_parent_id ? await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_parent_id]).first() : null;
-      quantityRoot = normalizedAsset.quantity_root_id ? await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_root_id]).first() : null;
+      // Quantity family lookups: try assets table first, fallback to inventory_items table for inventory qty groups
+      let qtyChildrenAssets = [];
+      let qtyChildrenInv = [];
+      try { qtyChildrenAssets = await db('assets').whereRaw('LOWER(quantity_parent_id) = LOWER(?)', [id]).orderBy('lastupdated', 'desc'); } catch(e){}
+      try { qtyChildrenInv = await db('inventory_items').whereRaw('LOWER(quantity_parent_id) = LOWER(?)', [id]).orderBy('lastupdated', 'desc').select('*'); } catch(e){}
+      quantityChildren = [ ...qtyChildrenAssets, ...qtyChildrenInv.map(r => ({...r, isInventory: true})) ];
+
+      quantityParent = null;
+      if (normalizedAsset.quantity_parent_id) {
+        quantityParent = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_parent_id]).first();
+        if (!quantityParent) {
+          quantityParent = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_parent_id]).first();
+          if (quantityParent) quantityParent.isInventory = true;
+        }
+      }
+      quantityRoot = null;
+      if (normalizedAsset.quantity_root_id) {
+        quantityRoot = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_root_id]).first();
+        if (!quantityRoot) {
+          quantityRoot = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [normalizedAsset.quantity_root_id]).first();
+          if (quantityRoot) quantityRoot.isInventory = true;
+        }
+      }
       
       quantityEvents = await db('quantity_events')
         .whereRaw('LOWER(root_id) = LOWER(?)', [normalizedAsset.quantity_root_id])

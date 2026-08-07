@@ -434,7 +434,7 @@ function openInventorySharedModal(existingItem = null) {
             if (typeof window.showQuantityHistoryModal === 'function') {
                 window.showQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.93').then(m => {
+                import('./quantity-history-modal.js?v=6.94').then(m => {
                     if (m && m.showQuantityHistoryModal) m.showQuantityHistoryModal(itemId);
                     else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-BTN] import err', err));
