@@ -8332,33 +8332,50 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     }
 
     // Handle quantity initialization if applicable
+    // IMPORTANT SAFETY GUARD: Only run the INIT block ONCE when the row is genuinely UNINITIALIZED.
+    // v6.86 bug saved some rows with quantity_root_id = '' (empty string) instead of NULL.
+    // Guard `!existing.quantity_root_id || trim===''` treated EMPTY as uninitialized → on EVERY edit
+    // save of COM-MUM-0726-QTFYUH-3 (which has empty root id but quantity_total=1 saved from before):
+    //   (1) main UPDATE SET quantity_total=2 correct → OK
+    //   (2) 1ms later THIS BLOCK ran UPDATE SET quantity_total=0 → WRONG
+    //   (3) applyQuantityEvent INIT ran, which floored or recalculated → ends at 1 (ALWAYS!)
+    // So: skip INIT if existing row ALREADY has any qty saved OR has a root_id (any form).
     if (isInitializingQuantity) {
-      const qtyUnit = normalizedRequestedQtyUnit
-      const qtyTotal = normalizedRequestedQtyTotal
-      const qtyPrecision = normalizedRequestedQtyPrecision
+      const existingAlreadyHasQty =
+        (existing.quantity_total !== null && existing.quantity_total !== undefined && Number(existing.quantity_total) > 0) ||
+        (existing.quantity_available !== null && existing.quantity_available !== undefined && Number(existing.quantity_available) > 0) ||
+        (String(existing.quantity_root_id || '').trim() !== '');
 
-      if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
-        await db('assets')
-          .where('id', id)
-          .update({
-            quantity_root_id: id,
-            quantity_unit: qtyUnit,
-            quantity_total: 0,
-            quantity_available: 0,
-            quantity_precision: qtyPrecision,
-            quantity_updated_at: new Date().toISOString()
-          });
+      if (existingAlreadyHasQty) {
+        console.warn(`[QTY INIT BLOCK SKIPPED] Asset ${id} appears already initialized (existing.quantity_total=${existing.quantity_total}, quantity_root_id='${existing.quantity_root_id}'). Prevented accidental overwrite of quantity_total → 0.`);
+      } else {
+        const qtyUnit = normalizedRequestedQtyUnit
+        const qtyTotal = normalizedRequestedQtyTotal
+        const qtyPrecision = normalizedRequestedQtyPrecision
 
-        await applyQuantityEvent({
-          rootId: id,
-          type: 'INIT',
-          actor: getRequestActor(req),
-          note: asset.quantity_note || asset.quantityNote || null,
-          metadata: { source: 'asset_update_init' },
-          lines: [
-            { assetId: id, unit: qtyUnit, deltaAvailable: qtyTotal, deltaTotal: qtyTotal, precision: qtyPrecision }
-          ]
-        })
+        if (qtyUnit && qtyTotal !== null && qtyTotal > 0) {
+          await db('assets')
+            .where('id', id)
+            .update({
+              quantity_root_id: id,
+              quantity_unit: qtyUnit,
+              quantity_total: 0,
+              quantity_available: 0,
+              quantity_precision: qtyPrecision,
+              quantity_updated_at: new Date().toISOString()
+            });
+
+          await applyQuantityEvent({
+            rootId: id,
+            type: 'INIT',
+            actor: getRequestActor(req),
+            note: asset.quantity_note || asset.quantityNote || null,
+            metadata: { source: 'asset_update_init' },
+            lines: [
+              { assetId: id, unit: qtyUnit, deltaAvailable: qtyTotal, deltaTotal: qtyTotal, precision: qtyPrecision }
+            ]
+          })
+        }
       }
     }
 

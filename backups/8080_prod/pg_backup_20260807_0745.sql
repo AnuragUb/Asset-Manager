@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict nhPQ0TPIbHSSamWquEWaBGlJd5bq8imBvGfdVanke765toBoxjeBhlCnxyOyhtL
+\restrict uCl5oXjh877im4lybJgO2ddw8KfO1T6mlap6aoYU2iphjpFbVdfVuGZyWISjUn3
 
 -- Dumped from database version 15.18
 -- Dumped by pg_dump version 15.18 (Debian 15.18-0+deb12u1)
@@ -294,7 +294,8 @@ CREATE TABLE public.assets (
     parent_folder text,
     zoho_product_id character varying(255),
     hsn_code character varying(255),
-    is_retired integer DEFAULT 0
+    is_retired integer DEFAULT 0,
+    condition character varying(255) DEFAULT 'Good'::character varying
 );
 
 
@@ -377,6 +378,40 @@ ALTER SEQUENCE public.auth_tokens_id_seq OWNED BY public.auth_tokens.id;
 
 
 --
+-- Name: clients; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.clients (
+    id bigint NOT NULL,
+    name text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.clients OWNER TO postgres;
+
+--
+-- Name: clients_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.clients_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.clients_id_seq OWNER TO postgres;
+
+--
+-- Name: clients_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.clients_id_seq OWNED BY public.clients.id;
+
+
+--
 -- Name: companies; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -398,7 +433,15 @@ CREATE TABLE public.company_templates (
     company_id character varying(255),
     template_type character varying(255),
     template_data text,
-    created_at character varying(255)
+    created_at character varying(255),
+    name character varying(255),
+    company_name character varying(255),
+    address text,
+    gst character varying(255),
+    cin character varying(255),
+    state_name character varying(255),
+    state_code character varying(255),
+    is_default integer DEFAULT 0
 );
 
 
@@ -437,7 +480,14 @@ CREATE TABLE public.components (
     name character varying(255),
     description text,
     weight character varying(255),
-    itemname text
+    itemname text,
+    make character varying(255),
+    model character varying(255),
+    srno character varying(255),
+    status character varying(255),
+    category character varying(255),
+    lastupdated character varying(255),
+    noqr integer DEFAULT 0
 );
 
 
@@ -562,6 +612,188 @@ CREATE TABLE public.hsn_codes (
 
 
 ALTER TABLE public.hsn_codes OWNER TO postgres;
+
+--
+-- Name: inventory_components; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_components (
+    id character varying NOT NULL,
+    parentid character varying,
+    itemname text,
+    itemdescription text,
+    status character varying,
+    make character varying,
+    model character varying,
+    srno character varying,
+    type character varying DEFAULT 'Component'::character varying,
+    category character varying,
+    lastupdated character varying DEFAULT now(),
+    noqr integer DEFAULT 1,
+    is_deleted integer DEFAULT 0,
+    deleted_at character varying
+);
+
+
+ALTER TABLE public.inventory_components OWNER TO postgres;
+
+--
+-- Name: inventory_folders; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_folders (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    parentid character varying,
+    icon character varying,
+    module character varying,
+    createdby character varying,
+    "timestamp" character varying DEFAULT now(),
+    is_deleted integer DEFAULT 0,
+    deleted_at character varying
+);
+
+
+ALTER TABLE public.inventory_folders OWNER TO postgres;
+
+--
+-- Name: inventory_items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_items (
+    id character varying NOT NULL,
+    itemname text NOT NULL,
+    itemdescription text,
+    status character varying DEFAULT 'In Store'::character varying,
+    make character varying,
+    model character varying,
+    srno character varying,
+    serialno character varying,
+    type character varying,
+    category character varying,
+    icon text,
+    parentid character varying,
+    folderid character varying DEFAULT 'IF-INBOX'::character varying NOT NULL,
+    kindid character varying DEFAULT 'IK-MISC'::character varying NOT NULL,
+    currentlocation text,
+    remarks text,
+    lastupdated character varying DEFAULT now(),
+    currency character varying DEFAULT 'INR'::character varying,
+    asset_value real DEFAULT 0,
+    warranty_months integer,
+    amc_months integer,
+    quantity_total real DEFAULT 0,
+    quantity_available real DEFAULT 0,
+    quantity_precision integer DEFAULT 0,
+    is_quantity_tracked integer DEFAULT 0,
+    is_set integer DEFAULT 0,
+    set_price_mode character varying(20),
+    hsn_code character varying(20),
+    weight real,
+    zoho_product_id character varying,
+    catalog_uuid character varying,
+    is_deleted integer DEFAULT 0,
+    deleted_at character varying,
+    dispatchreceivedt character varying,
+    purchasedetails text,
+    purpose character varying,
+    purchasedate character varying,
+    warranty_tracking integer DEFAULT 1,
+    quantity_unit character varying,
+    quantity_note text,
+    conversion_unit character varying,
+    conversion_factor real,
+    conversion_mode character varying,
+    macaddress text,
+    ipaddress text,
+    networktype text,
+    physicalport text,
+    vlan text,
+    socketid text,
+    userid character varying(255),
+    quantity_parent_id character varying(255),
+    quantity_root_id character varying(255),
+    quantity_updated_at character varying,
+    is_batch integer DEFAULT 0
+);
+
+
+ALTER TABLE public.inventory_items OWNER TO postgres;
+
+--
+-- Name: inventory_kinds; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_kinds (
+    id character varying NOT NULL,
+    name character varying NOT NULL,
+    folderid character varying NOT NULL,
+    parentid character varying,
+    module character varying,
+    icon character varying,
+    displayimage character varying,
+    identifier character varying,
+    lastupdated character varying DEFAULT now(),
+    is_deleted integer DEFAULT 0,
+    deleted_at character varying
+);
+
+
+ALTER TABLE public.inventory_kinds OWNER TO postgres;
+
+--
+-- Name: inventory_quantity_event_lines; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_quantity_event_lines (
+    event_id integer NOT NULL,
+    item_id character varying(255) NOT NULL,
+    unit character varying,
+    delta_available real DEFAULT 0,
+    delta_total real DEFAULT 0
+);
+
+
+ALTER TABLE public.inventory_quantity_event_lines OWNER TO postgres;
+
+--
+-- Name: inventory_quantity_events; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.inventory_quantity_events (
+    id integer NOT NULL,
+    root_id character varying NOT NULL,
+    type character varying,
+    actor character varying,
+    "timestamp" character varying DEFAULT now(),
+    note character varying,
+    metadata_json text
+);
+
+
+ALTER TABLE public.inventory_quantity_events OWNER TO postgres;
+
+--
+-- Name: inventory_quantity_events_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.inventory_quantity_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.inventory_quantity_events_id_seq OWNER TO postgres;
+
+--
+-- Name: inventory_quantity_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.inventory_quantity_events_id_seq OWNED BY public.inventory_quantity_events.id;
+
 
 --
 -- Name: knex_migrations; Type: TABLE; Schema: public; Owner: postgres
@@ -953,6 +1185,41 @@ ALTER SEQUENCE public.quantity_events_id_seq OWNED BY public.quantity_events.id;
 
 
 --
+-- Name: quotes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.quotes (
+    id bigint NOT NULL,
+    zoho_id text,
+    name text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.quotes OWNER TO postgres;
+
+--
+-- Name: quotes_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.quotes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.quotes_id_seq OWNER TO postgres;
+
+--
+-- Name: quotes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.quotes_id_seq OWNED BY public.quotes.id;
+
+
+--
 -- Name: role_permissions; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -975,6 +1242,40 @@ CREATE TABLE public.roles (
 
 
 ALTER TABLE public.roles OWNER TO postgres;
+
+--
+-- Name: temp_assets; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.temp_assets (
+    id bigint NOT NULL,
+    name text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.temp_assets OWNER TO postgres;
+
+--
+-- Name: temp_assets_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.temp_assets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.temp_assets_id_seq OWNER TO postgres;
+
+--
+-- Name: temp_assets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.temp_assets_id_seq OWNED BY public.temp_assets.id;
+
 
 --
 -- Name: temporary_assets; Type: TABLE; Schema: public; Owner: postgres
@@ -1113,6 +1414,13 @@ ALTER TABLE ONLY public.auth_tokens ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: clients id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.clients ALTER COLUMN id SET DEFAULT nextval('public.clients_id_seq'::regclass);
+
+
+--
 -- Name: company_templates id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1124,6 +1432,13 @@ ALTER TABLE ONLY public.company_templates ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.dc_item_mappings ALTER COLUMN id SET DEFAULT nextval('public.dc_item_mappings_id_seq'::regclass);
+
+
+--
+-- Name: inventory_quantity_events id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_quantity_events ALTER COLUMN id SET DEFAULT nextval('public.inventory_quantity_events_id_seq'::regclass);
 
 
 --
@@ -1166,6 +1481,20 @@ ALTER TABLE ONLY public.project_order_items ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.quantity_events ALTER COLUMN id SET DEFAULT nextval('public.quantity_events_id_seq'::regclass);
+
+
+--
+-- Name: quotes id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.quotes ALTER COLUMN id SET DEFAULT nextval('public.quotes_id_seq'::regclass);
+
+
+--
+-- Name: temp_assets id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.temp_assets ALTER COLUMN id SET DEFAULT nextval('public.temp_assets_id_seq'::regclass);
 
 
 --
@@ -1294,8 +1623,8 @@ Cables	IT	📦	\N	2026-05-04T09:25:52.213Z	\N	CBL	0	\N
 -- Data for Name: assets; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.assets (id, no, itemname, itemdescription, status, make, model, srno, serialno, type, category, icon, isplaceholder, parentid, currentlocation, previouslocation, dispatchreceivedt, purchasedetails, remarks, purpose, purchasedate, lastupdated, qrcode, assignedto, macaddress, ipaddress, networktype, physicalport, vlan, socketid, userid, noqr, currency, asset_value, warranty_months, amc_months, quantity_parent_id, quantity_root_id, quantity_unit, quantity_total, quantity_available, quantity_precision, quantity_updated_at, conversion_unit, conversion_factor, conversion_mode, is_quantity_tracked, warranty_tracking, boughtagainstpo, sentagainstdc, is_batch, linked_po_item_id, is_deleted, deleted_at, department, company_id, is_set, set_price_mode, weight, client_label, parent_folder, zoho_product_id, hsn_code, is_retired) FROM stdin;
-CAM-ON-0726-5DIIEA-K	\N	Netgear  R6850		In Store	Netgear	ARCHER C6	det:42dcf57077af46d472bbff0d21e32974	\N	Camera	IT		0	\N	On Site	\N	2026-07-04	Purchased via PO:  from  on 2026-05-21		\N	2026-07-04	2026-07-23T09:16:53.410Z	data:image/png;base64,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	Arnav Thatte	\N	\N	\N	\N	\N	\N	\N	0	USD	0	0	0	\N	\N	\N	0	\N	0	\N		\N	multiply	0	0	\N	\N	0	\N	0	\N	\N	\N	0	SUM_OF_CHILDREN		CAM-ON-5DIIEA	IT Assets	\N		0
+COPY public.assets (id, no, itemname, itemdescription, status, make, model, srno, serialno, type, category, icon, isplaceholder, parentid, currentlocation, previouslocation, dispatchreceivedt, purchasedetails, remarks, purpose, purchasedate, lastupdated, qrcode, assignedto, macaddress, ipaddress, networktype, physicalport, vlan, socketid, userid, noqr, currency, asset_value, warranty_months, amc_months, quantity_parent_id, quantity_root_id, quantity_unit, quantity_total, quantity_available, quantity_precision, quantity_updated_at, conversion_unit, conversion_factor, conversion_mode, is_quantity_tracked, warranty_tracking, boughtagainstpo, sentagainstdc, is_batch, linked_po_item_id, is_deleted, deleted_at, department, company_id, is_set, set_price_mode, weight, client_label, parent_folder, zoho_product_id, hsn_code, is_retired, condition) FROM stdin;
+CAM-ON-0726-5DIIEA-K	\N	Netgear  R6850		In Store	Netgear	ARCHER C6	det:42dcf57077af46d472bbff0d21e32974	\N	Camera	IT		0	\N	On Site	\N	2026-07-04	Purchased via PO:  from  on 2026-05-21		\N	2026-07-04	2026-07-23T09:16:53.410Z	data:image/png;base64,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	Arnav Thatte	\N	\N	\N	\N	\N	\N	\N	0	USD	0	0	0	\N	\N	\N	0	\N	0	\N		\N	multiply	0	0	\N	\N	0	\N	0	\N	\N	\N	0	SUM_OF_CHILDREN		CAM-ON-5DIIEA	IT Assets	\N		0	Good
 \.
 
 
@@ -1319,6 +1648,14 @@ COPY public.auth_tokens (id, user_id, token_hash, expires_at, created_at) FROM s
 
 
 --
+-- Data for Name: clients; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.clients (id, name, created_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: companies; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -1331,8 +1668,8 @@ COPY public.companies (id, name, created_at) FROM stdin;
 -- Data for Name: company_templates; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.company_templates (id, company_id, template_type, template_data, created_at) FROM stdin;
-1	\N	\N	\N	2026-03-17 06:13:28
+COPY public.company_templates (id, company_id, template_type, template_data, created_at, name, company_name, address, gst, cin, state_name, state_code, is_default) FROM stdin;
+1	\N	\N	\N	2026-03-17 06:13:28	\N	\N	\N	\N	\N	\N	\N	0
 \.
 
 
@@ -1340,7 +1677,7 @@ COPY public.company_templates (id, company_id, template_type, template_data, cre
 -- Data for Name: components; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.components (id, parentid, type, name, description, weight, itemname) FROM stdin;
+COPY public.components (id, parentid, type, name, description, weight, itemname, make, model, srno, status, category, lastupdated, noqr) FROM stdin;
 \.
 
 
@@ -1418,6 +1755,69 @@ COPY public.hsn_codes (code, description, gst_rate) FROM stdin;
 
 
 --
+-- Data for Name: inventory_components; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_components (id, parentid, itemname, itemdescription, status, make, model, srno, type, category, lastupdated, noqr, is_deleted, deleted_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: inventory_folders; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_folders (id, name, parentid, icon, module, createdby, "timestamp", is_deleted, deleted_at) FROM stdin;
+IF-INBOX	Inbox	\N	📥	INVENTORY	system	2026-08-06 12:03:53	0	\N
+IF-1786018888953-215	MinimalTest	IF-INBOX	??	INVENTORY	admin	2026-08-06T12:21:28.953Z	0	\N
+\.
+
+
+--
+-- Data for Name: inventory_items; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_items (id, itemname, itemdescription, status, make, model, srno, serialno, type, category, icon, parentid, folderid, kindid, currentlocation, remarks, lastupdated, currency, asset_value, warranty_months, amc_months, quantity_total, quantity_available, quantity_precision, is_quantity_tracked, is_set, set_price_mode, hsn_code, weight, zoho_product_id, catalog_uuid, is_deleted, deleted_at, dispatchreceivedt, purchasedetails, purpose, purchasedate, warranty_tracking, quantity_unit, quantity_note, conversion_unit, conversion_factor, conversion_mode, macaddress, ipaddress, networktype, physicalport, vlan, socketid, userid, quantity_parent_id, quantity_root_id, quantity_updated_at, is_batch) FROM stdin;
+SAN-MUM-0826-K4Q4Z6-N	Sanity Item 8080		In Store	CINEOM	SAN-8080	\N	\N	Sanity Kind 8080	Sanity Kind 8080	📦	\N	IF-INBOX	IK-1786018331236-469	Mumbai		2026-08-06 12:12:11	INR	2500	0	0	10	9	0	1	0	\N	8888	0	\N	\N	0	\N	\N		Owned	\N	1	Nos	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	SAN-MUM-0826-K4Q4Z6-N	2026-08-06 12:12:11	0
+MIS-MUM-0826-BO1WT5-G	8080 Final Sanity Camera		In Store	CINEOM	FINAL-8080-B6A	FINAL-SN-8080-01	\N	Misc	Test Equipment	📦	\N	IF-INBOX	IK-MISC	Mumbai		2026-08-06T12:23:08.643Z	INR	350000	0	0	20	18	0	1	0	\N	\N	0	\N	\N	0	\N	\N		Owned	\N	1	Nos	Unit=Nos	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	MIS-MUM-0826-BO1WT5-G	2026-08-06T12:23:08.644Z	0
+SAN-MUM-0826-2NE3ZT-5	Sanity Item 8080		In Store	TestBrand	Sanity8080	S8080-001	\N	SanityKind	Test	📦	\N	IF-INBOX	IK-1786019047088-587	Mumbai		2026-08-06T12:24:07.120Z	INR	50000	0	0	25	22	0	1	0	\N	\N	0	\N	\N	0	\N	\N		Owned	\N	1	Nos	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	SAN-MUM-0826-2NE3ZT-5	2026-08-06T12:24:07.120Z	0
+\.
+
+
+--
+-- Data for Name: inventory_kinds; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_kinds (id, name, folderid, parentid, module, icon, displayimage, identifier, lastupdated, is_deleted, deleted_at) FROM stdin;
+IK-MISC	Misc	IF-INBOX	\N	INVENTORY	🏷️	\N	\N	2026-08-06 12:03:53	0	\N
+IK-1786018331236-469	Sanity Kind 8080	IF-INBOX	\N	INVENTORY	📦	\N	\N	2026-08-06 12:12:11	0	\N
+IK-1786018888982-145	MinimalKind	IF-INBOX	\N	INVENTORY	???	\N	\N	2026-08-06T12:21:28.982Z	0	\N
+IK-1786019047088-587	SanityKind	IF-INBOX	\N	INVENTORY	???	\N	\N	2026-08-06T12:24:07.088Z	0	\N
+\.
+
+
+--
+-- Data for Name: inventory_quantity_event_lines; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_quantity_event_lines (event_id, item_id, unit, delta_available, delta_total) FROM stdin;
+1	SAN-MUM-0826-K4Q4Z6-N	Nos	9	10
+2	MIS-MUM-0826-BO1WT5-G	Nos	18	20
+3	SAN-MUM-0826-2NE3ZT-5	Nos	22	25
+\.
+
+
+--
+-- Data for Name: inventory_quantity_events; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.inventory_quantity_events (id, root_id, type, actor, "timestamp", note, metadata_json) FROM stdin;
+1	SAN-MUM-0826-K4Q4Z6-N	INIT	admin	2026-08-06 12:12:11	Initialized quantity tracking	{"quantity_total": 10, "quantity_available": 9}
+2	MIS-MUM-0826-BO1WT5-G	INIT	admin	2026-08-06T12:23:08.652Z	Initialized quantity tracking	{"quantity_total":20,"quantity_available":18}
+3	SAN-MUM-0826-2NE3ZT-5	INIT	admin	2026-08-06T12:24:07.122Z	Initialized quantity tracking	{"quantity_total":25,"quantity_available":22}
+\.
+
+
+--
 -- Data for Name: knex_migrations; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -1442,6 +1842,14 @@ COPY public.knex_migrations (id, name, batch, migration_time) FROM stdin;
 18	20260722123000_add_fk_wave4_hierarchy_for_9090.js	7	2026-07-23 07:16:30.739+00
 19	20260723093000_add_itemdescription_to_assets.js	7	2026-07-23 07:16:30.756+00
 20	20260723101500_add_hsn_code_and_is_retired_to_assets.js	7	2026-07-23 07:16:30.776+00
+21	20260723113000_expand_company_templates_schema.js	8	2026-07-30 12:02:38.328+00
+22	20260723114500_expand_components_schema.js	8	2026-07-30 12:02:38.399+00
+23	20260723120500_add_missing_condition_to_assets.js	8	2026-07-30 12:02:38.41+00
+24	20260730090000_create_inventory_preview_tables.js	8	2026-07-30 12:02:38.413+00
+25	20260730094500_expand_inventory_items_modal_parity.js	8	2026-07-30 12:02:38.416+00
+26	20260730101500_inventory_components_and_qty_events_preview.js	8	2026-07-30 12:02:38.419+00
+27	20260730112000_add_inventory_is_batch_preview.js	8	2026-07-30 12:02:38.421+00
+28	20260730123000_inventory_fk_hardening_preview.js	8	2026-07-30 12:02:38.424+00
 \.
 
 
@@ -1571,6 +1979,14 @@ COPY public.quantity_events (id, root_id, type, actor, "timestamp", note, metada
 
 
 --
+-- Data for Name: quotes; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.quotes (id, zoho_id, name, created_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -1591,6 +2007,14 @@ user	Standard user role
 
 
 --
+-- Data for Name: temp_assets; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.temp_assets (id, name, created_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: temporary_assets; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -1603,8 +2027,8 @@ COPY public.temporary_assets (id, itemname, make, model, type, category, status,
 --
 
 COPY public.users (username, fullname, password, role, project_id, client_id, company_id, employee_id, department, created_at) FROM stdin;
-admin	itdevelopment@cineom.in	$2b$12$UyLizpxrMbFLEQt7rYss.OxzoHJpGyNlbwkxrDmwakgVPOKpOp4YS	superuser	\N	25451fa6-82a7-414b-9b40-341bcd1b7286	25451fa6-82a7-414b-9b40-341bcd1b7286	1198	\N	2026-03-16 11:16:36
 SwapnilM	Swapnil Marathe	$2b$12$deCrXYi7UKavtMjqxtK0Ge98gWI/C4GeilaDKyU0Jk2IvdygnMEsm	manager	\N	25451fa6-82a7-414b-9b40-341bcd1b7286	25451fa6-82a7-414b-9b40-341bcd1b7286	\N	\N	\N
+admin	itdevelopment@cineom.in	$2a$12$V1qpfdj8zBy/u8eGJX3CQuoamG.wnC0oFnDtsZaYUKA1ZZPvLXfRG	superuser	\N	25451fa6-82a7-414b-9b40-341bcd1b7286	25451fa6-82a7-414b-9b40-341bcd1b7286	1198	\N	2026-03-16 11:16:36
 \.
 
 
@@ -1613,6 +2037,7 @@ SwapnilM	Swapnil Marathe	$2b$12$deCrXYi7UKavtMjqxtK0Ge98gWI/C4GeilaDKyU0Jk2Ivdyg
 --
 
 COPY public.zoho_catalog (zoho_product_id, product_name, unit_price, make, model, hsn_code, description, sku, is_active, last_synced_at, created_at) FROM stdin;
+ZP-SAMPLE-0001	Sample Catalog Product (Hardcoded)	25000.00	CINEOM	SAMPLE-MODEL-1	9987	Hardcoded sample catalog product for testing catalog → inventory conversion flow.	SAMPLE-001	t	2026-08-06 12:03:53.820352+00	2026-08-06 12:03:53.820352+00
 \.
 
 
@@ -1653,6 +2078,13 @@ SELECT pg_catalog.setval('public.auth_tokens_id_seq', 1, false);
 
 
 --
+-- Name: clients_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.clients_id_seq', 1, false);
+
+
+--
 -- Name: company_templates_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
@@ -1667,10 +2099,17 @@ SELECT pg_catalog.setval('public.dc_item_mappings_id_seq', 1, false);
 
 
 --
+-- Name: inventory_quantity_events_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.inventory_quantity_events_id_seq', 3, true);
+
+
+--
 -- Name: knex_migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.knex_migrations_id_seq', 20, true);
+SELECT pg_catalog.setval('public.knex_migrations_id_seq', 28, true);
 
 
 --
@@ -1706,6 +2145,20 @@ SELECT pg_catalog.setval('public.project_order_items_id_seq', 30, true);
 --
 
 SELECT pg_catalog.setval('public.quantity_events_id_seq', 18, true);
+
+
+--
+-- Name: quotes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.quotes_id_seq', 1, false);
+
+
+--
+-- Name: temp_assets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.temp_assets_id_seq', 1, false);
 
 
 --
@@ -1796,6 +2249,14 @@ ALTER TABLE ONLY public.auth_tokens
 
 
 --
+-- Name: clients clients_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.clients
+    ADD CONSTRAINT clients_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: companies companies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1873,6 +2334,54 @@ ALTER TABLE ONLY public.folders
 
 ALTER TABLE ONLY public.hsn_codes
     ADD CONSTRAINT hsn_codes_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: inventory_components inventory_components_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_components
+    ADD CONSTRAINT inventory_components_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_folders inventory_folders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_folders
+    ADD CONSTRAINT inventory_folders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_items inventory_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_items
+    ADD CONSTRAINT inventory_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_kinds inventory_kinds_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_kinds
+    ADD CONSTRAINT inventory_kinds_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_quantity_event_lines inventory_quantity_event_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_quantity_event_lines
+    ADD CONSTRAINT inventory_quantity_event_lines_pkey PRIMARY KEY (event_id, item_id);
+
+
+--
+-- Name: inventory_quantity_events inventory_quantity_events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_quantity_events
+    ADD CONSTRAINT inventory_quantity_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -1988,6 +2497,14 @@ ALTER TABLE ONLY public.quantity_events
 
 
 --
+-- Name: quotes quotes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT quotes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2001,6 +2518,14 @@ ALTER TABLE ONLY public.role_permissions
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: temp_assets temp_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.temp_assets
+    ADD CONSTRAINT temp_assets_pkey PRIMARY KEY (id);
 
 
 --
@@ -2096,6 +2621,90 @@ CREATE INDEX idx_dc_item_mappings_assetid ON public.dc_item_mappings USING btree
 --
 
 CREATE INDEX idx_folders_parentid ON public.folders USING btree (parentid);
+
+
+--
+-- Name: idx_inventory_components_parentid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_components_parentid ON public.inventory_components USING btree (parentid);
+
+
+--
+-- Name: idx_inventory_folders_parentid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_folders_parentid ON public.inventory_folders USING btree (parentid);
+
+
+--
+-- Name: idx_inventory_items_folderid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_items_folderid ON public.inventory_items USING btree (folderid);
+
+
+--
+-- Name: idx_inventory_items_kindid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_items_kindid ON public.inventory_items USING btree (kindid);
+
+
+--
+-- Name: idx_inventory_items_parentid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_items_parentid ON public.inventory_items USING btree (parentid);
+
+
+--
+-- Name: idx_inventory_items_zoho_product_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_items_zoho_product_id ON public.inventory_items USING btree (zoho_product_id);
+
+
+--
+-- Name: idx_inventory_kinds_folderid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_kinds_folderid ON public.inventory_kinds USING btree (folderid);
+
+
+--
+-- Name: idx_inventory_kinds_parentid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_kinds_parentid ON public.inventory_kinds USING btree (parentid);
+
+
+--
+-- Name: idx_inventory_quantity_event_lines_item_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_quantity_event_lines_item_id ON public.inventory_quantity_event_lines USING btree (item_id);
+
+
+--
+-- Name: idx_inventory_quantity_event_lines_itemid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_quantity_event_lines_itemid ON public.inventory_quantity_event_lines USING btree (item_id);
+
+
+--
+-- Name: idx_inventory_quantity_events_root_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_quantity_events_root_id ON public.inventory_quantity_events USING btree (root_id);
+
+
+--
+-- Name: idx_inventory_quantity_events_rootid; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_inventory_quantity_events_rootid ON public.inventory_quantity_events USING btree (root_id);
 
 
 --
@@ -2277,6 +2886,78 @@ ALTER TABLE ONLY public.folders
 
 
 --
+-- Name: inventory_components fk_inventory_components_parentid_inventory_items; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_components
+    ADD CONSTRAINT fk_inventory_components_parentid_inventory_items FOREIGN KEY (parentid) REFERENCES public.inventory_items(id) ON DELETE SET NULL;
+
+
+--
+-- Name: inventory_folders fk_inventory_folders_parentid_inventory_folders; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_folders
+    ADD CONSTRAINT fk_inventory_folders_parentid_inventory_folders FOREIGN KEY (parentid) REFERENCES public.inventory_folders(id) ON DELETE SET NULL;
+
+
+--
+-- Name: inventory_items fk_inventory_items_folderid_inventory_folders; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_items
+    ADD CONSTRAINT fk_inventory_items_folderid_inventory_folders FOREIGN KEY (folderid) REFERENCES public.inventory_folders(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: inventory_items fk_inventory_items_kindid_inventory_kinds; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_items
+    ADD CONSTRAINT fk_inventory_items_kindid_inventory_kinds FOREIGN KEY (kindid) REFERENCES public.inventory_kinds(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: inventory_items fk_inventory_items_parentid_inventory_items; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_items
+    ADD CONSTRAINT fk_inventory_items_parentid_inventory_items FOREIGN KEY (parentid) REFERENCES public.inventory_items(id) ON DELETE SET NULL;
+
+
+--
+-- Name: inventory_kinds fk_inventory_kinds_folderid_inventory_folders; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_kinds
+    ADD CONSTRAINT fk_inventory_kinds_folderid_inventory_folders FOREIGN KEY (folderid) REFERENCES public.inventory_folders(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: inventory_kinds fk_inventory_kinds_parentid_inventory_kinds; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_kinds
+    ADD CONSTRAINT fk_inventory_kinds_parentid_inventory_kinds FOREIGN KEY (parentid) REFERENCES public.inventory_kinds(id) ON DELETE SET NULL;
+
+
+--
+-- Name: inventory_quantity_event_lines fk_inventory_quantity_event_lines_itemid_inventory_items; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_quantity_event_lines
+    ADD CONSTRAINT fk_inventory_quantity_event_lines_itemid_inventory_items FOREIGN KEY (item_id) REFERENCES public.inventory_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: inventory_quantity_events fk_inventory_quantity_events_rootid_inventory_items; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.inventory_quantity_events
+    ADD CONSTRAINT fk_inventory_quantity_events_rootid_inventory_items FOREIGN KEY (root_id) REFERENCES public.inventory_items(id) ON DELETE CASCADE;
+
+
+--
 -- Name: layout_markers fk_layout_markers_assetid_assets; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2415,5 +3096,5 @@ REVOKE USAGE ON SCHEMA public FROM PUBLIC;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nhPQ0TPIbHSSamWquEWaBGlJd5bq8imBvGfdVanke765toBoxjeBhlCnxyOyhtL
+\unrestrict uCl5oXjh877im4lybJgO2ddw8KfO1T6mlap6aoYU2iphjpFbVdfVuGZyWISjUn3
 
