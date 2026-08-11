@@ -13,6 +13,23 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 - *(none yet)*
 
+### Fixed
+
+- *(pending further Sprint 1 issues)*
+
+---
+
+## [Sprint 1] Issue 1 — Password reset (2026-08)
+
+### Added
+
+- Migration `20260811180000_add_users_email` — nullable `users.email` for reset delivery
+- `SPRINT_1_PROGRESS.md` sprint tracker
+
+### Fixed
+
+- Password reset workflow: token persistence, stored-email delivery, Dev/Staging link fallback UX, reset-form token handling
+
 ---
 
 ## [Repo] 2026-08 — Phase 3 repository presentation

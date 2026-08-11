@@ -1302,36 +1302,61 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         const needle = String(email || '').trim();
         let user = null;
         if (needle) {
+            // Lookup by username OR stored users.email (grouped OR to avoid SQL precedence bugs).
+            // Reset delivery uses stored users.email only — never the typed needle as a mail target.
             user = await db('users')
-                .whereRaw('LOWER(username) = LOWER(?)', [needle])
-                .orWhereRaw('LOWER(fullname) = LOWER(?)', [needle])
-                .orWhereRaw(`LOWER(COALESCE(email, '')) = LOWER(?)`, [needle])
+                .where(function () {
+                    this.whereRaw('LOWER(username) = LOWER(?)', [needle])
+                        .orWhereRaw(`LOWER(COALESCE(email, '')) = LOWER(?)`, [needle]);
+                })
                 .first();
             user = normalizeResult(user);
         }
 
+        // Anti-enumeration: same outer response shape whether or not the account exists.
         if (!user) return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+
+        const storedEmail = String(user.email || '').trim();
+        const toAddress = /@/.test(storedEmail) ? storedEmail : null;
+
         const resetToken = tokenService.generateToken();
         const stored = await tokenService.storeResetToken(user.username, resetToken);
         if (stored === false) {
             console.error('[AUTH] Failed to persist password reset token; aborting.');
             return res.status(500).json({ ok: false, message: 'Failed to issue reset token.' });
         }
+
         const host = req.get('host');
         const protocol = req.protocol;
         const resetLink = `${protocol}://${host}/#reset-password?token=${resetToken}`;
-        const userEmail = String(user.email || user.mail || '').trim();
-        const toAddress = /@/.test(userEmail) ? userEmail : (/@/.test(needle) ? needle : null);
+
         let emailSent = false;
         if (toAddress) {
-            try { emailSent = await emailService.sendPasswordResetEmail(toAddress, resetLink); }
-            catch (e) { console.error('[AUTH] sendPasswordResetEmail threw:', e); emailSent = false; }
+            try {
+                emailSent = await emailService.sendPasswordResetEmail(toAddress, resetLink);
+            } catch (e) {
+                console.error('[AUTH] sendPasswordResetEmail threw:', e);
+                emailSent = false;
+            }
+        } else {
+            console.warn('[AUTH] Password reset requested but user has no stored email:', user.username);
         }
-        const isDevOrTestEnv = (process.env.NODE_ENV !== 'production') || host.includes('9090') || host.includes('8080') || host.includes('127.0.0.1') || host.includes('localhost') || /^192\.168\./.test(host);
+
+        const isDevOrTestEnv =
+            (process.env.NODE_ENV !== 'production') ||
+            host.includes('9090') ||
+            host.includes('8080') ||
+            host.includes('127.0.0.1') ||
+            host.includes('localhost') ||
+            /^192\.168\./.test(host);
+
+        // Dev/test escape hatch when SMTP fails or email is missing — never expose in true production hosts.
         const exposeLink = (!emailSent && isDevOrTestEnv) ? resetLink : null;
         const payload = { ok: true };
         if (exposeLink) {
-            payload.message = 'SMTP not configured. Use this dev reset link (expires in 60 minutes).';
+            payload.message = toAddress
+                ? 'Email could not be sent. Use this reset link (expires in 60 minutes).'
+                : 'No email on file for this account. Use this reset link (expires in 60 minutes), then set users.email.';
             payload.devResetLink = exposeLink;
         } else {
             payload.message = 'If an account exists, a reset email has been sent.';

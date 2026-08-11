@@ -205,10 +205,23 @@ export function setupAuth(onLoginSuccess) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
-                
+
                 const result = await response.json();
-                alert(result.message || 'Check your email for reset instructions.');
-                forgotModal.style.display = 'none';
+                if (!response.ok) {
+                    alert(result.message || result.error || 'Failed to process request.');
+                    return;
+                }
+
+                let msg = result.message || 'Check your email for reset instructions.';
+                if (result.devResetLink) {
+                    msg += `\n\nReset link:\n${result.devResetLink}`;
+                    try {
+                        await navigator.clipboard.writeText(result.devResetLink);
+                        msg += '\n\n(Link copied to clipboard.)';
+                    } catch (_) { /* clipboard optional */ }
+                }
+                alert(msg);
+                if (forgotModal) forgotModal.style.display = 'none';
             } catch (err) {
                 console.error('Forgot password error:', err);
                 alert('Failed to process request.');
@@ -220,19 +233,16 @@ export function setupAuth(onLoginSuccess) {
     }
 
     // --- Reset Password Logic (URL Handling) ---
-    // Check if we are in a reset password flow
-    // The token might be in the hash (/#reset-password?token=...) or query (?token=...) depending on routing
+    // Token may be in hash (/#reset-password?token=...) or query (?token=...)
     if (window.location.hash.includes('reset-password')) {
         let token = null;
-        
-        // Try parsing from hash first: #reset-password?token=XYZ
+
         const hashParts = window.location.hash.split('?');
         if (hashParts.length > 1) {
             const hashParams = new URLSearchParams(hashParts[1]);
             token = hashParams.get('token');
         }
-        
-        // If not in hash, try normal query params
+
         if (!token) {
             const urlParams = new URLSearchParams(window.location.search);
             token = urlParams.get('token');
@@ -240,34 +250,40 @@ export function setupAuth(onLoginSuccess) {
 
         const resetModal = document.getElementById('resetPasswordModal');
         const resetForm = document.getElementById('resetPasswordForm');
-        
-        if (token && resetModal) {
-            document.getElementById('resetToken').value = token;
+        const tokenInput = document.getElementById('resetToken');
+
+        if (token && resetModal && tokenInput) {
+            tokenInput.value = token;
+            tokenInput.setAttribute('value', token);
             resetModal.style.display = 'block';
-            console.log('Reset modal opened for token:', token);
+            console.log('Reset modal opened for token');
         } else {
             console.warn('Reset password detected but no token found or modal missing');
         }
 
-        if (resetForm) {
-            // Remove existing listeners by cloning
-            const newResetForm = resetForm.cloneNode(true);
-            resetForm.parentNode.replaceChild(newResetForm, resetForm);
-
-            newResetForm.addEventListener('submit', async (e) => {
+        if (resetForm && !resetForm.dataset.resetBound) {
+            resetForm.dataset.resetBound = '1';
+            resetForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const newPass = document.getElementById('newPassword').value;
                 const confirmPass = document.getElementById('confirmPassword').value;
-                const tokenVal = document.getElementById('resetToken').value;
+                const tokenVal = (document.getElementById('resetToken') || {}).value || token || '';
 
                 if (newPass !== confirmPass) {
                     alert('Passwords do not match!');
                     return;
                 }
+                if (!tokenVal) {
+                    alert('Missing reset token. Open the link from your email again.');
+                    return;
+                }
 
                 const btn = resetForm.querySelector('button');
-                btn.disabled = true;
-                btn.textContent = 'Resetting...';
+                const originalBtnText = btn ? btn.textContent : 'Set Password';
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'Resetting...';
+                }
 
                 try {
                     const response = await fetch('/api/auth/reset-password', {
@@ -279,17 +295,19 @@ export function setupAuth(onLoginSuccess) {
                     const result = await response.json();
                     if (response.ok) {
                         alert('Password reset successful! Please log in.');
-                        resetModal.style.display = 'none';
-                        window.location.href = '/'; // Reload to clear URL params
+                        if (resetModal) resetModal.style.display = 'none';
+                        window.location.href = '/';
                     } else {
-                        alert('Error: ' + result.error);
+                        alert('Error: ' + (result.error || 'Reset failed'));
                     }
                 } catch (err) {
                     console.error('Reset error:', err);
                     alert('Failed to reset password.');
                 } finally {
-                    btn.disabled = false;
-                    btn.textContent = 'Set Password';
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = originalBtnText;
+                    }
                 }
             });
         }
