@@ -11,11 +11,11 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ### Added
 
-- *(none yet)*
+- *(none yet — next Sprint 1 issues)*
 
 ### Fixed
 
-- *(pending further Sprint 1 issues)*
+- *(none yet — next Sprint 1 issues)*
 
 ---
 
@@ -24,12 +24,15 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 ### Added
 
 - Migration `20260811180000_add_users_email` — nullable `users.email` for reset delivery
-- `SPRINT_1_PROGRESS.md` sprint tracker
+- `SPRINT_1_PROGRESS.md` sprint tracker (includes post-issue docs → smoke → commit gate)
 
 ### Fixed
 
 - Password reset workflow: token persistence, stored-email delivery, Dev/Staging link fallback UX, reset-form token handling
 
+### Known debt
+
+- Gmail SMTP credentials require production configuration (Medium / Known) — `docs/08_TECHNICAL_DEBT.md`
 ---
 
 ## [Repo] 2026-08 — Phase 3 repository presentation

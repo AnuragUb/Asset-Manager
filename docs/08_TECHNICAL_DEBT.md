@@ -39,6 +39,17 @@ AssetEngine is a **battle-evolved monolith**: strong domain ideas, uneven modern
 | Multiple user-admin APIs | `/api/users*`, `/api/tenant/users*`, `/api/rbac*` overlap |
 | Service vs ARRI dual surfaces | Two APIs for similar job-card concepts |
 | Frontend calls missing APIs | e.g. `/api/all-orders` |
+| **Gmail SMTP credentials require production configuration** | Password-reset mail fails with BadCredentials when `dynamic.json` SMTP is misconfigured or uses non-production Gmail app passwords; Dev/Staging fall back to `devResetLink` only |
+
+### Authentication — SMTP (tracked)
+
+| Field | Value |
+|-------|--------|
+| Area | Authentication |
+| Item | Gmail SMTP credentials require production configuration |
+| Priority | Medium |
+| Status | Known |
+| Notes | Observed during Sprint 1 Issue 1 verification on `59:9090` / `59:8080`. Reset workflow is repaired; outbound mail still depends on valid SMTP in `web-app/asset-manager-backend/dynamic.json` (or successor secret store). Do not commit real credentials. |
 
 ---
 

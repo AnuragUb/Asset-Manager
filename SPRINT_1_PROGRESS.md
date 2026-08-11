@@ -4,6 +4,14 @@
 **Targets:** Dev `59:9090`, Staging `59:8080`  
 **Production `118:8080`:** Must not be modified
 
+## After every issue (required)
+
+1. Update `SPRINT_1_PROGRESS.md`
+2. Update `PROJECT_STATUS.md`
+3. Update `CHANGELOG.md`
+4. Run a smoke test (Dev `59:9090`, then Staging `59:8080`)
+5. **Only then** commit (one commit per issue)
+
 Approved analysis modifications:
 
 - Add `users.email` migration; password reset uses stored email
@@ -20,9 +28,11 @@ Status:
 - [x] Investigation
 - [x] Implementation
 - [x] Testing
+- [x] Docs (`SPRINT_1_PROGRESS` / `PROJECT_STATUS` / `CHANGELOG`)
+- [x] Smoke test
 - [x] Commit
 
-Commit: `fix(auth): repair password reset workflow` on `main` (`git log -1 --grep=password reset`)
+Commit: `26c9f0b` `fix(auth): repair password reset workflow` (+ follow-up docs commit for status/debt checklist)
 
 Regression: None observed (login, home pages, reset happy/error paths verified on 9090 and 8080)
 
@@ -45,11 +55,22 @@ Regression: None observed (login, home pages, reset happy/error paths verified o
 | Unknown user anti-enumeration | Pass | Pass |
 | Home page 200 | Pass | Pass |
 
+### Post-issue smoke (checklist)
+| Check | 59:9090 | 59:8080 |
+|-------|---------|---------|
+| Home / login page loads | Pass (200) | Pass (200) |
+| `POST /api/auth/forgot-password` (unknown user) | Pass | Pass |
+| Auth JS served (`v=7.01`, includes `devResetLink`) | Pass | Pass |
+| Bogus login rejected | Pass (401) | Pass (401) |
+
 SMTP in `dynamic.json` currently returns Gmail BadCredentials; reset still completes via Dev/Staging link fallback. Production host was not touched.
+
+**Technical debt (Known / Medium):** Gmail SMTP credentials require production configuration — see `docs/08_TECHNICAL_DEBT.md`.
 
 ---
 
 ## Issue 2 — Assets Card/Table Toggle
+
 
 Status:
 - [x] Investigation

@@ -1,6 +1,6 @@
 # Project Status — AssetEngine / CineEAM
 
-**Last updated:** August 2026 (repository presentation pass)  
+**Last updated:** August 2026 (Sprint 1 in progress)  
 **Primary branch:** `main`  
 **Primary remote:** `origin` → https://github.com/AnuragUb/Asset-Manager
 
@@ -12,13 +12,17 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `8f9e9a2` (`main`) | Phase 3 presentation |
-| **Product Version** | **v7.00** | Frontend entry log / recent UI commits (`main.js`) |
-| **Last Successful Deployment** | *TBD* | Record host + date after each deploy (e.g. `118:8080` / `59:8080` / `59:9090`) |
-| **Last Database Migration** | `20260804090000_seed_sample_zoho_catalog_product_preview` | Newest file under `web-app/asset-manager-backend/migrations/` — confirm applied per environment via Knex |
-| **Current Sprint** | *TBD* | Fill with sprint name/goal when set |
+| **Repository Version** | `26c9f0b` (`main`) | Issue 1 password-reset fix tip (see also follow-up docs commit) |
+| **Product Version** | **v7.00** / auth cache `v=7.01` | Frontend entry log; `auth.js` cache-bust for reset UX |
+| **Last Successful Deployment** | Dev/Staging bind-mount on `59` (containers restarted 2026-08-11 for Issue 1) | Production `118:8080` not deployed this sprint |
+| **Last Database Migration** | `20260811180000_add_users_email` | Applied on `asset_manager_test` (9090) and `asset_manager` (8080) |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Tracker: [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
+
+### Sprint 1 issue gate
+
+After every completed issue: update `SPRINT_1_PROGRESS.md`, this file, and `CHANGELOG.md` → smoke-test Dev then Staging → **only then** commit.
 
 ---
 
@@ -88,6 +92,7 @@ Detail: [`docs/09_CURRENT_STATE.md`](./docs/09_CURRENT_STATE.md).
 3. Stale workflow docs historically contradicted GitHub branch reality (runbook relocated; content still needs reconciliation)  
 4. Inventory / dual-DB category paths easy to misuse  
 5. Secrets and token files must stay gitignored and rotated if ever leaked  
+6. Gmail SMTP credentials require production configuration (password-reset mail) — Medium / Known  
 
 See [`docs/08_TECHNICAL_DEBT.md`](./docs/08_TECHNICAL_DEBT.md).
 
