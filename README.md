@@ -20,7 +20,7 @@ One pull request should solve one problem. Do not combine refactoring, features,
 | Primary remote | [AnuragUb/Asset-Manager](https://github.com/AnuragUb/Asset-Manager) |
 | Stack | Node.js (Express) · PostgreSQL · Redis · Vanilla JS SPA |
 | Environments | Dev/test `59:9090` · Staging `59:8080` · Production `118:8080` |
-| Repository Version | `cca1847` (local `main`) |
+| Repository Version | `8f9e9a2` (`main`) |
 | Product Version | v7.00 |
 | Current Release detail | [`PROJECT_STATUS.md`](./PROJECT_STATUS.md#current-release) |
 

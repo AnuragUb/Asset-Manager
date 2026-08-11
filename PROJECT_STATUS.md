@@ -12,7 +12,7 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `cca1847` (`main`) | Phase 3 presentation committed |
+| **Repository Version** | `8f9e9a2` (`main`) | Phase 3 presentation |
 | **Product Version** | **v7.00** | Frontend entry log / recent UI commits (`main.js`) |
 | **Last Successful Deployment** | *TBD* | Record host + date after each deploy (e.g. `118:8080` / `59:8080` / `59:9090`) |
 | **Last Database Migration** | `20260804090000_seed_sample_zoho_catalog_product_preview` | Newest file under `web-app/asset-manager-backend/migrations/` — confirm applied per environment via Knex |
