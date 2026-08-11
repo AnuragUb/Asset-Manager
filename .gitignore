@@ -30,7 +30,7 @@ Thumbs.db
 logs/
 *.log
 
-# Uploads and temporary files
+# Uploads and temporary files (backend-local)
 web-app/asset-manager-backend/uploads/
 web-app/asset-manager-backend/temp/
 
@@ -40,5 +40,39 @@ web-app/asset-manager-backend/temp/
 *.swp
 *.swo
 
+# Runtime backups and ad-hoc SQL dumps (except curated ops/sql)
 backups/
 *.sql
+!ops/
+!ops/sql/
+!ops/sql/**
+
+# --- Phase 1 hygiene: runtime / generated / secrets (local-only) ---
+# Runtime upload & export dirs (keep folder via .gitkeep)
+input/**
+!input/.gitkeep
+export/**
+!export/.gitkeep
+
+playwright-report/
+test-results/
+
+**/zoho_tokens.txt
+
+sdk_logs.log
+debug.log
+
+# Temp / test artifacts
+*.qr.png
+web-app/asset-manager-backend/last_asset_qr.png
+web-app/asset-manager-backend/new_asset_qr_check.png
+web-app/asset-manager-backend/qr_test.png
+web-app/asset-manager-backend/test_new_asset_qr.png
+web-app/asset-manager-backend/test_qr.png
+web-app/asset-manager-backend/test_qr.txt
+Untitled-1.txt
+dist_js_files.txt
+js_files.txt
+export_test.docx
+export_test.pdf
+export_test.xlsx

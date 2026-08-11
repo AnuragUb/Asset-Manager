@@ -1,2 +1,0 @@
-id,user_name,client_id,client_secret,refresh_token,access_token,grant_token,expiry_time,redirect_url,api_domain
-1,,1000.G9UZOO1G980DQ5VEZ3BC0EIXE8J0MY,aaffed3b69b871f19d7b7aa7afc552b6bbe60ace83,1000.712b694ed804cd8fbf88a25664280ffa.dd1e6ff440f83f8f0c23fec8c017933e,1000.23b7313c2371c2f03a2fee68fff2b391.3f2f0ed1e0a244d7b1014b3603e2e72b,1000.a4d628746a2589cc8bdc4cbbe376ce3c.081b8c11bbb1f8dfc1d5c6c3ee678ffd,1784198492393,http://localhost:8080/api/zoho/callback,https://www.zohoapis.in
