@@ -28,7 +28,7 @@ while ($true) {
         if ($failures -eq $ALERT_THRESHOLD) {
             Write-Host "------------------------------------------------------------" -ForegroundColor Red
             Write-Host "CRITICAL ALERT: PRIMARY SERVER IS OFFLINE!" -ForegroundColor Red
-            Write-Host "Action Required: Run 'restore_failover.ps1' on this machine." -ForegroundColor Cyan
+            Write-Host "Action Required: Run 'ops/replication/restore_failover.ps1' on this machine." -ForegroundColor Cyan
             Write-Host "------------------------------------------------------------" -ForegroundColor Red
             
             # This triggers a Windows System Sound alert

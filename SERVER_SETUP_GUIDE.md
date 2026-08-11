@@ -35,8 +35,8 @@ If you are having issues on `.118`, follow these steps to wipe the slate clean a
 3. **Check for Port Conflicts**:
    Before starting, ensure no other service is using port **8080** or **5432**:
    ```powershell
-   ./diagnose_docker.ps1
-   ```
+./ops/health/diagnose_docker.ps1
+```
 
 4. **Launch from Scratch**:
    ```powershell
@@ -54,7 +54,7 @@ If you are having issues on `.118`, follow these steps to wipe the slate clean a
    ```
 4. **Troubleshooting**: If the container won't start on your `.118` server, run the diagnostic script:
    ```powershell
-   ./diagnose_docker.ps1
+   ./ops/health/diagnose_docker.ps1
    ```
 5. Verify by visiting `http://localhost:8080` in your browser.
 

@@ -9,8 +9,9 @@ $DB_USER = "postgres"
 # The IP of the machine you want to SEND the data TO (.59 server)
 $TARGET_IP = "192.168.6.59" 
 $TARGET_SHARE = "\\$TARGET_IP\AssetManager_Backups"
-# Use a relative path to ensure backups work on F: drive
-$LOCAL_BACKUP_PATH = Join-Path $PSScriptRoot "backups\replication"
+# Repo-root backups/ (script lives in ops/replication/)
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$LOCAL_BACKUP_PATH = Join-Path $RepoRoot "backups\replication"
 
 # Ensure local path exists
 if (!(Test-Path -Path $LOCAL_BACKUP_PATH)) { 
@@ -71,7 +72,7 @@ while (-not $synced -and $retryCount -lt $maxRetries) {
             Copy-Item -Path $localFile -Destination $remoteFile -Force -ErrorAction Stop
             Write-Host "✅ Data successfully replicated to .59 shared folder." -ForegroundColor Green
             Write-Host "   Target: $remoteFile" -ForegroundColor Gray
-            Write-Host "`nNext Step: Run 'restore_replication.ps1' on the .59 server." -ForegroundColor Yellow
+            Write-Host "`nNext Step: Run 'ops/replication/restore_replication.ps1' on the .59 server." -ForegroundColor Yellow
             $synced = $true
         } else {
             throw "Target share $TARGET_SHARE is not reachable."

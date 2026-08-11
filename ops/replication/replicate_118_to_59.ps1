@@ -34,7 +34,7 @@ try {
     if (Test-Path $TARGET_SHARE) {
         Copy-Item -Path $localFile -Destination $remoteFile -Force
         Write-Host "[SUCCESS] Data replicated to .59 shared folder." -ForegroundColor Green
-        Write-Host "Now run 'restore_replication.ps1' on the .59 server to apply it." -ForegroundColor Cyan
+        Write-Host "Now run 'ops/replication/restore_replication.ps1' on the .59 server to apply it." -ForegroundColor Cyan
     } else {
         Write-Host "[ERROR] Target share $TARGET_SHARE is not reachable." -ForegroundColor Red
         Write-Host "Ensure C:\AssetManager_Backups is shared on .59 and accessible from .118." -ForegroundColor Yellow

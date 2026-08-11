@@ -109,7 +109,7 @@ docker exec -it asset-manager-db pg_ctl promote
 
 ## 4. Current Automated "Cold" Redundancy
 Until the above streaming is configured, we have the daily scripts:
-- `replicate_db.ps1` (Sender)
-- `restore_replication.ps1` (Receiver)
+- `ops/replication/replicate_db.ps1` (Sender)
+- `ops/replication/restore_replication.ps1` (Receiver)
 
 This provides a **24-hour safety net**, while the Streaming Replication provides **Second-by-Second safety**.
