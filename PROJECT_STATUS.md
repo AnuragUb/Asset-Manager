@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `26c9f0b` (`main`) | Issue 1 password-reset fix tip (see also follow-up docs commit) |
-| **Product Version** | **v7.00** / auth cache `v=7.01` | Frontend entry log; `auth.js` cache-bust for reset UX |
-| **Last Successful Deployment** | Dev/Staging bind-mount on `59` (containers restarted 2026-08-11 for Issue 1) | Production `118:8080` not deployed this sprint |
+| **Repository Version** | `68dfc32` (`main`) | Issue 1 complete (auth fix `26c9f0b` + status docs) |
+| **Product Version** | **v7.00** / auth cache `v=7.01` | Frontend entry log; password-reset UX shipped |
+| **Last Successful Deployment** | Dev/Staging on `59` verified 2026-08-11 (Issue 1) | Production `118:8080` not deployed this sprint |
 | **Last Database Migration** | `20260811180000_add_users_email` | Applied on `asset_manager_test` (9090) and `asset_manager` (8080) |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Tracker: [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1 ✅ complete · Issue 2 in progress — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

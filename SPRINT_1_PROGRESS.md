@@ -22,7 +22,7 @@ Approved analysis modifications:
 
 ---
 
-## Issue 1 — Password Reset Workflow
+## Issue 1 — Password Reset Workflow ✅ COMPLETE (approved)
 
 Status:
 - [x] Investigation
@@ -31,10 +31,16 @@ Status:
 - [x] Docs (`SPRINT_1_PROGRESS` / `PROJECT_STATUS` / `CHANGELOG`)
 - [x] Smoke test
 - [x] Commit
+- [x] Approved
 
-Commit: `26c9f0b` `fix(auth): repair password reset workflow` (+ follow-up docs commit for status/debt checklist)
+Commits:
+- `26c9f0b` `fix(auth): repair password reset workflow`
+- `68dfc32` `docs(sprint1): record Issue 1 status gate and SMTP debt`
 
 Regression: None observed (login, home pages, reset happy/error paths verified on 9090 and 8080)
+
+### Authentication outcome
+Password reset is repaired on Dev and Staging. Resets use stored `users.email`. SMTP production credentials remain Known/Medium debt.
 
 ### What changed
 - Migration `20260811180000_add_users_email.js` adds nullable `users.email` + lower(email) index

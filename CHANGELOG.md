@@ -19,7 +19,9 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
-## [Sprint 1] Issue 1 — Password reset (2026-08)
+## [Sprint 1] Issue 1 — Password reset / authentication (2026-08) ✅ COMPLETE
+
+**Status:** Approved and complete on Dev `59:9090` and Staging `59:8080`. Production `118:8080` untouched.
 
 ### Added
 
@@ -28,12 +30,17 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ### Fixed
 
-- Password reset workflow: token persistence, stored-email delivery, Dev/Staging link fallback UX, reset-form token handling
+- Password reset workflow end-to-end: token persistence (`storeResetToken`), lookup by username or stored email, delivery to **stored** `users.email` only, Dev/Staging `devResetLink` fallback UX, reset-form token handling
+- Auth module cache-bust `auth.js?v=7.01`
+
+### Commits
+
+- `26c9f0b` `fix(auth): repair password reset workflow`
+- `68dfc32` `docs(sprint1): record Issue 1 status gate and SMTP debt`
 
 ### Known debt
 
 - Gmail SMTP credentials require production configuration (Medium / Known) — `docs/08_TECHNICAL_DEBT.md`
----
 
 ## [Repo] 2026-08 — Phase 3 repository presentation
 
