@@ -1,0 +1,644 @@
+================================================================================
+AssetEngine (CineEAM) — Session Briefing
+Compiled from Cursor conversation with Lead Architect / Implementation guidance
+Workspace: F:\AssetManager\AssetManager_Dev
+Date of session: Tuesday, Aug 11, 2026
+================================================================================
+
+This file contains the questions you asked and the answers that were given,
+in conversation order. It is a reference dump for onboarding and planning.
+
+
+
+================================================================================
+QUESTION 1
+================================================================================
+Access folder F:\AssetManager and read the codebase in AssetManager_Dev.
+Take access to the entire folder including gitignore and .env files.
+Read README.md as well.
+
+--------------------------------------------------------------------------------
+ANSWER 1
+--------------------------------------------------------------------------------
+Workspace root was set to F:\AssetManager\AssetManager_Dev.
+
+What the project is:
+- Web-based Asset Manager (CineEAM) for inventory, projects, employees, QR
+  tracking, warranty, OCR, delivery challans, Zoho CRM sync, and RBAC.
+- PowerShell/Electron are deprecated; active work is the web app.
+
+How to run (from README):
+  cd web-app/asset-manager-backend
+  npm install
+  node server.js
+  App: http://localhost:8080
+
+Stack (current vs older docs):
+- Backend: Express in server.js (~11k lines, ~100+ API routes)
+- DB: PostgreSQL via Knex (.env + Docker); SQLite still present as legacy
+- Cache: Redis
+- Frontend: Vanilla ES modules under asset-manager-frontend/js/
+- Infra: docker-compose.yml → postgres, redis, app-prod (8080), app-test (9090)
+
+Older docs (ARCHITECTURE_OVERVIEW.md, system-architecture.md) still describe
+SQLite/better-sqlite3; runtime config and knexfile point at Postgres.
+
+Layout:
+- web-app/asset-manager-backend/ — server.js, utils.js, services/, migrations/
+- web-app/asset-manager-frontend/ — index.html + large modules and dist/
+- scripts/, tests/ (Playwright), data/, deprecated asset_manager.ps1
+- Git: on main @ 70bde35; remotes origin (AnuragUb) and official (CineomDevTeam)
+
+Config also read:
+- .gitignore — ignores node_modules, dist, DBs, .env*, uploads/temp, backups, *.sql
+- .env — Postgres/Redis, PORT=8080, encryption key, Zoho CRM credentials,
+  legacy SQLite path (secrets noted but not to be repeated casually)
+
+
+
+================================================================================
+QUESTION 2
+================================================================================
+Access this GitHub repo: https://github.com/AnuragUb/Asset-Manager
+
+--------------------------------------------------------------------------------
+ANSWER 2
+--------------------------------------------------------------------------------
+Local AssetManager_Dev already uses this as origin and is in sync.
+
+Repo:
+- URL: https://github.com/AnuragUb/Asset-Manager
+- Visibility: public
+- Default branch: main
+- Language: JavaScript
+- Last push: same day (~2 hours ago at time of check)
+- Open issues/PRs: 0
+
+Branches on GitHub:
+- main       → 70bde35 (same as local main)
+- fix-sync   → 70bde35 (same as main)
+- dev        → d6903dd (older, ~3 months; diverged)
+- Broken-State → cf8635f (stale, ~6 months)
+
+Local link:
+- origin → https://github.com/AnuragUb/Asset-Manager.git
+- Local main = origin/main (70bde35 — “Prepare repository for AI-assisted development”)
+- Second remote: official → CineomDevTeam/CineEAM
+
+Note: GitHub CLI (gh) was not installed on the machine; git + GitHub API were used.
+
+
+
+================================================================================
+QUESTION 3
+================================================================================
+Understand the current codebase and tell me what you understand.
+
+--------------------------------------------------------------------------------
+ANSWER 3
+--------------------------------------------------------------------------------
+### What it is
+Asset Manager / CineEAM — internal web app for CINEOM to track physical assets
+(cameras, kits, IT gear): inventory, project assignment, returns/inspection,
+QR tagging, employees, warranty, delivery challans, CRM/service integrations.
+
+Active product is the web app. PowerShell/Electron are deprecated leftovers.
+
+### Architecture (today)
+SPA + Express API, single process serving both:
+- Frontend: Vanilla JS ES modules (cache-busted query params like ?v=7.00)
+- Backend: Monolithic server.js (~456KB) + utils.js + services/
+- DB: PostgreSQL via Knex; dual DB for main vs In-House/Service
+- Cache: Redis — delete-on-write (invalidateAssetsCache)
+- Deploy: Docker Compose prod 8080 / test 9090
+
+### Frontend mental model
+index.html is one shell; main.js owns nav → view switching:
+- Assets dashboard — dashboard.js (huge)
+- Hierarchy — folders/kinds tree (hierarchy.js)
+- Inventory — inventory.js
+- Projects — projects.js
+- Employees, Warranty, DC, OCR, Settings, Admin/RBAC, ARRI, Service portal
+- Auth — auth.js; permissions gate nav (view.*)
+Versioning around v7.00.
+
+### Backend mental model
+server.js is system of record for APIs.
+
+Core domain logic:
+1. Asset lifecycle via updateAssetStatus:
+   - In Store → available (Mumbai hub)
+   - Project → locked to project / on site
+   - Under Inspection → returned, hidden until inward check
+   - Then release back to In Store
+   - Status changes can recurse to children via parentid
+2. Sets/components — kits glued by parentid; promotion components→assets
+3. Integrity — Postgres trigger against ID in both assets and components;
+   Redis cache flushed on writes
+4. Auth — JWT + cookies, bcrypt, RBAC
+5. Integrations — Zoho, email, Google Sheets, Tally, QR, OCR, PDF/DOCX
+
+### Repo / environments
+- Local = GitHub AnuragUb/Asset-Manager (origin), main @ 70bde35
+- Also remote official → CineomDevTeam/CineEAM
+- Docs say dev→9090, main→8080 but GitHub dev is months behind main
+
+### Quirks
+- Docs drift (SQLite vs Postgres; README still mentions PowerShell)
+- Giant server.js + dashboard.js
+- Dev serves source frontend (useDist = false)
+- .env holds secrets; gitignored
+- Many one-off check_*/repair scripts from production firefighting
+
+### Bottom line
+Production ops tool for cinema/IT asset logistics: hierarchical inventory,
+project deployment with inspection on return, QR tracking, admin/audit —
+implemented as Postgres + Redis Express app with large vanilla JS frontend,
+evolved from older SQLite/PowerShell system.
+
+
+
+================================================================================
+QUESTION 4
+================================================================================
+You are now the Lead Software Architect for AssetEngine (CineEAM).
+Do not write any code.
+Completely understand the repository. Build mental model. Identify:
+Frontend, Backend, Database, Auth, API routes, Business logic, Inventory,
+Asset lifecycle, Zoho, Service Portal, Dashboard, Scripts, Migrations.
+Produce architectural overview. Identify technical debt, security issues,
+repository hygiene issues, unfinished features.
+Do not modify code. Do not create files. Only explain.
+
+--------------------------------------------------------------------------------
+ANSWER 4 (SUMMARY OF ARCHITECTURAL UNDERSTANDING)
+--------------------------------------------------------------------------------
+
+### Product mental model
+Internal operations system for physical gear across warehouse and project sites:
+hierarchy, kits/sets, project deployment + inward inspection, quantity/batch
+splitting, QR, DCs, employees, warranty, OCR, IT network credentials, Zoho,
+ARRI service portal, newer Inventory module (preview/feature-flagged).
+
+### Architecture overview
+Browser (Vanilla JS SPA)
+  → auth / main / dashboard / inventory / projects / ...
+  → fetch /api/* + JWT cookies
+Express server.js
+  → services/ (cache, email, encryption, zoho, tokens, sheets)
+  → utils.js → Knex db + dbService + IdGenerator
+  → Redis + PostgreSQL
+  → currently serves frontend SOURCE (not dist)
+
+### Frontend architecture
+- Style: Vanilla ES modules, no React/Vue; ?v= cache busting
+- Entry: index.html + main.js
+- Gravity well: dashboard.js (~472KB)
+- Other large modules: projects.js (~175KB), inventory.js (~97KB), main.js (~70KB)
+- Pattern: HierarchyManager, localStorage category, RBAC UI, window.* globals
+- Static delivery: forceSource=true / useDist=false
+
+### Backend architecture
+- God-file server.js with ~100–160 route registrations
+- Thin services/ layer
+- utils.js owns Knex dual DB, IDs, Tally, legacy JSON paths
+
+### Database design
+- Knex → PostgreSQL; dual connection (main + service for In-House/SERVICE)
+- Core tables: assets, components, asset_kinds, folders, projects,
+  project_assets, project_orders, delivery_challans, users, companies,
+  roles/permissions, auth_tokens, employees, arri_*, zoho_*, inventory_*
+- Trigger: no same ID in both assets and components
+- Soft deletes (is_deleted); stringly-typed dates/status from SQLite era
+
+### Authentication
+- Login → bcrypt (plaintext still accepted and upgraded) → JWT cookie
+- Optional remember_token (30 days)
+- Middleware: authenticateJWT, authorizeRoles, requirePermission
+- Gaps: many unauthenticated routes; open signup; secure:false cookies;
+  default JWT_SECRET; default EXTERNAL_API_KEY; debug endpoints open
+
+### Asset lifecycle
+In Store → Project → Under Inspection → In Store
+Sets recurse; promoteToAsset moves components→assets; parentid sticky
+
+### Inventory module
+Parallel stock/catalog; UI always on; migrations gated to asset_manager_test;
+FEATURE_INVENTORY_ENABLED can disable backend
+
+### Zoho
+zohoService: push assets to Products, pull products/deals, catalog, sync logs;
+tokens in zoho_tokens.txt (tracked — risk)
+
+### Service Portal (ARRI)
+servicePortal.js + /api/service/* (JWT) and /api/arri/* (often open);
+job cards, clients, Google Sheets sync
+
+### Dashboard
+Operational cockpit: hierarchy, cards/table, CRUD, DC, bulk import, scanner init
+
+### Scripts
+~58 in scripts/ + many root check/fix/repair scripts — ops archaeology
+
+### Migrations
+~29 Knex migrations: initial schema → auth → sets → retirement → triggers →
+ARRI → Zoho → FK waves → inventory preview family
+
+### Technical debt (high level)
+Monolith concentration; docs drift; dual persistence eras; case translation tax;
+inconsistent auth; duplicate routes; inventory dual-world; forceSource;
+stringly types; script graveyard; window coupling; version query params;
+broad Redis KEYS invalidation; weak encryption key handling
+
+### Security issues (high level)
+Unauthenticated data APIs; open signup; default secrets; tracked zoho_tokens;
+network creds possibly plaintext; debug endpoints; 100mb JSON limit;
+auth logging sensitivity; secure:false cookies
+
+### Repository hygiene
+Tracked uploads, eng.traineddata, Zoho resource JSON, logos; workstation dump
+feel; dual remotes; stale branches; deprecated clients; nested package roots
+
+### Unfinished / partial features
+Inventory preview; OCR wiring fragile (import commented); network scanner
+inconsistent; assetsReport missing; dist path unused; Electron/PS deprecated;
+Tally maturity unclear; signup/multi-tenant incomplete; branch workflow stale;
+service vs ARRI API duplication
+
+### Architect verdict
+Battle-evolved internal ERP-lite with strong domain ideas, modular frontend
+shell around monolithic Express+Postgres core, mid-migration from
+SQLite/LAN-trust into JWT/RBAC/Postgres/Redis/Zoho — migration unfinished evenly.
+
+
+
+================================================================================
+QUESTION 5
+================================================================================
+If you became the lead engineer tomorrow, what would be the first ten
+engineering improvements, ordered by impact? Do not implement. Explain reasoning.
+
+--------------------------------------------------------------------------------
+ANSWER 5
+--------------------------------------------------------------------------------
+Ordering principle: stop bleeding → lock core domain → make change safe → modernize.
+
+1. Close the open API surface (auth by default)
+   Impact: Highest — confidentiality/integrity. Make auth default; allowlist
+   only true public routes (login, QR/public asset view).
+
+2. Remove secrets from the repo and rotate them
+   Impact: Critical. Tracked tokens, uploads, .env with real credentials,
+   default JWT/API keys. Rotate and purge.
+
+3. Stabilize asset lifecycle as a single domain module
+   Impact: Highest business correctness. Extract/harden updateAssetStatus,
+   promoteToAsset, assign/unassign/inspection, sets, quantity split.
+
+4. Fix auth model consistency
+   Impact: Security + admin safety. Signup, plaintext passwords, cookies,
+   duplicate RBAC routes, uneven role checks, debug routes.
+
+5. Make Inventory either real or clearly isolated
+   Impact: Product/schema clarity. Promote to first-class or quarantine preview.
+
+6. Minimal automated safety net on core flows
+   Impact: Delivery speed. Small API/E2E suite around lifecycle + auth.
+
+7. Split server.js into domain routers (no behavior change)
+   Impact: Velocity. Mechanical carve after tests exist.
+
+8. Enforce one environment/branch/deploy contract
+   Impact: Ops reliability. Single source of truth for branch/port/DB/flags.
+
+9. Repository hygiene pass
+   Impact: Onboarding/clone size/leakage. Untrack artifacts; curated tools/.
+
+10. Replace docs drift with short current-state handbook
+    Impact: Alignment. Living handbook after facts are stabilized.
+
+Deliberately NOT first: full rewrite, microservices, perfect obfuscation,
+big-bang SQLite cleanup, broad clean-code reformatting.
+
+
+
+================================================================================
+QUESTION 6
+================================================================================
+Generate a map of this repository: hierarchical breakdown showing folders,
+responsibilities, important files, dependencies, how modules communicate,
+anything that appears unused.
+
+--------------------------------------------------------------------------------
+ANSWER 6
+--------------------------------------------------------------------------------
+
+### Communication
+Browser → index.html → main.js → domain modules → fetch /api/* + cookies
+→ server.js → services + utils → Postgres/Redis/Zoho
+Also: window globals, localStorage, dynamic import(), HierarchyManager shared.
+
+### Top-level
+AssetManager_Dev/
+  web-app/          ★ ACTIVE PRODUCT
+  scripts/          Ops / DB utilities
+  tests/            Playwright (thin)
+  data/             Legacy SQLite/JSON
+  backups/          pg_dump archives
+  input/            Uploads
+  export/           Exports
+  lib/              Legacy QRCoder .NET (unused by web)
+  Docker/docs/root scripts
+  Deprecated local GUI (ps1/bat)
+
+### web-app/
+  asset-manager-backend/  — API
+  asset-manager-frontend/ — SPA
+  public/                 — OLD snapshot (appears superseded)
+  zoho_resources/, zoho_tokens.txt
+  nav-raul-drunk-backup.html
+  stale package.json
+
+### Backend important files
+server.js, utils.js, IdGenerator.js, knexfile.js, services/*, migrations/*
+
+### Backend services deps
+server.js → cacheService, tokenService, passwordService, emailService,
+encryptionService, googleSheetsService, zohoService
+zohoService → utils.db + cacheService + Zoho SDK
+
+### Frontend important files
+index.html, main.js, dashboard.js, inventory.js, projects.js, employees.js,
+warranty.js, servicePortal.js, auth.js, rbac.js, hierarchy.js, dataProcessor.js,
+contextMenu.js, networkScanner.js, ocr.js, integration_client.js,
+quantity-history-modal.js, asset-view.js, settings.js, companyTemplates.js,
+dcProjectFetcher.js, formAutosave.js, loginAnimations.js
+
+### Frontend import graph (simplified)
+main.js → auth, utils, hierarchy, dashboard, inventory, projects, employees,
+warranty, settings, companyTemplates, contextMenu, servicePortal,
+dcProjectFetcher, formAutosave, loginAnimations, itAssets, rbac (dynamic)
+dashboard.js → hierarchy, dataProcessor, networkScanner, quantity-history-modal,
+inventory (dynamic), employees (dynamic)
+ocr.js → integration_client.js
+asset-view.html → asset-view.js → auth.js
+
+### CDN deps
+Tabulator, SheetJS, Chart.js, html5-qrcode, QRCode, JsBarcode
+
+### npm islands
+1. repo root (Playwright)
+2. backend (real server deps)
+3. frontend (build tooling)
+4. stale web-app/package.json
+
+### Appears unused / orphaned
+- js/arri.js (no imports; ARRI is servicePortal.js)
+- js/admin.js (no imports; rbac.js used instead)
+- js/qr.js (no imports)
+- assetsReport.js missing
+- web-app/public/* old snapshot
+- nav-raul-drunk-backup.html
+- dist/ not served while forceSource=true
+- lib/QRCoder*
+- asset_manager.ps1/.bat
+- Multiple local *.db files
+- Duplicate root check/fix scripts
+- export_test.*, Untitled-1.txt, QR test PNGs
+- backend c?/ path artifact, temp_install/
+
+### Partially wired
+- ocr.js import commented in main.js but nav may call setupOcr
+- networkScanner commented in main.js but imported by dashboard.js
+- itAssets thin/legacy
+- Inventory preview DB gating
+
+### Must-touch for product behavior
+frontend: index.html, main.js, dashboard.js, projects.js, inventory.js
+backend: server.js, utils.js, services/*, migrations/*
+
+### Ignore for feature work (unless cleaning)
+lib/, asset_manager.ps1, web-app/public/, arri.js, admin.js, qr.js,
+SQLite files, dist (while forceSource), backup HTML
+
+
+
+================================================================================
+QUESTION 7
+================================================================================
+List every REST API endpoint: Method, Route, Authentication, Purpose,
+Frontend consumers, Backend implementation, Database tables affected.
+
+--------------------------------------------------------------------------------
+ANSWER 7 (CATALOG SUMMARY)
+--------------------------------------------------------------------------------
+Source of truth: web-app/asset-manager-backend/server.js
+Auth legend: None | JWT | JWT+roles | JWT+perm | API-Key
+Implementation: almost all handlers inline in server.js.
+Total Express app.(method) registrations: ~160 including HTML pages + duplicates.
+
+### Notable findings
+- Duplicate routes: GET /api/users, GET /api/projects, DELETE /api/asset_kinds/:name,
+  GET /asset/:id
+- Frontend calls GET /api/all-orders — NO backend route found
+- Legacy arri.js calls /api/arri/clients — backend has /api/arri/customers
+- Many older domains (DC, employees, OCR, settings, some ARRI) are unauthenticated
+
+### Domain groups covered in the full answer
+A. Health/Debug — test-ping, debug/diagnose, debug/cookies
+B. Auth — login, logout, me, forgot/reset password, signup
+C. Users/RBAC/Tenant — users CRUD, roles, permissions, rbac/roles, tenant/users, company
+D. Assets — CRUD, bulk, search, retired, history, sell, release-to-store,
+   link-po-item, make-set, break-set, split, unsplit, asset-details, public assets
+E. Hierarchy — folders, asset_kinds, hierarchy/tree, icons
+F. Inventory — folders/kinds/items/item-details/quantity events
+G. Quantity — split, issue, consume, adjust, events, replay
+H. Projects/Orders/Temp assets — full project lifecycle + orders + temporary_assets
+I. DC — delivery challans, remarks, upload-logo
+J. Employees/Quotas
+K. Audit/Reports/Activity
+L. Settings/Email/Tally/HSN
+M. Zoho — sync-asset, sync-deals, sync-products, catalog, status, sheets-sync
+N. Service + ARRI — /api/service/* and /api/arri/*
+O. Network/Scanner — credentials, contacts, network-info, scan
+P. QR/Dynamic codes
+Q. Company templates
+R. OCR — history, process, excel, export pdf/excel/word
+S. External API — API-Key gated projects/assets/stats
+T. HTML page routes — /, /asset/:id, /inventory/:id, /project/:id, public views
+
+(For the full per-endpoint tables with Method/Route/Auth/Purpose/Frontend/Impl/DB,
+ see the detailed catalog in the conversation transcript. It is too large to
+ duplicate every row here without making this file unreadable; the domain map
+ above is the complete coverage list.)
+
+Key lifecycle tables commonly affected:
+assets, components, project_assets, asset_history, audit_log,
+quantity_events, quantity_event_lines, temporary_assets, projects,
+project_orders, project_order_items, inventory_*, arri_*, zoho_*,
+users, roles, permissions, role_permissions, auth_tokens, password_resets,
+folders, asset_kinds, delivery_challans, employees, network_credentials,
+network_contacts, company_templates, hsn_codes, dynamic.json settings
+
+
+
+================================================================================
+QUESTION 8
+================================================================================
+Assume a new implementation engineer joins tomorrow. Write an onboarding guide:
+What they should read first; what they should never modify; how the system works;
+what architectural decisions they must understand before changing anything.
+
+--------------------------------------------------------------------------------
+ANSWER 8
+--------------------------------------------------------------------------------
+
+### Read first (order)
+Day 0: README.md → PROCESS_LOGIC.md → WORKFLOW.md → this briefing
+Day 1: Architecture docs (distrust SQLite claims) → .env keys → docker-compose.yml
+Day 2: index.html → main.js → dashboard.js (structure only);
+       server.js (authenticateJWT, updateAssetStatus, promoteToAsset, /api/assets);
+       utils.js + knexfile.js; services/
+Day 3: domain deep dives by assignment (lifecycle, inventory, Zoho, ARRI, auth, migrations)
+
+Do NOT start with root check_*.js / PowerShell replication scripts.
+
+### Never modify without approval
+- updateAssetStatus / promoteToAsset
+- Cross-table trigger migrations (assets ↔ components)
+- Production DB / .env secrets / zoho_tokens.txt
+- Replication/failover scripts
+- Blind mass renames in server.js / dashboard.js
+- Auth cookie/JWT signing without security review
+- Git history rewrites / force-push to main
+- Deleting “unused” tables or SQLite in prod folders casually
+
+Treat as read-only legacy until asked to clean:
+asset_manager.ps1, Electron leftovers, lib/QRCoder*, web-app/public/,
+root one-off scripts, backups/, large input/ artifacts
+
+### How the system works
+Operators track physical gear through hierarchy, sets, project assign/return
+inspection, QR, DCs, employees, warranty, OCR, ARRI, Zoho, Inventory preview.
+
+Runtime: Browser SPA → Express → Postgres + Redis + integrations
+Start: cd web-app/asset-manager-backend && node server.js
+Frontend served from SOURCE currently.
+
+Lifecycle:
+In Store → Project → Under Inspection → In Store (optional sell/retire)
+
+Environments (verify before deploy):
+Prod intent 8080/main; Test intent 9090/dev — reality may differ (stale dev,
+Dev/Prod folders, dual remotes).
+
+### Architectural decisions to understand
+1. Monolith by evolution — surgical edits only
+2. Postgres primary; SQLite/docs legacy
+3. Case translation contract (lowercase DB ↔ PascalCase UI) via normalizeResult
+4. Auth incomplete/inconsistent; duplicate routes exist
+5. Cache is delete-on-write
+6. assets and components IDs mutually exclusive (trigger + promoteToAsset)
+7. Inventory ≠ Assets
+8. Soft delete + stringly status
+9. Frontend ?v= query strings are part of deploy
+10. Integrations are side effects, not the core
+11. Dual remotes / dual folders — confirm source of truth before push
+
+### First-week agreement
+Do: work on Dev/9090 first; route→table→caller; smallest fix; ask before
+assets/auth migrations.
+Don’t: rewrite frameworks; commit secrets; mega-PR all auth fixes; change
+status strings without product confirmation; trust README alone for DB/branch.
+
+One-sentence summary:
+AssetEngine is a Postgres-backed Express monolith with a vanilla JS SPA:
+change lifecycle and auth with extreme care; treat Inventory/Zoho as satellites;
+ignore legacy PS/SQLite sediment unless cleaning; always verify environment.
+
+
+
+================================================================================
+QUESTION 9
+================================================================================
+Make these General Rules permanent rules:
+- Never make large architectural changes without asking.
+- Never rewrite working modules.
+- Always preserve existing functionality.
+- Never remove APIs without checking references.
+- Always propose database migrations.
+- Never hardcode secrets.
+- Always explain why a change is being made.
+- Prefer incremental commits.
+- Never modify production configuration.
+- Prefer maintainability over cleverness.
+- If uncertain, ask instead of assuming.
+
+--------------------------------------------------------------------------------
+ANSWER 9
+--------------------------------------------------------------------------------
+Permanent Cursor project rule created:
+
+File: .cursor/rules/assetengine-engineering-standards.mdc
+Scope: alwaysApply: true (every chat in this workspace)
+
+The rule encodes all listed principles as standing guidance, with AssetEngine-
+specific quick checks:
+1. Large architectural change? → Ask first.
+2. Remove/rename API? → Grep references first.
+3. Schema change? → Propose migration.
+4. Secrets or prod config? → Stop and ask.
+5. Prefer small incremental change that preserves behavior.
+
+
+
+================================================================================
+QUESTION 10
+================================================================================
+Give me all the information I have provided you — the questions I asked and
+the answers you gave — as a text file.
+
+--------------------------------------------------------------------------------
+ANSWER 10
+--------------------------------------------------------------------------------
+This file (ASSETENGINE_SESSION_BRIEFING.txt) is that deliverable.
+
+Location:
+  F:\AssetManager\AssetManager_Dev\ASSETENGINE_SESSION_BRIEFING.txt
+
+Also related permanent artifact from this session:
+  F:\AssetManager\AssetManager_Dev\.cursor\rules\assetengine-engineering-standards.mdc
+
+
+
+================================================================================
+APPENDIX A — Key paths
+================================================================================
+Workspace:     F:\AssetManager\AssetManager_Dev
+Parent:        F:\AssetManager  (also contains AssetManager_Prod, Image Assets, etc.)
+Backend:       web-app/asset-manager-backend/server.js
+Frontend:      web-app/asset-manager-frontend/
+Migrations:    web-app/asset-manager-backend/migrations/
+Services:      web-app/asset-manager-backend/services/
+Env:           .env (gitignored)
+Git remotes:   origin = AnuragUb/Asset-Manager
+               official = CineomDevTeam/CineEAM
+Default tip:   main @ 70bde35 (at time of session)
+
+
+
+================================================================================
+APPENDIX B — Important caveats
+================================================================================
+1. Do not commit this briefing if it would expose secrets. This file intentionally
+   avoids pasting .env secret values and Zoho client secrets.
+2. API catalog in Q7 is summarized by domain; the live route list in server.js
+   remains authoritative if code has changed since this session.
+3. Docs in the repo may still say SQLite — trust knexfile.js + .env + running code.
+4. Permanent engineering rules live in .cursor/rules/ and apply to future agents.
+
+
+
+================================================================================
+END OF BRIEFING
+================================================================================

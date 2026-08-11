@@ -1,73 +1,100 @@
-# Asset Management Tool (Web Version)
+# AssetEngine / CineEAM
 
-This is the web-based version of the Asset Management system. The local PowerShell and Electron versions are now deprecated in favor of this web application.
+Internal asset operations platform for **CINEOM** — warehouse stock, project assignment, kits/sets, QR tracking, delivery challans, IT assets, Zoho sync, and ARRI service workflows.
 
-## Quick Start (Web App)
+> Active product surface: **web application** under `web-app/`.  
+> Legacy PowerShell / Electron clients are deprecated and should not receive new feature work.
 
-1. **Navigate to the web app directory**:
-   ```bash
-   cd web-app/asset-manager-backend
-   ```
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-3. **Start the server**:
-   ```bash
-   node server.js
-   ```
-4. **Access the app**: Open your browser and go to `http://localhost:8080`
+### Engineering philosophy
 
-## Features
+AssetEngine is a long-lived commercial product. Every change should improve maintainability, documentation, stability, security, and/or developer experience. Never change architecture solely because a different architecture exists — business value outweighs architectural purity.
 
-- **Modern Web UI**: Responsive dashboard and asset management interface.
-- **Atomic Sync**: Assets, components, and warranty details are updated synchronously in a single request.
-- **QR Code Integration**: Automatic QR code generation for asset tracking.
-- **IT-Specific Fields**: Specialized tracking for MAC addresses, IP addresses, and network details.
-- **Employee Management**: Assign assets directly to employees from a global directory.
-- **Audit Logging**: Comprehensive change tracking for all asset modifications.
-
-## Core Ground Rules
-
-- **Web App Only**: We are currently and for the foreseeable future only working on the web app. The local app versions are deprecated.
-- **Simplified Version Control**: Changes are automatically pushed to the GitHub repository.
-
-## Project Structure
-
-- `web-app/asset-manager-backend`: Express.js server and SQLite database.
-- `web-app/asset-manager-frontend`: HTML/JS frontend (Vanilla JS with ES Modules).
-- `web-app/asset-manager-frontend/dist`: Production-ready frontend assets.
-
-## Deprecated Versions
-
-- `electron-app/`: The Electron-based desktop wrapper is deprecated.
-- `asset_manager.ps1` & `asset_manager.bat`: The PowerShell-based local GUI is deprecated.
+One pull request should solve one problem. Do not combine refactoring, features, documentation, and infrastructure in a single review.
 
 ---
 
-Every action is logged with:
-- **Timestamp**: When the action occurred
-- **User**: Who performed the action
-- **Action**: Type of action (CREATE, UPDATE, DELETE, LOGIN, LOGOUT)
-- **Asset ID**: Which asset was affected
-- **Details**: Description of the change
-- **Old Value**: Previous asset data (for updates)
-- **New Value**: New asset data (for creates/updates)
+## Status
 
-## Customization
+| Item | Value |
+|------|--------|
+| Primary remote | [AnuragUb/Asset-Manager](https://github.com/AnuragUb/Asset-Manager) |
+| Stack | Node.js (Express) · PostgreSQL · Redis · Vanilla JS SPA |
+| Environments | Dev/test `59:9090` · Staging `59:8080` · Production `118:8080` |
+| Repository Version | `cca1847` (local `main`) |
+| Product Version | v7.00 |
+| Current Release detail | [`PROJECT_STATUS.md`](./PROJECT_STATUS.md#current-release) |
 
-### Adding New Asset Types
-Edit `asset_manager.ps1` and modify the ComboBox items in the Add Asset section.
+---
 
-### Adding New Status Options
-Edit `asset_manager.ps1` and modify the Status ComboBox items.
+## Quick start
 
-### Changing User Credentials
-Edit `users.json` directly or modify the default user creation in `Load-Users` function.
+```bash
+cd web-app/asset-manager-backend
+npm install
+# Configure .env (never commit secrets)
+node server.js
+```
 
-## Requirements
+Open `http://localhost:8080` (or the port set in `.env`).
 
-- Windows 7 or later
-- PowerShell 3.0 or later
-- No additional dependencies
+**Requires:** Node.js 20+, PostgreSQL, Redis (in-memory cache fallback exists if Redis is down).
 
+Docker: see `web-app/asset-manager-backend/docker-compose.yml` and [`docs/runbooks/SERVER_SETUP_GUIDE.md`](./docs/runbooks/SERVER_SETUP_GUIDE.md).
+
+---
+
+## What it does
+
+- Hierarchical catalog (folders → kinds → assets) and kit/set composition  
+- Project assign / unassign with inward inspection  
+- Quantity / batch split–unsplit and promote-to-asset flows  
+- QR tagging and public asset views  
+- Delivery challans, employees, warranties, audit logging  
+- Inventory module (feature-flagged / environment-gated)  
+- Zoho CRM sync and ARRI service / job-card portal  
+
+Domain lifecycle semantics: [`PROCESS_LOGIC.md`](./PROCESS_LOGIC.md).
+
+---
+
+## Repository map
+
+```text
+web-app/asset-manager-backend/   Express API, Knex/Postgres, Redis
+web-app/asset-manager-frontend/  Vanilla JS SPA (ES modules)
+ops/                             Deployment, replication, health, SQL
+docs/                            Handbook, runbooks, architecture index
+resources/                       Branding / diagrams (optional assets)
+PROCESS_LOGIC.md                 Lifecycle / domain truth (kept at root)
+```
+
+Operational tooling lives under [`ops/`](./ops/README.md). Application code is not relocated under `ops/`.
+
+---
+
+## Documentation
+
+| Start here | Purpose |
+|------------|---------|
+| [`docs/README.md`](./docs/README.md) | Documentation index |
+| [`docs/architecture/README.md`](./docs/architecture/README.md) | Architecture navigation |
+| [`docs/01_PROJECT_OVERVIEW.md`](./docs/01_PROJECT_OVERVIEW.md) | Product overview |
+| [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) | Modernization status |
+| [`AGENTS.md`](./AGENTS.md) | Guidance for AI / human agents |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | How to contribute |
+| [`SECURITY.md`](./SECURITY.md) | Vulnerability reporting |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Notable changes |
+
+---
+
+## Contributing & security
+
+- Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening PRs.  
+- Report security issues per [`SECURITY.md`](./SECURITY.md) — do not open public issues for secrets or exploit details.  
+- Engineering standards for this repo (incremental change, no casual prod config edits) apply to humans and AI agents — see [`AGENTS.md`](./AGENTS.md) and `.cursor/rules/`.
+
+---
+
+## License / ownership
+
+Internal CINEOM software. Distribution and access follow organization policy.

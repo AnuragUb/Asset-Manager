@@ -1,0 +1,107 @@
+# Project Status — AssetEngine / CineEAM
+
+**Last updated:** August 2026 (repository presentation pass)  
+**Primary branch:** `main`  
+**Primary remote:** `origin` → https://github.com/AnuragUb/Asset-Manager
+
+This file tracks **repository modernization** and engineering readiness — not every product UI version bump.
+
+---
+
+## Current Release
+
+| Field | Value | Notes |
+|-------|--------|--------|
+| **Repository Version** | `cca1847` (`main`) | Phase 3 presentation committed |
+| **Product Version** | **v7.00** | Frontend entry log / recent UI commits (`main.js`) |
+| **Last Successful Deployment** | *TBD* | Record host + date after each deploy (e.g. `118:8080` / `59:8080` / `59:9090`) |
+| **Last Database Migration** | `20260804090000_seed_sample_zoho_catalog_product_preview` | Newest file under `web-app/asset-manager-backend/migrations/` — confirm applied per environment via Knex |
+| **Current Sprint** | *TBD* | Fill with sprint name/goal when set |
+
+Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
+
+---
+
+## Environment matrix
+
+| Role | Host intent |
+|------|-------------|
+| Dev / test | `59:9090` |
+| Staging | `59:8080` |
+| Production | `118:8080` |
+
+---
+
+## Modernization phases
+
+| Phase | Goal | Status |
+|-------|------|--------|
+| **1** | Repository hygiene (gitignore, SQL under `ops/sql`, keep uploads out of git) | **Done** (`567f440`) |
+| **2.1** | Ops organization (`ops/deployment`, `replication`, `health`, `sql`) | **Done locally** (`8256d27`) — push when approved |
+| **2.x** | Further ops/archive moves (maintenance scripts, `archive/` for legacy GUI) | **Deferred** |
+| **3** | Repository presentation (README, contributing, security, docs index) | **Done** |
+| **4+** | Auth perimeter, lifecycle clarity, inventory gating, debt reduction | **Planned** — see `docs/10_NEXT_PHASE.md` |
+
+Do **not** rename `web-app/` as part of modernization unless a multi-app monorepo is explicitly approved.
+
+**Repository modernization foundation is complete.** Further repository restructuring is out of scope unless explicitly requested. Future work should focus on features, security hardening, documentation updates, and technical debt reduction.
+
+---
+
+## Product health (summary)
+
+| Area | State |
+|------|--------|
+| Web app | Active, primary product |
+| Postgres + Redis | Runtime standard |
+| Auth / RBAC | Present; incomplete route coverage |
+| Inventory | UI present; backend feature / env gated |
+| Zoho / ARRI | Implemented; credential dependent |
+| Playwright | Present; thin |
+| Docs handbook | `docs/01`–`10` current-state set |
+
+Detail: [`docs/09_CURRENT_STATE.md`](./docs/09_CURRENT_STATE.md).
+
+---
+
+## Documentation layout (after Phase 3)
+
+| Path | Role |
+|------|------|
+| `README.md` | GitHub landing |
+| `CONTRIBUTING.md` / `SECURITY.md` / `CHANGELOG.md` / `AGENTS.md` | Community & agent entry points |
+| `PROCESS_LOGIC.md` | Domain lifecycle truth (**stays at repo root**) |
+| `docs/README.md` | Documentation index |
+| `docs/architecture/` | Architecture navigation |
+| `docs/01`–`10` | Current handbook |
+| `docs/runbooks/` | Setup, redundancy, testing, workflow |
+| `docs/archive/` | Historical / stale architecture notes |
+| `ops/` | Operational scripts (not app code) |
+| `resources/` | Branding / diagrams placeholder |
+
+---
+
+## Open risks (engineering)
+
+1. Incomplete API authentication on legacy routes  
+2. Monolithic `server.js` change risk  
+3. Stale workflow docs historically contradicted GitHub branch reality (runbook relocated; content still needs reconciliation)  
+4. Inventory / dual-DB category paths easy to misuse  
+5. Secrets and token files must stay gitignored and rotated if ever leaked  
+
+See [`docs/08_TECHNICAL_DEBT.md`](./docs/08_TECHNICAL_DEBT.md).
+
+---
+
+## Next recommended engineering focus
+
+Repository restructuring is **complete** unless explicitly requested again.
+
+1. Features that deliver business value  
+2. Security hardening (auth perimeter on mutate routes — proposal before large change)  
+3. Documentation updates as behavior changes  
+4. Technical debt reduction (incremental)  
+
+Align `docs/runbooks/WORKFLOW.md` with real branches and ports when convenient.
+
+Source plan (historical): [`docs/Repository_Modernization_Plan.md`](./docs/Repository_Modernization_Plan.md).

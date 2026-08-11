@@ -1,0 +1,68 @@
+---
+description: Permanent AssetEngine (CineEAM) engineering standards — architecture safety, incremental change, secrets, migrations
+alwaysApply: true
+---
+
+# AssetEngine Engineering Standards
+
+These rules are permanent. Follow them on every change in this repository.
+
+## Engineering philosophy
+
+AssetEngine is a long-lived commercial product.
+
+Every change should improve one or more of:
+
+- Maintainability
+- Documentation
+- Stability
+- Security
+- Developer Experience
+
+Never change architecture solely because a different architecture exists.
+
+Business value always outweighs architectural purity.
+
+## Repository philosophy
+
+One pull request should solve one problem.
+
+Avoid combining:
+
+- Refactoring
+- Features
+- Documentation
+- Infrastructure
+
+into one review.
+
+## Architecture and scope
+
+- **Never make large architectural changes without asking.** No framework swaps, monolith splits, wholesale module rewrites, or cross-cutting redesigns unless the user explicitly approves.
+- **Never rewrite working modules.** Prefer surgical edits inside existing files/functions. Do not replace a working module with a new implementation “for cleanliness.”
+- **Always preserve existing functionality.** Behavior, APIs, status flows, and UI contracts stay intact unless the user requests a breaking change.
+- **Prefer maintainability over cleverness.** Clear, boring, incremental code beats abstractions that are hard to reverse.
+
+## APIs and database
+
+- **Never remove APIs without checking references.** Before deleting or renaming a route, search frontend (`js/`, `*.html`), scripts, external callers, and duplicate `app.*( )` registrations in `server.js`.
+- **Always propose database migrations.** Do not hand-edit production schemas as the primary fix. Add/adjust Knex migrations under `web-app/asset-manager-backend/migrations/` and explain rollout impact (especially inventory/test-DB gates).
+
+## Secrets and production
+
+- **Never hardcode secrets.** No passwords, API keys, JWT secrets, Zoho tokens, or encryption keys in source. Use `.env` / environment variables; never commit `.env`, `zoho_tokens.txt`, or credential files.
+- **Never modify production configuration.** Do not change prod ports, prod compose overrides, live server IPs, replication/failover scripts, or production `.env` values unless the user explicitly asks.
+
+## Process
+
+- **Always explain why a change is being made.** State the problem, the minimal fix, and what was deliberately left alone.
+- **Prefer incremental commits.** Small, reviewable commits over one large mixed commit (when the user asks for commits).
+- **If uncertain, ask instead of assuming.** Especially for: asset lifecycle (`updateAssetStatus` / `promoteToAsset`), auth boundaries, inventory vs assets, which environment (8080/9090, Dev/Prod), and which git remote/branch is source of truth.
+
+## Quick checks before editing
+
+1. Is this a large architectural change? → Ask first.
+2. Does this remove or rename an API? → Grep all references first.
+3. Does this change schema? → Propose a migration.
+4. Does this touch secrets or prod config? → Stop and ask.
+5. Can this be a small incremental change that preserves behavior? → Prefer that.

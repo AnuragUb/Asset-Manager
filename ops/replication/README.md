@@ -11,4 +11,4 @@ Database replication and failover scripts for the on-prem 59 / 118 topology.
 
 Scripts that previously used `$PSScriptRoot\backups\...` now resolve **`backups/` at the repository root**.
 
-See also root `REDUNDANCY_SETUP.md`.
+See also `docs/runbooks/REDUNDANCY_SETUP.md`.

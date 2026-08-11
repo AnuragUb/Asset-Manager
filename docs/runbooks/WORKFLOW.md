@@ -1,5 +1,8 @@
 # Asset Manager - Development Workflow
 
+> **Location note (Phase 3):** Moved from repository root to `docs/runbooks/`.  
+> **Accuracy note:** Branch and port statements below may be stale relative to GitHub `main` and the live matrix (`59:9090` / `59:8080` / `118:8080`). Verify before deploying.
+
 This repository uses a branch-based workflow to separate Production (stable) from Development (testing).
 
 ## Branches
