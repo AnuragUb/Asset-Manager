@@ -107,14 +107,84 @@ class TokenService {
     }
 
     /**
+     * Store a password-reset token for a user
+     * @param {string} userId - username / user identifier
+     * @param {string} token - raw token (will be hashed)
+     * @param {number} expiresInMinutes - expiration in minutes (default 60)
+     */
+    async storeResetToken(userId, token, expiresInMinutes = 60) {
+        console.log('[TokenService] Storing password reset token for user:', userId);
+        const tokenHash = this.hashToken(token);
+        const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString();
+        const createdAt = new Date().toISOString();
+        try {
+            await db('password_resets').insert({
+                email: String(userId),
+                token_hash: tokenHash,
+                expires_at: expiresAt,
+                created_at: createdAt
+            });
+            console.log('[TokenService] Reset token stored');
+            return true;
+        } catch (e) {
+            console.error('[TokenService] Error storing reset token:', e.message || e);
+            return false;
+        }
+    }
+
+    /**
+     * Verify a password-reset token (valid signature + not expired).
+     * Returns username on success, null otherwise.
+     */
+    async verifyResetToken(token) {
+        if (!token) return null;
+        console.log('[TokenService] Verifying reset token...');
+        const tokenHash = this.hashToken(token);
+        const now = new Date().toISOString();
+        try {
+            const record = await db('password_resets')
+                .where('token_hash', tokenHash)
+                .select('email', 'expires_at', 'created_at')
+                .first();
+            if (!record) {
+                console.log('[TokenService] Reset token hash not found');
+                return null;
+            }
+            if (new Date(record.expires_at) <= new Date()) {
+                console.log('[TokenService] Reset token expired');
+                return null;
+            }
+            return String(record.email);
+        } catch (e) {
+            console.error('[TokenService] Error verifying reset token:', e.message || e);
+            return null;
+        }
+    }
+
+    /**
+     * Consume (delete) a reset token so it can't be reused.
+     */
+    async consumeResetToken(token) {
+        if (!token) return;
+        const tokenHash = this.hashToken(token);
+        try {
+            await db('password_resets').where('token_hash', tokenHash).delete();
+            console.log('[TokenService] Reset token consumed');
+        } catch (e) {
+            console.error('[TokenService] Error consuming reset token:', e.message || e);
+        }
+    }
+
+    /**
      * Clean up expired tokens from the database
      */
     async cleanupExpiredTokens() {
         console.log('[TokenService] Cleaning up expired tokens...');
         const now = new Date().toISOString();
         try {
-            const count = await db('auth_tokens').where('expires_at', '<', now).delete();
-            console.log(`[TokenService] Cleaned up ${count} expired tokens`);
+            const count1 = await db('auth_tokens').where('expires_at', '<', now).delete();
+            const count2 = await db('password_resets').where('expires_at', '<', now).delete();
+            console.log(`[TokenService] Cleaned up ${count1} auth tokens + ${count2} password reset tokens`);
         } catch (e) {
             console.error('[TokenService] Error cleaning up tokens:', e);
         }

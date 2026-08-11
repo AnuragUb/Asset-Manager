@@ -1299,17 +1299,44 @@ app.get('/api/auth/me', async (req, res) => {
 app.post('/api/auth/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
-        let user = await db('users').whereRaw('LOWER(username) = LOWER(?)', [email]).orWhereRaw('LOWER(fullname) = LOWER(?)', [email]).first();
-        user = normalizeResult(user);
+        const needle = String(email || '').trim();
+        let user = null;
+        if (needle) {
+            user = await db('users')
+                .whereRaw('LOWER(username) = LOWER(?)', [needle])
+                .orWhereRaw('LOWER(fullname) = LOWER(?)', [needle])
+                .orWhereRaw(`LOWER(COALESCE(email, '')) = LOWER(?)`, [needle])
+                .first();
+            user = normalizeResult(user);
+        }
 
         if (!user) return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
         const resetToken = tokenService.generateToken();
-        tokenService.storeResetToken(user.username, resetToken);
-        const host = req.get('host'); 
+        const stored = await tokenService.storeResetToken(user.username, resetToken);
+        if (stored === false) {
+            console.error('[AUTH] Failed to persist password reset token; aborting.');
+            return res.status(500).json({ ok: false, message: 'Failed to issue reset token.' });
+        }
+        const host = req.get('host');
         const protocol = req.protocol;
         const resetLink = `${protocol}://${host}/#reset-password?token=${resetToken}`;
-        await emailService.sendPasswordResetEmail(user.fullname || email, resetLink);
-        res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+        const userEmail = String(user.email || user.mail || '').trim();
+        const toAddress = /@/.test(userEmail) ? userEmail : (/@/.test(needle) ? needle : null);
+        let emailSent = false;
+        if (toAddress) {
+            try { emailSent = await emailService.sendPasswordResetEmail(toAddress, resetLink); }
+            catch (e) { console.error('[AUTH] sendPasswordResetEmail threw:', e); emailSent = false; }
+        }
+        const isDevOrTestEnv = (process.env.NODE_ENV !== 'production') || host.includes('9090') || host.includes('8080') || host.includes('127.0.0.1') || host.includes('localhost') || /^192\.168\./.test(host);
+        const exposeLink = (!emailSent && isDevOrTestEnv) ? resetLink : null;
+        const payload = { ok: true };
+        if (exposeLink) {
+            payload.message = 'SMTP not configured. Use this dev reset link (expires in 60 minutes).';
+            payload.devResetLink = exposeLink;
+        } else {
+            payload.message = 'If an account exists, a reset email has been sent.';
+        }
+        res.json(payload);
     } catch (err) {
         console.error('Forgot password error:', err);
         res.status(500).json({ ok: false, message: 'Internal server error' });
@@ -1319,12 +1346,15 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 app.post('/api/auth/reset-password', async (req, res) => {
     try {
         const { token, newPassword } = req.body;
-        const username = tokenService.verifyResetToken(token);
+        if (!newPassword || String(newPassword).length < 6) {
+            return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+        }
+        const username = await tokenService.verifyResetToken(token);
         if (!username) return res.status(400).json({ error: 'Invalid or expired reset token' });
         const passwordHash = await bcrypt.hash(newPassword, 12);
         await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).update({ password: passwordHash });
-        tokenService.invalidateAllUserTokens(username);
-        tokenService.consumeResetToken(token);
+        await tokenService.invalidateAllUserTokens(username);
+        await tokenService.consumeResetToken(token);
         res.json({ ok: true, message: 'Password reset successful' });
     } catch (err) {
         console.error('Reset password error:', err);

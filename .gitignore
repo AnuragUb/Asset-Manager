@@ -13,6 +13,7 @@ Thumbs.db
 *.db
 *.sqlite
 
+
 # Large binaries (Electron, etc.)
 *.exe
 *.dll
@@ -38,3 +39,6 @@ web-app/asset-manager-backend/temp/
 .idea/
 *.swp
 *.swo
+
+backups/
+*.sql
