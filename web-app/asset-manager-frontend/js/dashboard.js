@@ -5004,11 +5004,14 @@ export function renderDashboard(assets, filteredAssets) {
     if (dashboardTitle) {
         const isLeafKindNode = parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0);
         const haveAssets = (isLeafKindNode && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0)) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0));
-        const hasCards = (displayNodes && displayNodes.length > 0) || haveAssets;
+        // Match Inventory: show Cards/Table only when the view is an asset listing (leaf list,
+        // direct assets, or search results) — not on root / category / manufacturer / model folders.
+        const showAssetViewToggle = Boolean(haveAssets);
         const autoMode = (isLeafKindNode || window.currentSearchQuery || (directAssets && directAssets.length > 0)) ? 'table' : 'cards';
         if (typeof window.dashboardViewMode === 'undefined' || !window.dashboardViewMode) {
             window.dashboardViewMode = autoMode;
-        } else if (window.dashboardViewMode === 'table' && !hasCards) {
+        } else if (window.dashboardViewMode === 'table' && !showAssetViewToggle) {
+            // Hierarchy-only levels stay on cards; do not keep a stale table preference visible.
             window.dashboardViewMode = 'cards';
         }
 
@@ -5018,7 +5021,7 @@ export function renderDashboard(assets, filteredAssets) {
         const inactiveTabFg = '#475569';
         const cardsActive = window.dashboardViewMode === 'cards';
         const tableActive = window.dashboardViewMode === 'table';
-        const viewToggleHtml = hasCards ? `
+        const viewToggleHtml = showAssetViewToggle ? `
             <div id="dashViewToggleWrap" style="display: inline-flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-left: 12px;">
                 <button type="button" id="btnDashViewCards" style="
                     display: inline-flex; align-items: center; gap: 4px;

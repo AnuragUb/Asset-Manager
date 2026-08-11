@@ -19,6 +19,17 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
+## [Sprint 1] Issue 2 — Assets Card/Table toggle (2026-08) ✅ COMPLETE
+
+**Status:** UI-only. Verified on Dev `59:9090` and Staging `59:8080`. Production untouched.
+
+### Fixed
+
+- Assets Cards/Table switch now appears only on asset listings (leaf kinds, search results, direct-asset views), matching Inventory — hidden on root/category/manufacturer/model hierarchy levels
+- Dashboard cache-bust `dashboard.js?v=7.02`
+
+---
+
 ## [Sprint 1] Issue 1 — Password reset / authentication (2026-08) ✅ COMPLETE
 
 **Status:** Approved and complete on Dev `59:9090` and Staging `59:8080`. Production `118:8080` untouched.

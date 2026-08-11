@@ -75,21 +75,40 @@ SMTP in `dynamic.json` currently returns Gmail BadCredentials; reset still compl
 
 ---
 
-## Issue 2 — Assets Card/Table Toggle
-
+## Issue 2 — Assets Card/Table Toggle ✅ COMPLETE
 
 Status:
 - [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
+- [x] Implementation
+- [x] Testing
+- [x] Docs (`SPRINT_1_PROGRESS` / `PROJECT_STATUS` / `CHANGELOG`)
+- [x] Smoke test
+- [x] Commit
 
-Commit: Pending
+Commit: `07bcae2` `fix(ui): asset card/table visibility`
 
-Regression: None
+Regression: None observed — UI-only; hierarchy navigation unchanged; Inventory pattern matched
 
----
+### What changed
+- `dashboard.js`: Cards/Table toggle gated by `showAssetViewToggle` (= asset listing / search / direct assets), not by presence of folder/category cards
+- Hierarchy-only levels (root, categories, manufacturers, models) hide the toggle and stay on cards
+- Cache-bust `dashboard.js?v=7.02` via `main.js`
 
+### Verification
+| Check | Result |
+|-------|--------|
+| Predicate: root/category → toggle hidden | Pass (logic test) |
+| Predicate: leaf asset list / search / direct assets → toggle shown | Pass (logic test) |
+| Served `dashboard.js?v=7.02` on 9090 & 8080 contains `showAssetViewToggle` | Pass |
+| Old `viewToggleHtml = hasCards` absent | Pass |
+
+### Post-issue smoke (checklist)
+| Check | 59:9090 | 59:8080 |
+|-------|---------|---------|
+| Home page 200 | Pass | Pass |
+| `dashboard.js?v=7.02` served | Pass | Pass |
+| `main.js` imports 7.02 | Pass | Pass |
+| Auth forgot-password still OK | Pass | Pass |
 ## Issue 3 — Inventory Quantity History
 
 Status:

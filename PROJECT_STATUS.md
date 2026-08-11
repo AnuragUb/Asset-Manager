@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `68dfc32` (`main`) | Issue 1 complete (auth fix `26c9f0b` + status docs) |
-| **Product Version** | **v7.00** / auth cache `v=7.01` | Frontend entry log; password-reset UX shipped |
-| **Last Successful Deployment** | Dev/Staging on `59` verified 2026-08-11 (Issue 1) | Production `118:8080` not deployed this sprint |
-| **Last Database Migration** | `20260811180000_add_users_email` | Applied on `asset_manager_test` (9090) and `asset_manager` (8080) |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1 ✅ complete · Issue 2 in progress — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
+| **Repository Version** | `07bcae2` (`main`) | Sprint 1 Issue 2 UI tip |
+| **Product Version** | **v7.00** / dashboard `v=7.02` / auth `v=7.01` | Cache-busts for Issue 1–2 UX |
+| **Last Successful Deployment** | Dev/Staging on `59` (Issue 2 UI bind-mount) | Production `118:8080` not deployed this sprint |
+| **Last Database Migration** | `20260811180000_add_users_email` | No DB change for Issue 2 |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1 ✅ · Issue 2 ✅ · next Issue 3 pending approval — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 
