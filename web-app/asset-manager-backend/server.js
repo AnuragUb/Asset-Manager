@@ -19,6 +19,7 @@ const bcrypt = require('bcryptjs');
 const cache = require('./services/cacheService');
 const inventoryEventSystem = require('../shared/inventoryEventSystem');
 const recoveryCenter = require('./services/recoveryCenterService');
+const inventoryMovement = require('./services/inventoryMovementService');
 const {
   EVENT_TYPES: INV_EVENT_TYPES,
   ENTITY_TYPES: INV_ENTITY_TYPES,
@@ -4273,7 +4274,8 @@ async function recordInventoryQuantityEvent({
   entityType,
   entityId,
   previousValue,
-  newValue
+  newValue,
+  trx = null
 }) {
   const timestamp = new Date().toISOString();
   const canonicalType = assertInventoryEventType(type);
@@ -4291,8 +4293,9 @@ async function recordInventoryQuantityEvent({
   });
   const metadataJson = JSON.stringify(structuredMeta);
   const resolvedNote = note || defaultInventoryEventNote(canonicalType);
+  const runner = trx || db;
 
-  const inserted = await db('inventory_quantity_events')
+  const inserted = await runner('inventory_quantity_events')
     .insert({
       root_id: rootId,
       type: canonicalType,
@@ -4308,7 +4311,7 @@ async function recordInventoryQuantityEvent({
     : (inserted?.id ?? inserted);
 
   if (eventId && Array.isArray(lines) && lines.length > 0) {
-    await db('inventory_quantity_event_lines').insert(
+    await runner('inventory_quantity_event_lines').insert(
       lines.map(line => ({
         event_id: eventId,
         item_id: line.itemId,
@@ -4450,15 +4453,104 @@ app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
-    const items = await db('inventory_items')
+    const includeConsumed = String(req.query.includeConsumed || '') === '1';
+    let query = db('inventory_items')
       .where(function () {
         this.where('is_deleted', 0).orWhereNull('is_deleted');
-      })
-      .orderBy('itemname', 'asc');
+      });
+
+    // Default workspace excludes Consumed status (use /api/inventory/consumed)
+    if (!includeConsumed) {
+      query = query.andWhere(function () {
+        this.whereNull('status')
+          .orWhereRaw('LOWER(COALESCE(status, \'\')) <> ?', [inventoryMovement.CONSUMED_STATUS.toLowerCase()]);
+      });
+    }
+
+    const items = await query.orderBy('itemname', 'asc');
 
     res.json({ items: normalizeResult(items) });
   } catch (err) {
     console.error('Failed to fetch inventory items:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Inventory Movement System — type registry, apply CONSUME, consumed browse, movement history.
+ * Future movement types enable via inventoryMovementService registry (not new UI redesign).
+ */
+app.get('/api/inventory/movements/types', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+    res.json({
+      movements: inventoryMovement.listMovementTypes({
+        includeDisabled: String(req.query.all || '') === '1'
+      })
+    });
+  } catch (err) {
+    console.error('Inventory movement types error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/inventory/movements', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+    const filters = {
+      movementType: String(req.query.type || req.query.movementType || '').trim() || null,
+      entityId: String(req.query.entityId || req.query.itemId || '').trim() || null,
+      actor: String(req.query.actor || req.query.user || '').trim() || null,
+      from: String(req.query.from || '').trim() || null,
+      to: String(req.query.to || '').trim() || null,
+      q: String(req.query.q || req.query.search || '').trim() || null,
+      limit: req.query.limit
+    };
+    const movements = await inventoryMovement.listMovements(db, filters);
+    res.json({ movements, count: movements.length });
+  } catch (err) {
+    console.error('Inventory movements list error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory/movements', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+    const actor = req.user?.username || req.user?.user_id || getRequestActor(req);
+    const result = await inventoryMovement.applyMovement(db, {
+      type: req.body?.type || req.body?.movementType,
+      itemId: req.body?.itemId || req.body?.entityId || req.body?.id,
+      amount: req.body?.amount ?? req.body?.quantity,
+      note: req.body?.note || null,
+      actor
+    }, {
+      recordInventoryQuantityEvent,
+      appendAudit,
+      actor
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Inventory movement apply error:', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.get('/api/inventory/consumed', authenticateJWT, async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+    const filters = {
+      q: String(req.query.q || req.query.search || '').trim() || null,
+      location: String(req.query.location || '').trim() || null,
+      folderId: String(req.query.folderId || req.query.folderid || '').trim() || null,
+      kindId: String(req.query.kindId || req.query.kindid || '').trim() || null,
+      sort: String(req.query.sort || 'lastupdated').trim(),
+      sortDir: String(req.query.sortDir || 'desc').trim()
+    };
+    const rows = await inventoryMovement.listConsumedItems(db, filters);
+    res.json({ items: normalizeResult(rows), count: rows.length, status: inventoryMovement.CONSUMED_STATUS });
+  } catch (err) {
+    console.error('Inventory consumed list error:', err);
     res.status(500).json({ error: err.message });
   }
 });

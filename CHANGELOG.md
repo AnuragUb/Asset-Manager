@@ -9,13 +9,33 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- Recovery Center architecture: Recovery Strategy pattern, entity-level auth foundation (no RBAC yet), recoverable-count nav badge, docs update (`RECOVERY_CENTER.md`). Cache-bust `v=7.07`.
+- *(none yet — next Sprint 1 issues)*
 
 ### Fixed
 
 - *(none yet — next Sprint 1 issues)*
+
+---
+
+## [Sprint 1] Issue 6 — Inventory Movement Foundation / Consumed Inventory (2026-08) ✅ COMPLETE
+
+**Status:** Movement registry + CONSUME on Dev/Staging path. Production untouched. Recovery Center unchanged.
+
+### Added
+
+- `inventoryMovementService` — Movement Type registry (RECEIVE…FOUND); only **CONSUME** enabled
+- APIs: `/api/inventory/movements`, `/api/inventory/movements/types`, `/api/inventory/consumed`
+- Consumed Inventory workspace UI (search, filter, history, CSV report, Consume action)
+- Docs: `docs/architecture/INVENTORY_MOVEMENT_SYSTEM.md`
+- Shared event types: `DISPOSE`, `LOST`, `FOUND` (reserved)
+
+### Changed
+
+- `GET /api/inventory/items` excludes `status=Consumed` by default
+- Consume writes through shared Event System (`EVENT_TYPES.CONSUME`)
+- Cache-bust `v=7.08`
 
 ---
 

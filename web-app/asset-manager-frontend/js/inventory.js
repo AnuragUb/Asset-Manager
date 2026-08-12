@@ -5,7 +5,7 @@ import {
     getEventUi,
     presentEvent,
     normalizeEventType
-} from './inventory-event-system.js?v=7.04';
+} from './inventory-event-system.js?v=7.08';
 
 const state = {
     initialized: false,
@@ -14,6 +14,10 @@ const state = {
     items: [],
     selectedNodeId: null,
     catalogMode: false,
+    consumedMode: false,
+    consumedItems: [],
+    movementHistory: [],
+    consumedFilters: { q: '', location: '' },
     catalog: [],
     pageSize: 25,
     pageByKey: {},
@@ -206,6 +210,7 @@ function setWorkspaceChrome(mode = 'inventory') {
     const workspaceBadge = getEl('inventoryWorkspaceBadge');
     const actions = getEl('inventoryWorkspaceActions');
     const showItemsBtn = getEl('btnInventoryShowItems');
+    const consumedBtn = getEl('btnInventoryConsumed');
     const addFolderBtn = getEl('btnAddInventoryFolder');
     const addCategoryBtn = getEl('btnAddInventoryCategory');
     const addItemBtn = getEl('btnAddInventoryItem');
@@ -217,6 +222,21 @@ function setWorkspaceChrome(mode = 'inventory') {
         if (workspaceBadge) workspaceBadge.style.color = '#b76a00';
         if (actions) actions.style.display = 'flex';
         if (showItemsBtn) showItemsBtn.style.display = '';
+        if (consumedBtn) consumedBtn.style.display = '';
+        if (addFolderBtn) addFolderBtn.style.display = 'none';
+        if (addCategoryBtn) addCategoryBtn.style.display = 'none';
+        if (addItemBtn) addItemBtn.style.display = 'none';
+        return;
+    }
+
+    if (mode === 'consumed') {
+        if (workspaceTitle) workspaceTitle.textContent = 'Consumed Inventory';
+        if (workspaceBadge) workspaceBadge.textContent = 'Consumed';
+        if (workspaceBadge) workspaceBadge.style.background = '#fef2f2';
+        if (workspaceBadge) workspaceBadge.style.color = '#b91c1c';
+        if (actions) actions.style.display = 'flex';
+        if (showItemsBtn) showItemsBtn.style.display = '';
+        if (consumedBtn) consumedBtn.style.display = '';
         if (addFolderBtn) addFolderBtn.style.display = 'none';
         if (addCategoryBtn) addCategoryBtn.style.display = 'none';
         if (addItemBtn) addItemBtn.style.display = 'none';
@@ -229,6 +249,7 @@ function setWorkspaceChrome(mode = 'inventory') {
     if (workspaceBadge) workspaceBadge.style.color = '#0f5ea8';
     if (actions) actions.style.display = 'flex';
     if (showItemsBtn) showItemsBtn.style.display = '';
+    if (consumedBtn) consumedBtn.style.display = '';
     if (addFolderBtn) addFolderBtn.style.display = '';
     if (addCategoryBtn) addCategoryBtn.style.display = '';
     if (addItemBtn) addItemBtn.style.display = '';
@@ -335,6 +356,7 @@ function formatInventoryStatus(status) {
     if (normalized.toLowerCase() === 'in use' || normalized.toLowerCase() === 'in-use') return 'in-use';
     if (normalized.toLowerCase() === 'in project' || normalized.toLowerCase() === 'project') return 'project';
     if (normalized.toLowerCase() === 'under inspection') return 'under-inspection';
+    if (normalized.toLowerCase() === 'consumed') return 'others';
     return 'others';
 }
 
@@ -1021,6 +1043,7 @@ function renderInventoryItemsTable(items) {
         const parentId = escapeHtml(item.ParentID || item.parentid || '-');
         const idAttr = escapeAttr(id);
         const isQtyTracked = Boolean(item.IsQuantityTracked === 1 || item.is_quantity_tracked === 1 || item.QuantityRootId || item.quantity_root_id);
+        const isConsumed = String(item.Status || item.status || '').toLowerCase() === 'consumed';
 
         return `
             <tr class="inventory-table-row" data-item-id="${idAttr}" style="cursor: pointer;">
@@ -1043,6 +1066,7 @@ function renderInventoryItemsTable(items) {
                 <td style="white-space: nowrap;">
                     <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
                         <button type="button" class="inv-row-edit" data-id="${idAttr}" title="Edit" style="background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Edit</button>
+                        ${(!isConsumed && isQtyTracked) ? `<button type="button" class="inv-row-consume" data-id="${idAttr}" title="Consume quantity" style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Consume</button>` : ''}
                         <button type="button" class="inv-row-details" data-id="${idAttr}" title="View Full Details" style="background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Details</button>
                         <button type="button" class="inv-row-print-qr" data-id="${idAttr}" title="Print QR / Label" style="background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">🖨️ QR</button>
                     </div>
@@ -1089,6 +1113,11 @@ function renderInventoryItems() {
 
     if (state.catalogMode) {
         renderCatalogView();
+        return;
+    }
+
+    if (state.consumedMode) {
+        renderConsumedInventoryView();
         return;
     }
 
@@ -1261,6 +1290,16 @@ function renderInventoryItems() {
             const item = state.items.find(entry => String(entry.ID || entry.id) === String(itemId));
             if (!item) return;
             openInventorySharedModal(item);
+        });
+    });
+    content.querySelectorAll('.inv-row-consume').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const itemId = btn.getAttribute('data-id');
+            if (!itemId) return;
+            const item = state.items.find(entry => String(entry.ID || entry.id) === String(itemId));
+            if (!item) return;
+            openConsumeMovementModal(item);
         });
     });
     content.querySelectorAll('.inv-row-details').forEach(btn => {
@@ -1864,6 +1903,237 @@ function openCrudModal(type, existingItem = null) {
     modal.style.display = 'flex';
 }
 
+function authHeaders(extra = {}) {
+    const token = localStorage.getItem('token');
+    const headers = { ...extra };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+}
+
+async function loadConsumedWorkspace() {
+    const params = new URLSearchParams();
+    if (state.consumedFilters.q) params.set('q', state.consumedFilters.q);
+    if (state.consumedFilters.location) params.set('location', state.consumedFilters.location);
+    const qs = params.toString() ? `?${params}` : '';
+    const [consumedData, movementsData] = await Promise.all([
+        fetchJson(`/api/inventory/consumed${qs}`, { headers: authHeaders() }),
+        fetchJson('/api/inventory/movements?type=CONSUME&limit=100', { headers: authHeaders() })
+    ]);
+    state.consumedItems = consumedData.items || [];
+    state.movementHistory = movementsData.movements || [];
+}
+
+function downloadConsumedReport() {
+    const rows = state.consumedItems || [];
+    const header = ['ID', 'Item Name', 'Status', 'Location', 'Total Quantity', 'Available Quantity', 'Make', 'Model', 'Last Updated'];
+    const lines = [header.join(',')];
+    rows.forEach((item) => {
+        const cols = [
+            item.ID || item.id || '',
+            item.ItemName || item.itemname || '',
+            item.Status || item.status || 'Consumed',
+            item.CurrentLocation || item.currentlocation || '',
+            item.QuantityTotal ?? item.quantity_total ?? 0,
+            item.QuantityAvailable ?? item.quantity_available ?? 0,
+            item.Make || item.make || '',
+            item.Model || item.model || '',
+            item.LastUpdated || item.lastupdated || ''
+        ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
+        lines.push(cols.join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `consumed-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function openConsumeMovementModal(item) {
+    const itemId = String(item.ID || item.id || '');
+    const name = item.ItemName || item.itemname || itemId;
+    const available = Number(item.QuantityAvailable ?? item.quantity_available ?? 0);
+    const unit = item.QuantityUnit || item.quantity_unit || 'Nos';
+
+    let modal = getEl('inventoryConsumeModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'inventoryConsumeModal';
+        modal.className = 'modal';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:10050; align-items:center; justify-content:center;';
+        modal.innerHTML = `
+            <div style="background:#fff; border-radius:10px; width:min(440px,92vw); padding:20px; box-shadow:0 20px 50px rgba(0,0,0,0.2);">
+                <h3 style="margin:0 0 8px 0;">Consume Inventory</h3>
+                <p id="inventoryConsumeSubtitle" style="margin:0 0 14px 0; color:#64748b; font-size:13px;"></p>
+                <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Amount</label>
+                <input id="inventoryConsumeAmount" type="number" min="0" step="any" class="form-input" style="width:100%; margin-bottom:12px;" />
+                <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Notes</label>
+                <textarea id="inventoryConsumeNote" class="form-input" rows="3" style="width:100%; margin-bottom:16px;" placeholder="Optional note"></textarea>
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <button type="button" class="action-button grey" id="inventoryConsumeCancel">Cancel</button>
+                    <button type="button" class="action-button" id="inventoryConsumeSubmit" style="background:#dc2626; color:#fff;">Consume</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        getEl('inventoryConsumeCancel').onclick = () => { modal.style.display = 'none'; };
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+    }
+
+    getEl('inventoryConsumeSubtitle').textContent = `${name} · Available Quantity: ${available} ${unit}`;
+    getEl('inventoryConsumeAmount').value = available > 0 ? String(available) : '1';
+    getEl('inventoryConsumeNote').value = '';
+    modal.style.display = 'flex';
+
+    getEl('inventoryConsumeSubmit').onclick = async () => {
+        const amount = Number(getEl('inventoryConsumeAmount').value);
+        const note = getEl('inventoryConsumeNote').value || null;
+        try {
+            await fetchJson('/api/inventory/movements', {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ type: 'CONSUME', itemId, amount, note })
+            });
+            modal.style.display = 'none';
+            showToast('Quantity consumed', 'success');
+            await loadInventoryWorkspace();
+            if (state.consumedMode) {
+                await loadConsumedWorkspace();
+                renderConsumedInventoryView();
+            }
+        } catch (err) {
+            showToast(err.message || 'Consume failed', 'error');
+        }
+    };
+}
+
+function renderConsumedInventoryView() {
+    const title = getEl('inventoryPanelTitle');
+    const subtitle = getEl('inventoryPanelSubtitle');
+    const stats = getEl('inventoryStats');
+    const content = getEl('inventoryContent');
+    if (!title || !subtitle || !stats || !content) return;
+
+    setWorkspaceChrome('consumed');
+    const items = state.consumedItems || [];
+    const movements = state.movementHistory || [];
+    const totalQty = items.reduce((sum, item) => sum + Number(item.QuantityTotal || item.quantity_total || 0), 0);
+    const availableQty = items.reduce((sum, item) => sum + Number(item.QuantityAvailable || item.quantity_available || 0), 0);
+
+    title.textContent = 'Consumed Inventory';
+    subtitle.textContent = 'Items with status Consumed — existing inventory status model (no separate entity).';
+
+    stats.innerHTML = `
+        <button type="button" class="action-button grey" id="btnConsumedReport" style="font-size:12px;">📊 Report</button>
+        <span style="background:#fef2f2; color:#b91c1c; padding:4px 10px; border-radius:999px; font-weight:700; font-size:12px;">Consumed: ${items.length}</span>
+        <span style="background:#eef6ff; color:#0f5ea8; padding:4px 10px; border-radius:999px; font-weight:700; font-size:12px;">Total Quantity: ${totalQty}</span>
+        <span style="background:#f0fdf4; color:#166534; padding:4px 10px; border-radius:999px; font-weight:700; font-size:12px;">Available Quantity: ${availableQty}</span>
+    `;
+
+    const historyRows = movements.slice(0, 25).map((m) => {
+        const prevA = m.previous_quantity?.available ?? '—';
+        const nextA = m.new_quantity?.available ?? '—';
+        return `
+            <tr>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0;">${escapeHtml(m.movement_label || m.movement_type)}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0; white-space:nowrap; font-size:12px;">${escapeHtml(m.timestamp || '—')}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0;">${escapeHtml(m.user || '—')}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0; font-family:monospace; font-size:11px;">${escapeHtml(m.entity_id || '—')}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${escapeHtml(String(prevA))}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${escapeHtml(String(nextA))}</td>
+                <td style="padding:8px; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:12px;">${escapeHtml(m.notes || '—')}</td>
+            </tr>
+        `;
+    }).join('');
+
+    content.innerHTML = `
+        <div class="card-panel" style="margin-bottom:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+            <input type="search" id="consumedSearch" placeholder="Search consumed items..." value="${escapeHtml(state.consumedFilters.q || '')}"
+                style="padding:8px 12px; border:1px solid #ddd; border-radius:4px; min-width:220px;" />
+            <input type="text" id="consumedLocationFilter" placeholder="Filter by location..." value="${escapeHtml(state.consumedFilters.location || '')}"
+                style="padding:8px 12px; border:1px solid #ddd; border-radius:4px; min-width:180px;" />
+            <button type="button" class="action-button blue" id="btnConsumedApplyFilters">Filter</button>
+            <button type="button" class="action-button grey" id="btnConsumedClearFilters">Clear</button>
+        </div>
+        ${items.length ? renderInventoryItemsTable(items) : `
+            <div class="card-panel" style="padding:30px; text-align:center; color:#667085;">
+                No consumed inventory items found.
+            </div>
+        `}
+        <div class="card-panel" style="margin-top:16px; padding:0; overflow-x:auto;">
+            <div style="padding:12px 16px; border-bottom:1px solid #e2e8f0; font-weight:700;">Consume Movement History</div>
+            <table style="width:100%; border-collapse:collapse; min-width:900px;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="text-align:left; padding:8px;">Movement Type</th>
+                        <th style="text-align:left; padding:8px;">Timestamp</th>
+                        <th style="text-align:left; padding:8px;">User</th>
+                        <th style="text-align:left; padding:8px;">Entity</th>
+                        <th style="text-align:right; padding:8px;">Previous Qty (Avail)</th>
+                        <th style="text-align:right; padding:8px;">New Qty (Avail)</th>
+                        <th style="text-align:left; padding:8px;">Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${historyRows || `<tr><td colspan="7" style="padding:16px; text-align:center; color:#94a3b8;">No CONSUME movements yet.</td></tr>`}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    // Reuse table action wiring for consumed rows (lookup from consumedItems)
+    content.querySelectorAll('.inv-row-edit, .inv-row-details, .inv-row-qty-history, .inv-row-print-qr, .inv-row-consume').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const itemId = btn.getAttribute('data-id');
+            if (!itemId) return;
+            const item = state.consumedItems.find((entry) => String(entry.ID || entry.id) === String(itemId))
+                || state.items.find((entry) => String(entry.ID || entry.id) === String(itemId));
+            if (btn.classList.contains('inv-row-edit') && item) openInventorySharedModal(item);
+            if (btn.classList.contains('inv-row-details')) window.open(`/asset/${encodeURIComponent(itemId)}`, '_blank', 'noopener,noreferrer');
+            if (btn.classList.contains('inv-row-qty-history') && typeof window.showInventoryQuantityHistoryModal === 'function') {
+                window.showInventoryQuantityHistoryModal(itemId);
+            }
+            if (btn.classList.contains('inv-row-print-qr') && typeof window.printAssetLabel === 'function') {
+                window.printAssetLabel(itemId);
+            }
+        });
+    });
+
+    getEl('btnConsumedReport')?.addEventListener('click', downloadConsumedReport);
+    getEl('btnConsumedApplyFilters')?.addEventListener('click', async () => {
+        state.consumedFilters.q = getEl('consumedSearch')?.value || '';
+        state.consumedFilters.location = getEl('consumedLocationFilter')?.value || '';
+        await loadConsumedWorkspace();
+        renderConsumedInventoryView();
+    });
+    getEl('btnConsumedClearFilters')?.addEventListener('click', async () => {
+        state.consumedFilters = { q: '', location: '' };
+        await loadConsumedWorkspace();
+        renderConsumedInventoryView();
+    });
+    const searchEl = getEl('consumedSearch');
+    if (searchEl) {
+        searchEl.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                state.consumedFilters.q = searchEl.value || '';
+                state.consumedFilters.location = getEl('consumedLocationFilter')?.value || '';
+                await loadConsumedWorkspace();
+                renderConsumedInventoryView();
+            }
+        });
+    }
+}
+
+async function openConsumedInventoryView() {
+    state.catalogMode = false;
+    state.consumedMode = true;
+    state.selectedNodeId = null;
+    await loadConsumedWorkspace();
+    renderConsumedInventoryView();
+}
+
 async function loadInventoryWorkspace() {
     if (!isInventoryPreviewEnabled()) return;
 
@@ -1882,6 +2152,12 @@ async function loadInventoryWorkspace() {
 
     if (typeof window.renderSidebarTree === 'function') {
         await window.renderSidebarTree();
+    }
+    if (state.consumedMode) {
+        await loadConsumedWorkspace();
+        setWorkspaceChrome('consumed');
+        renderConsumedInventoryView();
+        return;
     }
     setWorkspaceChrome('inventory');
     renderInventoryTree();
@@ -1907,8 +2183,12 @@ export function initInventoryView() {
     });
     getEl('btnInventoryShowItems')?.addEventListener('click', () => {
         state.catalogMode = false;
+        state.consumedMode = false;
         renderInventoryTree();
         renderInventoryItems();
+    });
+    getEl('btnInventoryConsumed')?.addEventListener('click', () => {
+        openConsumedInventoryView().catch(err => showToast(err.message, 'error'));
     });
     getEl('btnAddInventoryFolder')?.addEventListener('click', () => openCrudModal('folder'));
     getEl('btnAddInventoryCategory')?.addEventListener('click', () => openCrudModal('kind'));
@@ -1920,10 +2200,12 @@ export function initInventoryView() {
 window.loadInventoryWorkspace = loadInventoryWorkspace;
 window.openInventoryItemModal = openInventorySharedModal;
 window.initInventoryView = initInventoryView;
+window.openConsumedInventoryView = openConsumedInventoryView;
 window.openInventoryRoot = async () => {
     if (!isInventoryPreviewEnabled()) return;
     if (!state.initialized) initInventoryView();
     state.catalogMode = false;
+    state.consumedMode = false;
     state.selectedNodeId = null;
     resetPagination();
     window.currentInventorySidebar = { type: 'root' };
@@ -1933,6 +2215,7 @@ window.openInventoryNode = async (nodeId) => {
     if (!isInventoryPreviewEnabled()) return;
     if (!state.initialized) initInventoryView();
     state.catalogMode = false;
+    state.consumedMode = false;
     state.selectedNodeId = nodeId || null;
     resetPagination('items:');
     resetPagination('nodes:');
@@ -1942,6 +2225,7 @@ window.openInventoryNode = async (nodeId) => {
 window.refreshInventoryCatalog = async () => {
     if (!isInventoryPreviewEnabled()) return;
     state.catalogMode = true;
+    state.consumedMode = false;
     resetPagination('catalog');
     window.currentInventorySidebar = { type: 'catalog' };
     await renderCatalogView(true);
@@ -1951,6 +2235,7 @@ window.openInventoryCatalog = async () => {
     if (!state.initialized) initInventoryView();
     state.selectedNodeId = null;
     state.catalogMode = true;
+    state.consumedMode = false;
     resetPagination('catalog');
     window.currentInventorySidebar = { type: 'catalog' };
     await renderCatalogView();

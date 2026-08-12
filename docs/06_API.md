@@ -126,7 +126,11 @@ Service: `services/recoveryCenterService.js` (entity registry + Recovery Strateg
 |--------|-------|------|---------|-----------|
 | GET/POST | `/api/inventory/folders` | JWT / JWT+roles | Folders | `inventory`, `dashboard` |
 | GET/POST | `/api/inventory/kinds` | JWT / JWT+roles | Kinds | `inventory`, `dashboard` |
-| GET/POST/PUT | `/api/inventory/items`… | JWT / JWT+roles | Items | `inventory`, `dashboard` |
+| GET/POST/PUT | `/api/inventory/items`… | JWT / JWT+roles | Items (excludes Consumed by default) | `inventory`, `dashboard` |
+| GET | `/api/inventory/consumed` | JWT | Consumed status browse | `inventory` |
+| GET | `/api/inventory/movements/types` | JWT | Movement type registry | `inventory` |
+| GET | `/api/inventory/movements` | JWT | Movement history | `inventory` |
+| POST | `/api/inventory/movements` | JWT+roles | Apply movement (CONSUME enabled) | `inventory` |
 | POST | `/api/inventory/items/:id/delete` | JWT+roles | Soft-delete + `DELETE` history | Issue 4+ |
 | POST | `/api/inventory/items/:id/restore` | JWT+roles | Restore + `RESTORE` history | Issue 4+ |
 | GET | `/api/inventory/item-details/:id` | JWT | Detail | `inventory` |

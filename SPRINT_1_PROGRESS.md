@@ -185,17 +185,36 @@ Follow-up: `refactor(platform): improve Recovery Center architecture` (strategy 
 
 ---
 
-## Issue 6 — Consumed Inventory
+## Issue 6 — Consumed Inventory / Movement Foundation ✅ COMPLETE
 
 Status:
 - [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
+- [x] Implementation (movement registry + CONSUME only)
+- [x] Testing
+- [x] Docs
+- [x] Commit
 
-Commit: Pending
+Commit: Pending (this pass) — `feat(inventory): introduce movement foundation`
 
-Regression: None
+### What shipped
+
+- Movement Type abstraction (`inventoryMovementService.js`) — future types registered, disabled
+- CONSUME applies qty delta + `status=Consumed` when depleted; events via shared Event System
+- UI: Inventory toolbar **Consumed Inventory** (search, filter, history, report)
+- APIs: movements types/list/apply + consumed browse
+- Docs: `INVENTORY_MOVEMENT_SYSTEM.md`
+
+### Smoke
+
+| Check | 9090 | 8080 |
+|-------|------|------|
+| Home 200 | Pass | Pass |
+| Movement types API (CONSUME enabled) | Pass | Pass |
+| Partial + full CONSUME + history fields | Pass | — |
+| Consumed list / search filter / active list excludes Consumed | Pass | — |
+| UI `v=7.08` inventory.js Consumed workspace | Pass | Pass |
+
+Production `118:8080`: not touched. Recovery Center: not modified.
 
 ---
 
