@@ -9,6 +9,41 @@
  */
 
 (function() {
+    function ensureEventSystem() {
+        if (globalThis.InventoryEventSystem) return Promise.resolve(globalThis.InventoryEventSystem);
+        return new Promise((resolve, reject) => {
+            const existing = document.querySelector('script[data-inventory-event-system]');
+            if (existing) {
+                existing.addEventListener('load', () => resolve(globalThis.InventoryEventSystem));
+                existing.addEventListener('error', reject);
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = '/shared/inventoryEventSystem.js?v=7.04';
+            script.dataset.inventoryEventSystem = '1';
+            script.onload = () => resolve(globalThis.InventoryEventSystem);
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    function resolveDisplay(e) {
+        const sys = globalThis.InventoryEventSystem;
+        if (sys && typeof sys.presentEvent === 'function') {
+            return sys.presentEvent(e);
+        }
+        return {
+            ...e,
+            type: e.type,
+            display_name: e.display_name || e.displayName || e.type,
+            ui: { badge: 'badge-secondary' },
+            actor: e.actor,
+            timestamp: e.timestamp,
+            note: e.note,
+            metadata: e.metadata
+        };
+    }
+
     // --- Styles ---
     const MODAL_CSS = `
         .qty-modal {
@@ -194,13 +229,23 @@
 
     // --- Helper Functions ---
     function getEventTypeClass(type) {
-        switch(type) {
+        const sys = globalThis.InventoryEventSystem;
+        if (sys && typeof sys.getEventUi === 'function') {
+            return sys.getEventUi(type).badge || 'badge-secondary';
+        }
+        const normalized = String(type || '').toUpperCase();
+        switch(normalized) {
             case 'ISSUE': return 'badge-warning';
             case 'CONSUME': return 'badge-danger';
             case 'RECEIVE': return 'badge-success';
             case 'ADJUST': return 'badge-info';
             case 'INIT': return 'badge-secondary';
             case 'SPLIT': return 'badge-info';
+            case 'DELETE': return 'badge-danger';
+            case 'RESTORE': return 'badge-success';
+            case 'STATUS_CHANGE': return 'badge-info';
+            case 'BATCH_ENABLED': return 'badge-info';
+            case 'BATCH_DISABLED': return 'badge-secondary';
             default: return 'badge-secondary';
         }
     }
@@ -238,6 +283,7 @@
         empty.style.display = 'none';
 
         try {
+            await ensureEventSystem();
             const response = await fetch(`/api/quantity/events/${encodeURIComponent(assetId)}`);
             if (!response.ok) throw new Error(`API Error: ${response.status}`);
             const payload = await response.json();
@@ -251,6 +297,7 @@
 
             // Render Rows
             tbody.innerHTML = events.map(e => {
+                const presented = resolveDisplay(e);
                 const lines = Array.isArray(e.lines) ? e.lines : [];
                 const myLines = lines.filter(l => String(l.asset_id || l.assetId) === String(assetId));
                 let changeStr = '';
@@ -264,19 +311,20 @@
                 } else {
                     changeStr = '<span style="color:#64748b;">-</span>';
                 }
-                const metaObj = e.metadata ?? (e.metadata_json ? (() => { try { return JSON.parse(e.metadata_json); } catch { return null; } })() : null);
+                const metaObj = presented.metadata ?? null;
                 const metaHtml = metaObj ? Object.entries(metaObj)
-                    .filter(([k]) => k !== 'prev_quantity' && k !== 'new_quantity')
-                    .map(([k, v]) => `<div><strong style="color: #475569">${k}:</strong> ${v}</div>`)
+                    .filter(([k]) => !['schema_version', 'entity_type', 'entity_id', 'previous_value', 'new_value', 'prev_quantity', 'new_quantity'].includes(k))
+                    .map(([k, v]) => `<div><strong style="color: #475569">${k}:</strong> ${typeof v === 'object' ? JSON.stringify(v) : v}</div>`)
                     .join('') : '';
+                const label = presented.display_name || presented.type;
                 return `
                   <tr>
-                    <td style="white-space: nowrap; color: #64748b; font-size: 11px;">${formatDate(e.timestamp)}</td>
-                    <td><span class="qty-badge ${getEventTypeClass(e.type)}">${e.type}</span></td>
-                    <td style="font-weight: 500;">${e.actor || '-'}</td>
+                    <td style="white-space: nowrap; color: #64748b; font-size: 11px;">${formatDate(presented.timestamp || e.timestamp)}</td>
+                    <td><span class="qty-badge ${getEventTypeClass(presented.type)}" title="${presented.type || ''}">${label}</span></td>
+                    <td style="font-weight: 500;">${presented.actor || '-'}</td>
                     <td>${changeStr}</td>
                     <td style="font-size: 11px; color: #64748b;">
-                        ${e.note ? `<div style="font-weight: 600;">${e.note}</div>` : ''}
+                        ${presented.note ? `<div style="font-weight: 600;">${presented.note}</div>` : ''}
                         ${metaHtml}
                     </td>
                   </tr>
@@ -314,6 +362,7 @@
         empty.style.display = 'none';
 
         try {
+            await ensureEventSystem();
             const response = await fetch(`/api/inventory/quantity/events/${encodeURIComponent(itemId)}`);
             if (!response.ok) throw new Error(`API Error: ${response.status}`);
             const payload = await response.json();
@@ -326,6 +375,7 @@
             }
 
             tbody.innerHTML = events.map(e => {
+                const presented = resolveDisplay(e);
                 const lines = Array.isArray(e.lines) ? e.lines : [];
                 const myLines = lines.filter(l => String(l.item_id || l.itemId) === String(itemId));
                 let changeStr = '';
@@ -336,21 +386,25 @@
                         const sign = val > 0 ? '+' : '';
                         return `<span style="color:${color}; font-weight:600;">${sign}${val} ${l.unit || ''}</span>`;
                     }).join('<br>');
+                } else if (presented.previous_value || presented.new_value) {
+                    changeStr = '<span style="color:#64748b;">see details</span>';
                 } else {
                     changeStr = '<span style="color:#64748b;">-</span>';
                 }
-                const metaObj = e.metadata ?? (e.metadata_json ? (() => { try { return JSON.parse(e.metadata_json); } catch { return null; } })() : null);
+                const metaObj = presented.metadata ?? null;
                 const metaHtml = metaObj ? Object.entries(metaObj)
-                    .map(([k, v]) => `<div><strong style="color: #475569">${k}:</strong> ${v}</div>`)
+                    .filter(([k]) => !['schema_version', 'entity_type', 'entity_id'].includes(k))
+                    .map(([k, v]) => `<div><strong style="color: #475569">${k}:</strong> ${typeof v === 'object' ? JSON.stringify(v) : v}</div>`)
                     .join('') : '';
+                const label = presented.display_name || presented.type;
                 return `
                   <tr>
-                    <td style="white-space: nowrap; color: #64748b; font-size: 11px;">${formatDate(e.timestamp)}</td>
-                    <td><span class="qty-badge ${getEventTypeClass(e.type)}">${e.type}</span></td>
-                    <td style="font-weight: 500;">${e.actor || '-'}</td>
+                    <td style="white-space: nowrap; color: #64748b; font-size: 11px;">${formatDate(presented.timestamp || e.timestamp)}</td>
+                    <td><span class="qty-badge ${getEventTypeClass(presented.type)}" title="${presented.type || ''}">${label}</span></td>
+                    <td style="font-weight: 500;">${presented.actor || '-'}</td>
                     <td>${changeStr}</td>
                     <td style="font-size: 11px; color: #64748b;">
-                        ${e.note ? `<div style="font-weight: 600;">${e.note}</div>` : ''}
+                        ${presented.note ? `<div style="font-weight: 600;">${presented.note}</div>` : ''}
                         ${metaHtml}
                     </td>
                   </tr>

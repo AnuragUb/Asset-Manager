@@ -19,6 +19,26 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
+## [Sprint 1] Issue 4 — Inventory Quantity History / event system (2026-08) ✅ COMPLETE
+
+**Status:** Meaningful inventory audit history on Dev/Staging. Production untouched.
+
+### Added
+
+- Shared reusable event system: `web-app/shared/inventoryEventSystem.js` (types, display map, legacy aliases, structured metadata helpers)
+- Architecture doc: `docs/architecture/inventory-event-system.md`
+- Soft-delete / restore APIs: `POST /api/inventory/items/:id/delete|restore` with `DELETE` / `RESTORE` events
+- Frontend ESM adapter + display-name timeline/modal (`v=7.04`)
+
+### Fixed
+
+- History only for operational changes (qty / available / status / batch / delete / restore) — not description/make/notes
+- One event per save (anti-duplicate); Available no longer false-triggers ADJUST when omitted
+- UI shows display labels (e.g. “Quantity Adjusted”), not raw constants
+- Legacy event names still present via compatibility mapping (no DB rewrite)
+
+---
+
 ## [Sprint 1] Issue 3 — Category counts & quantity terminology (2026-08) ✅ COMPLETE
 
 **Status:** UI terminology consistency on Dev/Staging. Production untouched.

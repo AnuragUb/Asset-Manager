@@ -57,6 +57,7 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 |--------|-------|
 | Hierarchy / dashboard | Frontend `dashboard.js` + API assets/folders/kinds — see `04`, `06` |
 | Lifecycle / promote / quantity | `PROCESS_LOGIC.md` + backend helpers around status updates |
+| Inventory audit events | [`inventory-event-system.md`](./inventory-event-system.md) |
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |
 | Auth / RBAC | `07` + login/JWT middleware in backend |

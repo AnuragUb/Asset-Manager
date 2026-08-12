@@ -114,8 +114,12 @@ Before removing or renaming any route: **grep frontend, HTML, scripts, and exter
 | GET/POST | `/api/inventory/folders` | JWT / JWT+roles | Folders | `inventory`, `dashboard` |
 | GET/POST | `/api/inventory/kinds` | JWT / JWT+roles | Kinds | `inventory`, `dashboard` |
 | GET/POST/PUT | `/api/inventory/items`… | JWT / JWT+roles | Items | `inventory`, `dashboard` |
+| POST | `/api/inventory/items/:id/delete` | JWT+roles | Soft-delete + `DELETE` history | Issue 4+ |
+| POST | `/api/inventory/items/:id/restore` | JWT+roles | Restore + `RESTORE` history | Issue 4+ |
 | GET | `/api/inventory/item-details/:id` | JWT | Detail | `inventory` |
-| GET | `/api/inventory/quantity/events/:rootId` | JWT | Qty events | `quantity-history-modal` |
+| GET | `/api/inventory/quantity/events/:rootId` | JWT | Qty events (presented) | `quantity-history-modal`, `inventory` |
+
+Event type SSOT: [`docs/architecture/inventory-event-system.md`](./architecture/inventory-event-system.md).
 
 Gated by `FEATURE_INVENTORY_ENABLED`. Tables: `inventory_*`.
 

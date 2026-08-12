@@ -1,5 +1,11 @@
 import { showToast } from './utils.js?v=6.60';
 import { HierarchyManager } from './hierarchy.js?v=6.60';
+import {
+    getEventDisplayName,
+    getEventUi,
+    presentEvent,
+    normalizeEventType
+} from './inventory-event-system.js?v=7.04';
 
 const state = {
     initialized: false,
@@ -432,12 +438,11 @@ function openInventorySharedModal(existingItem = null) {
             e.preventDefault();
             e.stopPropagation();
             if (!isEdit) return;
-            if (typeof window.showQuantityHistoryModal === 'function') {
-                window.showQuantityHistoryModal(itemId);
+            if (typeof window.showInventoryQuantityHistoryModal === 'function') {
+                window.showInventoryQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.96').then(m => {
-                    if (m && m.showQuantityHistoryModal) m.showQuantityHistoryModal(itemId);
-                    else if (window.showQuantityHistoryModal) window.showQuantityHistoryModal(itemId);
+                import('./quantity-history-modal.js?v=7.04').then(() => {
+                    if (window.showInventoryQuantityHistoryModal) window.showInventoryQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-BTN] import err', err));
             }
         };
@@ -791,11 +796,11 @@ function renderInventoryQtyTimeline(existingItem, events) {
     const historyHeader = historySection.querySelector('h4');
     if (historyHeader) {
         if (itemId) {
-            const openHistoryFnExists = (typeof window.showQuantityHistoryModal === 'function');
-            historyHeader.innerHTML = `Quantity History & Timeline 
-                <a href="#" onclick="${openHistoryFnExists ? `window.showQuantityHistoryModal('${escapeAttr(itemId)}');` : ''} return false;" 
+            const openHistoryFnExists = (typeof window.showInventoryQuantityHistoryModal === 'function' || typeof window.showQuantityHistoryModal === 'function');
+            historyHeader.innerHTML = `Quantity History & Timeline
+                <a href="#" onclick="${openHistoryFnExists ? `window.showInventoryQuantityHistoryModal('${escapeAttr(itemId)}');` : ''} return false;"
                    style="float: right; font-size: 11px; color: #0056b3; background: #e7f3ff; padding: 2px 8px; border-radius: 4px; text-decoration: none; border: 1px solid #b3d7ff; cursor: ${openHistoryFnExists ? 'pointer' : 'not-allowed'}; opacity: ${openHistoryFnExists ? 1 : 0.55};">
-                   � Open Full History
+                   Open Full History
                 </a>`;
         } else {
             historyHeader.textContent = 'Quantity History & Timeline';
@@ -811,38 +816,57 @@ function renderInventoryQtyTimeline(existingItem, events) {
     }
 
     timelineContainer.innerHTML = safeEvents.map(e => {
-        const date = new Date(e.timestamp || e.Timestamp || '').toLocaleString();
-        const type = String(e.type || e.Type || '').toUpperCase();
-        const actor = e.actor || e.Actor || '-';
-        const note = e.note || e.Note || '';
-        const metadata = e.metadata || null;
+        const presented = presentEvent(e);
+        const date = new Date(presented.timestamp || '').toLocaleString();
+        const type = normalizeEventType(presented.type || '');
+        const displayName = presented.display_name || getEventDisplayName(type);
+        const actor = presented.actor || '-';
+        const note = presented.note || '';
+        const metadata = presented.metadata || null;
+        const ui = presented.ui || getEventUi(type);
+        const color = ui.color || '#0078d4';
+        const icon = ui.icon || '⚖️';
 
-        const color = type === 'ISSUE' ? '#3b82f6' :
-            type === 'CONSUME' ? '#ef4444' :
-            type === 'ADJUST' ? '#f59e0b' :
-            type === 'SPLIT' ? '#8b5cf6' : '#0078d4';
-
-        const icon = type === 'ISSUE' ? '📤' :
-            type === 'CONSUME' ? '🔥' :
-            type === 'ADJUST' ? '🛠️' :
-            type === 'SPLIT' ? '✂️' : '⚖️';
+        const prev = presented.previous_value;
+        const next = presented.new_value;
+        let changeHtml = '';
+        if (prev || next) {
+            const rows = [];
+            const keys = new Set([
+                ...Object.keys(prev || {}),
+                ...Object.keys(next || {})
+            ]);
+            keys.forEach((k) => {
+                const a = prev ? prev[k] : undefined;
+                const b = next ? next[k] : undefined;
+                if (String(a) === String(b)) return;
+                rows.push(`<div><b style="color: #1e293b;">${escapeHtml(k)}:</b> ${escapeHtml(a ?? '—')} → ${escapeHtml(b ?? '—')}</div>`);
+            });
+            if (rows.length) {
+                changeHtml = `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-family: monospace; font-size: 11px; color: #475569;">${rows.join('')}</div>`;
+            }
+        } else if (metadata) {
+            changeHtml = `
+                    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-family: monospace; font-size: 11px; color: #475569;">
+                        ${Object.entries(metadata)
+                            .filter(([k]) => !['schema_version', 'entity_type', 'entity_id', 'previous_value', 'new_value'].includes(k))
+                            .map(([k, v]) => `<div><b style="color: #1e293b;">${escapeHtml(k)}:</b> ${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : v)}</div>`)
+                            .join('')}
+                    </div>`;
+        }
 
         return `
             <div style="padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid ${color}; background: #fff; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <span>${icon}</span>
-                        <span style="font-weight: 800; color: ${color}; text-transform: uppercase; font-size: 11px;">${escapeHtml(type)}</span>
+                        <span style="font-weight: 800; color: ${color}; font-size: 11px;">${escapeHtml(displayName)}</span>
                     </div>
                     <span style="color: #64748b; font-size: 11px;">${escapeHtml(date)}</span>
                 </div>
                 <div style="color: #1e293b; font-weight: 700; margin-bottom: 2px;">By ${escapeHtml(actor)}</div>
                 ${note ? `<div style="color: #475569; font-style: italic; margin-top: 4px; padding: 4px 8px; background: #f8fafc; border-radius: 4px; border-left: 2px solid #cbd5e1;">"${escapeHtml(note)}"</div>` : ''}
-                ${metadata ? `
-                    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-family: monospace; font-size: 11px; color: #475569;">
-                        ${Object.entries(metadata).map(([k, v]) => `<div><b style="color: #1e293b;">${escapeHtml(k)}:</b> ${escapeHtml(v)}</div>`).join('')}
-                    </div>
-                ` : ''}
+                ${changeHtml}
             </div>
         `;
     }).join('');
@@ -1253,12 +1277,11 @@ function renderInventoryItems() {
             e.stopPropagation();
             const itemId = btn.getAttribute('data-id');
             if (!itemId) return;
-            if (typeof window.showQuantityHistoryModal === 'function') {
-                window.showQuantityHistoryModal(itemId);
+            if (typeof window.showInventoryQuantityHistoryModal === 'function') {
+                window.showInventoryQuantityHistoryModal(itemId);
             } else {
-                import('./quantity-history-modal.js?v=6.96').then(m => {
-                    if (m && typeof m.showQuantityHistoryModal === 'function') m.showQuantityHistoryModal(itemId);
-                    else if (typeof window.showQuantityHistoryModal === 'function') window.showQuantityHistoryModal(itemId);
+                import('./quantity-history-modal.js?v=7.04').then(() => {
+                    if (typeof window.showInventoryQuantityHistoryModal === 'function') window.showInventoryQuantityHistoryModal(itemId);
                 }).catch(err => console.error('[QTY-HISTORY-ROW] import err', err));
             }
         });
@@ -1811,7 +1834,9 @@ function openCrudModal(type, existingItem = null) {
                             QuantityTotal: Number(getEl('inventoryItemTotal')?.value || 0),
                             QuantityAvailable: Number(getEl('inventoryItemAvailable')?.value || 0),
                             IsQuantityTracked: Number(getEl('inventoryItemTracked')?.value || 0),
-                            IsSet: Number(getEl('inventoryItemSet')?.value || 0)
+                            IsSet: Number(getEl('inventoryItemSet')?.value || 0),
+                            IsBatch: Number(existingItem?.IsBatch ?? existingItem?.is_batch ?? 0),
+                            Remarks: getEl('inventoryItemRemarks')?.value || getEl('itemRemarks')?.value || ''
                         })
                     });
                     createdId = String(existingItem ? (existingItem.ID || existingItem.id) : (res.ID || res.id || res.item?.ID || res.item?.id || ''));

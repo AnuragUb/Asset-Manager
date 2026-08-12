@@ -17,6 +17,19 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cache = require('./services/cacheService');
+const inventoryEventSystem = require('../shared/inventoryEventSystem');
+const {
+  EVENT_TYPES: INV_EVENT_TYPES,
+  ENTITY_TYPES: INV_ENTITY_TYPES,
+  assertEventType: assertInventoryEventType,
+  buildEventMetadata: buildInventoryEventMetadata,
+  snapshotInventoryItem,
+  detectInventoryMeaningfulChanges,
+  resolvePrimaryInventoryEventType,
+  defaultNoteForType: defaultInventoryEventNote,
+  presentEvent: presentInventoryEvent,
+  normalizeEventType: normalizeInventoryEventType
+} = inventoryEventSystem;
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../input');
@@ -2345,6 +2358,9 @@ app.get('/favicon.ico', (req, res) => {
 const distPath = path.join(__dirname, '../asset-manager-frontend/dist');
 const useDist = false; // Force source assets to prevent 404s during rapid development
 
+// Shared modules (inventory event system SSOT) — browsable by frontend ESM
+app.use('/shared', express.static(path.join(__dirname, '../shared')));
+
 // Setup Icons Directory (Serve from Source or DIST based on environment)
 const sourceIconsDir = path.join(__dirname, '../asset-manager-frontend/static/icons');
 const distIconsDir = path.join(__dirname, '../asset-manager-frontend/dist/static/icons');
@@ -4167,17 +4183,42 @@ app.post('/api/inventory/kinds', authenticateJWT, authorizeRoles('superuser', 'a
   }
 });
 
-async function recordInventoryQuantityEvent({ rootId, type, actor, note, metadata, lines }) {
+async function recordInventoryQuantityEvent({
+  rootId,
+  type,
+  actor,
+  note,
+  metadata,
+  lines,
+  entityType,
+  entityId,
+  previousValue,
+  newValue
+}) {
   const timestamp = new Date().toISOString();
-  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+  const canonicalType = assertInventoryEventType(type);
+  const resolvedEntityId = entityId != null ? String(entityId) : String(rootId);
+  const structuredMeta = buildInventoryEventMetadata({
+    entityType: entityType || INV_ENTITY_TYPES.INVENTORY_ITEM,
+    entityId: resolvedEntityId,
+    previousValue: previousValue !== undefined ? previousValue : (metadata && metadata.previous_value) || null,
+    newValue: newValue !== undefined ? newValue : (metadata && metadata.new_value) || null,
+    extra: metadata && typeof metadata === 'object'
+      ? Object.fromEntries(
+          Object.entries(metadata).filter(([k]) => !['previous_value', 'new_value', 'entity_type', 'entity_id', 'schema_version'].includes(k))
+        )
+      : null
+  });
+  const metadataJson = JSON.stringify(structuredMeta);
+  const resolvedNote = note || defaultInventoryEventNote(canonicalType);
 
   const inserted = await db('inventory_quantity_events')
     .insert({
       root_id: rootId,
-      type,
+      type: canonicalType,
       actor: actor || null,
       timestamp,
-      note: note || null,
+      note: resolvedNote,
       metadata_json: metadataJson
     })
     .returning('id');
@@ -4252,21 +4293,7 @@ app.get('/api/inventory/item-details/:id', authenticateJWT, async (req, res) => 
       .orderBy('timestamp', 'desc')
       .limit(50);
 
-    const quantityEvents = normalizeResult(events).map(e => {
-      let metadataObj = null;
-      if (e.metadata_json || e.MetadataJSON) {
-        const raw = e.metadata_json || e.MetadataJSON;
-        try {
-          metadataObj = raw ? JSON.parse(raw) : null;
-        } catch {
-          metadataObj = null;
-        }
-      }
-      return {
-        ...e,
-        metadata: metadataObj
-      };
-    });
+    const quantityEvents = normalizeResult(events).map(e => presentInventoryEvent(e));
 
     res.json({
       item,
@@ -4305,18 +4332,9 @@ app.get('/api/inventory/quantity/events/:rootId', authenticateJWT, async (req, r
     });
 
     const payload = normalizeResult(events).map(e => {
-      let metadataObj = null;
-      if (e.metadata_json || e.MetadataJSON) {
-        const raw = e.metadata_json || e.MetadataJSON;
-        try {
-          metadataObj = raw ? JSON.parse(raw) : null;
-        } catch {
-          metadataObj = null;
-        }
-      }
+      const presented = presentInventoryEvent(e);
       return {
-        ...e,
-        metadata: metadataObj,
+        ...presented,
         lines: (byEventId.get(String(e.ID || e.id)) || []).map(l => normalizeResult(l))
       };
     });
@@ -4456,12 +4474,27 @@ app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'a
     }
 
     if (isQtyTracked) {
+      const initSnap = snapshotInventoryItem({
+        quantity_total: normalizedQtyTotal,
+        quantity_available: normalizedQtyAvailable,
+        is_quantity_tracked: 1,
+        is_batch: inventoryIsBatch,
+        status: item.Status || item.status || 'In Store',
+        is_deleted: 0
+      });
       await recordInventoryQuantityEvent({
         rootId: newId,
-        type: 'INIT',
+        type: INV_EVENT_TYPES.INIT,
         actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
-        note: 'Initialized quantity tracking',
-        metadata: { quantity_total: normalizedQtyTotal, quantity_available: normalizedQtyAvailable },
+        note: defaultInventoryEventNote(INV_EVENT_TYPES.INIT),
+        entityType: INV_ENTITY_TYPES.INVENTORY_ITEM,
+        entityId: newId,
+        previousValue: null,
+        newValue: initSnap,
+        metadata: {
+          quantity_total: normalizedQtyTotal,
+          quantity_available: normalizedQtyAvailable
+        },
         lines: [{ itemId: newId, unit: normalizedQtyUnit, deltaTotal: normalizedQtyTotal, deltaAvailable: normalizedQtyAvailable }]
       });
     }
@@ -4530,19 +4563,23 @@ app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser',
       }
     }
 
-    // nextQtyAvailable: if user explicitly provided quantity_available / QuantityAvailable use it
-    // (even if 0). Else fall back to nextQtyTotal to keep old "available = total by default" behavior.
+    // Available: prefer explicit client value; otherwise KEEP previous available (do not
+    // silently remap to total — that falsely creates ADJUST history on metadata-only saves).
+    // Only default available=total when newly enabling quantity tracking.
     let nextQtyAvailable = 0;
     if (isQtyTracked) {
       if (item.quantity_available !== undefined && item.quantity_available !== null) {
         nextQtyAvailable = Number(item.quantity_available || 0);
       } else if (item.QuantityAvailable !== undefined && item.QuantityAvailable !== null) {
         nextQtyAvailable = Number(item.QuantityAvailable || 0);
-      } else {
+      } else if (!existingWasQtyTracked) {
         nextQtyAvailable = Number(nextQtyTotal || 0);
+      } else {
+        nextQtyAvailable = Number(prevQtyAvailable || 0);
       }
     }
     const inventoryIsBatch = Number(item.IsBatch ?? item.is_batch ?? existing.is_batch ?? 0);
+    const nextStatus = item.Status || item.status || existing.status || 'In Store';
     const shouldInitRoot = isQtyTracked && !existing.quantity_root_id;
 
     await db('inventory_items')
@@ -4551,7 +4588,7 @@ app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser',
         itemname: item.ItemName || item.itemname,
         itemdescription: item.ItemDescription || item.itemdescription || '',
         icon: item.Icon || item.icon || '📦',
-        status: item.Status || item.status || 'In Store',
+        status: nextStatus,
         make: item.Make || item.make || '',
         model: item.Model || item.model || '',
         srno: item.SrNo || item.srno || null,
@@ -4673,30 +4710,141 @@ app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser',
       }
     }
 
-    if (isQtyTracked && (shouldInitRoot || prevQtyTotal !== nextQtyTotal || prevQtyAvailable !== nextQtyAvailable || !existingWasQtyTracked)) {
+    // Meaningful operational history only (one event per save — no metadata noise / no duplicates)
+    const changeProbe = detectInventoryMeaningfulChanges({
+      existing,
+      next: {
+        quantity_total: nextQtyTotal,
+        quantity_available: nextQtyAvailable,
+        is_quantity_tracked: isQtyTracked ? 1 : 0,
+        is_batch: inventoryIsBatch,
+        status: nextStatus,
+        is_deleted: existing.is_deleted
+      }
+    });
+    let primaryType = resolvePrimaryInventoryEventType(changeProbe);
+    if (!primaryType && shouldInitRoot && isQtyTracked) {
+      primaryType = INV_EVENT_TYPES.INIT;
+    }
+    if (primaryType) {
+      const rootId = existing.quantity_root_id || originalId;
+      const actor = req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web';
+      const deltaTotal = nextQtyTotal - prevQtyTotal;
+      const deltaAvailable = nextQtyAvailable - prevQtyAvailable;
+      const lines = (changeProbe.totalChanged || changeProbe.availableChanged || changeProbe.qtyTrackedOn)
+        ? [{
+            itemId: originalId,
+            unit: normalizedQtyUnit,
+            deltaTotal: changeProbe.qtyTrackedOn ? nextQtyTotal : deltaTotal,
+            deltaAvailable: changeProbe.qtyTrackedOn ? nextQtyAvailable : deltaAvailable
+          }]
+        : [];
+
       await recordInventoryQuantityEvent({
-        rootId: existing.quantity_root_id || originalId,
-        type: shouldInitRoot ? 'INIT' : 'ADJUST',
-        actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
-        note: shouldInitRoot ? 'Initialized quantity tracking' : 'Updated quantity',
+        rootId,
+        type: primaryType,
+        actor,
+        note: defaultInventoryEventNote(primaryType),
+        entityType: INV_ENTITY_TYPES.INVENTORY_ITEM,
+        entityId: originalId,
+        previousValue: changeProbe.previousValue,
+        newValue: changeProbe.newValue,
         metadata: {
           prev_quantity_total: prevQtyTotal,
           new_quantity_total: nextQtyTotal,
           prev_quantity_available: prevQtyAvailable,
-          new_quantity_available: nextQtyAvailable
+          new_quantity_available: nextQtyAvailable,
+          prev_status: existing.status,
+          new_status: nextStatus,
+          prev_is_batch: Number(existing.is_batch || 0),
+          new_is_batch: inventoryIsBatch
         },
-        lines: [{
-          itemId: originalId,
-          unit: normalizedQtyUnit,
-          deltaTotal: nextQtyTotal - prevQtyTotal,
-          deltaAvailable: nextQtyAvailable - prevQtyAvailable
-        }]
+        lines
       });
     }
 
     res.json({ success: true, id: originalId });
   } catch (err) {
     console.error('Failed to update inventory item:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post('/api/inventory/items/:id/delete', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const originalId = String(req.params.id || '').trim();
+    if (!originalId) return res.status(400).json({ error: 'Inventory ID is required.' });
+
+    const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [originalId]).first();
+    if (!existing) return res.status(404).json({ error: `Inventory item ${originalId} not found.` });
+    if (Number(existing.is_deleted || 0) === 1) {
+      return res.json({ success: true, id: originalId, alreadyDeleted: true });
+    }
+
+    const now = new Date().toISOString();
+    const prevSnap = snapshotInventoryItem(existing);
+    await db('inventory_items')
+      .whereRaw('LOWER(id) = LOWER(?)', [originalId])
+      .update({ is_deleted: 1, deleted_at: now, lastupdated: now });
+
+    const newSnap = { ...prevSnap, is_deleted: 1 };
+    await recordInventoryQuantityEvent({
+      rootId: existing.quantity_root_id || originalId,
+      type: INV_EVENT_TYPES.DELETE,
+      actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
+      note: req.body?.note || defaultInventoryEventNote(INV_EVENT_TYPES.DELETE),
+      entityType: INV_ENTITY_TYPES.INVENTORY_ITEM,
+      entityId: originalId,
+      previousValue: prevSnap,
+      newValue: newSnap,
+      lines: []
+    });
+
+    res.json({ success: true, id: originalId });
+  } catch (err) {
+    console.error('Failed to delete inventory item:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory/items/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    if (rejectInventoryPreviewOnNonTest(res)) return;
+
+    const originalId = String(req.params.id || '').trim();
+    if (!originalId) return res.status(400).json({ error: 'Inventory ID is required.' });
+
+    const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [originalId]).first();
+    if (!existing) return res.status(404).json({ error: `Inventory item ${originalId} not found.` });
+    if (Number(existing.is_deleted || 0) !== 1) {
+      return res.json({ success: true, id: originalId, alreadyActive: true });
+    }
+
+    const now = new Date().toISOString();
+    const prevSnap = snapshotInventoryItem(existing);
+    await db('inventory_items')
+      .whereRaw('LOWER(id) = LOWER(?)', [originalId])
+      .update({ is_deleted: 0, deleted_at: null, lastupdated: now });
+
+    const newSnap = { ...prevSnap, is_deleted: 0 };
+    await recordInventoryQuantityEvent({
+      rootId: existing.quantity_root_id || originalId,
+      type: INV_EVENT_TYPES.RESTORE,
+      actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
+      note: req.body?.note || defaultInventoryEventNote(INV_EVENT_TYPES.RESTORE),
+      entityType: INV_ENTITY_TYPES.INVENTORY_ITEM,
+      entityId: originalId,
+      previousValue: prevSnap,
+      newValue: newSnap,
+      lines: []
+    });
+
+    res.json({ success: true, id: originalId });
+  } catch (err) {
+    console.error('Failed to restore inventory item:', err);
     res.status(500).json({ error: err.message });
   }
 });

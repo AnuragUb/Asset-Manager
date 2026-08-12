@@ -19,6 +19,7 @@ Approved analysis modifications:
 - Deleted Assets: existing soft-delete + restore until purge
 - Consumed Inventory: existing status model (no new entity)
 - Lifecycle: incremental only — no full refactor this sprint
+- **Issue 4:** Meaningful inventory audit history only — verify events are created **and** that metadata-only edits do **not** create events; no duplicate events for a single meaningful change
 
 ---
 
@@ -95,17 +96,52 @@ Regression: None expected — UI label / hierarchy presentation only; no schema 
 
 ---
 
-## Issue 4 — Inventory Quantity History
+## Issue 4 — Inventory Quantity History ✅ COMPLETE
 
 Status:
 - [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
+- [x] Analysis (reusable event system + matrix approved)
+- [x] Implementation
+- [x] Testing
+- [x] Commit
 
-Commit: Pending
+Commit: `5c4d3ca` `feat(inventory): reusable quantity event system`
 
-Regression: None
+Regression: None observed (home 200 on 9090/8080; shared event system served; inventory history helpers PASS)
+
+### What shipped
+
+- SSOT: `web-app/shared/inventoryEventSystem.js` (types, display names, UI chrome, legacy aliases, detect/resolve helpers, `presentEvent`)
+- Backend inventory POST/PUT use constants + structured metadata; soft-delete/restore APIs emit `DELETE`/`RESTORE`
+- Frontend timeline + inventory history modal show **display labels**, not raw types (`v=7.04`)
+- Docs: `docs/architecture/inventory-event-system.md`, API table updates
+
+### Product rules (locked)
+
+Meaningful operational history only; no metadata noise; no duplicate events per save; display ≠ type constant; extensible future types; legacy aliases without DB rewrite.
+
+### Event matrix — SHOULD record
+
+| Operation | Type |
+|-----------|------|
+| Create / enable qty tracking | `INIT` |
+| Total / Available qty change | `ADJUST` (one event if both) |
+| Status change | `STATUS_CHANGE` |
+| Batch enable / disable | `BATCH_ENABLED` / `BATCH_DISABLED` |
+| Delete / Restore | `DELETE` / `RESTORE` |
+
+### Event matrix — SHOULD NOT record
+
+Description · Make/Manufacturer · Model · Notes/Remarks · other metadata-only · idempotent re-save
+
+### Smoke / verification (2026-08-12)
+
+| Check | 9090 | 8080 |
+|-------|------|------|
+| Home 200 | Pass | Pass |
+| `/shared/inventoryEventSystem.js` | Pass | Pass |
+| `main.js?v=7.04` / inventory display helpers | Pass | Pass |
+| DB script: meta not meaningful; ADJUST/STATUS/BATCH/DELETE/RESTORE; legacy present | Pass (test DB) | n/a |
 
 ---
 
