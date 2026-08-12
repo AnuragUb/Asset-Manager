@@ -735,7 +735,7 @@ function renderAssetKanban(assets) {
                         ` : ''}
                         <div style="font-size: 10px; margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             ${(asset.is_quantity_tracked === 1 || asset.quantity_unit || asset.quantity_total) ? `
-                                <span style="color: #0078d4; font-weight: 600; display: flex; align-items: center; gap: 3px;">⚖️ ${asset.quantity_total ?? 0} ${asset.quantity_unit || ''}</span>
+                                <span style="color: #0078d4; font-weight: 600;">Total Quantity: ${asset.quantity_total ?? 0}${asset.quantity_unit ? ` ${asset.quantity_unit}` : ''}</span>
                             ` : ''}
                             <button onclick="event.stopPropagation(); showQuantityHistoryModal('${asset.ID}')" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;">📅 History</button>
                         </div>
@@ -3708,8 +3708,8 @@ window.showQuantityHistoryModal = async function(assetId) {
                     <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Asset ID</div>
                     <div style="font-weight: 700; color: #1e293b;">${assetId}</div>
                 </div>
-                <div style="text-align: right;">
-                    <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Current Batch Total</div>
+                    <div style="text-align: right;">
+                    <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Latest event Δ Total</div>
                     <div style="font-weight: 800; color: #2563eb; font-size: 18px;">${data.events.length > 0 ? data.events[data.events.length-1].lines[0].delta_total : 0} ${unit}</div>
                 </div>
             `;
@@ -5186,8 +5186,8 @@ export function renderDashboard(assets, filteredAssets) {
                     <td>
                         <div style="font-size: 11px;">
                             ${qtyTracked ? `
-                                <strong style="color: #0078d4;">⚖️ ${Number(qtyTotal)}</strong> ${_dashEscapeHtml(qtyUnit || '')}
-                                ${qtyAvail !== null ? `<br><span style="color: #666;">Avail: ${Number(qtyAvail)}</span>` : ''}
+                                <strong style="color: #0078d4;">Total Quantity: ${Number(qtyTotal)}</strong> ${_dashEscapeHtml(qtyUnit || '')}
+                                ${qtyAvail !== null ? `<br><span style="color: #666;">Available Quantity: ${Number(qtyAvail)}</span>` : ''}
                             ` : '-'}
                         </div>
                     </td>
@@ -5219,7 +5219,7 @@ export function renderDashboard(assets, filteredAssets) {
                             <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Assigned To</th>
                             <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Purchase Date</th>
                             <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Warranty</th>
-                            <th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Quantity</th>
+                            <th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Total Quantity</th>
                             <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Parent ID</th>
                             <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Actions</th>
                         </tr>
@@ -5569,20 +5569,26 @@ export function renderDashboard(assets, filteredAssets) {
         
         const total = realAssets.length;
         
-        // Calculate aggregate quantity for root assets in this kind/category
+        // Aggregate Total Quantity (sum of quantity_total) for qty-tracked assets with a shared unit.
         let aggregateQty = 0;
         let qtyUnit = '';
         let hasQuantityTracking = false;
+        let mixedUnits = false;
+        let trackedAssetCount = 0;
         
         realAssets.forEach(a => {
-            if (a.quantity_unit) {
-                hasQuantityTracking = true;
-                if (!qtyUnit) qtyUnit = a.quantity_unit;
-                
-                // Only aggregate if units match to avoid confusing mixed units
-                if (a.quantity_unit.toLowerCase() === qtyUnit.toLowerCase()) {
-                    aggregateQty += Number(a.quantity_total || 0);
-                }
+            const tracked = !!(a.is_quantity_tracked === 1 || a.IsQuantityTracked === 1 || a.quantity_unit || (a.quantity_total !== undefined && a.quantity_total !== null && Number(a.quantity_total) > 0));
+            if (!tracked) return;
+            trackedAssetCount += 1;
+            hasQuantityTracking = true;
+            const unit = String(a.quantity_unit || a.QuantityUnit || '').trim();
+            if (!qtyUnit && unit) qtyUnit = unit;
+            if (unit && qtyUnit && unit.toLowerCase() !== qtyUnit.toLowerCase()) {
+                mixedUnits = true;
+                return;
+            }
+            if (!unit || !qtyUnit || unit.toLowerCase() === qtyUnit.toLowerCase()) {
+                aggregateQty += Number(a.quantity_total || a.QuantityTotal || 0);
             }
         });
 
@@ -5640,11 +5646,15 @@ export function renderDashboard(assets, filteredAssets) {
                             : `<span style="font-size: 40px; line-height: 48px; display: block; text-align: center;">${isKind ? '📦' : '📂'}</span>`}
             </div>
             <div class="asset-card-header">
-                <span class="asset-card-title">${nodeName} (${total})</span>
+                <span class="asset-card-title">${nodeName}</span>
+                <div style="font-size: 11px; color: #334155; font-weight: 700; margin-top: 4px;">
+                    Total Assets: ${total.toLocaleString()}
+                </div>
                 ${hasQuantityTracking ? `
-                    <div style="font-size: 11px; color: #0078d4; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
-                        <span style="font-size: 12px;">⚖️</span> 
-                        <span>${aggregateQty.toLocaleString()} ${qtyUnit}</span>
+                    <div style="font-size: 11px; color: #0078d4; font-weight: 600; margin-top: 2px;">
+                        ${mixedUnits
+                            ? `Total Quantity: mixed units (${trackedAssetCount} tracked)`
+                            : `Total Quantity: ${aggregateQty.toLocaleString()}${qtyUnit ? ` ${qtyUnit}` : ''}`}
                     </div>
                 ` : ''}
             </div>
@@ -7189,8 +7199,8 @@ function showAssetList(nodeOrKindName) {
                 <td>
                     <div style="font-size: 11px;">
                         ${qtyTracked ? `
-                            <strong style="color: #0078d4;">⚖️ ${Number(qtyTotal)}</strong> ${escapeHtml(qtyUnit || '')}
-                            ${qtyAvail !== null ? `<br><span style="color: #666;">Avail: ${Number(qtyAvail)}</span>` : ''}
+                            <strong style="color: #0078d4;">Total Quantity: ${Number(qtyTotal)}</strong> ${escapeHtml(qtyUnit || '')}
+                            ${qtyAvail !== null ? `<br><span style="color: #666;">Available Quantity: ${Number(qtyAvail)}</span>` : ''}
                         ` : '-'}
                         <br><button class="qty-history-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; cursor: pointer;" title="View Quantity History">📅 History</button>
                     </div>

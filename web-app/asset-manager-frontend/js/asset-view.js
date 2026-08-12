@@ -211,11 +211,11 @@ async function renderAsset(data) {
                 <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Quantity</h3>
                 <div style="display: flex; gap: 20px;">
                     <div style="flex: 1; text-align: center; padding: 10px; background: #e6fffa; border-radius: 8px; border: 1px solid #b2f5ea;">
-                        <div style="font-size: 11px; color: #2c7a7b; font-weight: bold; text-transform: uppercase;">Available</div>
+                        <div style="font-size: 11px; color: #2c7a7b; font-weight: bold; text-transform: uppercase;">Available Quantity</div>
                         <div style="font-size: 20px; font-weight: bold; color: #234e52;">${qtyAvailable} <span style="font-size: 12px;">${qtyUnit}</span></div>
                     </div>
                     <div style="flex: 1; text-align: center; padding: 10px; background: #ebf8ff; border-radius: 8px; border: 1px solid #bee3f8;">
-                        <div style="font-size: 11px; color: #2b6cb0; font-weight: bold; text-transform: uppercase;">Total</div>
+                        <div style="font-size: 11px; color: #2b6cb0; font-weight: bold; text-transform: uppercase;">Total Quantity</div>
                         <div style="font-size: 20px; font-weight: bold; color: #2c5282;">${qtyTotal} <span style="font-size: 12px;">${qtyUnit}</span></div>
                     </div>
                 </div>

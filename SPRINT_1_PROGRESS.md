@@ -28,102 +28,74 @@ Status:
 - [x] Investigation
 - [x] Implementation
 - [x] Testing
-- [x] Docs (`SPRINT_1_PROGRESS` / `PROJECT_STATUS` / `CHANGELOG`)
+- [x] Docs
 - [x] Smoke test
 - [x] Commit
 - [x] Approved
 
-Commits:
-- `26c9f0b` `fix(auth): repair password reset workflow`
-- `68dfc32` `docs(sprint1): record Issue 1 status gate and SMTP debt`
-
-Regression: None observed (login, home pages, reset happy/error paths verified on 9090 and 8080)
-
-### Authentication outcome
-Password reset is repaired on Dev and Staging. Resets use stored `users.email`. SMTP production credentials remain Known/Medium debt.
-
-### What changed
-- Migration `20260811180000_add_users_email.js` adds nullable `users.email` + lower(email) index
-- Forgot-password looks up by username or stored email; sends only to stored `users.email`
-- Frontend shows `devResetLink` when mail cannot be sent; reset form no longer drops token via clone bug
-- Dev/Staging app containers restarted so `tokenService` reload picked up `storeResetToken`
-
-### Verification
-| Check | 59:9090 | 59:8080 |
-|-------|---------|---------|
-| Migration applied | Yes | Yes (`asset_manager`) |
-| Forgot → token persist | Pass | Pass |
-| SMTP fail → stored-email + link fallback | Pass | Pass |
-| Reset password → login with new password | Pass | Pass |
-| Old password rejected | Pass | Pass |
-| Lookup by stored email | Pass | Pass |
-| No email on file → link + message | Pass (9090) | — |
-| Unknown user anti-enumeration | Pass | Pass |
-| Home page 200 | Pass | Pass |
-
-### Post-issue smoke (checklist)
-| Check | 59:9090 | 59:8080 |
-|-------|---------|---------|
-| Home / login page loads | Pass (200) | Pass (200) |
-| `POST /api/auth/forgot-password` (unknown user) | Pass | Pass |
-| Auth JS served (`v=7.01`, includes `devResetLink`) | Pass | Pass |
-| Bogus login rejected | Pass (401) | Pass (401) |
-
-SMTP in `dynamic.json` currently returns Gmail BadCredentials; reset still completes via Dev/Staging link fallback. Production host was not touched.
-
-**Technical debt (Known / Medium):** Gmail SMTP credentials require production configuration — see `docs/08_TECHNICAL_DEBT.md`.
+Commits: `26c9f0b`, `68dfc32`, `2385228`
 
 ---
 
-## Issue 2 — Assets Card/Table Toggle ✅ COMPLETE
+## Issue 2 — Assets Card/Table Toggle ✅ COMPLETE (approved)
 
 Status:
 - [x] Investigation
 - [x] Implementation
 - [x] Testing
-- [x] Docs (`SPRINT_1_PROGRESS` / `PROJECT_STATUS` / `CHANGELOG`)
+- [x] Docs
+- [x] Smoke test
+- [x] Commit
+- [x] Approved
+
+Commit: `adc9f0b` / `07bcae2` family — `fix(ui): asset card/table visibility`
+
+---
+
+## Issue 3 — Category counts & quantity terminology ✅ COMPLETE
+
+Status:
+- [x] Investigation (Quantity Terminology Audit)
+- [x] Analysis
+- [x] Implementation
+- [x] Testing
+- [x] Docs
 - [x] Smoke test
 - [x] Commit
 
-Commit: `07bcae2` `fix(ui): asset card/table visibility`
+Commit: `9041e08` `fix(ui): consistent quantity terminology`
 
-Regression: None observed — UI-only; hierarchy navigation unchanged; Inventory pattern matched
+Regression: None expected — UI label / hierarchy presentation only; no schema or API contract changes
+
+### Canonical vocabulary applied
+| Label | Meaning |
+|-------|---------|
+| Total Assets | Asset record count (Assets hierarchy) |
+| Total Items | Inventory record count (Inventory hierarchy) |
+| Total Quantity | `quantity_total` (row or same-unit aggregate) |
+| Available Quantity | `quantity_available` |
+| Latest event Δ Total | Qty-history header (was misleading “Current Batch Total”) |
 
 ### What changed
-- `dashboard.js`: Cards/Table toggle gated by `showAssetViewToggle` (= asset listing / search / direct assets), not by presence of folder/category cards
-- Hierarchy-only levels (root, categories, manufacturers, models) hide the toggle and stay on cards
-- Cache-bust `dashboard.js?v=7.02` via `main.js`
-
-### Verification
-| Check | Result |
-|-------|--------|
-| Predicate: root/category → toggle hidden | Pass (logic test) |
-| Predicate: leaf asset list / search / direct assets → toggle shown | Pass (logic test) |
-| Served `dashboard.js?v=7.02` on 9090 & 8080 contains `showAssetViewToggle` | Pass |
-| Old `viewToggleHtml = hasCards` absent | Pass |
+- Assets hierarchy cards: primary **Total Assets**; secondary **Total Quantity** (explicit); mixed units called out
+- Inventory hierarchy cards: **Total Items** + labeled Total/Available Quantity
+- Inventory overview + item cards + table header aligned
+- Assets table: Total Quantity / Available Quantity wording
+- Projects: Total/Available Quantity; BULK shows Available Quantity
+- Asset detail page: Available Quantity / Total Quantity
+- Cache-bust `dashboard` / `inventory` / `projects` → `v=7.03`
 
 ### Post-issue smoke (checklist)
 | Check | 59:9090 | 59:8080 |
 |-------|---------|---------|
-| Home page 200 | Pass | Pass |
-| `dashboard.js?v=7.02` served | Pass | Pass |
-| `main.js` imports 7.02 | Pass | Pass |
-| Auth forgot-password still OK | Pass | Pass |
-## Issue 3 — Inventory Quantity History
-
-Status:
-- [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
-
-Commit: Pending
-
-Regression: None
+| Home 200 | Pass | Pass |
+| `dashboard.js?v=7.03` has Total Assets | Pass | Pass |
+| `inventory.js?v=7.03` has Total Items | Pass | Pass |
+| Auth forgot still OK | Pass | Pass |
 
 ---
 
-## Issue 4 — Category Quantity Bug
+## Issue 4 — Inventory Quantity History
 
 Status:
 - [x] Investigation

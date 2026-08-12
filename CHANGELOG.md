@@ -19,7 +19,22 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
-## [Sprint 1] Issue 2 — Assets Card/Table toggle (2026-08) ✅ COMPLETE
+## [Sprint 1] Issue 3 — Category counts & quantity terminology (2026-08) ✅ COMPLETE
+
+**Status:** UI terminology consistency on Dev/Staging. Production untouched.
+
+### Fixed
+
+- Assets hierarchy cards: **Total Assets** primary; **Total Quantity** explicitly labeled (mixed units noted)
+- Inventory hierarchy/overview/cards/tables: Total Items / Total Quantity / Available Quantity
+- Projects assign/bulk labels: Total Quantity / Available Quantity (BULK no longer mislabels available as Qty)
+- Asset detail + assets tables: Total Quantity / Available Quantity
+- Qty history summary: **Latest event Δ Total** (replaces misleading “Current Batch Total”)
+- Frontend cache-bust `v=7.03` (`dashboard`, `inventory`, `projects`, `asset-view`, `main`)
+
+---
+
+## [Sprint 1] Issue 2 — Assets Card/Table toggle (2026-08) ✅ COMPLETE (approved)
 
 **Status:** UI-only. Verified on Dev `59:9090` and Staging `59:8080`. Production untouched.
 

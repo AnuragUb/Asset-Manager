@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `07bcae2` (`main`) | Sprint 1 Issue 2 UI tip |
-| **Product Version** | **v7.00** / dashboard `v=7.02` / auth `v=7.01` | Cache-busts for Issue 1–2 UX |
-| **Last Successful Deployment** | Dev/Staging on `59` (Issue 2 UI bind-mount) | Production `118:8080` not deployed this sprint |
-| **Last Database Migration** | `20260811180000_add_users_email` | No DB change for Issue 2 |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1 ✅ · Issue 2 ✅ · next Issue 3 pending approval — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
+| **Repository Version** | `9041e08` (`main`) | Issue 3 quantity terminology |
+| **Product Version** | **v7.03** (main/dashboard/inventory/projects) | Sprint 1 Issue 3 cache-bust |
+| **Last Successful Deployment** | Dev/Staging on `59` (Issue 3 UI) | Production `118:8080` not deployed |
+| **Last Database Migration** | `20260811180000_add_users_email` | No DB change for Issue 3 |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–3 ✅ · next Issue 4 pending — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

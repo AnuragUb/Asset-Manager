@@ -786,8 +786,8 @@ async function loadProjectAssets(projectId) {
             const isQtyTracked = a.is_quantity_tracked === 1;
             const qtyDisplay = isQtyTracked ? `
                 <div style="font-size: 11px; margin-top: 4px; color: #2563eb; font-weight: 600;">
-                    Qty: ${a.quantity_total || 0} ${a.quantity_unit || 'pcs'} 
-                    <span style="color: #64748b; font-weight: 400; margin-left: 4px;">(${a.quantity_available || 0} Available)</span>
+                    Total Quantity: ${a.quantity_total || 0} ${a.quantity_unit || 'pcs'} 
+                    <span style="color: #64748b; font-weight: 400; margin-left: 4px;">(Available Quantity: ${a.quantity_available || 0})</span>
                 </div>
             ` : '';
 
@@ -2098,7 +2098,7 @@ async function showAssignAssetModal() {
                             <div style="flex-grow: 1;">
                                 <div style="font-weight: bold; color: #333;">${asset.ItemName || 'Unknown Item'}</div>
                                 <div style="font-size: 0.85em; color: #666;">ID: ${asset.ID}</div>
-                                ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<div style="font-size: 0.75em; color: #2563eb; font-weight: 600; margin-top: 2px;">📦 BULK (Qty: ${asset.quantity_available || 0})</div>` : ''}
+                                ${(asset.is_batch || (asset.quantity_available > 1 && asset.is_quantity_tracked)) ? `<div style="font-size: 0.75em; color: #2563eb; font-weight: 600; margin-top: 2px;">📦 BULK (Available Quantity: ${asset.quantity_available || 0})</div>` : ''}
                             </div>
                             <div style="text-align: right; font-size: 0.85em; color: #888; min-width: 100px;">
                                 <div>${asset.Model || ''}</div>
@@ -3119,7 +3119,7 @@ window.handleWorkspaceMakeSet = function() {
         
         if (qty > 1) {
             html += '<div style="display: flex; align-items: center; gap: 5px;">' +
-                        '<span style="font-size: 10px; color: #64748b;">Qty:</span>' +
+                        '<span style="font-size: 10px; color: #64748b;">Total Quantity:</span>' +
                         '<input type="number" class="make-set-item-qty" data-id="' + assetId + '" value="' + qty + '" min="1" max="' + qty + '" ' +
                                'style="width: 50px; padding: 2px 5px; font-size: 11px; border: 1px solid #e2e8f0; border-radius: 4px;">' +
                     '</div>';

@@ -175,11 +175,11 @@ function renderInventoryOverviewWidget(items, title) {
                 <div style="font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 6px;">${totalItems.toLocaleString()}</div>
             </div>
             <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #36b37e; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: 700;">Total Qty</div>
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: 700;">Total Quantity</div>
                 <div style="font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 6px;">${totalQty.toLocaleString()}</div>
             </div>
             <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #f59e0b; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: 700;">Available Qty</div>
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; font-weight: 700;">Available Quantity</div>
                 <div style="font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 6px;">${availableQty.toLocaleString()}</div>
             </div>
             <div style="background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #7e22ce; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
@@ -908,10 +908,13 @@ function renderInventoryNodeCards(nodes, manager) {
                     ${iconHtml}
                 </div>
                 <div class="asset-card-header">
-                    <span class="asset-card-title">${escapeHtml(node.Name)} (${stats.itemCount})</span>
-                    <div style="font-size: 11px; color: #0078d4; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 8px;">
-                        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="font-size: 12px;">⚖️</span> ${stats.totalQty.toLocaleString()}</span>
-                        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="font-size: 12px;">✅</span> ${stats.availableQty.toLocaleString()}</span>
+                    <span class="asset-card-title">${escapeHtml(node.Name)}</span>
+                    <div style="font-size: 11px; color: #334155; font-weight: 700; margin-top: 4px;">
+                        Total Items: ${stats.itemCount.toLocaleString()}
+                    </div>
+                    <div style="font-size: 11px; color: #0078d4; font-weight: 600; margin-top: 2px; display: flex; flex-direction: column; gap: 2px;">
+                        <span>Total Quantity: ${stats.totalQty.toLocaleString()}</span>
+                        <span style="color: #15803d;">Available Quantity: ${stats.availableQty.toLocaleString()}</span>
                     </div>
                 </div>
             </div>
@@ -944,8 +947,8 @@ function renderInventoryItemCards(items) {
                         ${fromCatalog ? `<span class="status-badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a;">Catalog</span>` : ''}
                     </div>
                     <div style="font-size: 11px; color: #666; margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap;">
-                        <span><strong>Total:</strong> ${total}</span>
-                        <span><strong>Available:</strong> ${available}</span>
+                        <span><strong>Total Quantity:</strong> ${total}</span>
+                        <span><strong>Available Quantity:</strong> ${available}</span>
                     </div>
                 </div>
             </div>
@@ -1040,7 +1043,7 @@ function renderInventoryItemsTable(items) {
                         <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Assigned To</th>
                         <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Purchase Date</th>
                         <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Warranty</th>
-                        <th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Quantity</th>
+                        <th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Total Quantity</th>
                         <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Parent ID</th>
                         <th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px;">Actions</th>
                     </tr>
