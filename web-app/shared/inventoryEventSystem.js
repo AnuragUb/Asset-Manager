@@ -1,5 +1,7 @@
 /**
- * Inventory / quantity audit event system — single source of truth.
+ * Domain event catalog — single source of truth for audit event types.
+ * Filename kept as inventoryEventSystem.js (Issue 4); treat as shared Event System.
+ * Inventory quantity store and domain_events / asset lifecycle all import from here.
  *
  * Dual load:
  * - Node:  require('../shared/inventoryEventSystem') from backend
@@ -49,7 +51,10 @@
 
   const ENTITY_TYPES = Object.freeze({
     INVENTORY_ITEM: 'inventory_item',
-    ASSET: 'asset'
+    ASSET: 'asset',
+    PROJECT: 'project',
+    PROCUREMENT: 'procurement',
+    ZOHO: 'zoho'
   });
 
   /** User-facing labels — never show raw EVENT_TYPES values in UI. */
@@ -59,8 +64,8 @@
     [EVENT_TYPES.STATUS_CHANGE]: 'Status Changed',
     [EVENT_TYPES.BATCH_ENABLED]: 'Batch / Serial Number Tracking Enabled',
     [EVENT_TYPES.BATCH_DISABLED]: 'Batch / Serial Number Tracking Disabled',
-    [EVENT_TYPES.DELETE]: 'Inventory Deleted',
-    [EVENT_TYPES.RESTORE]: 'Inventory Restored',
+    [EVENT_TYPES.DELETE]: 'Deleted',
+    [EVENT_TYPES.RESTORE]: 'Restored',
     [EVENT_TYPES.CONSUME]: 'Quantity Consumed',
     [EVENT_TYPES.RETURN]: 'Quantity Returned',
     [EVENT_TYPES.TRANSFER]: 'Transferred',
@@ -270,9 +275,9 @@
       case EVENT_TYPES.BATCH_DISABLED:
         return 'Batch / serial tracking disabled';
       case EVENT_TYPES.DELETE:
-        return 'Inventory item deleted';
+        return 'Soft-deleted (moved to Recycle Bin)';
       case EVENT_TYPES.RESTORE:
-        return 'Inventory item restored';
+        return 'Restored from Recycle Bin';
       case EVENT_TYPES.CONSUME:
         return 'Quantity consumed';
       case EVENT_TYPES.RETURN:
@@ -280,6 +285,58 @@
       default:
         return getEventDisplayName(type);
     }
+  }
+
+  /**
+   * Domain-neutral event envelope for any entity store (domain_events, inventory qty, etc.).
+   */
+  function createEventEnvelope({
+    type,
+    entityType,
+    entityId,
+    actor = null,
+    note = null,
+    previousValue = null,
+    newValue = null,
+    extra = null,
+    timestamp = null
+  } = {}) {
+    const canonicalType = assertEventType(type);
+    return {
+      type: canonicalType,
+      display_name: getEventDisplayName(canonicalType),
+      entity_type: entityType || ENTITY_TYPES.ASSET,
+      entity_id: entityId != null ? String(entityId) : null,
+      actor: actor || null,
+      timestamp: timestamp || new Date().toISOString(),
+      note: note || defaultNoteForType(canonicalType),
+      metadata: buildEventMetadata({
+        entityType: entityType || ENTITY_TYPES.ASSET,
+        entityId,
+        previousValue,
+        newValue,
+        extra
+      })
+    };
+  }
+
+  function snapshotAsset(row) {
+    if (!row || typeof row !== 'object') return null;
+    return {
+      id: row.id || row.ID || null,
+      itemname: row.itemname || row.ItemName || '',
+      status: String(row.status ?? row.Status ?? ''),
+      category: row.category || row.Category || row.type || row.Type || '',
+      make: row.make || row.Make || '',
+      model: row.model || row.Model || '',
+      currentlocation: row.currentlocation || row.CurrentLocation || '',
+      srno: row.srno || row.SrNo || null,
+      parentid: row.parentid || row.ParentId || null,
+      quantity_root_id: row.quantity_root_id || row.QuantityRootId || null,
+      is_deleted: Number(row.is_deleted ?? row.IsDeleted ?? 0),
+      deleted_at: row.deleted_at || row.DeletedAt || null,
+      deleted_by: row.deleted_by || row.DeletedBy || null
+    };
   }
 
   /**
@@ -334,6 +391,8 @@
     detectInventoryMeaningfulChanges,
     resolvePrimaryInventoryEventType,
     defaultNoteForType,
-    presentEvent
+    presentEvent,
+    createEventEnvelope,
+    snapshotAsset
   };
 });

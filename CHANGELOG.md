@@ -19,6 +19,27 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
+## [Sprint 1] Issue 5 — Soft Delete & Recovery / Recycle Bin (2026-08) ✅ COMPLETE
+
+**Status:** Soft Delete & Recovery foundation on Dev/Staging. Production untouched.
+
+### Added
+
+- Recycle Bin UI (Assets toolbar) with Restore, deleted metadata, search
+- `GET /api/assets/recycle-bin`, `POST /api/assets/:id/restore`
+- Migration `20260812120000_assets_soft_delete_recovery` (`assets.deleted_by`, `domain_events`)
+- `docs/architecture/EVENT_SYSTEM_GUIDE.md` (shared Event System developer reference)
+- Soft-delete / restore emit `DELETE` / `RESTORE` via shared `EVENT_TYPES` into `domain_events`
+
+### Changed
+
+- Soft delete preserves relationships (no component hard-delete / parent unlink)
+- Automatic 30-day hard purge disabled (foundation only; no permanent delete this sprint)
+- Delete confirm copy → Recycle Bin language
+- Frontend cache-bust `v=7.05`
+
+---
+
 ## [Sprint 1] Issue 4 — Inventory Quantity History / event system (2026-08) ✅ COMPLETE
 
 **Status:** Meaningful inventory audit history on Dev/Staging. Production untouched.

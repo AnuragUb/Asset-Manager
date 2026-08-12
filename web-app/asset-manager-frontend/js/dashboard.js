@@ -347,6 +347,58 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function filterRecycleBinAssets(assets, query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return Array.isArray(assets) ? assets : [];
+    return (assets || []).filter((a) => {
+        const hay = [
+            a.ID || a.id,
+            a.ItemName || a.itemname,
+            a.Category || a.category || a.Type || a.type,
+            a.Make || a.make,
+            a.Model || a.model,
+            a.CurrentLocation || a.currentlocation,
+            a.DeletedBy || a.deleted_by
+        ].map((v) => String(v || '').toLowerCase()).join(' ');
+        return hay.includes(q);
+    });
+}
+
+window.restoreAssetFromRecycleBin = async function (assetId) {
+    if (!assetId) return;
+    if (!confirm(`Restore asset ${assetId} from Recycle Bin?\n\nRelationships, history, QR, and serial numbers are preserved.`)) {
+        return;
+    }
+    try {
+        const token = localStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}/restore`, {
+            method: 'POST',
+            headers,
+            credentials: 'include'
+        });
+        const text = await response.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { message: text }; }
+        if (!response.ok) throw new Error(data.error || data.message || text || 'Restore failed');
+        showToast('Asset restored', 'success');
+        window.currentRecycleBinAssets = (window.currentRecycleBinAssets || []).filter(
+            (a) => String(a.ID || a.id).toLowerCase() !== String(assetId).toLowerCase()
+        );
+        if (typeof window.loadAssets === 'function') {
+            await window.loadAssets();
+        }
+        if (window.currentDashboardParent?.ID === 'RECYCLE_BIN_VIEW') {
+            const filtered = filterRecycleBinAssets(window.currentRecycleBinAssets, window.recycleBinSearchQuery);
+            renderDashboard(window.allAssets, () => filtered);
+        }
+    } catch (err) {
+        console.error('Restore failed:', err);
+        showToast(err.message || 'Restore failed', 'error');
+    }
+};
+
 function escapeAttr(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -3353,19 +3405,20 @@ window.deleteAsset = async function(assetId) {
         } catch (e) {}
         return { AssetTag: assetId, Name: '' };
     })() : { AssetTag: assetId, Name: '' };
-    const title = '⚠️  Permanent Deletion Warning';
-    const body = `Are you SURE you want to DELETE this asset?
+    const title = 'Move to Recycle Bin';
+    const body = `Move this asset to the Recycle Bin?
 
 Asset Tag:  ${details.AssetTag}
 Name:       ${details.Name}
 
 This will:
-  • Mark the asset as deleted (soft-delete)
-  • Hide it from all dashboards and search
-  • PERMANENTLY purge it from the database after 30 days (no recovery)
+  • Soft-delete the asset (lifecycle flag only)
+  • Hide it from the normal asset hierarchy and search
+  • Keep history, QR, serial numbers, and relationships
+  • Allow Restore from Recycle Bin
 
-This action CANNOT be undone once the 30-day window closes.`;
-    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: 'Yes, PERMANENTLY Mark Deleted' }))) return;
+Permanent delete / automatic purge is not enabled in this sprint.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: 'Move to Recycle Bin', danger: true }))) return;
     
     try {
         const username = localStorage.getItem('username') || 'web';
@@ -3375,7 +3428,7 @@ This action CANNOT be undone once the 30-day window closes.`;
         });
         
         if (response.ok) {
-            showToast('Asset marked for deletion (30-day grace period)', 'success');
+            showToast('Asset moved to Recycle Bin', 'success');
             if (window.loadAssets) await window.loadAssets();
             if (typeof renderDashboard === 'function') renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
             
@@ -4858,6 +4911,93 @@ export function renderDashboard(assets, filteredAssets) {
             });
         }
         return; // CRITICAL: Stop here for retired view
+    }
+
+    // Special Case: Recycle Bin (soft-deleted assets)
+    if (window.currentDashboardParent && window.currentDashboardParent.ID === 'RECYCLE_BIN_VIEW') {
+        const dashboardTitle = document.getElementById('dashboard-title');
+        if (dashboardTitle) {
+            dashboardTitle.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <button id="btnDashboardBack" class="icon-button" style="background: #f1f5f9; color: #475569; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; cursor: pointer;">←</button>
+                    <span>Recycle Bin</span>
+                    <input id="recycleBinSearch" type="search" placeholder="Search deleted assets..." value="${String(window.recycleBinSearchQuery || '').replace(/"/g, '&quot;')}"
+                        style="margin-left: 12px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 16px; font-size: 13px; min-width: 220px;" />
+                </div>
+            `;
+            const btnBack = document.getElementById('btnDashboardBack');
+            if (btnBack) {
+                btnBack.onclick = () => {
+                    window.currentDashboardParent = null;
+                    window.currentRecycleBinAssets = null;
+                    renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                };
+            }
+            const searchInput = document.getElementById('recycleBinSearch');
+            if (searchInput) {
+                searchInput.oninput = () => {
+                    window.recycleBinSearchQuery = searchInput.value || '';
+                    const filtered = filterRecycleBinAssets(window.currentRecycleBinAssets || [], window.recycleBinSearchQuery);
+                    renderDashboard(window.allAssets, () => filtered);
+                };
+            }
+        }
+
+        const healthWidget = document.getElementById('assetHealthWidget');
+        if (healthWidget) healthWidget.style.display = 'none';
+
+        assetGrid.innerHTML = '';
+        const recycleItems = assetsToRender || [];
+        if (recycleItems.length === 0) {
+            assetGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">♻️</div>
+                    <p>Recycle Bin is empty.</p>
+                </div>
+            `;
+        } else {
+            recycleItems.forEach(asset => {
+                const item = document.createElement('div');
+                item.className = 'asset-card search-result-card';
+                item.style = 'grid-column: 1 / -1; cursor: default; gap: 15px; position: relative; padding: 12px 15px;';
+                const id = asset.ID || asset.id;
+                const deletedAt = asset.DeletedAt || asset.deleted_at || '—';
+                const deletedBy = asset.DeletedBy || asset.deleted_by || '—';
+                const category = asset.Category || asset.category || asset.Type || asset.type || '—';
+                const make = asset.Make || asset.make || '—';
+                const model = asset.Model || asset.model || '—';
+                const location = asset.CurrentLocation || asset.currentlocation || '—';
+                const deletedAtDisplay = deletedAt !== '—' ? new Date(deletedAt).toLocaleString() : '—';
+
+                item.innerHTML = `
+                    <div style="position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: #94a3b8; border-top-left-radius: 4px; border-bottom-left-radius: 4px;"></div>
+                    <div style="font-size: 24px; width: 40px; text-align: center; margin-left: 5px; flex-shrink: 0;">♻️</div>
+                    <div class="search-result-info" style="flex: 1; min-width: 0;">
+                        <div class="search-result-title" style="font-weight: 700; color: #1e293b; font-size: 15px;">${escapeHtml(asset.ItemName || asset.itemname || id)}</div>
+                        <div class="search-result-subtitle" style="color: #64748b; font-size: 12px; line-height: 1.45;">
+                            ID: <span style="font-family: monospace;">${escapeHtml(id)}</span>
+                            • Category: ${escapeHtml(category)}
+                            • Make: ${escapeHtml(make)}
+                            • Model: ${escapeHtml(model)}
+                            • Location: ${escapeHtml(location)}<br/>
+                            Deleted: ${escapeHtml(deletedAtDisplay)} by ${escapeHtml(deletedBy)}
+                        </div>
+                    </div>
+                    <div style="text-align: right; display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+                        <button type="button" class="action-button green recycle-restore-btn" data-id="${escapeHtml(id)}" style="padding: 6px 12px; font-size: 12px;">Restore</button>
+                    </div>
+                `;
+                const restoreBtn = item.querySelector('.recycle-restore-btn');
+                if (restoreBtn) {
+                    restoreBtn.onclick = async (ev) => {
+                        ev.stopPropagation();
+                        await window.restoreAssetFromRecycleBin(id);
+                    };
+                }
+                assetGrid.appendChild(item);
+            });
+        }
+        return;
     }
 
     // Special Case: Temporary Assets View
@@ -8352,6 +8492,31 @@ export function setupDashboardFormHandlers() {
                 }
             } catch (err) {
                 console.error('Retired fetch error:', err);
+            }
+        };
+    }
+
+    const btnShowRecycleBin = document.getElementById('btnShowRecycleBin');
+    if (btnShowRecycleBin) {
+        btnShowRecycleBin.onclick = async () => {
+            try {
+                const response = await fetch('/api/assets/recycle-bin');
+                if (!response.ok) throw new Error(`Recycle Bin API ${response.status}`);
+                const payload = await response.json();
+                const deletedAssets = Array.isArray(payload?.assets) ? payload.assets : (Array.isArray(payload) ? payload : []);
+                if (window.showView) window.showView('dashboardView');
+                window.currentDashboardParent = { ID: 'RECYCLE_BIN_VIEW', Name: 'Recycle Bin' };
+                window.currentRecycleBinAssets = deletedAssets;
+                window.recycleBinSearchQuery = '';
+                if (typeof renderDashboard === 'function') {
+                    renderDashboard(window.allAssets, () => deletedAssets);
+                }
+                if (deletedAssets.length === 0) {
+                    showToast('Recycle Bin is empty', 'info');
+                }
+            } catch (err) {
+                console.error('Recycle Bin fetch error:', err);
+                showToast(err.message || 'Failed to open Recycle Bin', 'error');
             }
         };
     }

@@ -145,17 +145,35 @@ Description · Make/Manufacturer · Model · Notes/Remarks · other metadata-onl
 
 ---
 
-## Issue 5 — Deleted Assets
+## Issue 5 — Soft Delete & Recovery (Recycle Bin) ✅ COMPLETE
 
 Status:
 - [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
+- [x] Architecture Review
+- [x] Implementation
+- [x] Testing
+- [x] Commit
 
-Commit: Pending
+Commit: `1ecd239` `feat(assets): implement soft delete and recovery system`
 
-Regression: None
+Regression: None observed (home 200; Recycle Bin assets; soft-delete/restore DB verify PASS on test)
+
+### What shipped
+
+- UI label **Recycle Bin** (internal: Soft Delete & Recovery)
+- Soft delete sets `is_deleted` / `deleted_at` / `deleted_by`; preserves relationships & history
+- Restore API + Recycle Bin browse/search/restore
+- `DELETE` / `RESTORE` via shared Event System → `domain_events` (Issue 4 inventory store untouched)
+- Auto hard-purge disabled; `EVENT_SYSTEM_GUIDE.md` added
+- Migration `20260812120000_assets_soft_delete_recovery`
+
+### Smoke / verification (2026-08-12)
+
+| Check | 9090 | 8080 |
+|-------|------|------|
+| Home 200 | Pass | Pass |
+| `main.js?v=7.05` / dashboard Recycle Bin | Pass | Pass |
+| Soft-delete hides from active; restore; events DELETE+RESTORE; srno/parent intact | Pass (test DB) | schema migrated |
 
 ---
 

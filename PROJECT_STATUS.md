@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `5c4d3ca` (`main`) | Issue 4 inventory event system |
-| **Product Version** | **v7.04** (main/inventory + shared event system) | Sprint 1 Issue 4 cache-bust |
-| **Last Successful Deployment** | Dev/Staging on `59` (Issue 4) | Production `118:8080` not deployed |
-| **Last Database Migration** | `20260811180000_add_users_email` | No new migration for Issue 4 (metadata_json) |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–4 ✅ · next Issue 5 pending — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
+| **Repository Version** | `1ecd239` (`main`) | Soft Delete & Recovery |
+| **Product Version** | **v7.05** (main/dashboard + Recycle Bin) | Sprint 1 Issue 5 cache-bust |
+| **Last Successful Deployment** | Dev/Staging on `59` (Issue 5) | Production `118:8080` not deployed |
+| **Last Database Migration** | `20260812120000_assets_soft_delete_recovery` | `deleted_by` + `domain_events` |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–5 ✅ · next Issue 6 pending — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

@@ -77,11 +77,13 @@ Before removing or renaming any route: **grep frontend, HTML, scripts, and exter
 | GET | `/api/assets` | JWT | List/filter | `main`, `dashboard`, `projects`, `itAssets`, scanner |
 | POST | `/api/assets` | JWT | Create | `main`, `dashboard` |
 | PUT | `/api/assets/:id` | JWT | Update | `main`, `dashboard`, `employees`, `asset-view` |
-| DELETE | `/api/assets/:id` | JWT | Delete | `dashboard` |
-| DELETE | `/api/assets/bulk` | JWT | Bulk delete | — |
+| DELETE | `/api/assets/:id` | JWT | Soft-delete → Recycle Bin | `dashboard` |
+| DELETE | `/api/assets/bulk` | JWT | Bulk soft-delete | — |
 | POST | `/api/assets/bulk` | **None** | Bulk import | `dashboard` |
 | GET | `/api/assets/search` | JWT | Search | `projects` |
 | GET | `/api/assets/retired` | JWT | Retired list | `dashboard` |
+| GET | `/api/assets/recycle-bin` | JWT | Soft-deleted assets | `dashboard` |
+| POST | `/api/assets/:id/restore` | JWT+roles | Restore from Recycle Bin | `dashboard` |
 | GET | `/api/assets/:id/history` | None | History | — |
 | POST | `/api/assets/:id/sell` | JWT | Sell/retire | `dashboard` |
 | POST | `/api/assets/:id/release-to-store` | JWT | End inspection | `dashboard` |

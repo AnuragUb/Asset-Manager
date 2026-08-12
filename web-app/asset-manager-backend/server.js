@@ -28,7 +28,9 @@ const {
   resolvePrimaryInventoryEventType,
   defaultNoteForType: defaultInventoryEventNote,
   presentEvent: presentInventoryEvent,
-  normalizeEventType: normalizeInventoryEventType
+  normalizeEventType: normalizeInventoryEventType,
+  createEventEnvelope,
+  snapshotAsset
 } = inventoryEventSystem;
 
 // Ensure uploads directory exists
@@ -510,30 +512,10 @@ cron.schedule('0 0,12 * * *', () => {
   performDatabaseBackup();
 });
 
-// --- Automated Cleanup System (Permanent Deletion after 30 days) ---
+// --- Soft Delete retention: do NOT hard-purge this sprint (foundation only) ---
 async function performPermanentDeletionCleanup() {
   try {
-    const tablesToCleanup = ['assets', 'projects', 'asset_kinds', 'temporary_assets'];
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const dateStr = thirtyDaysAgo.toISOString();
-
-    console.log(`[CLEANUP] Starting permanent deletion cleanup for items deleted before ${dateStr}...`);
-
-    for (const tableName of tablesToCleanup) {
-      // Check if table exists before trying to delete from it (Database agnostic way)
-      const tableExists = await db.schema.hasTable(tableName);
-      if (tableExists) {
-        const result = await db(tableName)
-          .where('is_deleted', 1)
-          .andWhere('deleted_at', '<', dateStr)
-          .delete();
-        
-        if (result > 0) {
-          console.log(`[CLEANUP] Permanently deleted ${result} items from ${tableName}`);
-        }
-      }
-    }
+    console.log('[CLEANUP] Automatic permanent purge is DISABLED (Soft Delete & Recovery foundation). Soft-deleted rows are retained.');
   } catch (err) {
     console.error('[CLEANUP] Permanent deletion failed:', err);
   }
@@ -813,6 +795,9 @@ app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
                             .andWhereRaw('LOWER(status) != ?', ['in store']);
                     });
             })
+            .andWhere(function () {
+                this.where('is_deleted', 0).orWhereNull('is_deleted');
+            })
             .orderBy('lastupdated', 'desc');
         
         const normalizedAssets = normalizeResult(assets).map(a => {
@@ -830,6 +815,46 @@ app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
         console.error('Fetch retired assets error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+/**
+ * Recycle Bin — soft-deleted assets only (not shown in normal hierarchy).
+ */
+app.get('/api/assets/recycle-bin', authenticateJWT, async (req, res) => {
+  try {
+    const q = String(req.query.q || req.query.search || '').trim().toLowerCase();
+    let query = db('assets')
+      .where('is_deleted', 1)
+      .orderBy('deleted_at', 'desc');
+
+    if (q) {
+      query = query.andWhere(function () {
+        this.whereRaw('LOWER(id) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(itemname) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(make, \'\')) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(model, \'\')) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(category, \'\')) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(type, \'\')) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(currentlocation, \'\')) LIKE ?', [`%${q}%`])
+          .orWhereRaw('LOWER(COALESCE(deleted_by, \'\')) LIKE ?', [`%${q}%`]);
+      });
+    }
+
+    const assets = await query;
+    const normalized = normalizeResult(assets).map((a) => ({
+      ...a,
+      DeletedAt: a.DeletedAt || a.deleted_at || null,
+      DeletedBy: a.DeletedBy || a.deleted_by || null,
+      Category: a.Category || a.category || a.Type || a.type || '',
+      Make: a.Make || a.make || '',
+      Model: a.Model || a.model || '',
+      CurrentLocation: a.CurrentLocation || a.currentlocation || ''
+    }));
+    res.json({ assets: normalized, count: normalized.length });
+  } catch (err) {
+    console.error('Fetch recycle bin error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Asset History Endpoint ---
@@ -4240,6 +4265,53 @@ async function recordInventoryQuantityEvent({
   }
 
   return eventId;
+}
+
+/**
+ * Generic domain event writer (assets / future project / procurement).
+ * Uses shared EVENT_TYPES — does not mutate quantity totals.
+ * Issue 4 inventory qty events remain on inventory_quantity_events.
+ */
+async function recordDomainEvent({
+  entityType,
+  entityId,
+  type,
+  actor,
+  note,
+  previousValue,
+  newValue,
+  extra
+}) {
+  const envelope = createEventEnvelope({
+    type,
+    entityType,
+    entityId,
+    actor,
+    note,
+    previousValue,
+    newValue,
+    extra
+  });
+
+  const hasTable = await db.schema.hasTable('domain_events');
+  if (!hasTable) {
+    console.warn('[domain_events] table missing — event not persisted:', envelope.type, entityId);
+    return null;
+  }
+
+  const inserted = await db('domain_events')
+    .insert({
+      entity_type: envelope.entity_type,
+      entity_id: envelope.entity_id,
+      type: envelope.type,
+      actor: envelope.actor,
+      timestamp: envelope.timestamp,
+      note: envelope.note,
+      metadata_json: JSON.stringify(envelope.metadata)
+    })
+    .returning('id');
+
+  return Array.isArray(inserted) ? (inserted[0]?.id ?? inserted[0]) : (inserted?.id ?? inserted);
 }
 
 app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
@@ -8770,7 +8842,7 @@ app.put('/api/orders/:orderId/status', authenticateJWT, async (req, res) => {
 app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
   try {
     const { ids } = req.body;
-    const username = req.user.username || 'web';
+    const username = req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web';
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).send('No asset IDs provided');
@@ -8809,9 +8881,9 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
             if (qtyToReturn > 0 && parentId) {
               await applyQuantityEvent({
                 rootId: asset.quantity_root_id,
-                type: 'BULK_RETURN_ON_DELETE',
+                type: INV_EVENT_TYPES.RETURN,
                 actor: username,
-                note: `Returned quantity from bulk deleted split: ${id}`,
+                note: `Returned quantity from bulk soft-deleted split: ${id}`,
                 lines: [
                   { assetId: parentId, deltaAvailable: qtyToReturn, deltaTotal: 0 },
                   { assetId: id, deltaAvailable: -qtyToReturn, deltaTotal: -qtyToReturn }
@@ -8825,19 +8897,30 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
           if (qtyChildren) continue;
         }
 
-        // Clear ParentId for linked assets
-        const linkedComponents = await trx('components').where('parentid', id).select('id');
-        for (const comp of linkedComponents) {
-          await trx('assets').where('id', comp.id).update({ parentid: null });
-        }
-
-        await trx('components').where('id', id).delete();
-        await trx('components').where('parentid', id).delete();
-
+        // Soft delete only — preserve component/parent relationships
+        const prevSnap = snapshotAsset(asset);
         const changes = await trx('assets')
           .where('id', id)
-          .update({ is_deleted: 1, deleted_at: now });
-        if (changes > 0) deletedCount++;
+          .update({ is_deleted: 1, deleted_at: now, deleted_by: username, lastupdated: now });
+        if (changes > 0) {
+          deletedCount++;
+          await recordDomainEvent({
+            entityType: INV_ENTITY_TYPES.ASSET,
+            entityId: id,
+            type: INV_EVENT_TYPES.DELETE,
+            actor: username,
+            note: defaultInventoryEventNote(INV_EVENT_TYPES.DELETE),
+            previousValue: prevSnap,
+            newValue: { ...prevSnap, is_deleted: 1, deleted_at: now, deleted_by: username },
+            extra: (asset.quantity_parent_id && Number(asset.quantity_total || 0) > 0)
+              ? {
+                  qty_returned_to_parent: Number(asset.quantity_total || 0),
+                  parent_id: asset.quantity_parent_id,
+                  quantity_root_id: asset.quantity_root_id
+                }
+              : null
+          });
+        }
       }
     });
 
@@ -8846,10 +8929,10 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
       User: username, 
       AssetId: ids.join(','), 
       Severity: 'INFO', 
-      Details: `Marked ${deletedCount} assets for deletion (30-day grace period)` 
+      Details: `Moved ${deletedCount} assets to Recycle Bin (soft delete)` 
     });
 
-    res.json({ success: true, count: deletedCount, message: `Successfully marked ${deletedCount} assets for deletion` });
+    res.json({ success: true, count: deletedCount, message: `Moved ${deletedCount} assets to Recycle Bin` });
   } catch (err) {
     console.error('Failed bulk delete:', err);
     res.status(500).send('Error in bulk deletion: ' + err.message);
@@ -8859,7 +8942,7 @@ app.delete('/api/assets/bulk', authenticateJWT, async (req, res) => {
 app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
   try {
     const id = req.params.id;
-    const username = req.user.username || 'web';
+    const username = req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web';
 
     // 1. Fetch asset details for assignment and mandatory field checks
     const asset = await db('assets').where('id', id).first();
@@ -8906,9 +8989,9 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
             console.log(`[QTY RETURN] Returning ${qtyToReturn} from child ${id} to parent ${parentId}`);
             await applyQuantityEvent({
               rootId: asset.quantity_root_id,
-              type: 'RETURN_ON_DELETE',
+              type: INV_EVENT_TYPES.RETURN,
               actor: username,
-              note: `Returned quantity from deleted split: ${id}`,
+              note: `Returned quantity from soft-deleted split: ${id}`,
               lines: [
                 { assetId: parentId, deltaAvailable: qtyToReturn, deltaTotal: 0 },
                 { assetId: id, deltaAvailable: -qtyToReturn, deltaTotal: -qtyToReturn }
@@ -8944,32 +9027,130 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
-    // Delete from components table as well
-    // For linked assets (NoQR = 0), we should also clear their ParentId in the assets table
-    const linkedRows = await db('components').where('parentid', id).select('id');
-    for (const comp of linkedRows) {
-      await db('assets').where('id', comp.id).update({ parentid: null });
+    // Soft Delete & Recovery: preserve relationships (components, parent links, project history).
+    // Do NOT hard-delete component rows or clear parentid — deletion is a lifecycle flag only.
+    const now = new Date().toISOString();
+    const prevSnap = snapshotAsset(asset);
+    const qtyReturnedMeta = {};
+    if (asset.quantity_root_id && String(asset.quantity_root_id).toLowerCase() !== String(id).toLowerCase()) {
+      const qtyToReturn = Number(asset.quantity_total || 0);
+      if (qtyToReturn > 0 && asset.quantity_parent_id) {
+        qtyReturnedMeta.qty_returned_to_parent = qtyToReturn;
+        qtyReturnedMeta.parent_id = asset.quantity_parent_id;
+        qtyReturnedMeta.quantity_root_id = asset.quantity_root_id;
+      }
     }
 
-    await db('components').where('id', id).delete();
-    await db('components').where('parentid', id).delete();
-
-    // Soft Delete: Mark as deleted instead of removing immediately
-    const now = new Date().toISOString();
     const result = await db('assets')
       .where('id', id)
-      .update({ is_deleted: 1, deleted_at: now });
+      .update({
+        is_deleted: 1,
+        deleted_at: now,
+        deleted_by: username,
+        lastupdated: now
+      });
 
     if (result > 0) {
-      await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset marked for deletion (30-day grace period)' });
+      await recordDomainEvent({
+        entityType: INV_ENTITY_TYPES.ASSET,
+        entityId: id,
+        type: INV_EVENT_TYPES.DELETE,
+        actor: username,
+        note: defaultInventoryEventNote(INV_EVENT_TYPES.DELETE),
+        previousValue: prevSnap,
+        newValue: { ...prevSnap, is_deleted: 1, deleted_at: now, deleted_by: username },
+        extra: Object.keys(qtyReturnedMeta).length ? qtyReturnedMeta : null
+      });
+      await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset soft-deleted (Recycle Bin); relationships preserved' });
       await invalidateAssetsCache();
-      res.json({ success: true, message: 'Asset marked for deletion (30-day grace period)' });
+      res.json({ success: true, message: 'Asset moved to Recycle Bin' });
     } else {
       res.status(404).send('Asset not found');
     }
   } catch (err) {
     console.error('Failed to delete asset:', err);
     res.status(500).send('Error deleting asset: ' + err.message);
+  }
+});
+
+app.post('/api/assets/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const username = req.user?.username || req.user?.user_id || 'web';
+    if (!id) return res.status(400).json({ error: 'Asset ID is required.' });
+
+    const asset = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [id]).first();
+    if (!asset) return res.status(404).json({ error: 'Asset not found' });
+    if (Number(asset.is_deleted || 0) !== 1) {
+      return res.json({ success: true, id, alreadyActive: true });
+    }
+
+    const now = new Date().toISOString();
+    const prevSnap = snapshotAsset(asset);
+
+    // Reverse quantity return performed on soft-delete of split children (if any)
+    const lastDelete = await db('domain_events')
+      .where({ entity_type: INV_ENTITY_TYPES.ASSET, entity_id: id, type: INV_EVENT_TYPES.DELETE })
+      .orderBy('timestamp', 'desc')
+      .first()
+      .catch(() => null);
+
+    let deleteMeta = null;
+    if (lastDelete?.metadata_json) {
+      try { deleteMeta = JSON.parse(lastDelete.metadata_json); } catch { deleteMeta = null; }
+    }
+    const qtyReturned = Number(deleteMeta?.qty_returned_to_parent || 0);
+    const parentId = deleteMeta?.parent_id || asset.quantity_parent_id;
+    const rootId = deleteMeta?.quantity_root_id || asset.quantity_root_id;
+    if (qtyReturned > 0 && parentId && rootId) {
+      try {
+        await applyQuantityEvent({
+          rootId,
+          type: INV_EVENT_TYPES.RESTORE,
+          actor: username,
+          note: `Reversed quantity return on restore of ${id}`,
+          metadata: createEventEnvelope({
+            type: INV_EVENT_TYPES.RESTORE,
+            entityType: INV_ENTITY_TYPES.ASSET,
+            entityId: id,
+            actor: username,
+            previousValue: prevSnap,
+            newValue: { ...prevSnap, is_deleted: 0 }
+          }).metadata,
+          lines: [
+            { assetId: parentId, deltaAvailable: -qtyReturned, deltaTotal: 0 },
+            { assetId: id, deltaAvailable: qtyReturned, deltaTotal: qtyReturned }
+          ]
+        });
+      } catch (qtyErr) {
+        console.warn('[RESTORE] Quantity reverse skipped:', qtyErr.message);
+      }
+    }
+
+    await db('assets')
+      .whereRaw('LOWER(id) = LOWER(?)', [id])
+      .update({
+        is_deleted: 0,
+        deleted_at: null,
+        deleted_by: null,
+        lastupdated: now
+      });
+
+    await recordDomainEvent({
+      entityType: INV_ENTITY_TYPES.ASSET,
+      entityId: id,
+      type: INV_EVENT_TYPES.RESTORE,
+      actor: username,
+      note: defaultInventoryEventNote(INV_EVENT_TYPES.RESTORE),
+      previousValue: prevSnap,
+      newValue: { ...prevSnap, is_deleted: 0, deleted_at: null, deleted_by: null }
+    });
+    await appendAudit({ Action: 'RESTORE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset restored from Recycle Bin' });
+    await invalidateAssetsCache();
+    res.json({ success: true, id, message: 'Asset restored from Recycle Bin' });
+  } catch (err) {
+    console.error('Failed to restore asset:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
