@@ -472,6 +472,10 @@
                     <span class="tree-icon">⚙️</span>
                     <a href="#" class="nav-link" id="nav-settings">Settings</a>
                 </li>
+                <li class="menu-item-wrapper" onclick="document.getElementById('nav-recovery-center').click()">
+                    <span class="tree-icon">🗑️</span>
+                    <a href="#" class="nav-link" id="nav-recovery-center">Recovery Center</a>
+                </li>
                 <li class="menu-item-wrapper" onclick="document.getElementById('nav-releases').click()">
                     <span class="tree-icon">🚀</span>
                     <a href="#" class="nav-link" id="nav-releases">Releases</a>
@@ -565,9 +569,6 @@
                                 </button>
                                 <button class="action-button grey" id="btnShowRetired" title="View Sold/Retired Assets">
                                     <span>🗑️ Retired</span>
-                                </button>
-                                <button class="action-button grey" id="btnShowRecycleBin" title="Soft-deleted assets (Recycle Bin)">
-                                    <span>♻️ Recycle Bin</span>
                                 </button>
                             </div>
                         </div>
@@ -970,6 +971,65 @@
                     <div id="releases-view" class="view hidden" style="flex: 1; padding: 20px; overflow-y: auto;">
                         <h2>Release Notes</h2>
                         <div id="release-notes-content"></div>
+                    </div>
+
+                    <!-- Recovery Center (global soft-delete / restore) -->
+                    <div id="recovery-center-view" class="view hidden" style="flex: 1; padding: 20px; overflow: hidden; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h2 class="view-title" style="margin: 0;">Recovery Center</h2>
+                                <div style="color:#64748b;font-size:13px;margin-top:4px;">Platform-wide soft-delete recovery · <span id="recoveryCenterCount">0 items</span></div>
+                            </div>
+                            <div class="view-actions" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                                <input type="search" id="recoverySearch" placeholder="Search…" style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;min-width:180px;" />
+                                <select id="recoveryFilterEntity" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">
+                                    <option value="">All entity types</option>
+                                </select>
+                                <input type="date" id="recoveryFilterFrom" title="Deleted from" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;" />
+                                <input type="date" id="recoveryFilterTo" title="Deleted to" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;" />
+                                <select id="recoveryFilterDeletedBy" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">
+                                    <option value="">All users</option>
+                                </select>
+                                <select id="recoverySort" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">
+                                    <option value="deleted_at:desc">Newest deleted</option>
+                                    <option value="deleted_at:asc">Oldest deleted</option>
+                                    <option value="name:asc">Name A–Z</option>
+                                    <option value="name:desc">Name Z–A</option>
+                                </select>
+                                <button type="button" class="action-button blue" id="recoveryRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+
+                        <div id="recoveryBulkBar" style="display:none;align-items:center;gap:12px;margin-bottom:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+                            <span id="recoveryBulkLabel" style="font-weight:600;color:#334155;">0 selected</span>
+                            <button type="button" class="action-button green" id="recoveryBulkRestoreBtn" style="padding:6px 12px;font-size:12px;">Bulk Restore</button>
+                            <button type="button" class="action-button grey" id="recoveryBulkDeleteBtn" style="padding:6px 12px;font-size:12px;" disabled>Bulk Delete</button>
+                            <span style="font-size:12px;color:#94a3b8;">Permanent delete disabled this sprint</span>
+                        </div>
+
+                        <div style="flex:1;min-height:0;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;">
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                <thead style="position:sticky;top:0;background:#f8fafc;z-index:1;">
+                                    <tr style="text-align:left;border-bottom:1px solid #e2e8f0;color:#64748b;">
+                                        <th style="padding:10px 12px;"><input type="checkbox" id="recoverySelectAll" title="Select all" /></th>
+                                        <th style="padding:10px 12px;">Entity Type</th>
+                                        <th style="padding:10px 12px;">Name</th>
+                                        <th style="padding:10px 12px;">Original Location</th>
+                                        <th style="padding:10px 12px;">Deleted Date</th>
+                                        <th style="padding:10px 12px;">Deleted By</th>
+                                        <th style="padding:10px 12px;">Reason</th>
+                                        <th style="padding:10px 12px;">Status</th>
+                                        <th style="padding:10px 12px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recoveryCenterTableBody"></tbody>
+                            </table>
+                            <div id="recoveryCenterEmpty" style="display:none;padding:48px;text-align:center;color:#94a3b8;">
+                                <div style="font-size:42px;margin-bottom:12px;">🗑️</div>
+                                <div style="font-weight:600;color:#64748b;">Recovery Center is empty</div>
+                                <div style="font-size:13px;margin-top:6px;">Soft-deleted items will appear here.</div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Network Scanner View -->
@@ -2484,7 +2544,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=7.05"></script>
+<script type="module" src="/js/main.js?v=7.06"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {

@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `1ecd239` (`main`) | Soft Delete & Recovery |
-| **Product Version** | **v7.05** (main/dashboard + Recycle Bin) | Sprint 1 Issue 5 cache-bust |
-| **Last Successful Deployment** | Dev/Staging on `59` (Issue 5) | Production `118:8080` not deployed |
+| **Repository Version** | `142ecb9` (`main`) | Global Recovery Center |
+| **Product Version** | **v7.06** (main + recovery-center) | Sprint 1 Recovery Center |
+| **Last Successful Deployment** | Dev/Staging on `59` (Recovery Center) | Production `118:8080` not deployed |
 | **Last Database Migration** | `20260812120000_assets_soft_delete_recovery` | `deleted_by` + `domain_events` |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–5 ✅ · next Issue 6 pending — [`SPRINT_1_PROGRESS.md`](./SPRINT_1_PROGRESS.md) |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–5 ✅ (+ Recovery Center) · next Issue 6 pending |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

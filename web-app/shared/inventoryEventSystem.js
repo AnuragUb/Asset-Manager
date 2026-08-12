@@ -275,9 +275,9 @@
       case EVENT_TYPES.BATCH_DISABLED:
         return 'Batch / serial tracking disabled';
       case EVENT_TYPES.DELETE:
-        return 'Soft-deleted (moved to Recycle Bin)';
+        return 'Soft-deleted (moved to Recovery Center)';
       case EVENT_TYPES.RESTORE:
-        return 'Restored from Recycle Bin';
+        return 'Restored from Recovery Center';
       case EVENT_TYPES.CONSUME:
         return 'Quantity consumed';
       case EVENT_TYPES.RETURN:

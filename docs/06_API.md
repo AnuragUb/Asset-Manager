@@ -82,9 +82,19 @@ Before removing or renaming any route: **grep frontend, HTML, scripts, and exter
 | POST | `/api/assets/bulk` | **None** | Bulk import | `dashboard` |
 | GET | `/api/assets/search` | JWT | Search | `projects` |
 | GET | `/api/assets/retired` | JWT | Retired list | `dashboard` |
-| GET | `/api/assets/recycle-bin` | JWT | Soft-deleted assets | `dashboard` |
-| POST | `/api/assets/:id/restore` | JWT+roles | Restore from Recycle Bin | `dashboard` |
+| GET | `/api/assets/recycle-bin` | JWT | Legacy alias → Recovery Center (assets) | compat |
+| POST | `/api/assets/:id/restore` | JWT+roles | Restore asset (delegates to Recovery Center) | `dashboard` |
 | GET | `/api/assets/:id/history` | None | History | — |
+
+### Recovery Center (platform)
+
+| Method | Route | Auth | Purpose | Consumers |
+|--------|-------|------|---------|-----------|
+| GET | `/api/recovery-center/entity-types` | JWT | Registered entity types | `recovery-center.js` |
+| GET | `/api/recovery-center/items` | JWT | Soft-deleted items (filters) | `recovery-center.js` |
+| POST | `/api/recovery-center/:entityType/:id/restore` | JWT+roles | Restore by entity | `recovery-center.js` |
+
+Service: `services/recoveryCenterService.js` (entity registry). Permanent delete not enabled.
 | POST | `/api/assets/:id/sell` | JWT | Sell/retire | `dashboard` |
 | POST | `/api/assets/:id/release-to-store` | JWT | End inspection | `dashboard` |
 | POST | `/api/assets/:id/link-po-item` | JWT | Link PO line | `projects` |

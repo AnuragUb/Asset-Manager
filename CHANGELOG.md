@@ -19,6 +19,21 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ---
 
+## [Sprint 1] Issue 5b — Global Recovery Center (2026-08) ✅ COMPLETE
+
+**Status:** Recycle Bin promoted to platform **Recovery Center** under SYSTEM nav. Production untouched.
+
+### Changed
+
+- Removed Assets-toolbar Recycle Bin; Recovery Center lives in SYSTEM (Admin → Settings → Recovery Center → Releases)
+- Generic `recoveryCenterService` entity registry (Assets enabled; future types stubbed)
+- APIs: `/api/recovery-center/entity-types|items|:entityType/:id/restore`
+- Admin table UI: search, entity/date/user filters, sort, bulk restore (permanent delete disabled)
+- Docs: `EVENT_SYSTEM_GUIDE.md` + `RECOVERY_CENTER.md`
+- Cache-bust `v=7.06`
+
+---
+
 ## [Sprint 1] Issue 5 — Soft Delete & Recovery / Recycle Bin (2026-08) ✅ COMPLETE
 
 **Status:** Soft Delete & Recovery foundation on Dev/Staging. Production untouched.

@@ -59,6 +59,7 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 | Lifecycle / promote / quantity | `PROCESS_LOGIC.md` + backend helpers around status updates |
 | Inventory audit events | [`inventory-event-system.md`](./inventory-event-system.md) |
 | Event System (developer guide) | [`EVENT_SYSTEM_GUIDE.md`](./EVENT_SYSTEM_GUIDE.md) |
+| Recovery Center (global soft-delete) | [`RECOVERY_CENTER.md`](./RECOVERY_CENTER.md) |
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |
 | Auth / RBAC | `07` + login/JWT middleware in backend |

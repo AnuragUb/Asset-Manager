@@ -116,18 +116,30 @@ Envelope fields:
 
 ---
 
-## Lifecycle (soft delete)
+## Lifecycle (soft delete) & Recovery Center
 
 Soft delete is a **lifecycle flag**, not erasure:
 
-1. Asset remains in `assets` with `is_deleted = 1`, `deleted_at`, `deleted_by`
-2. Normal hierarchy / lists continue to exclude deleted rows
-3. **Recycle Bin** (`GET /api/assets/recycle-bin`) is the only browse surface for deleted assets
-4. `DELETE` / `RESTORE` domain events are appended; quantity history and audit rows are **not** removed
-5. Relationships (parent/child, components, project links, QR, serials) are preserved on soft delete
-6. Automatic hard purge is **disabled** this sprint (foundation only)
+1. Row remains in its table with `is_deleted = 1`, `deleted_at`, `deleted_by` (where applicable)
+2. Normal module lists continue to exclude deleted rows
+3. **Recovery Center** (SYSTEM nav) is the platform browse/restore surface — not an Assets toolbar
+4. APIs: `GET /api/recovery-center/items`, `POST /api/recovery-center/:entityType/:id/restore`
+5. Service registry: `services/recoveryCenterService.js` — register entity adapters (list + restore strategy)
+6. `DELETE` / `RESTORE` domain events use shared `EVENT_TYPES` (no raw strings)
+7. Automatic hard purge remains **disabled** this sprint
 
-Future lifecycle states (Active, Retired, Consumed, Reserved, Checked Out, Repair, Disposed, Archived, …) can reuse the same event catalog and flags without rewriting soft delete.
+### Adding a new entity type to Recovery Center
+
+1. Ensure the table has soft-delete columns (`is_deleted`, `deleted_at`, ideally `deleted_by`)
+2. In `recoveryCenterService.js`, `registerEntityType({ type, label, enabled: true, list, restore, ... })`  
+   - Prefer `createTableAdapter({ table, nameColumn, locationColumn, ... })` for simple tables  
+   - Override `restore` when relationships/qty need special handling (see Assets)
+3. On soft-delete write paths, call `recordDomainEvent` with `EVENT_TYPES.DELETE` and `ENTITY_TYPES.*`
+4. No UI rewrite required — Recovery Center loads enabled types dynamically
+
+Phase 1 enabled type: **Assets**. Inventory, Projects, Employees, etc. are registered as stubs (`enabled: false`).
+
+Future lifecycle states (Active, Retired, Consumed, Reserved, Checked Out, Repair, Disposed, Archived, …) can reuse the same event catalog and flags without rewriting Recovery Center.
 
 ---
 
@@ -142,7 +154,7 @@ Future lifecycle states (Active, Retired, Consumed, Reserved, Checked Out, Repai
   "type": "DELETE",
   "actor": "admin",
   "timestamp": "2026-08-12T06:00:00.000Z",
-  "note": "Soft-deleted (moved to Recycle Bin)",
+  "note": "Soft-deleted (moved to Recovery Center)",
   "metadata_json": {
     "schema_version": 1,
     "entity_type": "asset",

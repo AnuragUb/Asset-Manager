@@ -1,6 +1,6 @@
 console.log('MAIN.JS: Entry point (v7.03)');
 import { showView } from './utils.js?v=6.60';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.05';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.06';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
 import { setupAuth, checkSession } from './auth.js?v=7.01';
@@ -10,6 +10,7 @@ import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 import { initWarrantyView } from './warranty.js?v=6.60';
 import { initProjectsView } from './projects.js?v=7.03';
 import { initInventoryView } from './inventory.js?v=7.04';
+import { initRecoveryCenterView } from './recovery-center.js?v=7.06';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
 // import { initAssetsReportView } from './assetsReport.js?v=6.60';  // file does not exist; dead import caused ES6 module graph abort
@@ -602,6 +603,7 @@ const APP_VIEWS = {
     'ocr-view': { id: 'ocr-view', navId: 'nav-ocr', sidebar: false },
     'warranty-view': { id: 'warranty-view', navId: 'nav-warranty', sidebar: false },
     'settings-view': { id: 'settings-view', navId: 'nav-settings', sidebar: true },
+    'recovery-center-view': { id: 'recovery-center-view', navId: 'nav-recovery-center', sidebar: true },
     'admin-view': { id: 'admin-view', navId: 'nav-admin', sidebar: true },
     'arri-view': { id: 'arri-view', navId: 'nav-arri', sidebar: false }
 };
@@ -640,7 +642,7 @@ function switchDashboardSubView(subViewName) {
             const tree = document.getElementById('sidebar-tree');
             const systemMenu = document.getElementById('system-menu');
             if (tree && systemMenu) {
-                if (['admin-view', 'settings-view', 'releases-view'].includes(subViewName)) {
+                if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view'].includes(subViewName)) {
                     tree.classList.add('hidden');
                     systemMenu.classList.remove('hidden');
                 } else {
@@ -754,7 +756,7 @@ window.addEventListener('popstate', (event) => {
                 const tree = document.getElementById('sidebar-tree');
                 const systemMenu = document.getElementById('system-menu');
                 if (tree && systemMenu) {
-                    if (['admin-view', 'settings-view', 'releases-view'].includes(subViewName)) {
+                    if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view'].includes(subViewName)) {
                         tree.classList.add('hidden');
                         systemMenu.classList.remove('hidden');
                     } else {
@@ -1141,6 +1143,17 @@ function setupNavigation() {
                 console.log('nav-settings init called');
                 if (typeof initSettingsView === 'function') {
                     initSettingsView();
+                }
+            }
+        },
+        'nav-recovery-center': {
+            view: 'dashboardView',
+            subView: 'recovery-center-view',
+            init: () => {
+                if (typeof initRecoveryCenterView === 'function') {
+                    initRecoveryCenterView();
+                } else if (window.initRecoveryCenterView) {
+                    window.initRecoveryCenterView();
                 }
             }
         }

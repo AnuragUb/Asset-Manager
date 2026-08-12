@@ -145,35 +145,38 @@ Description · Make/Manufacturer · Model · Notes/Remarks · other metadata-onl
 
 ---
 
-## Issue 5 — Soft Delete & Recovery (Recycle Bin) ✅ COMPLETE
+## Issue 5 — Soft Delete & Recovery → Global Recovery Center ✅ COMPLETE
 
 Status:
 - [x] Investigation
 - [x] Architecture Review
-- [x] Implementation
+- [x] Implementation (soft delete + **Global Recovery Center**)
 - [x] Testing
 - [x] Commit
 
-Commit: `1ecd239` `feat(assets): implement soft delete and recovery system`
+Commit: `142ecb9` `feat(platform): promote Recovery Center to SYSTEM navigation`
 
-Regression: None observed (home 200; Recycle Bin assets; soft-delete/restore DB verify PASS on test)
+### Product naming
 
-### What shipped
+- Internal: Soft Delete & Recovery  
+- UI / nav: **Recovery Center** (SYSTEM module — not Assets)
 
-- UI label **Recycle Bin** (internal: Soft Delete & Recovery)
-- Soft delete sets `is_deleted` / `deleted_at` / `deleted_by`; preserves relationships & history
-- Restore API + Recycle Bin browse/search/restore
-- `DELETE` / `RESTORE` via shared Event System → `domain_events` (Issue 4 inventory store untouched)
-- Auto hard-purge disabled; `EVENT_SYSTEM_GUIDE.md` added
-- Migration `20260812120000_assets_soft_delete_recovery`
+### What shipped (final)
 
-### Smoke / verification (2026-08-12)
+- SYSTEM nav: Admin → Settings → Recovery Center → Releases
+- Entity registry (`recoveryCenterService.js`) — Assets enabled; other types stubbed for future
+- Generic APIs under `/api/recovery-center/*` (+ legacy asset recycle-bin/restore wrappers)
+- Admin table: search, filters, sort, restore, view details; permanent delete disabled
+- Soft delete preserves relationships; `DELETE`/`RESTORE` via shared Event System
+- Docs: `EVENT_SYSTEM_GUIDE.md`, `RECOVERY_CENTER.md`
+
+### Smoke
 
 | Check | 9090 | 8080 |
 |-------|------|------|
 | Home 200 | Pass | Pass |
-| `main.js?v=7.05` / dashboard Recycle Bin | Pass | Pass |
-| Soft-delete hides from active; restore; events DELETE+RESTORE; srno/parent intact | Pass (test DB) | schema migrated |
+| Recovery Center module (`v=7.06`) | Pass | Pass |
+| Entity registry + items API | Pass | Pass |
 
 ---
 
