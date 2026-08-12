@@ -2,7 +2,7 @@
  * ESM adapter for the shared inventory event system (SSOT under web-app/shared/).
  * Loads the dual-mode script once, then re-exports helpers for inventory / history UI.
  */
-import '/shared/inventoryEventSystem.js?v=7.08';
+import '/shared/inventoryEventSystem.js?v=7.09';
 
 const sys = globalThis.InventoryEventSystem;
 if (!sys) {

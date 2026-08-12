@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | a8ddb91 (main) | Inventory movement foundation |
-| **Product Version** | **v7.08** (inventory consume + movement) | Sprint 1 Issue 6 |
-| **Last Successful Deployment** | Dev/Staging on `59` (prior Recovery Center) | Production `118:8080` not deployed |
-| **Last Database Migration** | `20260812120000_assets_soft_delete_recovery` | No new migration for Issue 6 (status model) |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–6 ✅ · next Issue 7 pending |
+| **Repository Version** | pending (`main`) | Lifecycle consolidation |
+| **Product Version** | **v7.09** (lifecycle model) | Sprint 1 complete |
+| **Last Successful Deployment** | Dev/Staging on `59` | Production `118:8080` not deployed |
+| **Last Database Migration** | `20260812120000_assets_soft_delete_recovery` | No migration for Issue 7 |
+| **Current Sprint** | **AssetEngine Sprint 1 — COMPLETE** | Issues 1–7 ✅ |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

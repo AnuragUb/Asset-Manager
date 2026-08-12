@@ -218,16 +218,36 @@ Production `118:8080`: not touched. Recovery Center: not modified.
 
 ---
 
-## Issue 7 — Lifecycle Review (incremental)
+## Issue 7 — Lifecycle Review / Platform Consolidation ✅ COMPLETE
 
 Status:
 - [x] Investigation
-- [ ] Implementation
-- [ ] Testing
-- [ ] Commit
+- [x] Implementation (shared lifecycle model — no new features)
+- [x] Testing
+- [x] Docs
+- [x] Commit
 
-Commit: Pending
+Commit: Pending (this pass) — `refactor(platform): consolidate lifecycle architecture`
 
-Regression: None
+### What shipped
 
-Scope note: incremental only this sprint — no full lifecycle refactor.
+- Shared `lifecycleModel.js`: Active, Retired, Deleted, Consumed, Reserved, Checked Out/In, Maintenance, Repair, Archived, Disposed
+- Transitions + `resolveLifecycle` / operational status aliases
+- Wired Movement CONSUME + Recovery Center Deleted label to shared constants
+- Docs: `LIFECYCLE_MODEL.md`
+
+### Smoke
+
+| Check | 9090 | 8080 |
+|-------|------|------|
+| Shared module resolve/transitions | Pass (node) | Pass (node) |
+| Home 200 + `/shared/lifecycleModel.js` | Pass | Pass |
+| Movement types + Recovery Center summary | Pass | — |
+
+Production untouched. Sprint 1 complete after this commit.
+
+---
+
+## Sprint 1 — COMPLETE
+
+All issues 1–7 delivered. Next work is outside this sprint.

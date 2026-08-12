@@ -8,6 +8,7 @@
  * Do not hardcode event type strings — use shared EVENT_TYPES.
  */
 const inventoryEventSystem = require('../../shared/inventoryEventSystem');
+const lifecycleModel = require('../../shared/lifecycleModel');
 const {
   EVENT_TYPES,
   ENTITY_TYPES,
@@ -15,6 +16,12 @@ const {
   snapshotAsset,
   defaultNoteForType
 } = inventoryEventSystem;
+
+const {
+  LIFECYCLE_STATES,
+  getLifecycleDisplayName,
+  resolveLifecycle
+} = lifecycleModel;
 
 /** @type {Map<string, object>} entity definitions */
 const registry = new Map();
@@ -196,7 +203,8 @@ function normalizeDeletedRow(entityDef, row) {
     deleted_at: deletedAt,
     deleted_by: deletedBy,
     reason: reason || null,
-    status: 'Soft Deleted',
+    status: getLifecycleDisplayName(LIFECYCLE_STATES.DELETED),
+    lifecycle_state: LIFECYCLE_STATES.DELETED,
     can_restore: true,
     can_permanent_delete: false,
     details_url: entityDef.detailsUrl ? entityDef.detailsUrl(id) : null,
@@ -446,5 +454,7 @@ module.exports = {
   canRestoreEntity,
   assertCanRestore,
   normalizeDeletedRow,
-  createTableAdapter
+  createTableAdapter,
+  LIFECYCLE_STATES,
+  resolveLifecycle
 };

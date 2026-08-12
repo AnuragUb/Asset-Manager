@@ -9,6 +9,7 @@
  *   or ESM re-export via /js/inventory-event-system.js
  *
  * Do not hardcode event type strings at call sites — use EVENT_TYPES.* only.
+ * Lifecycle states (Active, Deleted, Consumed, …) live in lifecycleModel.js — not here.
  */
 (function (root, factory) {
   const api = factory();

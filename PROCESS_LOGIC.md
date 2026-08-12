@@ -2,6 +2,8 @@
 
 This document outlines the operational logic, process flows, and technical implementation of the core features currently active on the Asset Manager production environment (Port 8080).
 
+**Platform lifecycle (Sprint 1):** Canonical states, transitions, and operational status aliases live in [`docs/architecture/LIFECYCLE_MODEL.md`](./docs/architecture/LIFECYCLE_MODEL.md) and [`web-app/shared/lifecycleModel.js`](./web-app/shared/lifecycleModel.js). Import from there for new work.
+
 ---
 
 ## 1. Asset Lifecycle & Status Transitions

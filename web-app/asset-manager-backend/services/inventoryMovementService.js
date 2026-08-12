@@ -11,6 +11,7 @@
  * History is written via inventory_quantity_events + EVENT_TYPES (not a parallel log).
  */
 const inventoryEventSystem = require('../../shared/inventoryEventSystem');
+const lifecycleModel = require('../../shared/lifecycleModel');
 const {
   EVENT_TYPES,
   ENTITY_TYPES,
@@ -21,6 +22,12 @@ const {
   normalizeEventType,
   assertEventType
 } = inventoryEventSystem;
+
+const {
+  LIFECYCLE_STATES,
+  OPERATIONAL_STATUS,
+  isConsumed: isConsumedLifecycle
+} = lifecycleModel;
 
 /**
  * Movement Type registry — configuration, not hardcoded consume branches at call sites.
@@ -53,7 +60,8 @@ const MOVEMENT_TYPES = Object.freeze({
     label: 'Consume',
     eventType: EVENT_TYPES.CONSUME,
     enabled: true,
-    resultStatus: 'Consumed',
+    resultStatus: OPERATIONAL_STATUS.CONSUMED,
+    lifecycleState: LIFECYCLE_STATES.CONSUMED,
     requiresAmount: true,
     reducesAvailable: true,
     reducesTotal: true
@@ -102,7 +110,7 @@ const MOVEMENT_TYPES = Object.freeze({
   })
 });
 
-const CONSUMED_STATUS = 'Consumed';
+const CONSUMED_STATUS = OPERATIONAL_STATUS.CONSUMED;
 
 function listMovementTypes({ includeDisabled = true } = {}) {
   return Object.values(MOVEMENT_TYPES)
@@ -113,6 +121,7 @@ function listMovementTypes({ includeDisabled = true } = {}) {
       eventType: m.eventType,
       enabled: !!m.enabled,
       resultStatus: m.resultStatus || null,
+      lifecycleState: m.lifecycleState || null,
       requiresAmount: !!m.requiresAmount
     }));
 }
@@ -123,7 +132,7 @@ function getMovementType(code) {
 }
 
 function isConsumedStatus(status) {
-  return String(status || '').trim().toLowerCase() === CONSUMED_STATUS.toLowerCase();
+  return isConsumedLifecycle(status);
 }
 
 function presentMovement(rawEvent, movementDef = null) {
@@ -411,6 +420,7 @@ module.exports = {
   CONSUMED_STATUS,
   EVENT_TYPES,
   ENTITY_TYPES,
+  LIFECYCLE_STATES,
   listMovementTypes,
   getMovementType,
   isConsumedStatus,

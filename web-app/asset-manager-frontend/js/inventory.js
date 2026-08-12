@@ -5,7 +5,11 @@ import {
     getEventUi,
     presentEvent,
     normalizeEventType
-} from './inventory-event-system.js?v=7.08';
+} from './inventory-event-system.js?v=7.09';
+import {
+    OPERATIONAL_STATUS,
+    isConsumed as isConsumedLifecycle
+} from './lifecycle-model.js?v=7.09';
 
 const state = {
     initialized: false,
@@ -356,7 +360,7 @@ function formatInventoryStatus(status) {
     if (normalized.toLowerCase() === 'in use' || normalized.toLowerCase() === 'in-use') return 'in-use';
     if (normalized.toLowerCase() === 'in project' || normalized.toLowerCase() === 'project') return 'project';
     if (normalized.toLowerCase() === 'under inspection') return 'under-inspection';
-    if (normalized.toLowerCase() === 'consumed') return 'others';
+    if (isConsumedLifecycle(normalized) || normalized.toLowerCase() === OPERATIONAL_STATUS.CONSUMED.toLowerCase()) return 'others';
     return 'others';
 }
 
@@ -1043,7 +1047,7 @@ function renderInventoryItemsTable(items) {
         const parentId = escapeHtml(item.ParentID || item.parentid || '-');
         const idAttr = escapeAttr(id);
         const isQtyTracked = Boolean(item.IsQuantityTracked === 1 || item.is_quantity_tracked === 1 || item.QuantityRootId || item.quantity_root_id);
-        const isConsumed = String(item.Status || item.status || '').toLowerCase() === 'consumed';
+        const isConsumed = isConsumedLifecycle(item);
 
         return `
             <tr class="inventory-table-row" data-item-id="${idAttr}" style="cursor: pointer;">

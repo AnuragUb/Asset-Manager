@@ -60,6 +60,7 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 | Inventory audit events | [`inventory-event-system.md`](./inventory-event-system.md) |
 | Event System (developer guide) | [`EVENT_SYSTEM_GUIDE.md`](./EVENT_SYSTEM_GUIDE.md) |
 | Inventory Movement System (CONSUME) | [`INVENTORY_MOVEMENT_SYSTEM.md`](./INVENTORY_MOVEMENT_SYSTEM.md) |
+| Platform Lifecycle Model | [`LIFECYCLE_MODEL.md`](./LIFECYCLE_MODEL.md) |
 | Recovery Center (global soft-delete) | [`RECOVERY_CENTER.md`](./RECOVERY_CENTER.md) |
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |

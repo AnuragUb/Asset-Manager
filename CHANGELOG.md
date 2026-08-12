@@ -11,11 +11,29 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ### Added
 
-- *(none yet — next Sprint 1 issues)*
+- *(none — Sprint 1 complete)*
 
 ### Fixed
 
-- *(none yet — next Sprint 1 issues)*
+- *(none — Sprint 1 complete)*
+
+---
+
+## [Sprint 1] Issue 7 — Platform Lifecycle Consolidation (2026-08) ✅ COMPLETE
+
+**Status:** Shared lifecycle model on Dev/Staging path. No new product features. Production untouched.
+
+### Added
+
+- `web-app/shared/lifecycleModel.js` — canonical states, operational aliases, transitions
+- Frontend adapter `js/lifecycle-model.js`
+- Docs: `docs/architecture/LIFECYCLE_MODEL.md`
+
+### Changed
+
+- Inventory Movement + Recovery Center import lifecycle constants (no parallel `"Consumed"` / soft-delete labels)
+- Cross-links from Event System, Recovery Center, Movement, `PROCESS_LOGIC.md`
+- Cache-bust `v=7.09`
 
 ---
 

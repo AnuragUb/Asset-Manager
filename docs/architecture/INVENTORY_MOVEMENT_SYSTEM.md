@@ -22,9 +22,9 @@ Existing inventory_items.status model
 
 ### Constraints (approved)
 
-- **No separate consumed entity table** — use `inventory_items.status = 'Consumed'`
+- **No separate consumed entity table** — use `inventory_items.status = OPERATIONAL_STATUS.CONSUMED` (shared lifecycle model)
 - **No independent movement log** — write through shared `EVENT_TYPES` / `recordInventoryQuantityEvent`
-- **Do not hardcode “Consumed” branches** at API/UI call sites — use `MOVEMENT_TYPES` / `applyMovement({ type })`
+- **Do not hardcode “Consumed” branches** at API/UI call sites — use `MOVEMENT_TYPES` / `applyMovement({ type })` and [`LIFECYCLE_MODEL.md`](./LIFECYCLE_MODEL.md)
 
 ## Movement Types
 

@@ -18,6 +18,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cache = require('./services/cacheService');
 const inventoryEventSystem = require('../shared/inventoryEventSystem');
+const lifecycleModel = require('../shared/lifecycleModel');
 const recoveryCenter = require('./services/recoveryCenterService');
 const inventoryMovement = require('./services/inventoryMovementService');
 const {
@@ -6802,7 +6803,7 @@ app.post('/api/quantity/consume', async (req, res) => {
       const record = normalizeDBData({
         ID: newId,
         ItemName: `${parent.ItemName || 'Item'} (Consumed)`,
-        Status: 'Consumed',
+        Status: lifecycleModel.OPERATIONAL_STATUS.CONSUMED,
         Make: parent.Make || '',
         Model: parent.Model || '',
         SrNo: '', // SrNo

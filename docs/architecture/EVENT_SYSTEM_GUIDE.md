@@ -139,7 +139,7 @@ Soft delete is a **lifecycle flag**, not erasure:
 
 Phase 1 enabled type: **Assets**. Inventory, Projects, Employees, etc. are registered as stubs (`enabled: false`).
 
-Future lifecycle states (Active, Retired, Consumed, Reserved, Checked Out, Repair, Disposed, Archived, …) can reuse the same event catalog and flags without rewriting Recovery Center.
+Future lifecycle states (Active, Retired, Consumed, Reserved, Checked Out, Repair, Disposed, Archived, …) are defined in the shared **Platform Lifecycle Model** — see [`LIFECYCLE_MODEL.md`](./LIFECYCLE_MODEL.md). Events audit transitions; they do not redefine lifecycle codes.
 
 ---
 

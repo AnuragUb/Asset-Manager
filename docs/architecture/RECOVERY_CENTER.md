@@ -3,11 +3,13 @@
 **Module:** Global SYSTEM navigation (not Assets toolbar)  
 **Service:** [`web-app/asset-manager-backend/services/recoveryCenterService.js`](../../web-app/asset-manager-backend/services/recoveryCenterService.js)  
 **UI:** [`web-app/asset-manager-frontend/js/recovery-center.js`](../../web-app/asset-manager-frontend/js/recovery-center.js)  
-**Events:** [`EVENT_SYSTEM_GUIDE.md`](./EVENT_SYSTEM_GUIDE.md)
+**Events:** [`EVENT_SYSTEM_GUIDE.md`](./EVENT_SYSTEM_GUIDE.md) · Lifecycle: [`LIFECYCLE_MODEL.md`](./LIFECYCLE_MODEL.md)
 
 ## Purpose
 
 Central soft-delete recovery for AssetEngine — a platform Recycle Bin / Deleted Items service. Phase 1 recovers **Assets**; the registry is multi-entity from day one so later modules plug in without redesigning the UI.
+
+Soft delete maps to platform lifecycle state **Deleted** (`LIFECYCLE_STATES.DELETED`). Restore returns the entity toward **Active** (flags cleared per Recovery Strategy).
 
 ## Navigation
 
