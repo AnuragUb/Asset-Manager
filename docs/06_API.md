@@ -92,9 +92,10 @@ Before removing or renaming any route: **grep frontend, HTML, scripts, and exter
 |--------|-------|------|---------|-----------|
 | GET | `/api/recovery-center/entity-types` | JWT | Registered entity types | `recovery-center.js` |
 | GET | `/api/recovery-center/items` | JWT | Soft-deleted items (filters) | `recovery-center.js` |
-| POST | `/api/recovery-center/:entityType/:id/restore` | JWT+roles | Restore by entity | `recovery-center.js` |
+| GET | `/api/recovery-center/summary` | JWT | Recoverable totals (nav badge) | `recovery-center.js` |
+| POST | `/api/recovery-center/:entityType/:id/restore` | JWT + entity assert | Restore via Recovery Strategy | `recovery-center.js` |
 
-Service: `services/recoveryCenterService.js` (entity registry). Permanent delete not enabled.
+Service: `services/recoveryCenterService.js` (entity registry + Recovery Strategy). Permanent delete not enabled.
 | POST | `/api/assets/:id/sell` | JWT | Sell/retire | `dashboard` |
 | POST | `/api/assets/:id/release-to-store` | JWT | End inspection | `dashboard` |
 | POST | `/api/assets/:id/link-po-item` | JWT | Link PO line | `projects` |

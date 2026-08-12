@@ -12,11 +12,11 @@ This file tracks **repository modernization** and engineering readiness — not 
 
 | Field | Value | Notes |
 |-------|--------|--------|
-| **Repository Version** | `142ecb9` (`main`) | Global Recovery Center |
-| **Product Version** | **v7.06** (main + recovery-center) | Sprint 1 Recovery Center |
+| **Repository Version** | `582c845` (`main`) | Recovery Center architecture follow-up |
+| **Product Version** | **v7.07** (main + recovery-center badge) | Strategy + permission foundation + badge |
 | **Last Successful Deployment** | Dev/Staging on `59` (Recovery Center) | Production `118:8080` not deployed |
 | **Last Database Migration** | `20260812120000_assets_soft_delete_recovery` | `deleted_by` + `domain_events` |
-| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–5 ✅ (+ Recovery Center) · next Issue 6 pending |
+| **Current Sprint** | **AssetEngine Sprint 1 — Stabilization & UX** | Issue 1–5 ✅ · RC architecture improve · next Issue 6 pending |
 
 Update this table when shipping or cutting a release. Prefer real deploy/migration confirmation over guessing.
 

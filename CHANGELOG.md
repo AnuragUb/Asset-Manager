@@ -9,9 +9,9 @@ Version labels below mix **product UI versions** (e.g. v7.00) and **repository m
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- *(none yet — next Sprint 1 issues)*
+- Recovery Center architecture: Recovery Strategy pattern, entity-level auth foundation (no RBAC yet), recoverable-count nav badge, docs update (`RECOVERY_CENTER.md`). Cache-bust `v=7.07`.
 
 ### Fixed
 

@@ -154,7 +154,8 @@ Status:
 - [x] Testing
 - [x] Commit
 
-Commit: `142ecb9` `feat(platform): promote Recovery Center to SYSTEM navigation`
+Commit: `142ecb9` `feat(platform): promote Recovery Center to SYSTEM navigation`  
+Follow-up: `refactor(platform): improve Recovery Center architecture` (strategy pattern, permission foundation, nav badge, docs)
 
 ### Product naming
 
@@ -165,6 +166,9 @@ Commit: `142ecb9` `feat(platform): promote Recovery Center to SYSTEM navigation`
 
 - SYSTEM nav: Admin → Settings → Recovery Center → Releases
 - Entity registry (`recoveryCenterService.js`) — Assets enabled; other types stubbed for future
+- **Recovery Strategy** abstraction (`registerRecoveryStrategy` / `createRecoveryStrategy`); Asset restore wired via strategy
+- Permission foundation: service-layer `assertCanRestore` / entity `restoreRoles` (no RBAC yet; routes do not assume every user can restore)
+- Nav badge: `Recovery Center (N)` from `GET /api/recovery-center/summary` (all enabled types contribute)
 - Generic APIs under `/api/recovery-center/*` (+ legacy asset recycle-bin/restore wrappers)
 - Admin table: search, filters, sort, restore, view details; permanent delete disabled
 - Soft delete preserves relationships; `DELETE`/`RESTORE` via shared Event System
@@ -177,6 +181,7 @@ Commit: `142ecb9` `feat(platform): promote Recovery Center to SYSTEM navigation`
 | Home 200 | Pass | Pass |
 | Recovery Center module (`v=7.06`) | Pass | Pass |
 | Entity registry + items API | Pass | Pass |
+| Architecture follow-up (`v=7.07`) — strategy / summary / badge | Pending deploy | Pending deploy |
 
 ---
 

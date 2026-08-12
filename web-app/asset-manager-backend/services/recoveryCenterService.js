@@ -1,9 +1,10 @@
 /**
- * Recovery Center — platform soft-delete / restore registry.
+ * Recovery Center — platform soft-delete / restore service.
  *
- * Entity adapters register here so the UI and APIs stay entity-agnostic.
- * Phase 1: Assets enabled. Other types are registered as stubs (not listed until enabled).
+ * Architecture:
+ *   Entity Registry  →  Recovery Strategy  →  (future) Permission Layer
  *
+ * Phase 1: Assets enabled. Other types registered as stubs until enabled.
  * Do not hardcode event type strings — use shared EVENT_TYPES.
  */
 const inventoryEventSystem = require('../../shared/inventoryEventSystem');
@@ -15,15 +16,102 @@ const {
   defaultNoteForType
 } = inventoryEventSystem;
 
-/** @type {Map<string, object>} */
+/** @type {Map<string, object>} entity definitions */
 const registry = new Map();
+
+/** @type {Map<string, object>} Recovery Strategy per entity type */
+const strategies = new Map();
+
+/**
+ * Optional global permission resolver.
+ * Default: entity-level role list (not “everyone can restore”).
+ * Future RBAC: setPermissionResolver(async ({ user, entityType, action, item }) => boolean)
+ */
+let permissionResolver = null;
+
+function setPermissionResolver(fn) {
+  permissionResolver = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * Create a Recovery Strategy object.
+ * @param {{ restore: Function, canRestore?: Function, name?: string }} spec
+ */
+function createRecoveryStrategy(spec = {}) {
+  if (typeof spec.restore !== 'function') {
+    throw new Error('Recovery Strategy requires a restore(id, ctx) function');
+  }
+  return Object.freeze({
+    name: spec.name || 'unnamed',
+    restore: spec.restore,
+    canRestore: typeof spec.canRestore === 'function' ? spec.canRestore : null
+  });
+}
+
+/**
+ * Register (or replace) the Recovery Strategy for an entity type.
+ */
+function registerRecoveryStrategy(entityType, strategy) {
+  const type = String(entityType || '');
+  if (!type) throw new Error('entityType is required');
+  const resolved = typeof strategy.restore === 'function'
+    ? createRecoveryStrategy(strategy)
+    : strategy;
+  if (!resolved || typeof resolved.restore !== 'function') {
+    throw new Error('Invalid Recovery Strategy');
+  }
+  strategies.set(type, resolved);
+
+  const existing = registry.get(type);
+  if (existing) {
+    registry.set(type, Object.freeze({
+      ...existing,
+      strategy: resolved,
+      restore: (id, ctx) => resolved.restore(id, ctx)
+    }));
+  }
+  return type;
+}
+
+function getRecoveryStrategy(entityType) {
+  return strategies.get(String(entityType || '')) || null;
+}
 
 function registerEntityType(definition) {
   if (!definition || !definition.type) {
     throw new Error('Recovery Center entity requires type');
   }
-  registry.set(String(definition.type), Object.freeze({ ...definition }));
-  return definition.type;
+  const type = String(definition.type);
+  const permissions = {
+    // Future RBAC keys (not enforced yet beyond role allow-list)
+    restorePermission: definition.permissions?.restorePermission || `recovery.${type}.restore`,
+    viewPermission: definition.permissions?.viewPermission || `recovery.${type}.view`,
+    // Interim role allow-list until RBAC is wired (entity-scoped — not global “any user”)
+    restoreRoles: definition.permissions?.restoreRoles
+      || definition.restoreRoles
+      || ['superuser', 'admin', 'manager'],
+    ...((definition.permissions && typeof definition.permissions === 'object') ? definition.permissions : {})
+  };
+
+  const strategy = definition.strategy
+    || (typeof definition.restore === 'function'
+      ? createRecoveryStrategy({ name: `${type}.restore`, restore: definition.restore })
+      : strategies.get(type)
+      || null);
+
+  const entry = Object.freeze({
+    ...definition,
+    type,
+    permissions,
+    strategy: strategy || null,
+    restore: strategy
+      ? (id, ctx) => strategy.restore(id, ctx)
+      : (typeof definition.restore === 'function' ? definition.restore : null)
+  });
+
+  registry.set(type, entry);
+  if (strategy) strategies.set(type, strategy);
+  return type;
 }
 
 function getEntityType(type) {
@@ -38,9 +126,55 @@ function listEntityTypes({ includeDisabled = false } = {}) {
       label: e.label,
       enabled: !!e.enabled,
       supportsPermanentDelete: false,
-      restoreRoles: e.restoreRoles || ['superuser', 'admin', 'manager']
+      hasStrategy: !!(e.strategy || typeof e.restore === 'function'),
+      permissions: {
+        restorePermission: e.permissions?.restorePermission,
+        viewPermission: e.permissions?.viewPermission,
+        restoreRoles: e.permissions?.restoreRoles || []
+      }
     }))
     .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+
+/**
+ * Entity-level authorization hook (foundation only — not full RBAC).
+ * Returns true if restore is allowed for this user/entity.
+ */
+async function canRestoreEntity(user, entityType, item = null) {
+  const def = getEntityType(entityType);
+  if (!def || !def.enabled) return false;
+
+  if (permissionResolver) {
+    return !!(await permissionResolver({
+      user,
+      entityType,
+      action: 'restore',
+      item,
+      entity: def
+    }));
+  }
+
+  const strategy = getRecoveryStrategy(entityType) || def.strategy;
+  if (strategy && typeof strategy.canRestore === 'function') {
+    return !!(await strategy.canRestore(user, item, def));
+  }
+
+  const roles = def.permissions?.restoreRoles || [];
+  if (!roles.length) {
+    // No roles configured → deny by default (do not assume every user can restore)
+    return false;
+  }
+  const role = String(user?.role || '').toLowerCase();
+  return roles.map((r) => String(r).toLowerCase()).includes(role);
+}
+
+async function assertCanRestore(user, entityType, item = null) {
+  const allowed = await canRestoreEntity(user, entityType, item);
+  if (!allowed) {
+    const err = new Error(`Not authorized to restore ${entityType} entities`);
+    err.status = 403;
+    throw err;
+  }
 }
 
 function normalizeDeletedRow(entityDef, row) {
@@ -72,14 +206,14 @@ function normalizeDeletedRow(entityDef, row) {
 
 /**
  * Factory for simple table-backed soft-delete entities (is_deleted flag).
- * Complex restore (assets) overrides restore().
  */
 function createTableAdapter(opts) {
   return {
     type: opts.type,
     label: opts.label,
     enabled: opts.enabled !== false,
-    restoreRoles: opts.restoreRoles || ['superuser', 'admin', 'manager'],
+    restoreRoles: opts.restoreRoles,
+    permissions: opts.permissions,
     idColumn: opts.idColumn || 'id',
     nameColumn: opts.nameColumn || 'itemname',
     locationColumn: opts.locationColumn || null,
@@ -124,14 +258,21 @@ function createTableAdapter(opts) {
       const rows = await q;
       return rows.map((row) => normalizeDeletedRow(this, row));
     },
+    async count(db) {
+      if (!opts.table || !(await db.schema.hasTable(opts.table))) return 0;
+      const row = await db(opts.table)
+        .where(opts.deletedFlag || 'is_deleted', 1)
+        .count('* as c')
+        .first();
+      return Number(row?.c ?? row?.count ?? 0);
+    },
     async restore() {
-      throw new Error(`Restore not implemented for ${opts.type}`);
+      throw new Error(`Restore strategy not registered for ${opts.type}`);
     }
   };
 }
 
 function registerBuiltinEntityTypes() {
-  // --- Phase 1 enabled ---
   registerEntityType({
     ...createTableAdapter({
       type: ENTITY_TYPES.ASSET,
@@ -141,13 +282,16 @@ function registerBuiltinEntityTypes() {
       idColumn: 'id',
       nameColumn: 'itemname',
       locationColumn: 'currentlocation',
-      detailsUrl: (id) => `/asset/${encodeURIComponent(id)}`
+      detailsUrl: (id) => `/asset/${encodeURIComponent(id)}`,
+      permissions: {
+        restorePermission: 'recovery.asset.restore',
+        viewPermission: 'recovery.asset.view',
+        restoreRoles: ['superuser', 'admin', 'manager']
+      }
     }),
-    // restore injected later via setAssetRestoreHandler to avoid circular deps with server.js
     restore: null
   });
 
-  // --- Future stubs (architecture only; not listed while disabled) ---
   const stubs = [
     { type: ENTITY_TYPES.INVENTORY_ITEM, label: 'Inventory', table: 'inventory_items', nameColumn: 'itemname', locationColumn: 'currentlocation' },
     { type: ENTITY_TYPES.PROJECT, label: 'Projects', table: 'projects', nameColumn: 'name', locationColumn: null },
@@ -172,28 +316,34 @@ function registerBuiltinEntityTypes() {
         table: stub.table,
         enabled: false,
         nameColumn: stub.nameColumn || 'name',
-        locationColumn: stub.locationColumn || null
+        locationColumn: stub.locationColumn || null,
+        permissions: {
+          restorePermission: `recovery.${stub.type}.restore`,
+          viewPermission: `recovery.${stub.type}.view`,
+          restoreRoles: ['superuser', 'admin', 'manager']
+        }
       }),
-      restore: async () => {
-        throw new Error(`${stub.label} recovery is not enabled yet`);
-      }
+      strategy: createRecoveryStrategy({
+        name: `${stub.type}.stub`,
+        restore: async () => {
+          throw new Error(`${stub.label} recovery is not enabled yet`);
+        }
+      })
     });
   }
 }
 
 registerBuiltinEntityTypes();
 
-let assetRestoreHandler = null;
-
+/**
+ * Wire Asset restore (avoids circular require with server.js).
+ * Prefer registerRecoveryStrategy going forward.
+ */
 function setAssetRestoreHandler(fn) {
-  assetRestoreHandler = fn;
-  const existing = registry.get(ENTITY_TYPES.ASSET);
-  if (existing) {
-    registry.set(ENTITY_TYPES.ASSET, Object.freeze({
-      ...existing,
-      restore: async (id, ctx) => assetRestoreHandler(id, ctx)
-    }));
-  }
+  registerRecoveryStrategy(ENTITY_TYPES.ASSET, createRecoveryStrategy({
+    name: 'asset.restore',
+    restore: fn
+  }));
 }
 
 async function listDeletedItems(db, filters = {}) {
@@ -220,7 +370,29 @@ async function listDeletedItems(db, filters = {}) {
   return chunks;
 }
 
-async function restoreEntity(db, entityType, entityId, ctx) {
+/**
+ * Badge / summary — totals across all enabled entity types.
+ * Future entity types auto-contribute when enabled + count() implemented.
+ */
+async function getRecoverableSummary(db) {
+  const byEntityType = {};
+  let total = 0;
+  for (const meta of listEntityTypes({ includeDisabled: false })) {
+    const def = getEntityType(meta.type);
+    if (!def || !def.enabled) continue;
+    let n = 0;
+    if (typeof def.count === 'function') {
+      n = await def.count(db);
+    } else if (typeof def.list === 'function') {
+      n = (await def.list(db, {})).length;
+    }
+    byEntityType[meta.type] = n;
+    total += n;
+  }
+  return { total, byEntityType };
+}
+
+async function restoreEntity(db, entityType, entityId, ctx = {}) {
   const def = getEntityType(entityType);
   if (!def) {
     const err = new Error(`Unknown entity type: ${entityType}`);
@@ -232,12 +404,29 @@ async function restoreEntity(db, entityType, entityId, ctx) {
     err.status = 501;
     throw err;
   }
-  if (typeof def.restore !== 'function') {
-    const err = new Error(`No restore strategy registered for ${entityType}`);
+
+  await assertCanRestore(ctx.user, entityType, { entity_id: entityId });
+
+  const strategy = getRecoveryStrategy(entityType) || def.strategy;
+  const restoreFn = strategy?.restore || def.restore;
+  if (typeof restoreFn !== 'function') {
+    const err = new Error(`No Recovery Strategy registered for ${entityType}`);
     err.status = 501;
     throw err;
   }
-  return def.restore(entityId, { ...ctx, db, EVENT_TYPES, ENTITY_TYPES, createEventEnvelope, snapshotAsset, defaultNoteForType });
+
+  return restoreFn(entityId, {
+    ...ctx,
+    db,
+    entityType,
+    entity: def,
+    strategy,
+    EVENT_TYPES,
+    ENTITY_TYPES,
+    createEventEnvelope,
+    snapshotAsset,
+    defaultNoteForType
+  });
 }
 
 module.exports = {
@@ -247,8 +436,15 @@ module.exports = {
   getEntityType,
   listEntityTypes,
   listDeletedItems,
+  getRecoverableSummary,
   restoreEntity,
+  createRecoveryStrategy,
+  registerRecoveryStrategy,
+  getRecoveryStrategy,
   setAssetRestoreHandler,
+  setPermissionResolver,
+  canRestoreEntity,
+  assertCanRestore,
   normalizeDeletedRow,
   createTableAdapter
 };

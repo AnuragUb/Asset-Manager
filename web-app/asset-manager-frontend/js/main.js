@@ -1,6 +1,6 @@
 console.log('MAIN.JS: Entry point (v7.03)');
 import { showView } from './utils.js?v=6.60';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.06';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.07';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
 import { setupAuth, checkSession } from './auth.js?v=7.01';
@@ -10,7 +10,7 @@ import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 import { initWarrantyView } from './warranty.js?v=6.60';
 import { initProjectsView } from './projects.js?v=7.03';
 import { initInventoryView } from './inventory.js?v=7.04';
-import { initRecoveryCenterView } from './recovery-center.js?v=7.06';
+import { initRecoveryCenterView, refreshRecoveryCenterBadge } from './recovery-center.js?v=7.07';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
 // import { initAssetsReportView } from './assetsReport.js?v=6.60';  // file does not exist; dead import caused ES6 module graph abort
@@ -689,6 +689,11 @@ function switchDashboardSubView(subViewName) {
     }
 
     if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+    if (typeof refreshRecoveryCenterBadge === 'function') {
+        refreshRecoveryCenterBadge().catch(() => {});
+    } else if (window.refreshRecoveryCenterBadge) {
+        window.refreshRecoveryCenterBadge().catch(() => {});
+    }
 }
 
 // --- GLOBAL QoL: ESC KEY TO CLOSE MODALS ---
@@ -803,6 +808,9 @@ window.addEventListener('popstate', (event) => {
         }
 
         if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+        if (typeof refreshRecoveryCenterBadge === 'function') {
+            refreshRecoveryCenterBadge().catch(() => {});
+        }
 
     } else {
         // Fallback if no state (e.g. initial load or empty hash)
@@ -1359,6 +1367,9 @@ function setupNavigation() {
             }
             
             if (window.syncSidebarBubbles) window.syncSidebarBubbles();
+            if (typeof refreshRecoveryCenterBadge === 'function') {
+                refreshRecoveryCenterBadge().catch(() => {});
+            }
             updateCompactLayout();
         };
 

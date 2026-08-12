@@ -853,7 +853,19 @@ app.get('/api/recovery-center/items', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/recovery-center/:entityType/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+/** Badge total — sums recoverable counts across all enabled entity types. */
+app.get('/api/recovery-center/summary', authenticateJWT, async (req, res) => {
+  try {
+    const summary = await recoveryCenter.getRecoverableSummary(db);
+    res.json(summary);
+  } catch (err) {
+    console.error('Recovery Center summary error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Authorization is entity-scoped inside recoveryCenter.restoreEntity (not hardcoded here).
+app.post('/api/recovery-center/:entityType/:id/restore', authenticateJWT, async (req, res) => {
   try {
     const entityType = String(req.params.entityType || '').trim();
     const id = String(req.params.id || '').trim();
@@ -9193,7 +9205,8 @@ app.delete('/api/assets/:id', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+// Auth: entity-level via Recovery Center service (same interim roles as asset strategy).
+app.post('/api/assets/:id/restore', authenticateJWT, async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
     const username = req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web';

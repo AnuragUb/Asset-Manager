@@ -1,6 +1,7 @@
 /**
  * Recovery Center — global soft-delete recovery module (SYSTEM nav).
  * Multi-entity capable; Phase 1 shows Assets.
+ * Nav badge totals all enabled entity types via GET /api/recovery-center/summary.
  */
 import { showToast } from './utils.js?v=6.60';
 
@@ -17,8 +18,11 @@ const state = {
     sortDir: 'desc'
   },
   selected: new Set(),
-  loaded: false
+  loaded: false,
+  badgeTotal: 0
 };
+
+const NAV_LABEL = 'Recovery Center';
 
 function getEl(id) {
   return document.getElementById(id);
@@ -169,6 +173,26 @@ async function loadItems() {
   renderToolbarMeta();
   renderTable();
   updateBulkBar();
+  await refreshRecoveryCenterBadge();
+}
+
+/**
+ * Update SYSTEM nav label: "Recovery Center" or "Recovery Center (N)".
+ * Total includes every enabled entity type (future types auto-contribute).
+ */
+export async function refreshRecoveryCenterBadge() {
+  const nav = getEl('nav-recovery-center');
+  if (!nav) return 0;
+  try {
+    const data = await fetchJson('/api/recovery-center/summary');
+    const total = Number(data.total || 0);
+    state.badgeTotal = total;
+    nav.textContent = total > 0 ? `${NAV_LABEL} (${total})` : NAV_LABEL;
+    return total;
+  } catch (err) {
+    console.warn('[RecoveryCenter] badge refresh failed:', err.message || err);
+    return state.badgeTotal;
+  }
 }
 
 async function restoreOne(entityType, entityId) {
@@ -293,3 +317,4 @@ export async function initRecoveryCenterView() {
 }
 
 window.initRecoveryCenterView = initRecoveryCenterView;
+window.refreshRecoveryCenterBadge = refreshRecoveryCenterBadge;
