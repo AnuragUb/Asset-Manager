@@ -4,7 +4,8 @@ Operational tooling for AssetEngine hosts (not application source).
 
 | Folder | Purpose |
 |--------|---------|
-| `deployment/` | Local launch helpers (`run-*.bat`) |
+| `deployment/` | Deploy scripts, health check, legacy launch helpers |
+| `releases/` | Permanent release history, SemVer policy, [`DEPLOYMENT_MATRIX.md`](./releases/DEPLOYMENT_MATRIX.md) |
 | `replication/` | DB replicate / restore / failover scripts (59 ↔ 118) |
 | `health/` | Health checks and Docker diagnostics |
 | `maintenance/` | One-off DB repair/check scripts (populated in later steps) |

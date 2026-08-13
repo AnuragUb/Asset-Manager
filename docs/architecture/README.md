@@ -62,6 +62,10 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 | Inventory Movement System (CONSUME) | [`INVENTORY_MOVEMENT_SYSTEM.md`](./INVENTORY_MOVEMENT_SYSTEM.md) |
 | Platform Lifecycle Model | [`LIFECYCLE_MODEL.md`](./LIFECYCLE_MODEL.md) |
 | Recovery Center (global soft-delete) | [`RECOVERY_CENTER.md`](./RECOVERY_CENTER.md) |
+| Deployment environments & readiness | [`DEPLOYMENT_ENVIRONMENT_REPORT.md`](./DEPLOYMENT_ENVIRONMENT_REPORT.md) |
+| Release management (SemVer, manifests, matrix) | [`RELEASE_MANAGEMENT.md`](./RELEASE_MANAGEMENT.md) |
+| Release history / Deployment Matrix | [`../../ops/releases/`](../../ops/releases/), [`../../ops/releases/DEPLOYMENT_MATRIX.md`](../../ops/releases/DEPLOYMENT_MATRIX.md) |
+| Sprint 1 retrospective | [`SPRINT_1_RETROSPECTIVE.md`](./SPRINT_1_RETROSPECTIVE.md) |
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |
 | Auth / RBAC | `07` + login/JWT middleware in backend |
