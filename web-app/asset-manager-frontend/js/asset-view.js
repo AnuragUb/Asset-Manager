@@ -473,7 +473,7 @@ async function renderAsset(data) {
                         ${zohoId ? '🔄 Update in Zoho' : '📤 Push to Zoho CRM'}
                     </button>
                     ${zohoId ? `
-                        <a href="https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}" target="_blank" style="background: #f3f4f6; color: #374151; padding: 10px; border-radius: 8px; text-decoration: none; display: flex; align-items: center; justify-content: center; min-width: 40px;" title="View in Zoho">
+                        <a href="${(typeof buildZohoProductUiUrl === 'function' ? buildZohoProductUiUrl(zohoId) : `https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}`)}" target="_blank" style="background: #f3f4f6; color: #374151; padding: 10px; border-radius: 8px; text-decoration: none; display: flex; align-items: center; justify-content: center; min-width: 40px;" title="View in Zoho">
                             🔗
                         </a>
                     ` : ''}

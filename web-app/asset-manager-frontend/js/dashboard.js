@@ -2,6 +2,7 @@ import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showT
 import { HierarchyManager } from './hierarchy.js?v=6.59';
 import { DataProcessor } from './dataProcessor.js?v=6.59';
 import { initScannerView } from './networkScanner.js?v=6.59';
+import { fetchWithAuth } from './auth.js?v=6.60';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
@@ -4756,13 +4757,16 @@ function renderZohoCatalog(catalog) {
 }
 
 window.openZohoProduct = (id) => {
-    window.open(`https://crm.zoho.in/crm/org60021949576/tab/Products/${id}`, '_blank');
+    const url = (typeof buildZohoProductUiUrl === 'function')
+        ? buildZohoProductUiUrl(id)
+        : `https://crm.zoho.in/crm/org60021949576/tab/Products/${id}`;
+    if (url) window.open(url, '_blank');
 };
 
 window.syncZohoCatalog = async () => {
     if (!confirm('Sync catalog from Zoho CRM?')) return;
     try {
-        const response = await fetch('/api/zoho/sync-products', { method: 'POST' });
+        const response = await fetchWithAuth('/api/zoho/sync-products', { method: 'POST' });
         const result = await response.json();
         if (response.ok) {
             alert(`Sync complete: ${result.message}`);

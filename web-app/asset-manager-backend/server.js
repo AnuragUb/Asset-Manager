@@ -105,8 +105,90 @@ const REMEMBER_COOKIE_NAME = 'remember_token';
 const DEFAULT_COMPANY_NAME = 'CINEOM';
 let DEFAULT_COMPANY_ID = null;
 
+/** Query params that must never appear in application request logs. */
+const SENSITIVE_QUERY_PARAM_NAMES = new Set([
+  'code',
+  'state',
+  'access_token',
+  'refresh_token',
+  'client_secret',
+  'grant_token',
+  'token',
+  'error_description',
+  'id_token'
+]);
+
+/**
+ * Whether Set-Cookie should use the Secure flag.
+ * Production / explicit COOKIE_SECURE=true → true.
+ * Local HTTP (e.g. 59:9090) → false unless override or HTTPS proxy headers.
+ */
+function shouldUseSecureCookies(req) {
+  const override = String(process.env.COOKIE_SECURE || '').trim().toLowerCase();
+  if (override === 'true' || override === '1' || override === 'yes') return true;
+  if (override === 'false' || override === '0' || override === 'no') return false;
+  if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') return true;
+  if (req) {
+    const xf = String(req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
+    if (xf === 'https') return true;
+    if (req.secure) return true;
+  }
+  return false;
+}
+
+function getAuthCookieOptions(req, maxAgeMs) {
+  const opts = {
+    httpOnly: true,
+    secure: shouldUseSecureCookies(req),
+    sameSite: 'lax'
+  };
+  if (maxAgeMs !== undefined) opts.maxAge = maxAgeMs;
+  return opts;
+}
+
+/** Pathname only — never log OAuth codes/state or other sensitive query values. */
+function requestPathForLog(req) {
+  if (req.path && typeof req.path === 'string') return req.path;
+  const raw = String(req.originalUrl || req.url || '/');
+  const q = raw.indexOf('?');
+  return q === -1 ? raw : raw.slice(0, q);
+}
+
+/**
+ * Redact known secret query params from a URL string (defense in depth if a caller
+ * accidentally passes originalUrl). Prefer requestPathForLog for request logging.
+ */
+function sanitizeUrlForLog(urlString) {
+  const raw = String(urlString || '');
+  const q = raw.indexOf('?');
+  if (q === -1) return raw;
+  const path = raw.slice(0, q);
+  try {
+    const params = new URLSearchParams(raw.slice(q + 1));
+    for (const key of [...params.keys()]) {
+      if (SENSITIVE_QUERY_PARAM_NAMES.has(String(key).toLowerCase())) {
+        params.set(key, '[REDACTED]');
+      }
+    }
+    const qs = params.toString();
+    return qs ? `${path}?${qs}` : path;
+  } catch {
+    return path;
+  }
+}
+
 const app = express();
 const port = process.env.PORT || 9090;
+
+// Needed so req.secure / X-Forwarded-Proto work behind Nginx (api.spvtm.com → 118:8080).
+// Enable for production HTTPS cookie semantics; local 9090 stays unaffected unless COOKIE_SECURE=true.
+if (
+  shouldUseSecureCookies(null) ||
+  String(process.env.TRUST_PROXY || '').toLowerCase() === 'true' ||
+  String(process.env.TRUST_PROXY || '') === '1'
+) {
+  app.set('trust proxy', 1);
+}
 
 // --- DATABASE UTILITIES ---
 
@@ -1226,25 +1308,15 @@ app.post('/api/auth/login', async (req, res) => {
     // Generate JWT
     const { token, claims } = signJwtForUser(user, category);
 
-    // Set JWT Cookie
-    res.cookie(JWT_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: false, 
-      sameSite: 'lax',
-      maxAge: JWT_EXPIRES_IN_SECONDS * 1000
-    });
+    // Set JWT Cookie (Secure on production HTTPS / COOKIE_SECURE=true)
+    res.cookie(JWT_COOKIE_NAME, token, getAuthCookieOptions(req, JWT_EXPIRES_IN_SECONDS * 1000));
 
     // Handle Remember Me
     if (rememberMe) {
         const rememberToken = tokenService.generateToken();
         await tokenService.storeRememberToken(user.username, rememberToken, 30);      
 
-        res.cookie(REMEMBER_COOKIE_NAME, rememberToken, {
-            httpOnly: true,
-            secure: false, 
-            sameSite: 'lax',
-            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-        });
+        res.cookie(REMEMBER_COOKIE_NAME, rememberToken, getAuthCookieOptions(req, 30 * 24 * 60 * 60 * 1000));
     }
 
     console.log(`[AUTH] Login successful for: ${username}`);
@@ -1282,20 +1354,9 @@ app.post('/api/auth/logout', async (req, res) => {
       await tokenService.invalidateRememberToken(cookies[REMEMBER_COOKIE_NAME]);
   }
 
-  // Clear Cookies
-  res.cookie(JWT_COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: false, 
-    sameSite: 'lax',
-    maxAge: 0
-  });
-  
-  res.cookie(REMEMBER_COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: false, 
-    sameSite: 'lax',
-    maxAge: 0
-  });
+  // Clear Cookies (Secure flag must match how cookies were set)
+  res.cookie(JWT_COOKIE_NAME, '', getAuthCookieOptions(req, 0));
+  res.cookie(REMEMBER_COOKIE_NAME, '', getAuthCookieOptions(req, 0));
 
   res.json({ ok: true, message: 'Logged out' });
 });
@@ -1354,12 +1415,7 @@ app.get('/api/auth/me', async (req, res) => {
                     const category = 'IT';
                     const { token: newToken, claims } = signJwtForUser(user, category);
                     
-                    res.cookie(JWT_COOKIE_NAME, newToken, {
-                        httpOnly: true,
-                        secure: false, 
-                        sameSite: 'lax',
-                        maxAge: JWT_EXPIRES_IN_SECONDS * 1000
-                    });
+                    res.cookie(JWT_COOKIE_NAME, newToken, getAuthCookieOptions(req, JWT_EXPIRES_IN_SECONDS * 1000));
 
                     const permissionsSet = new Set(rolePermissionCache[claims.role] || []);
                     if (claims.role === 'admin' || claims.role === 'superuser') {
@@ -2099,8 +2155,15 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
-  
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+
+  // Never log query strings (OAuth code/state and other secrets). Path + status + duration only.
+  const startedAt = Date.now();
+  const pathOnly = requestPathForLog(req);
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(`${new Date().toISOString()} - ${req.method} ${pathOnly} ${res.statusCode} ${durationMs}ms`);
+  });
+
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -2719,14 +2782,117 @@ app.get('/api/zoho/status', authenticateJWT, async (req, res) => {
         const logs = await db('zoho_sync_logs')
             .orderBy('created_at', 'desc')
             .limit(10);
-            
-        res.json({ 
-            success: true, 
-            health, 
-            logs 
+
+        // Safe UI helpers only — no secrets
+        const crmOrgId = String(process.env.ZOHO_CRM_ORG_ID || '60021949576').trim();
+        res.json({
+            success: true,
+            health,
+            logs,
+            oauth: {
+                authorizePath: '/api/zoho/oauth/authorize',
+                callbackPath: '/api/zoho/oauth/callback',
+                redirectUrlConfigured: health.config?.ZOHO_REDIRECT_URL === 'PRESENT',
+                scopes: zohoService.getOAuthScopes()
+            },
+            crmUi: {
+                orgId: crmOrgId,
+                productUrlTemplate: `https://crm.zoho.in/crm/org${crmOrgId}/tab/Products/{id}`
+            }
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * Start Server-Based Zoho OAuth (admin/superuser only).
+ * Redirects browser to Zoho India accounts authorize URL.
+ */
+app.get('/api/zoho/oauth/authorize', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
+    try {
+        const state = await zohoService.createOAuthState(req.user.user_id);
+        const url = zohoService.buildAuthorizationUrl(state);
+        return res.redirect(302, url);
+    } catch (err) {
+        const code = err.code || '';
+        if (code === 'ZOHO_NOT_CONFIGURED') {
+            return res.status(400).json({
+                success: false,
+                error: 'Zoho OAuth is not configured. Set ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REDIRECT_URL.'
+            });
+        }
+        console.error('[ZOHO-OAUTH] authorize failed:', err.message);
+        return res.status(500).json({ success: false, error: 'Failed to start Zoho authorization' });
+    }
+});
+
+/**
+ * Zoho OAuth callback (public — Zoho redirects here).
+ * Validates state, exchanges code via SDK, never returns tokens to the browser.
+ */
+app.get('/api/zoho/oauth/callback', async (req, res) => {
+    const sendResultPage = (ok, title, detail) => {
+        const color = ok ? '#065f46' : '#991b1b';
+        const bg = ok ? '#ecfdf5' : '#fef2f2';
+        res.status(ok ? 200 : 400).type('html').send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<meta http-equiv="refresh" content="3;url=/" />
+<style>
+ body{font-family:system-ui,sans-serif;background:#111827;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
+ .card{background:${bg};color:${color};padding:28px 32px;border-radius:12px;max-width:520px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+ a{color:#1d4ed8}
+</style></head><body><div class="card">
+<h1 style="margin-top:0">${title}</h1>
+<p>${detail}</p>
+<p><a href="/">Return to AssetEngine</a></p>
+</div></body></html>`);
+    };
+
+    try {
+        const { code, state, error, error_description: errorDescription } = req.query || {};
+        if (error) {
+            // Log Zoho error code only (e.g. access_denied) — never query secrets or error_description
+            console.error('[ZOHO-OAUTH] callback error from Zoho:', String(error).slice(0, 64));
+            return sendResultPage(false, 'Zoho authorization denied', 'The authorization request was cancelled or rejected.');
+        }
+
+        const stateCheck = await zohoService.consumeOAuthState(String(state || ''));
+        if (!stateCheck.ok) {
+            console.error('[ZOHO-OAUTH] invalid state:', stateCheck.reason);
+            return sendResultPage(false, 'Invalid OAuth state', 'The authorization request could not be verified. Please try Connect Zoho again.');
+        }
+
+        if (!code) {
+            return sendResultPage(false, 'Missing authorization code', 'Zoho did not return an authorization code.');
+        }
+
+        await zohoService.completeOAuthWithCode(String(code));
+        // Optional smoke: do not fail the page if API probe fails after token save
+        try {
+            await zohoService.checkConnection();
+        } catch (_) { /* ignore */ }
+
+        return sendResultPage(true, 'Zoho connected', 'Authorization completed. Existing sync features can use the stored tokens. Redirecting…');
+    } catch (err) {
+        console.error('[ZOHO-OAUTH] callback failed:', err.code || err.message);
+        return sendResultPage(false, 'Zoho authorization failed', 'Token exchange failed. Check server configuration and try again.');
+    }
+});
+
+/**
+ * Disconnect Zoho OAuth (removes token file only; preserves local Zoho IDs / catalog).
+ */
+app.post('/api/zoho/oauth/disconnect', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
+    try {
+        await zohoService.disconnect();
+        return res.json({
+            success: true,
+            message: 'Zoho authorization removed. Local catalog and asset Zoho IDs were preserved.'
+        });
+    } catch (err) {
+        console.error('[ZOHO-OAUTH] disconnect failed:', err.message);
+        return res.status(500).json({ success: false, error: 'Failed to disconnect Zoho authorization' });
     }
 });
 

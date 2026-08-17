@@ -1516,7 +1516,10 @@ function openCatalogProductModal(item) {
     getEl('btnViewCatalogInZoho')?.addEventListener('click', (e) => {
         e.preventDefault();
         if (!zohoId) return;
-        window.open(`https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}`, '_blank');
+        const url = (typeof buildZohoProductUiUrl === 'function')
+            ? buildZohoProductUiUrl(zohoId)
+            : `https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}`;
+        if (url) window.open(url, '_blank');
     });
 
     getEl('btnCreateInventoryFromCatalog')?.addEventListener('click', (e) => {

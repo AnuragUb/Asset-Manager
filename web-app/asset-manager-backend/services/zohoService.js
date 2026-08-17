@@ -1,87 +1,161 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const ZOHOCRMSDK = require('@zohocrm/nodejs-sdk-8.0');
 const { db } = require('../utils');
 const cache = require('./cacheService');
 
 /**
+ * Minimum OAuth scopes for existing AssetEngine Zoho operations.
+ * Products ALL covers catalog pull + asset product create/update.
+ * Deals READ covers sync-deals.
+ * findUser(false) avoids mandatory users/org READ scopes.
+ */
+const ZOHO_OAUTH_SCOPES = [
+    'ZohoCRM.modules.products.ALL',
+    'ZohoCRM.modules.deals.READ'
+].join(',');
+
+const OAUTH_STATE_TTL_SEC = 600;
+const TOKEN_FILE = path.join(__dirname, '../zoho_tokens.txt');
+const ACCOUNTS_AUTH_BASE = 'https://accounts.zoho.in/oauth/v2/auth';
+
+/**
  * Zoho CRM Service
+ *
+ * Token persistence: FileStore (Option A — lowest risk).
+ * DB `oauthtoken` migration exists but SDK DBStore is MySQL-oriented;
+ * FileStore remains the active store. File is gitignored and lives on
+ * the bind-mounted host tree so restarts keep authorization.
  */
 class ZohoService {
     constructor() {
         this.initialized = false;
     }
 
-    async init() {
-        if (this.initialized) return;
-
-        // Manually load .env since this might be run as a standalone script
+    _loadEnv() {
         require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
-        console.log('[ZohoService] Loading config from:', path.join(__dirname, '../../../.env'));
+    }
+
+    getTokenFilePath() {
+        return TOKEN_FILE;
+    }
+
+    hasPersistedTokens() {
+        try {
+            if (!fs.existsSync(TOKEN_FILE)) return false;
+            const stat = fs.statSync(TOKEN_FILE);
+            return stat.size > 0;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Safe config presence (never returns secret values).
+     */
+    getConfigStatus() {
+        this._loadEnv();
+        const present = (key) => {
+            const v = process.env[key];
+            if (v === undefined || v === null) return 'MISSING';
+            return String(v).trim() ? 'PRESENT' : 'EMPTY';
+        };
+        return {
+            ZOHO_CLIENT_ID: present('ZOHO_CLIENT_ID'),
+            ZOHO_CLIENT_SECRET: present('ZOHO_CLIENT_SECRET'),
+            ZOHO_REDIRECT_URL: present('ZOHO_REDIRECT_URL'),
+            ZOHO_GRANT_TOKEN: present('ZOHO_GRANT_TOKEN') === 'PRESENT' || present('GRANT_TOKEN') === 'PRESENT'
+                ? 'PRESENT'
+                : 'MISSING',
+            tokenFile: this.hasPersistedTokens() ? 'PRESENT' : 'MISSING',
+            dataCenter: 'INDataCenter.PRODUCTION',
+            oauthScopes: ZOHO_OAUTH_SCOPES,
+            crmOrgIdConfigured: present('ZOHO_CRM_ORG_ID'),
+            redirectUrlExpected: 'https://api.spvtm.com/api/zoho/oauth/callback'
+        };
+    }
+
+    getCrmProductUrl(zohoProductId) {
+        this._loadEnv();
+        const orgId = String(process.env.ZOHO_CRM_ORG_ID || '60021949576').trim();
+        const id = String(zohoProductId || '').trim();
+        if (!id) return null;
+        return `https://crm.zoho.in/crm/org${orgId}/tab/Products/${id}`;
+    }
+
+    getOAuthScopes() {
+        return ZOHO_OAUTH_SCOPES;
+    }
+
+    async init(options = {}) {
+        if (this.initialized && !options.force && !options.authorizationCode) return;
+
+        this._loadEnv();
+        console.log('[ZohoService] Loading config from repo-root .env');
         console.log('[ZohoService] Client ID present:', !!process.env.ZOHO_CLIENT_ID);
 
+        const clientId = process.env.ZOHO_CLIENT_ID;
+        const clientSecret = process.env.ZOHO_CLIENT_SECRET;
+        const redirectURL = process.env.ZOHO_REDIRECT_URL;
+
+        if (!clientId || !clientSecret || !redirectURL) {
+            const err = new Error('ZOHO_NOT_CONFIGURED');
+            err.code = 'ZOHO_NOT_CONFIGURED';
+            throw err;
+        }
+
         try {
-            /*
-             * Create an instance of Logger Class that takes two parameters
-             * level -> Level of the log messages to be logged. Can be configured by typing Levels "." and choosing any level from the list displayed.
-             * filePath -> Absolute file path to store logs.
-             */
             let logger = new ZOHOCRMSDK.LogBuilder()
                 .level(ZOHOCRMSDK.Levels.INFO)
                 .filePath(path.join(__dirname, '../../sdk_logs.log'))
                 .build();
 
-            /*
-             * Create an instance of TokenStore
-             */
-            let tokenstore = new ZOHOCRMSDK.FileStore(path.join(__dirname, '../zoho_tokens.txt'));
+            let tokenstore = new ZOHOCRMSDK.FileStore(TOKEN_FILE);
 
-            /*
-             * Create an instance of Token that takes the following parameters
-             */
             let tokenBuilder = new ZOHOCRMSDK.OAuthBuilder()
-                .clientId(process.env.ZOHO_CLIENT_ID)
-                .clientSecret(process.env.ZOHO_CLIENT_SECRET)
-                .redirectURL(process.env.ZOHO_REDIRECT_URL);
+                .clientId(clientId)
+                .clientSecret(clientSecret)
+                .redirectURL(redirectURL)
+                .findUser(false);
 
-            // ONLY add grantToken if it's actually provided in the environment
+            const authorizationCode = options.authorizationCode
+                ? String(options.authorizationCode).trim()
+                : '';
             const grantToken = process.env.ZOHO_GRANT_TOKEN || process.env.GRANT_TOKEN;
-            
-            // Check if tokens exist in the file store first
-            const tokenStorePath = path.join(__dirname, '../zoho_tokens.txt');
-            const hasExistingTokens = require('fs').existsSync(tokenStorePath);
+            const hasExistingTokens = this.hasPersistedTokens();
 
-            if (grantToken && grantToken.length > 50) {
-                console.log('[ZohoService] Using provided Grant Token:', grantToken.substring(0, 10) + '...');
-                tokenBuilder.grantToken(grantToken);
-            } else if (!hasExistingTokens) {
-                console.error('[ZohoService] ERROR: No Grant Token provided and no existing zoho_tokens.txt found.');
-                throw new Error('MANDATORY_GRANT_TOKEN_MISSING');
+            if (authorizationCode) {
+                // Server-based OAuth callback code (treated as grant token by SDK)
+                console.log('[ZohoService] Initializing with OAuth authorization code (value not logged)');
+                tokenBuilder.grantToken(authorizationCode);
+            } else if (hasExistingTokens) {
+                console.log('[ZohoService] Initializing from persisted FileStore tokens');
+            } else if (grantToken && String(grantToken).trim().length > 50) {
+                // Legacy Self Client / grant-token bootstrap (still supported)
+                console.log('[ZohoService] Initializing with env grant token bootstrap (value not logged)');
+                tokenBuilder.grantToken(String(grantToken).trim());
+            } else {
+                const err = new Error('ZOHO_NOT_AUTHORIZED');
+                err.code = 'ZOHO_NOT_AUTHORIZED';
+                throw err;
             }
 
             let token = tokenBuilder.build();
 
-            /*
-             * Create an instance of SDKConfig that takes the following parameters
-             * autoRefreshFields -> A boolean value that represents whether to auto-refresh fields or not.
-             * pickListValidation -> A boolean value that represents whether to validate picklist values or not.
-             * timeout -> An integer value that represents the timeout for the API call.
-             */
             let sdkConfig = new ZOHOCRMSDK.SDKConfigBuilder()
                 .autoRefreshFields(true)
                 .pickListValidation(false)
                 .build();
 
-            /*
-             * The path containing the absolute directory path to store user-specific files containing module fields information.
-             */
             let resourcePath = path.join(__dirname, '../zoho_resources');
-            if (!require('fs').existsSync(resourcePath)) {
-                require('fs').mkdirSync(resourcePath);
+            if (!fs.existsSync(resourcePath)) {
+                fs.mkdirSync(resourcePath);
             }
 
-            /*
-             * Initialize the SDK.
-             */
+            // Re-init path after OAuth / disconnect
+            this.initialized = false;
+
             let builder = await new ZOHOCRMSDK.InitializeBuilder();
             await builder.environment(ZOHOCRMSDK.INDataCenter.PRODUCTION())
                 .token(token)
@@ -94,9 +168,103 @@ class ZohoService {
             this.initialized = true;
             console.log('[ZohoService] SDK Initialized successfully');
         } catch (error) {
-            console.error('[ZohoService] Initialization failed:', error);
+            this.initialized = false;
+            if (!error.code) {
+                console.error('[ZohoService] Initialization failed:', error.message || error);
+            }
             throw error;
         }
+    }
+
+    /**
+     * Create OAuth state bound to an admin user (CSRF protection).
+     */
+    async createOAuthState(userId) {
+        const state = crypto.randomBytes(32).toString('hex');
+        await cache.set(`zoho:oauth:state:${state}`, {
+            userId: String(userId),
+            createdAt: Date.now()
+        }, OAUTH_STATE_TTL_SEC);
+        return state;
+    }
+
+    /**
+     * Validate and consume OAuth state (one-time use).
+     */
+    async consumeOAuthState(state, expectedUserId = null) {
+        if (!state || typeof state !== 'string') {
+            return { ok: false, reason: 'MISSING_STATE' };
+        }
+        const key = `zoho:oauth:state:${state}`;
+        const saved = await cache.get(key);
+        await cache.del(key);
+        if (!saved || !saved.userId) {
+            return { ok: false, reason: 'INVALID_OR_EXPIRED_STATE' };
+        }
+        if (expectedUserId && String(saved.userId) !== String(expectedUserId)) {
+            return { ok: false, reason: 'STATE_USER_MISMATCH' };
+        }
+        return { ok: true, userId: saved.userId };
+    }
+
+    /**
+     * Build Zoho India accounts authorization URL (server-based app).
+     */
+    buildAuthorizationUrl(state) {
+        this._loadEnv();
+        const clientId = process.env.ZOHO_CLIENT_ID;
+        const redirectURL = process.env.ZOHO_REDIRECT_URL;
+        if (!clientId || !redirectURL) {
+            const err = new Error('ZOHO_NOT_CONFIGURED');
+            err.code = 'ZOHO_NOT_CONFIGURED';
+            throw err;
+        }
+        const params = new URLSearchParams({
+            scope: ZOHO_OAUTH_SCOPES,
+            client_id: clientId,
+            response_type: 'code',
+            access_type: 'offline',
+            redirect_uri: redirectURL,
+            state: state,
+            prompt: 'consent'
+        });
+        return `${ACCOUNTS_AUTH_BASE}?${params.toString()}`;
+    }
+
+    /**
+     * Complete server-based OAuth using authorization code from callback.
+     */
+    async completeOAuthWithCode(authorizationCode) {
+        if (!authorizationCode || !String(authorizationCode).trim()) {
+            const err = new Error('MISSING_AUTHORIZATION_CODE');
+            err.code = 'MISSING_AUTHORIZATION_CODE';
+            throw err;
+        }
+        await this.init({ authorizationCode: String(authorizationCode).trim(), force: true });
+        if (!this.hasPersistedTokens()) {
+            const err = new Error('TOKEN_PERSISTENCE_FAILED');
+            err.code = 'TOKEN_PERSISTENCE_FAILED';
+            throw err;
+        }
+        return { ok: true, authorized: true };
+    }
+
+    /**
+     * Remove persisted OAuth tokens. Does not touch catalog/assets/projects data.
+     */
+    async disconnect() {
+        this.initialized = false;
+        try {
+            if (fs.existsSync(TOKEN_FILE)) {
+                fs.unlinkSync(TOKEN_FILE);
+            }
+        } catch (err) {
+            console.error('[ZohoService] Disconnect failed to remove token file:', err.message);
+            const e = new Error('DISCONNECT_FAILED');
+            e.code = 'DISCONNECT_FAILED';
+            throw e;
+        }
+        return { ok: true, authorized: false };
     }
 
     /**
@@ -238,32 +406,79 @@ class ZohoService {
 
     /**
      * Check the health of the Zoho CRM connection and Token status.
+     * Returns structured status codes without secrets.
      */
     async checkConnection() {
+        const config = this.getConfigStatus();
+        const timestamp = new Date();
+
+        if (config.ZOHO_CLIENT_ID !== 'PRESENT' || config.ZOHO_CLIENT_SECRET !== 'PRESENT' || config.ZOHO_REDIRECT_URL !== 'PRESENT') {
+            return {
+                status: 'NOT_CONFIGURED',
+                message: 'Zoho client credentials or redirect URL are not configured.',
+                timestamp,
+                authorized: false,
+                config
+            };
+        }
+
+        if (config.tokenFile !== 'PRESENT' && config.ZOHO_GRANT_TOKEN !== 'PRESENT') {
+            return {
+                status: 'NOT_AUTHORIZED',
+                message: 'Zoho is configured but not authorized. Connect via Server-Based OAuth (or temporary grant-token bootstrap).',
+                timestamp,
+                authorized: false,
+                config
+            };
+        }
+
         try {
             await this.init();
-            // Attempt a simple lightweight call (fetch 1 module info)
             const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
             const paramInstance = new ZOHOCRMSDK.ParameterMap();
             paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, 1);
-            
+
             const response = await recordOperations.getRecords(paramInstance);
-            
+
             if (response != null && [200, 201, 204].includes(response.getStatusCode())) {
-                return { 
-                    status: 'CONNECTED', 
+                return {
+                    status: 'CONNECTED',
                     message: 'Authentication successful and API responsive.',
-                    timestamp: new Date()
+                    timestamp,
+                    authorized: true,
+                    config
                 };
-            } else {
-                throw new Error(`API returned status code: ${response?.getStatusCode()}`);
             }
+            return {
+                status: 'API_ERROR',
+                message: `API returned status code: ${response?.getStatusCode()}`,
+                timestamp,
+                authorized: this.hasPersistedTokens(),
+                config
+            };
         } catch (error) {
-            console.error('[ZohoService] Health Check Failed:', error.message);
-            return { 
-                status: 'DISCONNECTED', 
-                message: error.message || 'Unknown connection error',
-                timestamp: new Date()
+            const msg = error.message || String(error);
+            const code = error.code || '';
+            console.error('[ZohoService] Health Check Failed:', code || msg);
+
+            if (code === 'ZOHO_NOT_CONFIGURED') {
+                return { status: 'NOT_CONFIGURED', message: msg, timestamp, authorized: false, config };
+            }
+            if (code === 'ZOHO_NOT_AUTHORIZED' || msg.includes('MANDATORY_GRANT_TOKEN') || msg.includes('ZOHO_NOT_AUTHORIZED')) {
+                return { status: 'NOT_AUTHORIZED', message: 'Not authorized with Zoho.', timestamp, authorized: false, config };
+            }
+            if (/refresh|token|oauth|invalid_code|invalid_grant/i.test(msg)) {
+                return { status: 'TOKEN_REFRESH_FAILED', message: 'Token refresh or OAuth credential failure.', timestamp, authorized: false, config };
+            }
+            if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|unreachable/i.test(msg)) {
+                return { status: 'ZOHO_UNREACHABLE', message: 'Unable to reach Zoho CRM APIs.', timestamp, authorized: false, config };
+            }
+            return {
+                status: 'API_ERROR',
+                message: 'Zoho API error during health check.',
+                timestamp,
+                authorized: this.hasPersistedTokens(),
+                config
             };
         }
     }

@@ -224,10 +224,10 @@ export function initContextMenu() {
 }
 
 /**
- * Displays a modal with Zoho integration health and recent logs
+ * Displays a modal with Zoho integration health, OAuth connect/disconnect, and recent logs.
+ * Never displays tokens or secrets.
  */
 async function showZohoStatusModal() {
-    // Create modal if it doesn't exist
     let modal = document.getElementById('zohoStatusModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -248,18 +248,20 @@ async function showZohoStatusModal() {
 
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="background: white; padding: 25px; border-radius: 12px; width: 600px; max-width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+        <div class="modal-content" style="background: white; padding: 25px; border-radius: 12px; width: 640px; max-width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
                 <h2 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 24px;">🛡️</span> Zoho Integration Health
+                    <span style="font-size: 24px;">🛡️</span> Zoho CRM Integration
                 </h2>
-                <button onclick="document.getElementById('zohoStatusModal').style.display='none'" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">&times;</button>
+                <button type="button" id="btnCloseZohoStatus" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">&times;</button>
             </div>
-            
-            <div id="zohoHealthStatus" style="padding: 15px; border-radius: 8px; margin-bottom: 20px; background: #f3f4f6; display: flex; align-items: center; gap: 15px;">
+
+            <div id="zohoHealthStatus" style="padding: 15px; border-radius: 8px; margin-bottom: 16px; background: #f3f4f6; display: flex; align-items: center; gap: 15px;">
                 <div class="spinner" style="border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite;"></div>
                 Checking connection to Zoho CRM...
             </div>
+
+            <div id="zohoOAuthActions" style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;"></div>
 
             <h3 style="font-size: 14px; text-transform: uppercase; color: #666; margin-bottom: 10px;">Recent Sync Activity</h3>
             <div id="zohoSyncLogs" style="font-size: 13px;">
@@ -274,31 +276,95 @@ async function showZohoStatusModal() {
         </style>
     `;
 
+    document.getElementById('btnCloseZohoStatus')?.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    const statusLabel = (status) => {
+        const map = {
+            CONNECTED: 'Connected',
+            NOT_CONFIGURED: 'Not configured',
+            NOT_AUTHORIZED: 'Not authorized',
+            TOKEN_REFRESH_FAILED: 'Token refresh failed',
+            ZOHO_UNREACHABLE: 'Zoho unreachable',
+            API_ERROR: 'API error',
+            DISCONNECTED: 'Disconnected'
+        };
+        return map[status] || status || 'Unknown';
+    };
+
+    const statusTone = (status) => {
+        if (status === 'CONNECTED') return { bg: '#ecfdf5', color: '#065f46', icon: '✅' };
+        if (status === 'NOT_AUTHORIZED' || status === 'NOT_CONFIGURED') return { bg: '#fffbeb', color: '#92400e', icon: '⚠️' };
+        return { bg: '#fef2f2', color: '#991b1b', icon: '❌' };
+    };
+
     try {
         const response = await fetchWithAuth('/api/zoho/status');
         const data = await response.json();
-        
+        const health = data.health || {};
+        const tone = statusTone(health.status);
+        const checkedAt = health.timestamp ? new Date(health.timestamp).toLocaleString() : '—';
+
+        if (data.crmUi) {
+            window.__zohoCrmUi = data.crmUi;
+        }
+
         const healthEl = document.getElementById('zohoHealthStatus');
-        if (data.health.status === 'CONNECTED') {
-            healthEl.style.background = '#ecfdf5';
-            healthEl.style.color = '#065f46';
-            healthEl.innerHTML = `
-                <span style="font-size: 20px;">✅</span>
-                <div>
-                    <strong>Connected</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${data.health.message}</span>
-                </div>
-            `;
-        } else {
-            healthEl.style.background = '#fef2f2';
-            healthEl.style.color = '#991b1b';
-            healthEl.innerHTML = `
-                <span style="font-size: 20px;">❌</span>
-                <div>
-                    <strong>Disconnected</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${data.health.message}</span>
-                </div>
-            `;
+        healthEl.style.background = tone.bg;
+        healthEl.style.color = tone.color;
+        healthEl.innerHTML = `
+            <span style="font-size: 20px;">${tone.icon}</span>
+            <div>
+                <strong>${statusLabel(health.status)}</strong><br>
+                <span style="font-size: 12px; opacity: 0.85;">${health.message || ''}</span><br>
+                <span style="font-size: 11px; opacity: 0.7;">Last check: ${checkedAt}</span>
+            </div>
+        `;
+
+        const actions = document.getElementById('zohoOAuthActions');
+        const canManageOAuth = (() => {
+            try {
+                const u = window.currentUser || JSON.parse(localStorage.getItem('user') || 'null');
+                const role = u?.role;
+                return role === 'admin' || role === 'superuser' || (Array.isArray(role) && (role.includes('admin') || role.includes('superuser')));
+            } catch {
+                return false;
+            }
+        })();
+
+        if (actions) {
+            if (!canManageOAuth) {
+                actions.innerHTML = '<p style="font-size:12px;color:#6b7280;margin:0;">Admin authorization required to connect or disconnect Zoho.</p>';
+            } else if (health.status === 'NOT_CONFIGURED') {
+                actions.innerHTML = '<p style="font-size:12px;color:#92400e;margin:0;">Set ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REDIRECT_URL on the server, then reconnect.</p>';
+            } else {
+                const parts = [];
+                if (health.status !== 'CONNECTED') {
+                    parts.push(`<a id="btnZohoConnect" class="action-button" href="/api/zoho/oauth/authorize" style="background:#f59e0b;color:white;text-decoration:none;display:inline-flex;align-items:center;padding:8px 14px;border-radius:6px;font-weight:600;">Connect Zoho</a>`);
+                }
+                if (health.status === 'CONNECTED' || health.config?.tokenFile === 'PRESENT' || health.status === 'TOKEN_REFRESH_FAILED') {
+                    parts.push(`<button type="button" id="btnZohoDisconnect" class="action-button" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;">Disconnect Zoho</button>`);
+                }
+                if (health.status === 'CONNECTED') {
+                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Disconnect removes OAuth tokens only. Catalog and local Zoho IDs are kept.</span>`);
+                } else {
+                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Opens Zoho authorization (India). Tokens never appear in the browser.</span>`);
+                }
+                actions.innerHTML = parts.join('\n');
+            }
+
+            document.getElementById('btnZohoDisconnect')?.addEventListener('click', async () => {
+                if (!confirm('Disconnect Zoho authorization? Local catalog and asset Zoho IDs will be preserved.')) return;
+                try {
+                    const r = await fetchWithAuth('/api/zoho/oauth/disconnect', { method: 'POST' });
+                    const body = await r.json();
+                    if (!r.ok) throw new Error(body.error || 'Disconnect failed');
+                    await showZohoStatusModal();
+                } catch (e) {
+                    alert(e.message || 'Disconnect failed');
+                }
+            });
         }
 
         const logsEl = document.getElementById('zohoSyncLogs');
@@ -306,14 +372,14 @@ async function showZohoStatusModal() {
             logsEl.innerHTML = data.logs.map(log => `
                 <div class="log-item">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <strong>${log.operation.replace(/_/g, ' ')}</strong>
+                        <strong>${String(log.operation || '').replace(/_/g, ' ')}</strong>
                         <span class="status-tag" style="background: ${log.status === 'SUCCESS' ? '#d1fae5' : '#fee2e2'}; color: ${log.status === 'SUCCESS' ? '#065f46' : '#991b1b'};">
                             ${log.status}
                         </span>
                     </div>
                     <div style="color: #666; font-size: 11px; display: flex; gap: 10px;">
                         <span>${new Date(log.created_at).toLocaleString()}</span>
-                        ${log.zoho_id ? `<span>Zoho ID: ...${log.zoho_id.substring(log.zoho_id.length - 6)}</span>` : ''}
+                        ${log.zoho_id ? `<span>Zoho ID: ...${String(log.zoho_id).slice(-6)}</span>` : ''}
                     </div>
                     ${log.error_message ? `<div style="color: #991b1b; margin-top: 5px; font-family: monospace; font-size: 11px; background: #fff1f2; padding: 5px; border-radius: 4px;">${log.error_message}</div>` : ''}
                 </div>
@@ -321,8 +387,21 @@ async function showZohoStatusModal() {
         } else {
             logsEl.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No sync activity recorded yet.</p>';
         }
-
     } catch (err) {
-        document.getElementById('zohoHealthStatus').innerHTML = 'Error loading status';
+        const healthEl = document.getElementById('zohoHealthStatus');
+        if (healthEl) healthEl.innerHTML = 'Error loading status';
     }
 }
+
+/** Build Zoho Product UI URL using optional server-provided org template. */
+function buildZohoProductUiUrl(zohoProductId) {
+    const id = String(zohoProductId || '').trim();
+    if (!id) return null;
+    const tpl = window.__zohoCrmUi?.productUrlTemplate;
+    if (tpl && tpl.includes('{id}')) return tpl.replace('{id}', encodeURIComponent(id));
+    const orgId = window.__zohoCrmUi?.orgId || '60021949576';
+    return `https://crm.zoho.in/crm/org${orgId}/tab/Products/${encodeURIComponent(id)}`;
+}
+
+window.buildZohoProductUiUrl = buildZohoProductUiUrl;
+window.showZohoStatusModal = showZohoStatusModal;

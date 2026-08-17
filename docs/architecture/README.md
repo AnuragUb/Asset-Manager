@@ -69,7 +69,7 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |
 | Auth / RBAC | `07` + login/JWT middleware in backend |
-| Zoho | Backend Zoho modules + env tokens (never commit) |
+| Zoho CRM OAuth + sync | [`ZOHO_CRM_INTEGRATION.md`](./ZOHO_CRM_INTEGRATION.md) |
 | ARRI / service portal | Frontend `servicePortal.js` + related API |
 
 ---

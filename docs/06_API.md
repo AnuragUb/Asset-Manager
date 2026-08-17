@@ -214,13 +214,18 @@ Persistence often `dynamic.json` for settings; HSN uses `hsn_codes`.
 
 ### Zoho
 
+See [`architecture/ZOHO_CRM_INTEGRATION.md`](./architecture/ZOHO_CRM_INTEGRATION.md) for OAuth flow, scopes, and token storage.
+
 | Method | Route | Auth | Consumers |
 |--------|-------|------|-----------|
 | POST `/api/zoho/sync-asset/:id` | JWT | `asset-view.js` |
 | POST `/api/zoho/sync-deals` | JWT | — |
 | POST `/api/zoho/sync-products` | JWT | `contextMenu`, `dashboard` |
 | GET `/api/zoho/catalog` | JWT | `inventory` |
-| GET `/api/zoho/status` | JWT | `contextMenu` |
+| GET `/api/zoho/status` | JWT | `contextMenu` (status + OAuth meta + CRM UI template; no secrets) |
+| GET `/api/zoho/oauth/authorize` | JWT + admin/superuser | Starts Server-Based OAuth (redirect to Zoho India) |
+| GET `/api/zoho/oauth/callback` | Public (OAuth state) | Zoho redirect; exchanges code; never returns tokens |
+| POST `/api/zoho/oauth/disconnect` | JWT + admin/superuser | Removes token file only; preserves local catalog / Zoho IDs |
 
 ### Service + ARRI
 
