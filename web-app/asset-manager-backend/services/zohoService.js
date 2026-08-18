@@ -9,11 +9,15 @@ const cache = require('./cacheService');
  * Minimum OAuth scopes for existing AssetEngine Zoho operations.
  * Products ALL covers catalog pull + asset product create/update.
  * Deals READ covers sync-deals.
+ * settings.fields/modules READ required by SDK Utility.getFields
+ * when autoRefreshFields(true) precedes Records API calls.
  * findUser(false) avoids mandatory users/org READ scopes.
  */
 const ZOHO_OAUTH_SCOPES = [
     'ZohoCRM.modules.products.ALL',
-    'ZohoCRM.modules.deals.READ'
+    'ZohoCRM.modules.deals.READ',
+    'ZohoCRM.settings.fields.READ',
+    'ZohoCRM.settings.modules.READ'
 ].join(',');
 
 const OAUTH_STATE_TTL_SEC = 600;
