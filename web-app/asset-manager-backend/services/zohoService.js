@@ -21,6 +21,50 @@ const TOKEN_FILE = path.join(__dirname, '../zoho_tokens.txt');
 const ACCOUNTS_AUTH_BASE = 'https://accounts.zoho.in/oauth/v2/auth';
 
 /**
+ * SDK FileStore CSV columns (see @zohocrm/nodejs-sdk-8.0 FileStore.setToken):
+ * id, user_name, client_id, client_secret, refresh_token, access_token,
+ * grant_token, expiry_time, redirect_url, api_domain
+ */
+const FS_COL = {
+    ID: 0,
+    REFRESH_TOKEN: 4,
+    ACCESS_TOKEN: 5,
+    GRANT_TOKEN: 6
+};
+
+/**
+ * Parse Zoho SDK FileStore CSV text for a usable credential.
+ * Header-only / empty / blank data rows → null (not authenticated).
+ * Does not return secret values to callers beyond presence for builder wiring
+ * when used internally — callers must not log the returned strings.
+ *
+ * @param {string} fileContents
+ * @returns {{ id: string|null, refreshToken: string|null, accessToken: string|null }|null}
+ */
+function parseZohoFileStoreCredentials(fileContents) {
+    if (!fileContents || !String(fileContents).trim()) return null;
+    const lines = String(fileContents)
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    if (lines.length < 2) return null; // header only or empty
+
+    // Skip header (first line). Find first data row with refresh or access token.
+    for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        if (cols.length < 6) continue;
+        const id = (cols[FS_COL.ID] || '').trim() || null;
+        const refreshToken = (cols[FS_COL.REFRESH_TOKEN] || '').trim() || null;
+        const accessToken = (cols[FS_COL.ACCESS_TOKEN] || '').trim() || null;
+        // A usable persisted session needs refresh and/or access (SDK build keys).
+        if (refreshToken || accessToken) {
+            return { id, refreshToken, accessToken };
+        }
+    }
+    return null;
+}
+
+/**
  * Zoho CRM Service
  *
  * Token persistence: FileStore (Option A — lowest risk).
@@ -31,6 +75,8 @@ const ACCOUNTS_AUTH_BASE = 'https://accounts.zoho.in/oauth/v2/auth';
 class ZohoService {
     constructor() {
         this.initialized = false;
+        /** @type {Promise<any>|null} */
+        this._oauthExchangePromise = null;
     }
 
     _loadEnv() {
@@ -41,13 +87,41 @@ class ZohoService {
         return TOKEN_FILE;
     }
 
-    hasPersistedTokens() {
+    /**
+     * Read first usable credential from FileStore CSV (no logging of values).
+     */
+    readPersistedCredential() {
         try {
-            if (!fs.existsSync(TOKEN_FILE)) return false;
-            const stat = fs.statSync(TOKEN_FILE);
-            return stat.size > 0;
+            if (!fs.existsSync(TOKEN_FILE)) return null;
+            const contents = fs.readFileSync(TOKEN_FILE, 'utf8');
+            return parseZohoFileStoreCredentials(contents);
         } catch {
-            return false;
+            return null;
+        }
+    }
+
+    /**
+     * True only when FileStore contains a real refresh and/or access token row.
+     * Header-only / empty / invalid files return false.
+     */
+    hasPersistedTokens() {
+        return this.readPersistedCredential() != null;
+    }
+
+    /**
+     * Delete token file so OAuth code exchange is not poisoned by stale/header-only store.
+     * Does not touch catalog, assets, or DB.
+     */
+    _clearTokenFileForOAuthExchange() {
+        try {
+            if (fs.existsSync(TOKEN_FILE)) {
+                fs.unlinkSync(TOKEN_FILE);
+            }
+        } catch (err) {
+            console.error('[ZohoService] Failed to clear token file before OAuth exchange:', err.message);
+            const e = new Error('TOKEN_FILE_CLEAR_FAILED');
+            e.code = 'TOKEN_FILE_CLEAR_FAILED';
+            throw e;
         }
     }
 
@@ -89,6 +163,15 @@ class ZohoService {
     }
 
     async init(options = {}) {
+        // Wait out an in-flight OAuth code exchange so health checks do not race FileStore.
+        if (this._oauthExchangePromise && !options.authorizationCode) {
+            try {
+                await this._oauthExchangePromise;
+            } catch (_) {
+                /* exchange failed; continue into normal init / NOT_AUTHORIZED */
+            }
+        }
+
         if (this.initialized && !options.force && !options.authorizationCode) return;
 
         this._loadEnv();
@@ -123,14 +206,21 @@ class ZohoService {
                 ? String(options.authorizationCode).trim()
                 : '';
             const grantToken = process.env.ZOHO_GRANT_TOKEN || process.env.GRANT_TOKEN;
-            const hasExistingTokens = this.hasPersistedTokens();
+            const persisted = authorizationCode ? null : this.readPersistedCredential();
 
             if (authorizationCode) {
-                // Server-based OAuth callback code (treated as grant token by SDK)
-                console.log('[ZohoService] Initializing with OAuth authorization code (value not logged)');
+                // Server-based OAuth callback: SDK exchanges authorization_code via grantToken.
+                console.log('[ZohoService] OAuth authorization code received');
                 tokenBuilder.grantToken(authorizationCode);
-            } else if (hasExistingTokens) {
-                console.log('[ZohoService] Initializing from persisted FileStore tokens');
+            } else if (persisted && persisted.refreshToken) {
+                console.log('[ZohoService] Persisted Zoho refresh token found');
+                tokenBuilder.refreshToken(persisted.refreshToken);
+            } else if (persisted && persisted.accessToken) {
+                console.log('[ZohoService] Persisted Zoho access token found');
+                tokenBuilder.accessToken(persisted.accessToken);
+            } else if (persisted && persisted.id) {
+                console.log('[ZohoService] Persisted Zoho token id found');
+                tokenBuilder.id(persisted.id);
             } else if (grantToken && String(grantToken).trim().length > 50) {
                 // Legacy Self Client / grant-token bootstrap (still supported)
                 console.log('[ZohoService] Initializing with env grant token bootstrap (value not logged)');
@@ -166,7 +256,11 @@ class ZohoService {
                 .initialize();
 
             this.initialized = true;
-            console.log('[ZohoService] SDK Initialized successfully');
+            if (authorizationCode) {
+                console.log('[ZohoService] OAuth token exchange successful');
+            } else {
+                console.log('[ZohoService] SDK Initialized successfully');
+            }
         } catch (error) {
             this.initialized = false;
             if (!error.code) {
@@ -233,6 +327,7 @@ class ZohoService {
 
     /**
      * Complete server-based OAuth using authorization code from callback.
+     * Clears stale/header-only FileStore first so exchange is not poisoned.
      */
     async completeOAuthWithCode(authorizationCode) {
         if (!authorizationCode || !String(authorizationCode).trim()) {
@@ -240,13 +335,31 @@ class ZohoService {
             err.code = 'MISSING_AUTHORIZATION_CODE';
             throw err;
         }
-        await this.init({ authorizationCode: String(authorizationCode).trim(), force: true });
-        if (!this.hasPersistedTokens()) {
-            const err = new Error('TOKEN_PERSISTENCE_FAILED');
-            err.code = 'TOKEN_PERSISTENCE_FAILED';
-            throw err;
+
+        const exchange = (async () => {
+            this.initialized = false;
+            // Do not treat existing FileStore as authorized — start clean for code exchange.
+            this._clearTokenFileForOAuthExchange();
+            await this.init({
+                authorizationCode: String(authorizationCode).trim(),
+                force: true
+            });
+            if (!this.hasPersistedTokens()) {
+                const err = new Error('TOKEN_PERSISTENCE_FAILED');
+                err.code = 'TOKEN_PERSISTENCE_FAILED';
+                throw err;
+            }
+            return { ok: true, authorized: true };
+        })();
+
+        this._oauthExchangePromise = exchange;
+        try {
+            return await exchange;
+        } finally {
+            if (this._oauthExchangePromise === exchange) {
+                this._oauthExchangePromise = null;
+            }
         }
-        return { ok: true, authorized: true };
     }
 
     /**
@@ -464,7 +577,7 @@ class ZohoService {
             if (code === 'ZOHO_NOT_CONFIGURED') {
                 return { status: 'NOT_CONFIGURED', message: msg, timestamp, authorized: false, config };
             }
-            if (code === 'ZOHO_NOT_AUTHORIZED' || msg.includes('MANDATORY_GRANT_TOKEN') || msg.includes('ZOHO_NOT_AUTHORIZED')) {
+            if (code === 'ZOHO_NOT_AUTHORIZED' || msg.includes('MANDATORY_GRANT_TOKEN') || msg.includes('ZOHO_NOT_AUTHORIZED') || code === 'MANDATORY VALUE ERROR' || msg.includes('MANDATORY VALUE ERROR')) {
                 return { status: 'NOT_AUTHORIZED', message: 'Not authorized with Zoho.', timestamp, authorized: false, config };
             }
             if (/refresh|token|oauth|invalid_code|invalid_grant/i.test(msg)) {
@@ -727,3 +840,4 @@ class ZohoService {
 }
 
 module.exports = new ZohoService();
+module.exports.parseZohoFileStoreCredentials = parseZohoFileStoreCredentials;
