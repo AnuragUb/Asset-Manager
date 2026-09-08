@@ -1,0 +1,1054 @@
+/**
+ * Physical Intake — register existing / non-procurement physical stock.
+ * Does not create Assets or Inventory through the legacy add forms.
+ */
+import { showToast } from './utils.js?v=6.60';
+import {
+    canLogistics,
+    escapeHtml,
+    emptyState,
+    toastOperatorError,
+    formatQty,
+    formatWhen,
+    dash,
+    go,
+    consumeOpen,
+    lifecycleApi
+} from './lifecycle.js?v=7.48';
+
+export const PO_STATUS_LABELS = {
+    EXPECTED: 'PO Expected Later',
+    NOT_REQUIRED: 'No PO Required',
+    AVAILABLE: 'Purchase Order Already Available',
+    AWAITING_PO: 'PO Expected Later',
+    PO_LINKED: 'Purchase Order linked'
+};
+
+export function defaultPoStatusForType(intakeType) {
+    if (intakeType === 'EXTERNAL_ACQUISITION') return 'EXPECTED';
+    if (intakeType === 'OTHER_APPROVED') return '';
+    return 'NOT_REQUIRED';
+}
+
+function poStatusLabel(choiceOrState) {
+    return PO_STATUS_LABELS[choiceOrState] || '—';
+}
+
+function el(id) {
+    return document.getElementById(id);
+}
+
+function canMutate() {
+    return canLogistics();
+}
+
+async function api(path, options = {}) {
+    return lifecycleApi(path, options);
+}
+
+function idempotencyKey(prefix) {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const wizard = {
+    holdingType: '',
+    intakeType: '',
+    product: null,
+    quantity: '',
+    unit: '',
+    location: 'Mumbai',
+    reason: '',
+    source: {},
+    poStatus: '',
+    expectedPoNumber: '',
+    expectedVendorRef: '',
+    selectedPo: null,
+    selectedLine: null,
+    result: null
+};
+
+function resetWizard() {
+    wizard.holdingType = '';
+    wizard.intakeType = '';
+    wizard.product = null;
+    wizard.quantity = '';
+    wizard.unit = '';
+    wizard.location = 'Mumbai';
+    wizard.reason = '';
+    wizard.source = {};
+    wizard.poStatus = '';
+    wizard.expectedPoNumber = '';
+    wizard.expectedVendorRef = '';
+    wizard.selectedPo = null;
+    wizard.selectedLine = null;
+    wizard.result = null;
+}
+
+export function provenanceHtml(intake, opts = {}) {
+    if (!intake) return '';
+    const typeLabel = INTAKE_TYPE_LABELS[intake.intakeType] || intake.intakeType || '—';
+    const source = intake.sourceSummary || dash(intake.reason);
+    const compact = opts.compact ? ' style="margin:12px 0;"' : '';
+    const cp = intake.commercialProvenance;
+    const out = (intake.outputs || [])[0] || {};
+    const resourceType = out.resourceType || intake.holdingType || '';
+    const resourceId = out.resourceId || intake.physicalId || '';
+    const poLabel = cp ? poStatusLabel(cp.state || cp.poStatusLabel) : '';
+    const showLink = !opts.hideLink && cp && cp.state === 'AWAITING_PO' && canMutate() && resourceType && resourceId;
+    const poBits = cp ? `
+            <div><div class="lc-k">Purchase Order Status</div><div>${escapeHtml(cp.poStatusLabel || poLabel || '—')}</div></div>
+            ${cp.expectedPoNumber ? `<div><div class="lc-k">Expected PO Number</div><div>${escapeHtml(cp.expectedPoNumber)}</div></div>` : ''}
+            ${cp.expectedVendorRef ? `<div><div class="lc-k">Expected vendor / reference</div><div>${escapeHtml(cp.expectedVendorRef)}</div></div>` : ''}
+            ${cp.procurementPoId ? `<div><div class="lc-k">Purchase Order</div><div class="lc-mono">${escapeHtml(cp.procurementPoId)}</div></div>` : ''}
+            ${cp.procurementPoLineId ? `<div><div class="lc-k">PO Line</div><div class="lc-mono">${escapeHtml(cp.procurementPoLineId)}</div></div>` : ''}
+            ${cp.vendorName ? `<div><div class="lc-k">Vendor</div><div>${escapeHtml(cp.vendorName)}</div></div>` : ''}
+    ` : '';
+    return `<section class="pi-provenance"${compact}>
+        <div class="lc-section-label">Origin</div>
+        <div class="pi-prov-grid">
+            <div><div class="lc-k">Origin</div><div>NON-PROCUREMENT INTAKE</div></div>
+            <div><div class="lc-k">Reason</div><div>${escapeHtml(typeLabel)}</div></div>
+            <div><div class="lc-k">Source</div><div>${source}</div></div>
+            <div><div class="lc-k">Intake</div><div class="lc-mono">${escapeHtml(intake.id || '')}</div></div>
+            ${intake.actor ? `<div><div class="lc-k">Registered by</div><div>${escapeHtml(intake.actor)}</div></div>` : ''}
+            ${intake.createdAt ? `<div><div class="lc-k">When</div><div>${formatWhen(intake.createdAt)}</div></div>` : ''}
+            ${poBits}
+        </div>
+        <p class="lc-muted" style="margin:8px 0 0;">Physical identity is the Asset or Inventory ID. The Intake ID is an audit reference.</p>
+        ${showLink ? `<button type="button" class="action-button blue pi-link-po" style="margin-top:10px;" data-resource-type="${escapeHtml(resourceType)}" data-resource-id="${escapeHtml(resourceId)}" data-intake-id="${escapeHtml(intake.id || '')}">Link Purchase Order</button>` : ''}
+    </section>`;
+}
+
+export async function loadProvenance(physicalIntakeId) {
+    if (!physicalIntakeId) return null;
+    try {
+        const data = await api(`/api/physical-intakes/${encodeURIComponent(physicalIntakeId)}`);
+        return data.intake || data;
+    } catch (_err) {
+        return null;
+    }
+}
+
+function choiceButtons(name, options, selected) {
+    return options.map((opt) => {
+        const on = selected === opt.value ? ' pi-choice-on' : '';
+        return `<button type="button" class="pi-choice${on}" data-pi-field="${escapeHtml(name)}" data-pi-value="${escapeHtml(opt.value)}">
+            <strong>${escapeHtml(opt.label)}</strong>
+            ${opt.hint ? `<span>${escapeHtml(opt.hint)}</span>` : ''}
+        </button>`;
+    }).join('');
+}
+
+function sourceFieldsHtml() {
+    const t = wizard.intakeType;
+    if (t === 'OPENING_BALANCE') {
+        return `
+            <p class="pi-callout">Opening balance — existing physical stock being registered in AssetEngine. This is not a Receipt or Purchase.</p>
+            <label class="lc-k">Opening balance note</label>
+            <textarea id="piSourceNote" class="form-input" rows="2">${escapeHtml(wizard.source.openingBalanceNote || wizard.reason || '')}</textarea>
+            <label class="lc-k">Source date (optional)</label>
+            <input type="date" id="piSourceDate" class="form-input" value="${escapeHtml(wizard.source.sourceDate || '')}">
+            <label class="lc-k">Legacy reference (optional)</label>
+            <input type="text" id="piLegacyRef" class="form-input" value="${escapeHtml(wizard.source.legacyReference || '')}">
+        `;
+    }
+    if (t === 'LEGACY_EXISTING_STOCK') {
+        return `
+            <label class="lc-k">Legacy ID (optional)</label>
+            <input type="text" id="piLegacyId" class="form-input" value="${escapeHtml(wizard.source.legacyId || '')}">
+            <label class="lc-k">Source system (optional)</label>
+            <input type="text" id="piSourceSystem" class="form-input" value="${escapeHtml(wizard.source.sourceSystem || '')}">
+            <label class="lc-k">Legacy description (optional)</label>
+            <textarea id="piLegacyDesc" class="form-input" rows="2">${escapeHtml(wizard.source.legacyDescription || '')}</textarea>
+        `;
+    }
+    if (t === 'EXTERNAL_ACQUISITION') {
+        return `
+            <label class="lc-k">Source / reference document (optional)</label>
+            <input type="text" id="piSourceDoc" class="form-input" value="${escapeHtml(wizard.source.sourceDocument || '')}">
+            <label class="lc-k">Acquisition date (optional)</label>
+            <input type="date" id="piAcqDate" class="form-input" value="${escapeHtml(wizard.source.acquisitionDate || '')}">
+            <label class="lc-k">Note (optional)</label>
+            <textarea id="piSourceNote" class="form-input" rows="2">${escapeHtml(wizard.source.note || wizard.reason || '')}</textarea>
+        `;
+    }
+    if (t === 'INTERNAL_TRANSFER') {
+        return `
+            <p class="pi-callout">Internal Transfer here is intake provenance only. It does not create a complete transfer ledger.</p>
+            <label class="lc-k">Source location / context (required)</label>
+            <input type="text" id="piSourceLocation" class="form-input" required value="${escapeHtml(wizard.source.sourceLocation || '')}">
+            <label class="lc-k">Transfer reference (optional)</label>
+            <input type="text" id="piTransferRef" class="form-input" value="${escapeHtml(wizard.source.transferReference || '')}">
+            <label class="lc-k">Note (optional)</label>
+            <textarea id="piSourceNote" class="form-input" rows="2">${escapeHtml(wizard.source.note || '')}</textarea>
+        `;
+    }
+    if (t === 'DONATION') {
+        return `
+            <label class="lc-k">Donor / reference (optional)</label>
+            <input type="text" id="piDonor" class="form-input" value="${escapeHtml(wizard.source.donor || '')}">
+            <label class="lc-k">Date (optional)</label>
+            <input type="date" id="piDonationDate" class="form-input" value="${escapeHtml(wizard.source.donationDate || '')}">
+            <label class="lc-k">Note (optional)</label>
+            <textarea id="piSourceNote" class="form-input" rows="2">${escapeHtml(wizard.source.note || wizard.reason || '')}</textarea>
+        `;
+    }
+    if (t === 'NON_PO_ACQUISITION') {
+        return `
+            <label class="lc-k">Reason (required)</label>
+            <textarea id="piReason" class="form-input" rows="3" required>${escapeHtml(wizard.reason || '')}</textarea>
+            <label class="lc-k">External reference (optional)</label>
+            <input type="text" id="piSourceDoc" class="form-input" value="${escapeHtml(wizard.source.reference || '')}">
+        `;
+    }
+    if (t === 'OTHER_APPROVED') {
+        return `
+            <label class="lc-k">Explanation / reason (required)</label>
+            <textarea id="piReason" class="form-input" rows="3" required>${escapeHtml(wizard.reason || wizard.source.explanation || '')}</textarea>
+            <p class="lc-muted">The logged-in Logistics operator is recorded as the approving actor.</p>
+        `;
+    }
+    return '<p class="lc-muted">Select an intake type first.</p>';
+}
+
+function collectSource() {
+    const t = wizard.intakeType;
+    const val = (id) => el(id)?.value?.trim() || '';
+    wizard.reason = val('piReason') || val('piSourceNote') || wizard.reason;
+    wizard.location = val('piLocation') || wizard.location || 'Mumbai';
+    if (t === 'OPENING_BALANCE') {
+        wizard.source = {
+            openingBalanceNote: val('piSourceNote'),
+            sourceDate: val('piSourceDate'),
+            legacyReference: val('piLegacyRef')
+        };
+        wizard.reason = wizard.reason || wizard.source.openingBalanceNote;
+    } else if (t === 'LEGACY_EXISTING_STOCK') {
+        wizard.source = {
+            legacyId: val('piLegacyId'),
+            sourceSystem: val('piSourceSystem'),
+            legacyDescription: val('piLegacyDesc')
+        };
+    } else if (t === 'EXTERNAL_ACQUISITION') {
+        wizard.source = {
+            sourceDocument: val('piSourceDoc'),
+            acquisitionDate: val('piAcqDate'),
+            note: val('piSourceNote')
+        };
+        wizard.reason = wizard.reason || wizard.source.note;
+    } else if (t === 'INTERNAL_TRANSFER') {
+        wizard.source = {
+            sourceLocation: val('piSourceLocation'),
+            transferReference: val('piTransferRef'),
+            note: val('piSourceNote')
+        };
+    } else if (t === 'DONATION') {
+        wizard.source = {
+            donor: val('piDonor'),
+            donationDate: val('piDonationDate'),
+            note: val('piSourceNote')
+        };
+        wizard.reason = wizard.reason || wizard.source.note;
+    } else if (t === 'NON_PO_ACQUISITION') {
+        wizard.source = { reference: val('piSourceDoc') };
+        wizard.reason = val('piReason');
+    } else if (t === 'OTHER_APPROVED') {
+        wizard.source = { explanation: val('piReason') };
+        wizard.reason = val('piReason');
+    }
+}
+
+function wizardHost() {
+    return el('physicalIntakesContent');
+}
+
+function renderList(intakes) {
+    const host = wizardHost();
+    if (!host) return;
+    if (!intakes.length) {
+        host.innerHTML = emptyState({
+            title: 'No Physical Intakes yet.',
+            body: 'Register existing or non-procurement stock here. Procurement stock still arrives through Receipt Notes.',
+            actionLabel: canMutate() ? '+ Physical Intake' : '',
+            actionView: canMutate() ? 'physical-intakes-view' : '',
+            actionAttr: 'id="btnEmptyPhysicalIntake"'
+        });
+        host.querySelector('#btnEmptyPhysicalIntake')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            startWizard();
+        });
+        return;
+    }
+    host.innerHTML = `
+        <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr>
+                    <th>Intake</th>
+                    <th>Type</th>
+                    <th>Holding</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Physical ID</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${intakes.map((row) => {
+                    const out = (row.outputs || [])[0] || {};
+                    return `<tr class="pi-row" data-id="${escapeHtml(row.id)}" style="cursor:pointer;">
+                        <td class="lc-mono">${escapeHtml(row.id)}</td>
+                        <td>${escapeHtml(INTAKE_TYPE_LABELS[row.intakeType] || row.intakeType)}</td>
+                        <td>${escapeHtml(row.holdingType)}</td>
+                        <td>${escapeHtml(row.productName || row.productId || '—')}</td>
+                        <td>${formatQty(row.quantity)} ${escapeHtml(row.unit || '')}</td>
+                        <td class="lc-mono">${escapeHtml(out.resourceId || '—')}</td>
+                        <td>${formatWhen(row.createdAt)}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    host.querySelectorAll('.pi-row').forEach((row) => {
+        row.addEventListener('click', () => openDetail(row.getAttribute('data-id')));
+    });
+}
+
+async function renderIntakeList() {
+    const host = wizardHost();
+    if (!host) return;
+    const q = el('physicalIntakeSearch')?.value || '';
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    params.set('limit', '100');
+    const data = await api(`/api/physical-intakes?${params.toString()}`);
+    const intakes = data.intakes || [];
+    if (el('physicalIntakeCountBadge')) {
+        el('physicalIntakeCountBadge').textContent = `${data.total ?? intakes.length} Intakes`;
+    }
+    renderList(intakes);
+}
+
+function bindChoiceClicks(host, field, onPick) {
+    host.querySelectorAll(`[data-pi-field="${field}"]`).forEach((btn) => {
+        btn.addEventListener('click', () => onPick(btn.getAttribute('data-pi-value')));
+    });
+}
+
+function renderStepHolding() {
+    const host = wizardHost();
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <p class="pi-banner">This physical stock is being registered outside procurement. Receipt Notes remain the path for stock that came through a Purchase Order.</p>
+            <h3>What are you registering?</h3>
+            <div class="pi-choices">
+                ${choiceButtons('holdingType', [
+                    { value: 'ASSET', label: 'Asset', hint: 'Individually identified physical holding. One AssetEngine ID and QR.' },
+                    { value: 'INVENTORY', label: 'Inventory', hint: 'Quantity-tracked holding. One Inventory row and QR. Not per-unit children.' }
+                ], wizard.holdingType)}
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piCancel">Cancel</button>
+            </div>
+        </div>
+    `;
+    bindChoiceClicks(host, 'holdingType', (value) => {
+        wizard.holdingType = value;
+        renderStepType();
+    });
+    el('piCancel')?.addEventListener('click', () => {
+        resetWizard();
+        renderIntakeList().catch((err) => toastOperatorError(err));
+    });
+}
+
+function renderStepType() {
+    const host = wizardHost();
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <p class="lc-muted">Registering ${escapeHtml(wizard.holdingType === 'ASSET' ? 'an Asset' : 'Inventory')}.</p>
+            <h3>Why does this stock exist?</h3>
+            <div class="pi-choices pi-choices-grid">
+                ${choiceButtons('intakeType', [
+                    { value: 'OPENING_BALANCE', label: 'Opening Balance', hint: 'Existing stock being registered in AssetEngine.' },
+                    { value: 'LEGACY_EXISTING_STOCK', label: 'Legacy Existing Stock', hint: 'Known stock from a previous register.' },
+                    { value: 'EXTERNAL_ACQUISITION', label: 'External Acquisition', hint: 'Acquired outside a Receipt Note; a Purchase Order may follow.' },
+                    { value: 'INTERNAL_TRANSFER', label: 'Internal Transfer', hint: 'Provenance only — not a transfer ledger.' },
+                    { value: 'DONATION', label: 'Donation', hint: 'Donated or gifted stock.' },
+                    { value: 'NON_PO_ACQUISITION', label: 'Non-PO Acquisition', hint: 'Requires a reason.' },
+                    { value: 'OTHER_APPROVED', label: 'Other Approved', hint: 'Requires an explanation.' }
+                ], wizard.intakeType)}
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+            </div>
+        </div>
+    `;
+    bindChoiceClicks(host, 'intakeType', (value) => {
+        wizard.intakeType = value;
+        wizard.poStatus = defaultPoStatusForType(value);
+        wizard.selectedPo = null;
+        wizard.selectedLine = null;
+        wizard.expectedPoNumber = '';
+        wizard.expectedVendorRef = '';
+        renderStepProduct();
+    });
+    el('piBack')?.addEventListener('click', renderStepHolding);
+}
+
+function renderStepProduct() {
+    const host = wizardHost();
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Product</h3>
+            <p class="lc-muted">Search and select an existing AssetEngine Product. Physical Intake will not create a Product.</p>
+            <input type="search" id="piProductSearch" class="form-input" placeholder="Search Product name or ID..." style="max-width:420px;">
+            <div id="piProductHits" style="margin-top:10px;"></div>
+            <div id="piProductSelected" style="margin-top:10px;">${wizard.product ? `<strong>${escapeHtml(wizard.product.id)}</strong> · ${escapeHtml(wizard.product.name)}` : ''}</div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button blue" id="piNext" ${wizard.product ? '' : 'disabled'}>Next</button>
+            </div>
+        </div>
+    `;
+    const hits = el('piProductHits');
+    let timer = null;
+    el('piProductSearch')?.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const q = el('piProductSearch')?.value || '';
+            if (q.trim().length < 1) {
+                hits.innerHTML = '';
+                return;
+            }
+            try {
+                const data = await api(`/api/products?q=${encodeURIComponent(q)}&status=ACTIVE&limit=8`);
+                const products = data.products || [];
+                hits.innerHTML = products.map((p) => `<button type="button" class="action-button grey rn-pick-product" data-id="${escapeHtml(p.id)}" style="margin:2px 4px 2px 0;">${escapeHtml(p.id)} · ${escapeHtml(p.name)}</button>`).join('')
+                    || '<p class="lc-muted">No matching Products.</p>';
+                hits.querySelectorAll('.rn-pick-product').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const found = products.find((p) => p.id === btn.getAttribute('data-id'));
+                        wizard.product = found;
+                        wizard.unit = found?.unit || wizard.unit || 'Nos';
+                        el('piProductSelected').innerHTML = `<strong>${escapeHtml(found.id)}</strong> · ${escapeHtml(found.name)}`;
+                        const next = el('piNext');
+                        if (next) next.disabled = false;
+                    });
+                });
+            } catch (err) {
+                toastOperatorError(err);
+            }
+        }, 250);
+    });
+    el('piBack')?.addEventListener('click', renderStepType);
+    el('piNext')?.addEventListener('click', () => {
+        if (!wizard.product) return;
+        renderStepQty();
+    });
+}
+
+function renderStepQty() {
+    const host = wizardHost();
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Quantity / Unit</h3>
+            <p class="lc-muted">${wizard.holdingType === 'ASSET'
+                ? 'One Asset record will be created with this quantity. This is not per-unit Inventory children.'
+                : 'One Inventory record will be created with this quantity.'}</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:640px;">
+                <div>
+                    <label class="lc-k">Quantity</label>
+                    <input type="number" min="0.000001" step="any" id="piQty" class="form-input" value="${escapeHtml(wizard.quantity || '')}">
+                </div>
+                <div>
+                    <label class="lc-k">Unit</label>
+                    <input type="text" id="piUnit" class="form-input" value="${escapeHtml(wizard.unit || wizard.product?.unit || 'Nos')}">
+                </div>
+                <div>
+                    <label class="lc-k">Location</label>
+                    <input type="text" id="piLocation" class="form-input" value="${escapeHtml(wizard.location || 'Mumbai')}">
+                </div>
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button blue" id="piNext">Next</button>
+            </div>
+        </div>
+    `;
+    el('piBack')?.addEventListener('click', renderStepProduct);
+    el('piNext')?.addEventListener('click', () => {
+        wizard.quantity = el('piQty')?.value || '';
+        wizard.unit = el('piUnit')?.value || 'Nos';
+        wizard.location = el('piLocation')?.value || 'Mumbai';
+        if (!(Number(wizard.quantity) > 0)) {
+            showToast('Quantity must be greater than zero.', 'error');
+            return;
+        }
+        renderStepSource();
+    });
+}
+
+function renderStepSource() {
+    const host = wizardHost();
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Additional source information</h3>
+            <div class="pi-source-fields" style="max-width:640px;display:flex;flex-direction:column;gap:8px;">
+                ${sourceFieldsHtml()}
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button blue" id="piNext">Review</button>
+            </div>
+        </div>
+    `;
+    el('piBack')?.addEventListener('click', renderStepQty);
+    el('piNext')?.addEventListener('click', () => {
+        collectSource();
+        if ((wizard.intakeType === 'NON_PO_ACQUISITION' || wizard.intakeType === 'OTHER_APPROVED') && !wizard.reason) {
+            showToast('A reason is required for this intake type.', 'error');
+            return;
+        }
+        if (wizard.intakeType === 'INTERNAL_TRANSFER' && !wizard.source.sourceLocation) {
+            showToast('Source location / context is required for Internal Transfer intake.', 'error');
+            return;
+        }
+        renderStepPoStatus();
+    });
+}
+
+function poRadio(value, label, selected) {
+    const on = selected === value ? ' pi-choice-on' : '';
+    return `<label class="pi-choice pi-radio${on}">
+        <input type="radio" name="piPoStatus" value="${escapeHtml(value)}" ${selected === value ? 'checked' : ''}>
+        <strong>${escapeHtml(label)}</strong>
+    </label>`;
+}
+
+function collectPoStatus() {
+    const picked = document.querySelector('input[name="piPoStatus"]:checked');
+    wizard.poStatus = picked ? picked.value : '';
+    wizard.expectedPoNumber = el('piExpectedPoNumber')?.value?.trim() || '';
+    wizard.expectedVendorRef = el('piExpectedVendor')?.value?.trim() || '';
+}
+
+function selectedLineProductMatch() {
+    const line = wizard.selectedLine;
+    const productId = wizard.product?.id;
+    if (!line || !productId) return '';
+    if (!line.productId) {
+        return '<p class="pi-callout">Map the PO line to an AssetEngine Product before linking this intake.</p>';
+    }
+    if (String(line.productId) !== String(productId)) {
+        return '<p class="pi-callout">The intake Product does not match the Purchase Order line Product.</p>';
+    }
+    return `<p class="lc-muted">Product match: ${escapeHtml(line.productId)}</p>`;
+}
+
+function renderAvailablePoFields() {
+    const po = wizard.selectedPo;
+    const line = wizard.selectedLine;
+    const versionLabel = po ? `Current · ${po.poNumber || po.id}` : '';
+    const lines = (po && po.lines) ? po.lines.filter((l) => String(l.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN') : [];
+    return `
+        <div id="piPoAvailableFields" class="pi-po-available" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-width:640px;">
+            <label class="lc-k">Purchase Order</label>
+            <input type="search" id="piPoSearch" class="form-input" placeholder="Search Purchase Orders...">
+            <div id="piPoHits"></div>
+            <div id="piPoSelected">${po ? `<strong>${escapeHtml(po.poNumber || po.id)}</strong> · ${escapeHtml(po.vendorName || '')}` : '<span class="lc-muted">Select a Purchase Order.</span>'}</div>
+            ${po ? `
+                <label class="lc-k">PO Version</label>
+                <select id="piPoVersion" class="form-input">
+                    <option value="${escapeHtml(po.id)}">${escapeHtml(versionLabel)}</option>
+                </select>
+                <label class="lc-k">PO Line</label>
+                <select id="piPoLine" class="form-input">
+                    <option value="">Select a PO line</option>
+                    ${lines.map((l) => `<option value="${escapeHtml(l.id)}" ${line && line.id === l.id ? 'selected' : ''}>${escapeHtml(l.id)} · ${l.productId ? escapeHtml(l.productId) : 'unmapped'} · ordered ${formatQty(l.ordered)}</option>`).join('')}
+                </select>
+                <div id="piPoLineMatch">${selectedLineProductMatch()}</div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function bindPoSearch() {
+    const hits = el('piPoHits');
+    let timer = null;
+    el('piPoSearch')?.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const q = el('piPoSearch')?.value || '';
+            if (!hits) return;
+            if (q.trim().length < 1) {
+                hits.innerHTML = '';
+                return;
+            }
+            try {
+                const data = await api(`/api/physical-intakes/linkable-pos?q=${encodeURIComponent(q)}&limit=8`);
+                const pos = data.purchaseOrders || [];
+                hits.innerHTML = pos.map((p) => `<button type="button" class="action-button grey pi-pick-po" data-id="${escapeHtml(p.id)}" style="margin:2px 4px 2px 0;">${escapeHtml(p.poNumber || p.id)} · ${escapeHtml(p.vendorName || '')}</button>`).join('')
+                    || '<p class="lc-muted">No matching Purchase Orders.</p>';
+                hits.querySelectorAll('.pi-pick-po').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const found = pos.find((p) => p.id === btn.getAttribute('data-id'));
+                        wizard.selectedPo = found;
+                        wizard.selectedLine = null;
+                        collectPoStatus();
+                        renderStepPoStatus();
+                    });
+                });
+            } catch (err) {
+                toastOperatorError(err);
+            }
+        }, 250);
+    });
+    el('piPoLine')?.addEventListener('change', () => {
+        const id = el('piPoLine')?.value || '';
+        wizard.selectedLine = (wizard.selectedPo?.lines || []).find((l) => l.id === id) || null;
+        const match = el('piPoLineMatch');
+        if (match) match.innerHTML = selectedLineProductMatch();
+    });
+}
+
+function renderExpectedFields() {
+    return `
+        <div id="piExpectedFields" class="pi-expected-fields" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-width:640px;">
+            <p class="lc-muted">Optional. This is a note only until an imported Purchase Order is linked. It is not a PO relationship.</p>
+            <label class="lc-k">Expected PO Number</label>
+            <input type="text" id="piExpectedPoNumber" class="form-input" value="${escapeHtml(wizard.expectedPoNumber || '')}">
+            <label class="lc-k">Expected vendor / reference</label>
+            <input type="text" id="piExpectedVendor" class="form-input" value="${escapeHtml(wizard.expectedVendorRef || '')}">
+        </div>
+    `;
+}
+
+function renderStepPoStatus() {
+    const host = wizardHost();
+    const selected = wizard.poStatus || '';
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Purchase Order Status</h3>
+            <p class="lc-muted">This records commercial provenance for the holding. It does not create a Receipt Note.</p>
+            <fieldset class="pi-po-status pi-choices" style="border:0;padding:0;margin:0;">
+                <legend class="lc-k">Purchase Order Status</legend>
+                ${poRadio('EXPECTED', 'PO Expected Later', selected)}
+                ${poRadio('NOT_REQUIRED', 'No PO Required', selected)}
+                ${poRadio('AVAILABLE', 'Purchase Order Already Available', selected)}
+            </fieldset>
+            <div id="piPoStatusExtra">
+                ${selected === 'EXPECTED' ? renderExpectedFields() : ''}
+                ${selected === 'AVAILABLE' ? renderAvailablePoFields() : ''}
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button blue" id="piNext">Review</button>
+            </div>
+        </div>
+    `;
+    host.querySelectorAll('input[name="piPoStatus"]').forEach((input) => {
+        input.addEventListener('change', () => {
+            collectPoStatus();
+            if (wizard.poStatus !== 'AVAILABLE') {
+                wizard.selectedPo = null;
+                wizard.selectedLine = null;
+            }
+            renderStepPoStatus();
+        });
+    });
+    if (selected === 'AVAILABLE') bindPoSearch();
+    el('piBack')?.addEventListener('click', () => {
+        collectPoStatus();
+        renderStepSource();
+    });
+    el('piNext')?.addEventListener('click', () => {
+        collectPoStatus();
+        if (!wizard.poStatus) {
+            showToast('Choose Purchase Order Status before registering this intake.', 'error');
+            return;
+        }
+        if (wizard.poStatus === 'AVAILABLE') {
+            if (!wizard.selectedPo || !wizard.selectedLine) {
+                showToast('Select a Purchase Order and PO line before registering.', 'error');
+                return;
+            }
+            if (!wizard.selectedLine.productId) {
+                showToast('Map the PO line to an AssetEngine Product before linking this intake.', 'error');
+                return;
+            }
+            if (wizard.product?.id && String(wizard.selectedLine.productId) !== String(wizard.product.id)) {
+                showToast('The intake Product does not match the Purchase Order line Product.', 'error');
+                return;
+            }
+        }
+        renderStepReview();
+    });
+}
+
+function renderStepReview() {
+    const host = wizardHost();
+    const qty = formatQty(wizard.quantity);
+    const kind = wizard.holdingType === 'ASSET' ? 'Asset' : 'Inventory';
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Review</h3>
+            <p class="pi-banner">This physical stock is being registered outside procurement.</p>
+            <dl class="pi-review">
+                <dt>Type</dt><dd>${escapeHtml(INTAKE_TYPE_LABELS[wizard.intakeType] || wizard.intakeType)}</dd>
+                <dt>Product</dt><dd>${escapeHtml(wizard.product?.id || '')} · ${escapeHtml(wizard.product?.name || '')}</dd>
+                <dt>Quantity</dt><dd>${qty} ${escapeHtml(wizard.unit || '')}</dd>
+                <dt>Unit</dt><dd>${escapeHtml(wizard.unit || '')}</dd>
+                <dt>Reason</dt><dd>${escapeHtml(wizard.reason || '—')}</dd>
+                <dt>Purchase Order Status</dt><dd>${escapeHtml(poStatusLabel(wizard.poStatus))}</dd>
+                ${wizard.poStatus === 'EXPECTED' && wizard.expectedPoNumber ? `<dt>Expected PO Number</dt><dd>${escapeHtml(wizard.expectedPoNumber)}</dd>` : ''}
+                ${wizard.poStatus === 'EXPECTED' && wizard.expectedVendorRef ? `<dt>Expected vendor / reference</dt><dd>${escapeHtml(wizard.expectedVendorRef)}</dd>` : ''}
+                ${wizard.poStatus === 'AVAILABLE' ? `<dt>Purchase Order</dt><dd>${escapeHtml(wizard.selectedPo?.poNumber || wizard.selectedPo?.id || '—')}</dd>` : ''}
+                ${wizard.poStatus === 'AVAILABLE' ? `<dt>PO Version</dt><dd>Current · ${escapeHtml(wizard.selectedPo?.poNumber || wizard.selectedPo?.id || '—')}</dd>` : ''}
+                ${wizard.poStatus === 'AVAILABLE' ? `<dt>PO Line</dt><dd>${escapeHtml(wizard.selectedLine?.id || '—')}</dd>` : ''}
+                <dt>Source</dt><dd>${escapeHtml(Object.values(wizard.source).filter(Boolean).join(' · ') || '—')}</dd>
+                <dt>Result</dt><dd>${escapeHtml(kind)} · ${qty} ${escapeHtml(wizard.unit || '')}</dd>
+            </dl>
+            <p><strong>Register this physical stock?</strong></p>
+            <p>This will create ${escapeHtml(qty)} ${escapeHtml(wizard.unit || 'units')} of ${escapeHtml(kind)} for Product ${escapeHtml(wizard.product?.name || wizard.product?.id || '')}.
+            This stock will be recorded as NON-PROCUREMENT INTAKE.</p>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button green" id="piConfirm">${canMutate() ? 'Register Physical Stock' : 'Not permitted'}</button>
+            </div>
+        </div>
+    `;
+    el('piBack')?.addEventListener('click', renderStepPoStatus);
+    el('piConfirm')?.addEventListener('click', submitIntake);
+}
+
+async function submitIntake() {
+    if (!canMutate()) {
+        showToast('Sales cannot create Physical Intakes.', 'error');
+        return;
+    }
+    const btn = el('piConfirm');
+    if (btn) btn.disabled = true;
+    try {
+        const payload = {
+            holdingType: wizard.holdingType,
+            intakeType: wizard.intakeType,
+            productId: wizard.product.id,
+            quantity: Number(wizard.quantity),
+            unit: wizard.unit,
+            location: wizard.location,
+            reason: wizard.reason,
+            source: wizard.source,
+            commercialPoChoice: wizard.poStatus,
+            expectedPoNumber: wizard.poStatus === 'EXPECTED' ? wizard.expectedPoNumber : null,
+            expectedVendorRef: wizard.poStatus === 'EXPECTED' ? wizard.expectedVendorRef : null,
+            procurementPoId: wizard.poStatus === 'AVAILABLE' ? wizard.selectedPo?.id : null,
+            procurementPoLineId: wizard.poStatus === 'AVAILABLE' ? wizard.selectedLine?.id : null
+        };
+        const data = await api('/api/physical-intakes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Idempotency-Key': idempotencyKey('intake')
+            },
+            body: JSON.stringify(payload)
+        });
+        wizard.result = data;
+        renderSuccess(data);
+        showToast('Physical stock registered.', 'success');
+    } catch (err) {
+        toastOperatorError(err);
+        if (btn) btn.disabled = false;
+    }
+}
+
+function renderSuccess(data) {
+    const host = wizardHost();
+    const intake = data.intake || data;
+    const created = data.created || (intake.outputs || [])[0] || {};
+    const resourceId = created.resourceId || created.resource_id;
+    const resourceType = created.resourceType || created.resource_type || intake.holdingType;
+    const isAsset = String(resourceType).toUpperCase() === 'ASSET';
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Registered</h3>
+            ${provenanceHtml(intake)}
+            <div class="pi-result-card">
+                <div class="lc-k">${isAsset ? 'Asset ID' : 'Inventory ID'}</div>
+                <div class="lc-mono" style="font-size:18px;font-weight:700;">${escapeHtml(resourceId || '—')}</div>
+                <div class="lc-k" style="margin-top:10px;">Quantity</div>
+                <div>${formatQty(intake.quantity)} ${escapeHtml(intake.unit || '')}</div>
+                <div class="lc-k" style="margin-top:10px;">QR</div>
+                <div>${created.qr === false ? 'Not generated' : 'Generated for this physical ID'}</div>
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piAnother">Another intake</button>
+                <button type="button" class="action-button blue" id="piOpenPhysical">${isAsset ? 'Open Asset' : 'Open Inventory'}</button>
+            </div>
+        </div>
+    `;
+    el('piAnother')?.addEventListener('click', () => startWizard());
+    el('piOpenPhysical')?.addEventListener('click', () => {
+        if (isAsset) {
+            window.open(`/asset/${encodeURIComponent(resourceId)}`, '_blank');
+        } else {
+            go('inventory-view');
+        }
+    });
+    bindPhysicalIntakePoLink(host, intake);
+}
+
+async function openDetail(id) {
+    const host = wizardHost();
+    const data = await api(`/api/physical-intakes/${encodeURIComponent(id)}`);
+    const intake = data.intake || data;
+    const history = await api(`/api/physical-intakes/${encodeURIComponent(id)}/history`).catch(() => ({ events: intake.events || [] }));
+    const out = (intake.outputs || [])[0] || {};
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <button type="button" class="action-button grey" id="piBackList">Back to list</button>
+            <h3>Physical Intake</h3>
+            ${provenanceHtml(intake)}
+            <div class="pi-result-card">
+                <div class="lc-k">${intake.holdingType === 'ASSET' ? 'Asset ID' : 'Inventory ID'}</div>
+                <div class="lc-mono" style="font-size:18px;font-weight:700;">${escapeHtml(out.resourceId || '—')}</div>
+                <div class="lc-k" style="margin-top:10px;">Product</div>
+                <div>${escapeHtml(intake.productName || intake.productId || '—')}</div>
+                <div class="lc-k" style="margin-top:10px;">Quantity</div>
+                <div>${formatQty(intake.quantity)} ${escapeHtml(intake.unit || '')}</div>
+            </div>
+            <h4>History</h4>
+            ${(history.events || []).map((ev) => `<article class="lc-event-card">
+                <div class="lc-event-when">${formatWhen(ev.timestamp)}</div>
+                <div class="lc-event-action">${escapeHtml(eventTypeLabel(ev.type))}</div>
+                <div class="lc-event-meta">
+                    ${ev.actor ? `<span>By ${escapeHtml(ev.actor)}</span>` : ''}
+                    ${ev.quantity != null ? `<span>Qty ${formatQty(ev.quantity)}</span>` : ''}
+                    ${ev.resourceId ? `<span class="lc-mono">${escapeHtml(ev.resourceId)}</span>` : ''}
+                </div>
+            </article>`).join('') || '<p class="lc-muted">No history.</p>'}
+        </div>
+    `;
+    el('piBackList')?.addEventListener('click', () => renderIntakeList().catch((err) => toastOperatorError(err)));
+    bindPhysicalIntakePoLink(host, intake);
+}
+
+function eventTypeLabel(type) {
+    if (type === 'PO_EXPECTED') return 'Purchase Order expected later';
+    if (type === 'PO_LINKED') return 'Purchase Order linked';
+    if (type === 'PHYSICAL_INTAKE_CREATED') return 'Physical Intake registered';
+    if (type === 'PHYSICAL_INTAKE_ASSET_CREATED') return 'Asset registered by Physical Intake';
+    if (type === 'PHYSICAL_INTAKE_INVENTORY_CREATED') return 'Inventory registered by Physical Intake';
+    return String(type || 'Event').replace(/_/g, ' ');
+}
+
+function closeLinkPoModal() {
+    document.getElementById('piLinkPoModal')?.remove();
+}
+
+export function bindPhysicalIntakePoLink(root, intake, opts = {}) {
+    const host = root || document;
+    host.querySelectorAll('.pi-link-po').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const resourceType = btn.getAttribute('data-resource-type');
+            const resourceId = btn.getAttribute('data-resource-id');
+            openLinkPoModal({
+                resourceType,
+                resourceId,
+                intake,
+                onLinked: () => {
+                    if (typeof opts.onLinked === 'function') {
+                        opts.onLinked();
+                        return;
+                    }
+                    if (intake && intake.id && wizardHost()) {
+                        openDetail(intake.id).catch((err) => toastOperatorError(err));
+                    }
+                }
+            });
+        });
+    });
+}
+
+function openLinkPoModal({ resourceType, resourceId, intake, onLinked }) {
+    closeLinkPoModal();
+    const holdingProduct = intake?.productId || intake?.productName || '—';
+    const holdingQty = `${formatQty(intake?.quantity)} ${escapeHtml(intake?.unit || '')}`;
+    const overlay = document.createElement('div');
+    overlay.id = 'piLinkPoModal';
+    overlay.className = 'pi-link-modal-overlay';
+    overlay.innerHTML = `
+        <div class="pi-link-modal" role="dialog" aria-labelledby="piLinkPoTitle">
+            <h3 id="piLinkPoTitle">Link Purchase Order</h3>
+            <div class="pi-link-cols">
+                <div>
+                    <div class="lc-k">Holding</div>
+                    <div>Product ${escapeHtml(holdingProduct)}</div>
+                    <div class="lc-mono">${escapeHtml(resourceId || '')}</div>
+                    <div>Quantity ${holdingQty}</div>
+                </div>
+                <div id="piLinkSelectedLine" class="lc-muted">Select a PO line.</div>
+            </div>
+            <label class="lc-k">Purchase Order</label>
+            <input type="search" id="piLinkPoSearch" class="form-input" placeholder="Search Purchase Orders...">
+            <div id="piLinkPoHits"></div>
+            <div id="piLinkPoSelected" class="lc-muted" style="margin:6px 0;">No Purchase Order selected.</div>
+            <label class="lc-k">PO Version</label>
+            <select id="piLinkPoVersion" class="form-input" disabled><option value="">Select a Purchase Order first</option></select>
+            <label class="lc-k">PO Line</label>
+            <select id="piLinkPoLine" class="form-input" disabled><option value="">Select a Purchase Order first</option></select>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piLinkPoCancel">Cancel</button>
+                <button type="button" class="action-button green" id="piLinkPoConfirm" disabled>Link Purchase Order</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    let selectedPo = null;
+    let selectedLine = null;
+
+    function renderLineSummary() {
+        const box = overlay.querySelector('#piLinkSelectedLine');
+        const confirm = overlay.querySelector('#piLinkPoConfirm');
+        if (!selectedLine) {
+            box.className = 'lc-muted';
+            box.textContent = 'Select a PO line.';
+            if (confirm) confirm.disabled = true;
+            return;
+        }
+        box.className = '';
+        box.innerHTML = `
+            <div class="lc-k">Selected PO line</div>
+            <div>Product ${escapeHtml(selectedLine.productId || 'unmapped')}</div>
+            <div>Ordered ${formatQty(selectedLine.ordered)}</div>
+            <div>Current outstanding ${formatQty(selectedLine.outstanding)}</div>
+        `;
+        if (confirm) confirm.disabled = !selectedLine.productId;
+        if (!selectedLine.productId) {
+            box.innerHTML += '<p class="pi-callout">Map the PO line to an AssetEngine Product before linking this intake.</p>';
+        } else if (intake?.productId && String(selectedLine.productId) !== String(intake.productId)) {
+            box.innerHTML += '<p class="pi-callout">The intake Product does not match the Purchase Order line Product.</p>';
+            if (confirm) confirm.disabled = true;
+        }
+    }
+
+    function applyPo(po) {
+        selectedPo = po;
+        selectedLine = null;
+        overlay.querySelector('#piLinkPoSelected').innerHTML = `<strong>${escapeHtml(po.poNumber || po.id)}</strong> · ${escapeHtml(po.vendorName || '')}`;
+        const version = overlay.querySelector('#piLinkPoVersion');
+        version.disabled = false;
+        version.innerHTML = `<option value="${escapeHtml(po.id)}">Current · ${escapeHtml(po.poNumber || po.id)}</option>`;
+        const lineSel = overlay.querySelector('#piLinkPoLine');
+        const lines = (po.lines || []).filter((l) => String(l.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN');
+        lineSel.disabled = false;
+        lineSel.innerHTML = `<option value="">Select a PO line</option>${lines.map((l) => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.id)} · ${l.productId ? escapeHtml(l.productId) : 'unmapped'} · ordered ${formatQty(l.ordered)}</option>`).join('')}`;
+        renderLineSummary();
+    }
+
+    let timer = null;
+    overlay.querySelector('#piLinkPoSearch')?.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const q = overlay.querySelector('#piLinkPoSearch')?.value || '';
+            const hits = overlay.querySelector('#piLinkPoHits');
+            if (q.trim().length < 1) {
+                hits.innerHTML = '';
+                return;
+            }
+            try {
+                const data = await api(`/api/physical-intakes/linkable-pos?q=${encodeURIComponent(q)}&limit=8`);
+                const pos = data.purchaseOrders || [];
+                hits.innerHTML = pos.map((p) => `<button type="button" class="action-button grey pi-pick-po" data-id="${escapeHtml(p.id)}" style="margin:2px 4px 2px 0;">${escapeHtml(p.poNumber || p.id)} · ${escapeHtml(p.vendorName || '')}</button>`).join('')
+                    || '<p class="lc-muted">No matching Purchase Orders.</p>';
+                hits.querySelectorAll('.pi-pick-po').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const found = pos.find((p) => p.id === btn.getAttribute('data-id'));
+                        if (found) applyPo(found);
+                    });
+                });
+            } catch (err) {
+                toastOperatorError(err);
+            }
+        }, 250);
+    });
+    overlay.querySelector('#piLinkPoLine')?.addEventListener('change', () => {
+        const id = overlay.querySelector('#piLinkPoLine')?.value || '';
+        selectedLine = (selectedPo?.lines || []).find((l) => l.id === id) || null;
+        renderLineSummary();
+    });
+    overlay.querySelector('#piLinkPoCancel')?.addEventListener('click', closeLinkPoModal);
+    overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) closeLinkPoModal();
+    });
+    overlay.querySelector('#piLinkPoConfirm')?.addEventListener('click', async () => {
+        const confirm = overlay.querySelector('#piLinkPoConfirm');
+        if (!selectedPo || !selectedLine) return;
+        if (confirm) confirm.disabled = true;
+        try {
+            await api('/api/physical-intakes/link-po', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    resourceType,
+                    resourceId,
+                    procurementPoId: selectedPo.id,
+                    procurementPoLineId: selectedLine.id
+                })
+            });
+            closeLinkPoModal();
+            showToast('Purchase Order linked.', 'success');
+            if (typeof onLinked === 'function') onLinked();
+        } catch (err) {
+            toastOperatorError(err);
+            if (confirm) confirm.disabled = false;
+        }
+    });
+}
+
+function startWizard() {
+    if (!canMutate()) {
+        showToast('Sales cannot create Physical Intakes.', 'error');
+        return;
+    }
+    resetWizard();
+    renderStepHolding();
+}
+
+let bound = false;
+export function initPhysicalIntakesView() {
+    if (!bound) {
+        bound = true;
+        el('btnReloadPhysicalIntakes')?.addEventListener('click', () => {
+            renderIntakeList().catch((err) => toastOperatorError(err));
+        });
+        el('btnStartPhysicalIntake')?.addEventListener('click', () => {
+            if (!canMutate()) {
+                showToast('Sales cannot create Physical Intakes.', 'error');
+                return;
+            }
+            startWizard();
+        });
+        el('physicalIntakeSearch')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                renderIntakeList().catch((err) => toastOperatorError(err));
+            }
+        });
+    }
+    const pending = consumeOpen('physical-intakes-view');
+    if (pending && pending.open) {
+        openDetail(pending.open).catch((err) => toastOperatorError(err));
+        return;
+    }
+    if (pending && pending.extra && pending.extra.start) {
+        startWizard();
+        return;
+    }
+    renderIntakeList().catch((err) => toastOperatorError(err));
+}
+
+window.initPhysicalIntakesView = initPhysicalIntakesView;
+window.startPhysicalIntake = startWizard;
+window.loadPhysicalIntakeProvenance = loadProvenance;
+window.renderPhysicalIntakeProvenanceHtml = provenanceHtml;
+window.bindPhysicalIntakePoLink = bindPhysicalIntakePoLink;
