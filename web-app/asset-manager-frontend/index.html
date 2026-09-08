@@ -9,7 +9,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/static/logo.png?v=6.44">
     <link rel="apple-touch-icon" href="/static/logo.png?v=6.44">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=6.44">
+    <link rel="stylesheet" href="/static/style.css?v=7.49">
     <link rel="stylesheet" href="/static/modal.css?v=6.44">
     <link rel="stylesheet" href="/static/sidebar-raul.css?v=6.44">
     <link rel="stylesheet" href="/static/mobile.css?v=6.44">
@@ -416,10 +416,10 @@
         <header id="app-header" class="hidden">
             <div class="top-bar-pill">
                 <div class="header-left">
-                    <button id="sidebarToggle" class="icon-button burger-container">
-                    <div class="burger-line line-left"></div>
-                    <div class="burger-line line-center"></div>
-                    <div class="burger-line line-right"></div>
+                    <button id="sidebarToggle" class="icon-button burger-container" type="button" aria-label="Toggle sidebar" aria-controls="app-sidebar" aria-expanded="false">
+                    <div class="burger-line line-left" aria-hidden="true"></div>
+                    <div class="burger-line line-center" aria-hidden="true"></div>
+                    <div class="burger-line line-right" aria-hidden="true"></div>
                 </button>
                     <div class="app-logo-container">
                         <img src="/static/logo.png?v=1.1" alt="Logo" class="app-logo">
@@ -427,22 +427,34 @@
                     </div>
                 </div>
 
-                <nav class="nav-center">
+                <nav class="nav-center" aria-label="Primary">
                     <div class="bubble bubble-hover"></div>
                     <div class="bubble bubble-active"></div>
                     <ul>
-                        <li><a href="#" class="nav-link active" id="nav-dashboard">Assets</a></li>
-                        <li><a href="#" class="nav-link" id="nav-inventory">Inventory</a></li>
-                        <li><a href="#" class="nav-link" id="nav-arri">ARRI Service</a></li>
+                        <li class="nav-dropdown" id="nav-logistics-item">
+                            <button type="button" class="nav-link nav-dropdown-toggle" id="nav-logistics" aria-haspopup="true" aria-expanded="false" aria-controls="nav-logistics-menu" aria-label="Logistics menu">Logistics</button>
+                            <ul class="nav-dropdown-menu" id="nav-logistics-menu" hidden aria-label="Logistics">
+                                <li><a href="#operations-view" class="nav-link" id="nav-operations">Dashboard</a></li>
+                                <li><a href="#products-view" class="nav-link" id="nav-products">Products</a></li>
+                                <li><a href="#history-view" class="nav-link" id="nav-history">History</a></li>
+                                <li><a href="#reservations-view" class="nav-link" id="nav-reservations">Reservations</a></li>
+                                <li><a href="#purchase-orders-view" class="nav-link" id="nav-purchase-orders">Purchase Orders</a></li>
+                                <li><a href="#receipts-view" class="nav-link" id="nav-receipts">Receipt Notes</a></li>
+                                <li><a href="#dc-view" class="nav-link" id="nav-dc">Create DC</a></li>
+                            </ul>
+                        </li>
+                        <li><a href="#home-view" class="nav-link" id="nav-dashboard">Assets</a></li>
+                        <li><a href="#inventory-view" class="nav-link" id="nav-inventory">Inventory</a></li>
+                        <li><a href="#sets-view" class="nav-link" id="nav-sets">Sets</a></li>
+                        <li><a href="#projects-view" class="nav-link" id="nav-projects">Projects</a></li>
+                        <li><a href="#warranty-view" class="nav-link" id="nav-warranty">Warranty</a></li>
+                        <li class="hidden"><a href="#physical-intakes-view" class="nav-link" id="nav-physical-intakes">Physical Intake</a></li>
+                        <li class="hidden"><a href="#arri-view" class="nav-link" id="nav-arri">ARRI Service</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-sheet">Sheet</a></li>
-                        <li><a href="#" class="nav-link" id="nav-employees">Employees</a></li>
-                        <li><a href="#" class="nav-link" id="nav-dc">Create DC</a></li>
-                        <li><a href="#" class="nav-link" id="nav-projects">Projects</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-consignments">Consignments</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-rentals">Rentals</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-scanner">Network Scanner</a></li>
                         <li class="hidden"><a href="#" class="nav-link" id="nav-ocr">Document OCR</a></li>
-                        <li><a href="#" class="nav-link" id="nav-warranty">Warranty</a></li>
                     </ul>
                 </nav>
                 <div class="header-right">
@@ -455,8 +467,8 @@
         <div class="main-layout">
             <aside id="app-sidebar" class="hidden">
             <div class="sidebar-search">
-                <input type="text" placeholder="Search...">
-                <button class="icon-button">🔍</button>
+                <input type="text" placeholder="Search..." aria-label="Search">
+                <button class="icon-button" type="button" aria-label="Search">🔍</button>
             </div>
 
             <ul class="sidebar-menu" id="sidebar-tree">
@@ -464,6 +476,10 @@
             </ul>
             <ul class="sidebar-menu hidden" id="system-menu">
                 <li class="menu-header">System</li>
+                <li class="menu-item-wrapper" onclick="document.getElementById('nav-employees').click()">
+                    <span class="tree-icon">👤</span>
+                    <a href="#" class="nav-link" id="nav-employees">Employees</a>
+                </li>
                 <li class="menu-item-wrapper" onclick="document.getElementById('nav-admin').click()">
                     <span class="tree-icon">🛡️</span>
                     <a href="#" class="nav-link" id="nav-admin">Admin</a>
@@ -501,8 +517,8 @@
                         
                         <form id="loginForm">
                             <div class="form-group">
-                                <label for="username">Username</label>
-                                <input type="text" id="username" name="username" placeholder="Enter your username" required>
+                                <label for="username">Username / Email</label>
+                                <input type="text" id="username" name="username" placeholder="Enter your username or email" required autocomplete="username">
                             </div>
                             <div class="form-group">
                                 <label for="password">Password</label>
@@ -550,10 +566,24 @@
             <div id="dashboardView" class="view hidden" style="flex: 1 1 0; min-height: 0; box-sizing: border-box; display: flex; flex-direction: column; padding: 0; margin: 0; background: transparent; box-shadow: none; overflow: hidden;">
                 <!-- Main Dashboard Container -->
                 <div id="dashboard-container" style="display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: hidden;">
-                    <!-- Dashboard Section (Home) -->
+                    <div id="operations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Dashboard</h2>
+                                <span style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">Lifecycle</span>
+                            </div>
+                            <div class="view-actions">
+                                <button type="button" class="action-button grey" id="btnReloadOperations">Refresh</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">Follow the lifecycle: Product → Purchase Order → Receipt → Stock → Reservation → Set. Assets are physical holdings, not the catalogue.</p>
+                        <div id="operationsContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
+                    </div>
+
+                    <!-- Dashboard Section (Assets) -->
                     <div id="home-view" class="view hidden" style="flex: 1 1 0; min-height: 0; padding: 20px; margin: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
                         <div class="dashboard-header" style="flex-shrink: 0;">
-                            <h2 id="dashboard-title">IT Assets</h2>
+                            <h2 id="dashboard-title">Assets</h2>
                             <div class="dashboard-actions">
                                 <button class="action-button orange" id="btnReportDashboard">
                                     <span>📊 Report</span>
@@ -565,13 +595,14 @@
                                     <span>📋 Kanban</span>
                                 </button>
                                 <button class="action-button green" id="btnAddAssetItem">
-                                    <span>➕ Add Asset</span>
+                                    <span>+ Physical Intake</span>
                                 </button>
                                 <button class="action-button grey" id="btnShowRetired" title="View Sold/Retired Assets">
                                     <span>🗑️ Retired</span>
                                 </button>
                             </div>
                         </div>
+                        <p class="lc-stock-banner">ASSET = individually identified physical holding. This is not a Product. Quantity-tracked holdings are under Inventory. Procurement stock arrives through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.</p>
                         <div id="assetGridWrapper" class="asset-grid-scroll-wrapper" style="flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%;">
                             <div class="asset-grid" id="assetGrid" style="height: auto; width: 100%;">
                                 <!-- Asset cards will be dynamically inserted here -->
@@ -847,8 +878,16 @@
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 15px;">
-                                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Customer/Receiver Name</label>
-                                        <input type="text" id="dcCustomerName" name="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="e.g. John Doe / ABC Corp">
+                                        <label for="dcCustomerName" style="display: block; margin-bottom: 5px; font-weight: 600;">Customer / Receiver Name</label>
+                                        <div class="dc-account-lookup">
+                                            <input type="text" id="dcCustomerName" name="dcCustomerName" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search Zoho Accounts..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dcAccountList" aria-haspopup="listbox">
+                                            <input type="hidden" id="dcZohoAccountId" value="">
+                                            <div id="dcAccountList" class="dc-account-list" role="listbox" hidden></div>
+                                        </div>
+                                        <div id="dcAccountSelected" class="dc-account-selected" hidden>
+                                            <span class="dc-prov-zoho" title="Customer details defaulted from the Zoho Account master. This Delivery Challan stores a snapshot.">ZOHO ACCOUNT</span>
+                                            <span id="dcAccountSelectedName"></span>
+                                        </div>
                                     </div>
                                     <div class="form-group" style="margin-bottom: 15px;">
                                         <div style="font-weight: 700; margin-bottom: 8px;">Consignee (Ship To)</div>
@@ -898,12 +937,18 @@
                                             <input type="text" id="dcOtherReferences" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Other References">
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
-                                            <input type="text" id="dcDispatchedThrough" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatched through">
-                                            <input type="text" id="dcDestination" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Destination">
+                                            <div>
+                                                <label for="dcPickup" style="display:block;margin-bottom:4px;font-size:12px;color:#667085;">Pick-Up</label>
+                                                <input type="text" id="dcPickup" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Where goods leave from" autocomplete="off">
+                                            </div>
+                                            <div>
+                                                <label for="dcDestination" style="display:block;margin-bottom:4px;font-size:12px;color:#667085;">Destination</label>
+                                                <input type="text" id="dcDestination" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Where goods go to" autocomplete="off">
+                                            </div>
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                                            <input type="text" id="dcDispatchedThrough" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatched through">
                                             <input type="text" id="dcPlaceOfSupply" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Place of Supply">
-                                            <div style="flex: 1;"></div>
                                         </div>
                                         <textarea id="dcTermsOfDelivery" class="form-input" style="width: 100%; min-height: 50px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-top: 8px;" placeholder="Terms of Delivery"></textarea>
                                     </div>
@@ -1121,10 +1166,182 @@
                         </div>
                     </div>
 
+                    <div id="sets-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Sets</h2>
+                                <span id="setCountBadge" style="background: #fffbeb; color: #92400e; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Sets</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="setSearch" placeholder="Search sets..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 220px;">
+                                <select id="setTypeFilter" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;" title="Composition (physical kinds)">
+                                    <option value="">All composition</option>
+                                    <option value="EMPTY">Composition: Empty</option>
+                                    <option value="ASSET">Composition: Asset</option>
+                                    <option value="INVENTORY">Composition: Inventory</option>
+                                    <option value="MIXED">Composition: Mixed</option>
+                                </select>
+                                <select id="setCompletenessFilter" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;" title="Completeness (requirements vs allocation)">
+                                    <option value="">All completeness</option>
+                                    <option value="EMPTY">Completeness: Empty</option>
+                                    <option value="INCOMPLETE">Incomplete</option>
+                                    <option value="COMPLETE">Complete</option>
+                                    <option value="OVERCOMPLETE">Overcomplete</option>
+                                </select>
+                                <button class="action-button grey" id="btnReloadSets">Refresh</button>
+                                <button class="action-button green" id="btnCreateSet">+ Create Set</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">Assemble a Set: Create Set → Add requirements → Allocate physical stock → Complete. Allocation commits stock to the Set. This is not Make Set, Break, or Conversion. Legacy Managed Sets appear as Manual Review.</p>
+                        <div id="setsContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
+                    </div>
+
+                    <div id="receipts-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Receipt Notes</h2>
+                                <span id="receiptCountBadge" style="background: #ecfdf5; color: #047857; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Receipts</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="receiptSearch" placeholder="Search receipt, PO, vendor..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
+                                <select id="receiptStatusFilter" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">All statuses</option>
+                                    <option value="OPEN">Open</option>
+                                    <option value="POSTED">Posted</option>
+                                    <option value="CANCELLED">Cancelled</option>
+                                    <option value="REVERSED">Reversed</option>
+                                </select>
+                                <button class="action-button grey" id="btnReloadReceipts">Refresh</button>
+                                <button class="action-button green" id="btnCreateReceipt">+ Receive against PO</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">Receive goods: this stock came through procurement. PO → Receipt → Count → Accepted / Damaged / Rejected → Post → physical stock. To register existing or non-procurement stock, use Physical Intake. A Purchase Order itself does not create stock.</p>
+                        <div id="receiptsContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
+                    </div>
+
+                    <div id="purchase-orders-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Purchase Orders</h2>
+                                <span id="poCountBadge" style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Purchase Orders</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="poSearch" placeholder="Search PO number or Zoho ID..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
+                                <button class="action-button grey" id="btnReloadPos">Refresh</button>
+                                <button class="action-button blue" id="btnImportZohoPo">Import from Zoho</button>
+                            </div>
+                        </div>
+                        <p class="po-zoho-banner" style="margin:0 0 12px 0;">Purchase Orders are created and managed in Zoho. AssetEngine keeps a read-only operational mirror for receiving. There is no Create PO screen here.</p>
+                        <div id="purchaseOrdersContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
+                    </div>
+
+                    <div id="products-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Products</h2>
+                                <span id="productCountBadge" style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 AssetEngine Products</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <label for="productSearch" class="lc-k" style="margin:0;">Search AssetEngine Products</label>
+                                <input type="search" id="productSearch" placeholder="Search AssetEngine Products..." aria-label="Search AssetEngine Products" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
+                                <select id="productStatusFilter" aria-label="AssetEngine Product status" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">All statuses</option>
+                                    <option value="ACTIVE">Active</option>
+                                    <option value="ARCHIVED">Archived</option>
+                                </select>
+                                <select id="productOriginFilter" aria-label="AssetEngine Product origin" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">All origins</option>
+                                    <option value="ZOHO">ZOHO</option>
+                                    <option value="ASSETENGINE">ASSETENGINE</option>
+                                    <option value="ASSET">ASSET</option>
+                                    <option value="INVENTORY">INVENTORY</option>
+                                    <option value="SET">SET</option>
+                                </select>
+                                <button class="action-button grey" id="btnReloadProducts">Refresh</button>
+                                <button class="action-button grey" id="btnOpenZohoCatalog" aria-expanded="false" aria-controls="zohoCatalogSection">Zoho Reference Catalog</button>
+                                <button class="action-button blue" id="btnCreateFromCatalog" aria-label="Create Against Zoho Products">Create Against Zoho Products</button>
+                                <button class="action-button grey prd-standalone-btn" id="btnCreateProduct" aria-label="Standalone AE Product"><img src="/static/logo.png?v=6.44" alt="" class="prd-standalone-logo" aria-hidden="true">Standalone AE Product</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">PRODUCT is catalogue identity. ZOHO PRODUCT is the commercial mapping. PHYSICAL STOCK is Assets and Inventory — never the Product itself.</p>
+                        <div style="flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 24px;">
+                            <section class="prd-ae-section" aria-labelledby="localProductsHeading">
+                                <div class="lc-section-label" id="localProductsHeading" title="Authoritative Product record in AssetEngine.">AssetEngine Products</div>
+                                <p class="lc-muted" style="margin: 4px 0 10px;">Authoritative AssetEngine Product Master</p>
+                                <div id="productsContent"></div>
+                            </section>
+                            <section id="zohoCatalogSection" class="prd-zoho-section hidden" aria-labelledby="zohoCatalogHeading" hidden>
+                                <div class="prd-zoho-head">
+                                    <span class="prd-prov-pill prd-prov-zoho" title="Read-only reference from Zoho. Not an AssetEngine Product." aria-label="Zoho Reference. Read-only reference from Zoho. Not an AssetEngine Product.">ZOHO</span>
+                                    <div class="lc-section-label" id="zohoCatalogHeading" style="margin: 0;" title="Read-only reference from Zoho. Not an AssetEngine Product.">Zoho Reference Catalog</div>
+                                    <span id="zohoCatalogCountBadge" style="background: #e2e8f0; color: #334155; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Zoho References</span>
+                                    <button type="button" class="action-button grey" id="btnCloseZohoCatalog" style="margin-left: auto;" aria-label="Close Zoho Reference Catalog">Close catalog</button>
+                                </div>
+                                <p class="lc-muted" style="margin: 6px 0 10px;">Read-only catalogue from Zoho · Not an AssetEngine Product</p>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+                                    <label for="zohoCatalogSearch" class="lc-k" style="margin: 0;">Search Zoho Product Catalog</label>
+                                    <input type="search" id="zohoCatalogSearch" placeholder="Search Zoho Product Catalog..." aria-label="Search Zoho Product Catalog" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: min(360px, 100%);">
+                                </div>
+                                <div id="zohoCatalogContent" role="status" aria-live="polite"></div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div id="reservations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Reservations</h2>
+                                <span id="reservationCountBadge" style="background: #eef2ff; color: #3730a3; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Reservations</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <select id="reservationStatusFilter" aria-label="Reservation status" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="ACTIVE">Active</option>
+                                    <option value="RELEASED">Released</option>
+                                    <option value="TRANSFERRED">Transferred</option>
+                                    <option value="">All</option>
+                                </select>
+                                <button type="button" class="action-button grey" id="btnReloadReservations">Refresh</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">A reservation holds physical stock for an owner. Create a reservation from an Asset or Inventory record. Quantity shown is what operators need; reservation IDs are for audit.</p>
+                        <div id="reservationsContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
+                    </div>
+
+                    <div id="history-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Lifecycle History</h2>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <label for="historySearch" class="lc-own-note" style="margin:0;">Look up ID</label>
+                                <input type="text" id="historySearch" placeholder="Product, PO, Receipt, Asset, Reservation, Set…" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 280px;">
+                                <button type="button" class="action-button grey" id="btnReloadHistory">Refresh</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">Human-readable lifecycle events. Operation IDs stay in technical details.</p>
+                        <div id="historyContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
+                    </div>
+
+                    <div id="physical-intakes-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 class="view-title" style="margin: 0;">Physical Intake</h2>
+                                <span id="physicalIntakeCountBadge" style="background: #f5f3ff; color: #6d28d9; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Intakes</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="physicalIntakeSearch" placeholder="Search intake, Product, reason..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
+                                <button class="action-button grey" id="btnReloadPhysicalIntakes">Refresh</button>
+                                <button class="action-button green" id="btnStartPhysicalIntake">+ Physical Intake</button>
+                            </div>
+                        </div>
+                        <p class="lc-muted">Register existing / non-procurement stock. This physical stock is being registered outside procurement. Receipt Notes remain the path when the stock came through a Purchase Order.</p>
+                        <div id="physicalIntakesContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
+                    </div>
+
                     <div id="inventory-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px;">
                         <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
                             <div style="display: flex; align-items: center; gap: 15px;">
-                                <h2 class="view-title" id="inventoryWorkspaceTitle" style="margin: 0;">Inventory Workspace</h2>
+                                <h2 class="view-title" id="inventoryWorkspaceTitle" style="margin: 0;">Inventory</h2>
                                 <span id="inventoryWorkspaceBadge" style="background: #eef6ff; color: #0f5ea8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">Inventory</span>
                             </div>
                             <div class="view-actions" id="inventoryWorkspaceActions" style="display: flex; gap: 10px;">
@@ -1133,14 +1350,14 @@
                                 <button class="action-button grey" id="btnInventoryConsumed" title="Browse consumed inventory">Consumed Inventory</button>
                                 <button class="action-button purple" id="btnAddInventoryFolder">Add Folder</button>
                                 <button class="action-button indigo" id="btnAddInventoryCategory">Add Category</button>
-                                <button class="action-button green" id="btnAddInventoryItem">Add Inventory Item</button>
+                                <button class="action-button green" id="btnAddInventoryItem">+ Physical Intake</button>
                             </div>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0;">
                             <div class="card-panel" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
                                 <div>
                                     <h3 id="inventoryPanelTitle" style="margin: 0 0 6px 0;">All Inventory</h3>
-                                    <p id="inventoryPanelSubtitle" style="margin: 0; color: #667085;">Inventory navigation is driven from the left sidebar.</p>
+                                    <p id="inventoryPanelSubtitle" style="margin: 0; color: #667085;">INVENTORY = quantity-tracked physical holding. Total, Available, and Reserved are the operator quantities. This is not a Product. Procurement stock arrives through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.</p>
                                 </div>
                                 <div id="inventoryStats" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;"></div>
                             </div>
@@ -1317,7 +1534,8 @@
                                             <input type="text" id="rbac-role-desc" class="form-input" placeholder="What can this role do?">
                                         </div>
                                         
-                                        <label style="font-weight: 600; display: block; margin-bottom: 15px; font-size: 14px; color: #1e293b;">Select Permissions</label>
+        <label style="font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; color: #1e293b;">Select Permissions</label>
+                                        <p style="font-size: 12px; color: #64748b; margin: 0 0 12px;">Tickers are configured grants for the selected role. Admin/superuser UI bypass is not stored as a grant.</p>
                                         <div id="rbac-permissions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px;">
                                             <!-- Permissions checkboxes will be inserted here -->
                                         </div>
@@ -1728,6 +1946,7 @@
                                 <input type="checkbox" id="itemIsSet" name="itemIsSet" style="width: 20px; height: 20px; cursor: pointer;">
                                 <label for="itemIsSet" style="font-weight: 700; color: #92400e; cursor: pointer;">📦 Is this a SET?</label>
                             </div>
+                            <div id="managedSetSection"></div>
                             <div class="form-group">
                                 <label for="itemDate">Dispatch / Receive Dt.</label>
                                 <input type="date" id="itemDate" name="itemDate">
@@ -1847,13 +2066,29 @@
                                             <label for="itemConvFactor" style="font-size: 11px;">Factor</label>
                                             <input type="number" id="itemConvFactor" name="itemConvFactor" inputmode="decimal" step="any" placeholder="e.g. 100" style="width: 100%;">
                                         </div>
-                                        <button type="button" id="btnApplyConversion" class="btn-action" style="background: #0078d4; color: white; border: none; padding: 0 20px; border-radius: 4px; font-weight: 700; cursor: pointer; height: 38px; min-width: 150px; display: block !important; visibility: visible !important;">Apply Conversion</button>
+                                        <button type="button" id="btnApplyConversion" class="btn-action" style="background: #0078d4; color: white; border: none; padding: 0 20px; border-radius: 4px; font-weight: 700; cursor: pointer; height: 38px; min-width: 150px; display: block !important; visibility: visible !important;">Apply unit change</button>
                                     </div>
-                                    <p style="font-size: 11px; color: #666; margin-top: 8px;">Converts the base unit and total quantity. This change is permanent after saving.</p>
+                                    <p style="font-size: 11px; color: #666; margin-top: 8px;">Changes the recorded unit and total quantity. This is not Inventory → Asset.</p>
                                 </div>
                             </div>
+                            <div id="breakLineageSection" style="display: none; grid-column: span 2; margin-top: 12px; border: 1px solid #c7d2fe; background: #eef2ff; padding: 12px; border-radius: 8px;">
+                                <h4 style="margin: 0 0 8px 0; color: #3730a3;">Break Quantity / Make Individual</h4>
+                                <p id="breakLineageSummary" style="margin: 0 0 10px 0; font-size: 12px; color: #4338ca;"></p>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;">
+                                    <div>
+                                        <label for="breakAmountInput" style="font-size: 11px;">Break quantity</label>
+                                        <input type="number" id="breakAmountInput" min="0" step="any" style="width: 110px; padding: 6px;">
+                                    </div>
+                                    <button type="button" id="btnBreakQuantity" class="btn-action" style="background: #4f46e5; color: white; border: none; padding: 8px 12px; border-radius: 4px; font-weight: 700; cursor: pointer;">Break Quantity</button>
+                                    <button type="button" id="btnMakeIndividual" class="btn-action" style="background: #0f766e; color: white; border: none; padding: 8px 12px; border-radius: 4px; font-weight: 700; cursor: pointer;">Make Individual</button>
+                                </div>
+                                <div id="breakChildrenList" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;"></div>
+                            </div>
+                            <div id="assetReserveSection" style="display: none; grid-column: span 2; margin-top: 12px; border: 1px solid #e0e7ff; background: #f8fafc; padding: 12px; border-radius: 8px;"></div>
+                            <div id="assetReturnSection" style="display: none; grid-column: span 2; margin-top: 12px; border: 1px solid #7dd3fc; background: #f0f9ff; padding: 12px; border-radius: 8px;"></div>
                             <div id="qtyEditHint" style="grid-column: 1 / -1; display: none; background: #fff7ed; border: 1px solid #fed7aa; padding: 10px 12px; border-radius: 8px; color: #7c2d12; font-weight: 600; font-size: 13px;">
                             </div>
+                            <div id="assetProvenanceSection" style="display: none; grid-column: 1 / -1; margin-top: 8px;"></div>
                         </div>
 
                         <!-- Quantity History / Timeline -->
@@ -1886,7 +2121,7 @@
 
                         <!-- Split Assets Section -->
                         <div id="splitAssetsSection" style="display: none; margin-top: 15px; border-top: 2px solid #6366f1; padding-top: 15px;">
-                            <h4 style="margin: 0 0 10px 0; color: #6366f1;">Split / Individual Assets</h4>
+                            <h4 style="margin: 0 0 10px 0; color: #6366f1;">Lineage children</h4>
                             <div id="splitAssetsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
                                 <!-- Split assets will be listed here -->
                             </div>
@@ -1930,7 +2165,7 @@
                             </div>
                         </div>
                         <div style="position: sticky; bottom: 0; background: white; margin-top: 20px; border-top: 1px solid #eee; padding: 15px 0; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
-                            <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Add Asset</button>
+                            <button type="submit" class="login-button" style="width: auto; padding: 10px 30px;">Save</button>
                             <div style="display: flex; align-items: center; gap: 10px;">
                                 <span style="font-size: 0.9em; color: #666;">Or Bulk Upload:</span>
                                 <button onclick="window.showSetImportTemplate('general')" class="action-button blue" style="text-decoration: none; padding: 5px 15px; font-size: 13px; display: flex; align-items: center; border: none; cursor: pointer;">📥 General Template</button>
@@ -2473,10 +2708,11 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h3 style="margin: 0;">Project Purchase Orders (PO)</h3>
                             <div style="display: flex; gap: 10px;">
-                                <button class="action-button small" onclick="window.showPreviousPOFetcher()" style="background: #fff; color: #2563eb; border: 1px solid #2563eb; font-weight: 600;">🔍 Fetch Previous PO</button>
-                                <button class="action-button blue" id="btnAddProjectOrder">+ Create New PO</button>
+                                <button class="action-button grey" id="btnViewProjectPurchaseOrders">View Purchase Orders</button>
+                                <button class="action-button blue" id="btnImportProjectPurchaseOrder">Import from Zoho</button>
                             </div>
                         </div>
+                        <p class="po-zoho-banner" style="margin: 0 0 12px 0;">Purchase Orders are created and managed in Zoho. AssetEngine keeps a read-only operational mirror for receiving. Historical local POs remain visible here and are not edited or deleted.</p>
                         <div id="projectOrdersList">
                             <table class="data-table">
                                 <thead>
@@ -2545,7 +2781,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=7.10"></script>
+<script type="module" src="/js/main.js?v=7.49"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {
@@ -2590,20 +2826,25 @@
         <form id="signupForm">
             <div class="form-group">
                 <label for="signupEmail">Email</label>
-                <input type="email" id="signupEmail" name="email" placeholder="Enter your email" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="email" id="signupEmail" name="email" placeholder="Enter your email" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="email">
             </div>
             <div class="form-group">
                 <label for="signupName">Full Name</label>
-                <input type="text" id="signupName" name="name" placeholder="Enter your full name" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="text" id="signupName" name="name" placeholder="Enter your full name" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="name">
             </div>
             <div class="form-group">
                 <label for="signupPhone">Phone Number</label>
-                <input type="tel" id="signupPhone" name="phone" placeholder="Enter your phone number" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="tel" id="signupPhone" name="phone" placeholder="Optional" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="tel">
             </div>
             <div class="form-group">
                 <label for="signupPassword">Password</label>
-                <input type="password" id="signupPassword" name="password" placeholder="Create a password" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="password" id="signupPassword" name="password" placeholder="At least 8 characters" required minlength="8" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="new-password">
             </div>
+            <div class="form-group">
+                <label for="signupConfirmPassword">Confirm Password</label>
+                <input type="password" id="signupConfirmPassword" name="confirmPassword" placeholder="Re-enter your password" required minlength="8" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="new-password">
+            </div>
+            <p id="signupMsg" class="error-msg" style="min-height: 18px;"></p>
             <button type="submit" class="login-button" style="margin-top: 10px; width: 100%;">Sign Up</button>
         </form>
     </div>
@@ -2901,14 +3142,15 @@
     <div class="modal-content" style="max-width: 400px; padding: 30px; border-radius: 16px;">
         <span class="close-modal" id="closeForgotModal" style="position: absolute; right: 20px; top: 20px;">&times;</span>
         <div style="text-align: center; margin-bottom: 25px;">
-            <h2 style="margin: 0; color: #333; font-size: 24px;">Reset Password</h2>
+            <h2 style="margin: 0; color: #333; font-size: 24px;">Forgot Password</h2>
             <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Enter your username or the email on your account</p>
         </div>
         <form id="forgotPasswordForm">
             <div class="form-group">
                 <label for="forgotEmail">Username or account email</label>
-                <input type="text" id="forgotEmail" name="email" placeholder="Username or email on file" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="text" id="forgotEmail" name="email" placeholder="Username or email on file" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="username">
             </div>
+            <p id="forgotMsg" class="error-msg" style="min-height: 18px;"></p>
             <button type="submit" class="login-button" style="margin-top: 10px; width: 100%;">Send Reset Link</button>
         </form>
     </div>
@@ -2918,20 +3160,21 @@
 <div id="resetPasswordModal" class="modal">
     <div class="modal-content" style="max-width: 400px; padding: 30px; border-radius: 16px;">
         <div style="text-align: center; margin-bottom: 25px;">
-            <h2 style="margin: 0; color: #333; font-size: 24px;">New Password</h2>
-            <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Create a secure password</p>
+            <h2 style="margin: 0; color: #333; font-size: 24px;">Reset Password</h2>
+            <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Create a secure password (at least 8 characters)</p>
         </div>
         <form id="resetPasswordForm">
             <input type="hidden" id="resetToken">
             <div class="form-group">
                 <label for="newPassword">New Password</label>
-                <input type="password" id="newPassword" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="password" id="newPassword" required minlength="8" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="new-password">
             </div>
             <div class="form-group">
                 <label for="confirmPassword">Confirm Password</label>
-                <input type="password" id="confirmPassword" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                <input type="password" id="confirmPassword" required minlength="8" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="new-password">
             </div>
-            <button type="submit" class="login-button" style="margin-top: 10px; width: 100%;">Set Password</button>
+            <p id="resetMsg" class="error-msg" style="min-height: 18px;"></p>
+            <button type="submit" class="login-button" style="margin-top: 10px; width: 100%;">Reset Password</button>
         </form>
     </div>
 </div>
@@ -2943,7 +3186,7 @@
     </div>
     <div style="display: flex; gap: 10px;">
         <button id="btnCancelSelection" class="size-btn" style="background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px; padding: 5px 15px; cursor: pointer;">Cancel</button>
-        <button id="btnMakeSet" class="login-button" style="width: auto; padding: 5px 20px; background: #fbbf24; color: #78350f; font-size: 14px; border: 1px solid #d97706;">Make Set 📦</button>
+        <button id="btnMakeSet" class="login-button" style="display: none; width: auto; padding: 5px 20px; background: #fbbf24; color: #78350f; font-size: 14px; border: 1px solid #d97706;">Sets via Allocation</button>
         <button id="btnProceedBatchPrint" class="login-button" style="width: auto; padding: 5px 20px; background: #17a2b8; font-size: 14px;">Print Selected</button>
     </div>
 </div>
@@ -3225,6 +3468,47 @@
                 <button type="submit" class="btn-primary" style="background-color: #dc3545; border-color: #dc3545;">Confirm Sale</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div id="setDetailModal" class="modal" style="display:none;align-items:center;justify-content:center;">
+    <div class="modal-content" style="max-width:920px;width:94%;max-height:92vh;overflow:auto;">
+        <span class="close-modal" id="closeSetDetailModal">&times;</span>
+        <div id="setDetailModalBody"></div>
+    </div>
+</div>
+
+<div id="createSetModal" class="modal" style="display:none;align-items:center;justify-content:center;">
+    <div class="modal-content" style="max-width:640px;width:94%;max-height:92vh;overflow:auto;">
+        <span class="close-modal" id="closeCreateSetModal">&times;</span>
+        <h3 style="margin:0 0 12px;">Create Set</h3>
+        <div class="ms-field">
+            <label class="ms-label" for="newSetName">Set Name</label>
+            <input type="text" id="newSetName" class="ms-input" autocomplete="off" placeholder="e.g. Camera Kit">
+        </div>
+        <div class="ms-field">
+            <label class="ms-label" for="newSetIdPreview">Set ID</label>
+            <div class="ms-locked">
+                <input type="text" id="newSetIdPreview" class="ms-input ms-mono" readonly tabindex="-1" value="SET-MMYY-XXXXXX-C">
+                <span title="Generated automatically">&#128274;</span>
+            </div>
+            <p class="ms-hint">Permanent Set ID is generated on the server (SET-MMYY-XXXXXX-C). The Set becomes ACTIVE immediately. Requirements cannot be edited later.</p>
+        </div>
+        <div class="ms-field">
+            <label class="ms-label" for="newSetDescription">Description (optional)</label>
+            <textarea id="newSetDescription" class="ms-input" rows="2"></textarea>
+        </div>
+        <div class="ms-section-title">Requirements</div>
+        <div id="newSetRequirements" class="ms-rows"></div>
+        <div class="ms-field" style="margin-top:8px;">
+            <label class="ms-label" for="newSetProductSearch">Add Product requirement</label>
+            <input type="text" id="newSetProductSearch" class="ms-input" autocomplete="off" placeholder="Search Product name or ID...">
+            <div id="newSetProductResults" class="ms-results"></div>
+        </div>
+        <div class="ms-modal-actions">
+            <button type="button" class="ms-btn" id="btnCancelCreateSet">Cancel</button>
+            <button type="button" class="ms-btn ms-btn-primary" id="btnConfirmCreateSet">Create Set</button>
+        </div>
     </div>
 </div>
 

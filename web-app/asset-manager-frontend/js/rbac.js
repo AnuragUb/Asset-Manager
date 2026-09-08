@@ -3,7 +3,7 @@
  * Handles Role-Based Access Control management for Superusers
  */
 
-import { showView } from './utils.js?v=6.41';
+import { showView, PAGE_ACCESS_PERMISSIONS } from './utils.js?v=7.39';
 
 let allPermissions = [];
 let allRoles = [];
@@ -13,10 +13,8 @@ export async function renderRBAC() {
     console.log('Rendering RBAC View (Sub-Tab)...');
     
     try {
-        // 1. Initialize listeners (if not already done)
         initRBACListeners();
-
-        // 2. Load initial data
+        applyRbacEditorAuthority();
         await Promise.all([
             loadPermissions(),
             loadRoles(),
@@ -24,6 +22,35 @@ export async function renderRBAC() {
         ]);
     } catch (err) {
         console.error('Critical error in renderRBAC:', err);
+    }
+}
+
+function applyRbacEditorAuthority() {
+    const canEdit = currentRoleName() === 'superuser';
+    const bannerId = 'rbac-authority-banner';
+    let banner = document.getElementById(bannerId);
+    if (!banner) {
+        const tab = document.getElementById('admin-rbac-tab');
+        const toolbar = tab && tab.querySelector('.view-toolbar');
+        banner = document.createElement('p');
+        banner.id = bannerId;
+        banner.style.cssText = 'margin: 0 0 16px; font-size: 13px; color: #64748b;';
+        if (toolbar && toolbar.parentNode) {
+            toolbar.parentNode.insertBefore(banner, toolbar.nextSibling);
+        }
+    }
+    banner.textContent = canEdit
+        ? 'You can view the Admin page and edit RBAC policies (superuser). Checkboxes are configured grants, not your personal bypass.'
+        : 'View Admin page does not grant RBAC edits. Saving policies requires superuser. Checkboxes show configured role grants, not admin UI bypass.';
+    const saveBtn = document.getElementById('btnSaveRole');
+    const createBtn = document.getElementById('btnCreateRole');
+    if (saveBtn) {
+        saveBtn.disabled = !canEdit;
+        saveBtn.title = canEdit ? '' : 'RBAC policy changes require superuser.';
+    }
+    if (createBtn) {
+        createBtn.disabled = !canEdit;
+        createBtn.title = canEdit ? '' : 'Creating roles requires superuser.';
     }
 }
 
@@ -195,11 +222,23 @@ function renderRolesList() {
     container.innerHTML = html;
 }
 
+function pageLabelForKey(key) {
+    const row = (PAGE_ACCESS_PERMISSIONS || []).find((p) => p.key === key);
+    return row ? row.page : '';
+}
+
+function currentRoleName() {
+    try {
+        return JSON.parse(localStorage.getItem('currentUser') || '{}').role || '';
+    } catch (_err) {
+        return '';
+    }
+}
+
 function renderPermissionsGrid() {
     const grid = document.getElementById('rbac-permissions-grid');
     if (!grid) return;
 
-    // Group permissions by prefix (module.xxx)
     const groups = {};
     allPermissions.forEach(p => {
         const prefix = p.key.includes('.') ? p.key.split('.')[0] : 'general';
@@ -209,13 +248,16 @@ function renderPermissionsGrid() {
 
     let html = '';
     Object.keys(groups).sort().forEach(group => {
-        html += `<div style="grid-column: 1 / -1; margin-top: 15px; margin-bottom: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 700;">${group}</div>`;
+        const heading = group === 'view' ? 'Page access (configured grants — admin UI bypass is not a grant)' : group;
+        html += `<div style="grid-column: 1 / -1; margin-top: 15px; margin-bottom: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 700;">${heading}</div>`;
         groups[group].forEach(p => {
+            const page = pageLabelForKey(p.key);
+            const title = page ? `${page} — ${p.key}` : p.key;
             html += `
                 <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid #f1f5f9; border-radius: 8px; cursor: pointer; background: #fff; transition: all 0.2s;">
                     <input type="checkbox" name="permission" value="${p.key}" style="margin-top: 3px; width: 16px; height: 16px;">
                     <div>
-                        <div style="font-size: 13px; font-weight: 500; color: #334155;">${p.key}</div>
+                        <div style="font-size: 13px; font-weight: 500; color: #334155;">${title}</div>
                         <div style="font-size: 11px; color: #94a3b8; line-height: 1.3;">${p.description || ''}</div>
                     </div>
                 </label>

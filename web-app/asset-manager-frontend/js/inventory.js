@@ -10,6 +10,7 @@ import {
     OPERATIONAL_STATUS,
     isConsumed as isConsumedLifecycle
 } from './lifecycle-model.js?v=7.09';
+import { setupInventoryConversionUI } from './conversions.js?v=7.28';
 
 const state = {
     initialized: false,
@@ -527,6 +528,18 @@ function openInventorySharedModal(existingItem = null) {
     };
 
     setVal('itemName', existingItem?.ItemName || existingItem?.itemname || '');
+    (async () => {
+        const host = document.getElementById('managedSetSection');
+        let ms = existingItem?.managedSet || existingItem?.ManagedSet || null;
+        if (!ms && itemId) {
+            try {
+                const r = await fetch(`/api/inventory/item-details/${encodeURIComponent(itemId)}`, { credentials: 'same-origin' });
+                const j = await r.json();
+                ms = j.item?.managedSet || j.item?.ManagedSet || null;
+            } catch (_) { /* ignore */ }
+        }
+        if (typeof window.paintManagedSetSection === 'function') window.paintManagedSetSection(host, ms);
+    })();
     setVal('itemDescription', existingItem?.ItemDescription || existingItem?.itemdescription || '');
     setVal('itemIcon', existingItem?.Icon || existingItem?.icon || '📦');
     if (window.updateIconPreview) window.updateIconPreview(existingItem?.Icon || existingItem?.icon || '📦');
@@ -1504,7 +1517,7 @@ function openCatalogProductModal(item) {
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
             <button class="action-button grey" id="btnCloseCatalogProduct">Close</button>
             <button class="action-button" id="btnViewCatalogInZoho" style="background: #f3f4f6; color: #4b5563;">View in Zoho</button>
-            <button class="action-button blue" id="btnCreateInventoryFromCatalog">Create Inventory</button>
+            <button class="action-button blue" id="btnCreateProductFromCatalog">Create Product</button>
         </div>
     `;
 
@@ -1522,25 +1535,37 @@ function openCatalogProductModal(item) {
         if (url) window.open(url, '_blank');
     });
 
-    getEl('btnCreateInventoryFromCatalog')?.addEventListener('click', (e) => {
+    getEl('btnCreateProductFromCatalog')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        modal.style.display = 'none';
-        openInventoryFromCatalog({
-            zoho_product_id: zohoId,
-            product_name: productName,
-            make,
-            model,
-            unit_price: unitPrice,
-            description,
-            sku,
-            hsn_code: hsn
-        });
+        if (!zohoId) {
+            showToast('This catalog row has no Zoho Product ID.', 'error');
+            return;
+        }
+        try {
+            const token = localStorage.getItem('token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const created = await fetchJson('/api/products/from-catalog', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ zoho_product_id: zohoId })
+            });
+            const productId = created.product?.id || created.id || '';
+            showToast(productId
+                ? `Product ${productId} created. Publish from the Product workspace.`
+                : 'Product created. Publish from the Product workspace.', 'success');
+            modal.style.display = 'none';
+        } catch (err) {
+            showToast(err.message || 'Could not create Product from catalog.', 'error');
+        }
     });
 
     modal.style.display = 'flex';
 }
 
 function openInventoryFromCatalog(catalogItem) {
+    showToast('Catalog cannot create Inventory. Create a Product from catalog, then use Receipt Notes (procurement) or Physical Intake (existing / non-procurement stock).', 'info');
+    return;
     openInventorySharedModal(null);
 
     const form = getEl('addAssetItemForm');
@@ -1736,6 +1761,7 @@ function openCrudModal(type, existingItem = null) {
                         <label for="inventoryItemId">Inventory ID</label>
                         <input type="text" id="inventoryItemId" value="${itemId}" readonly style="background: #f8fafc; color: #64748b; font-family: monospace;">
                     </div>
+                    <div id="inventoryProvenanceSection"></div>
                 ` : ''}
                 <div class="form-group">
                     <label for="inventoryItemName">Item Name</label>
@@ -1779,14 +1805,18 @@ function openCrudModal(type, existingItem = null) {
                         </select>
                     </div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                     <div class="form-group">
-                        <label for="inventoryItemTotal">Quantity Total</label>
+                        <label for="inventoryItemTotal">Total</label>
                         <input type="number" id="inventoryItemTotal" min="0" step="1" value="${itemTotalValue}">
                     </div>
                     <div class="form-group">
-                        <label for="inventoryItemAvailable">Quantity Available</label>
+                        <label for="inventoryItemAvailable">Available</label>
                         <input type="number" id="inventoryItemAvailable" min="0" step="1" value="${itemAvailableValue}">
+                    </div>
+                    <div class="form-group">
+                        <label>Reserved</label>
+                        <input type="text" value="${Number(existingItem?.quantity_reserved ?? existingItem?.QuantityReserved ?? 0)}" disabled>
                     </div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -1805,6 +1835,22 @@ function openCrudModal(type, existingItem = null) {
                         </select>
                     </div>
                 </div>
+                ${existingItem ? `
+                <div id="invBreakLineageSection" style="display:none; border:1px solid #c7d2fe; background:#eef2ff; padding:12px; border-radius:8px;">
+                    <h4 style="margin:0 0 8px 0; color:#3730a3;">Break Quantity / Make Individual</h4>
+                    <p id="invBreakLineageSummary" style="margin:0 0 10px 0; font-size:12px; color:#4338ca;"></p>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+                        <div>
+                            <label for="invBreakAmountInput" style="font-size:11px;">Break quantity</label>
+                            <input type="number" id="invBreakAmountInput" min="0" step="any" style="width:110px; padding:6px;">
+                        </div>
+                        <button type="button" id="invBtnBreakQuantity" class="btn-action" style="background:#4f46e5; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:700; cursor:pointer;">Break Quantity</button>
+                        <button type="button" id="invBtnMakeIndividual" class="btn-action" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:4px; font-weight:700; cursor:pointer;">Make Individual</button>
+                    </div>
+                    <div id="invBreakChildrenList" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+                </div>
+                <div id="invReserveSection" style="display:none; border:1px solid #e0e7ff; background:#f8fafc; padding:12px; border-radius:8px; margin-top:12px;"></div>
+                <div id="invConvertSection" style="display:none; border:1px solid #99f6e4; background:#f0fdfa; padding:12px; border-radius:8px; margin-top:12px;"></div>` : ''}
                 <button type="submit" class="action-button blue" style="width: 100%;">${existingItem ? 'Save Inventory Item' : 'Add Inventory Item'}</button>
             </form>
         `;
@@ -1819,6 +1865,45 @@ function openCrudModal(type, existingItem = null) {
                 const selectedFolderId = folderSelect.value;
                 kindSelect.innerHTML = buildKindOptions(selectedFolderId, '');
             });
+        }
+
+        if (type === 'item' && existingItem && typeof window.setupBreakLineageUI === 'function') {
+            window.setupBreakLineageUI({
+                holdingType: 'INVENTORY',
+                record: existingItem,
+                sectionId: 'invBreakLineageSection',
+                summaryId: 'invBreakLineageSummary',
+                amountId: 'invBreakAmountInput',
+                breakBtnId: 'invBtnBreakQuantity',
+                makeBtnId: 'invBtnMakeIndividual',
+                listId: 'invBreakChildrenList'
+            }).catch((err) => console.error('Inventory break UI error:', err));
+        }
+        if (type === 'item' && existingItem) {
+            setupInventoryConversionUI({ record: existingItem, sectionId: 'invConvertSection' })
+                .catch((err) => console.error('Inventory conversion UI error:', err));
+            if (typeof window.setupReserveUI === 'function') {
+                window.setupReserveUI({
+                    resourceType: 'INVENTORY',
+                    resourceId: existingItem.id || existingItem.ID,
+                    productId: existingItem.product_id || existingItem.productId,
+                    productName: existingItem.itemname || existingItem.ItemName,
+                    available: existingItem.quantity_available ?? existingItem.QuantityAvailable,
+                    wholeRecord: false,
+                    hostId: 'invReserveSection'
+                });
+            }
+            const intakeId = existingItem.physical_intake_id || existingItem.physicalIntakeId;
+            const provHost = getEl('inventoryProvenanceSection');
+            if (intakeId && provHost && typeof window.loadPhysicalIntakeProvenance === 'function') {
+                window.loadPhysicalIntakeProvenance(intakeId).then((intake) => {
+                    if (!intake || typeof window.renderPhysicalIntakeProvenanceHtml !== 'function') return;
+                    provHost.innerHTML = window.renderPhysicalIntakeProvenanceHtml(intake, { compact: true });
+                    if (typeof window.bindPhysicalIntakePoLink === 'function') {
+                        window.bindPhysicalIntakePoLink(provHost, intake);
+                    }
+                }).catch(() => {});
+            }
         }
 
         form.onsubmit = async (event) => {
@@ -1863,6 +1948,10 @@ function openCrudModal(type, existingItem = null) {
                     }
                     if (!kindValue) {
                         showToast('Category is required.', 'error');
+                        return;
+                    }
+                    if (!existingItem) {
+                        showToast('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.', 'info');
                         return;
                     }
                     const res = await fetchJson(existingItem ? `/api/inventory/items/${encodeURIComponent(existingItem.ID || existingItem.id)}` : '/api/inventory/items', {
@@ -2102,8 +2191,12 @@ function renderConsumedInventoryView() {
             if (btn.classList.contains('inv-row-qty-history') && typeof window.showInventoryQuantityHistoryModal === 'function') {
                 window.showInventoryQuantityHistoryModal(itemId);
             }
-            if (btn.classList.contains('inv-row-print-qr') && typeof window.printAssetLabel === 'function') {
-                window.printAssetLabel(itemId);
+            if (btn.classList.contains('inv-row-print-qr')) {
+                if (typeof window.openInventoryPrintPreview === 'function') {
+                    window.openInventoryPrintPreview([item || { ID: itemId }]);
+                } else if (typeof window.printAssetLabel === 'function') {
+                    window.printAssetLabel(itemId);
+                }
             }
         });
     });
@@ -2174,11 +2267,32 @@ async function loadInventoryWorkspace() {
 export function initInventoryView() {
     if (!isInventoryPreviewEnabled()) return;
 
+    // Inventory nav always opens holdings, never the Zoho catalog workspace.
+    state.catalogMode = false;
+    state.consumedMode = false;
+    if (window.currentInventorySidebar && window.currentInventorySidebar.type === 'catalog') {
+        window.currentInventorySidebar = { type: 'root' };
+    }
+
     const navInventory = getEl('nav-inventory');
     if (navInventory) navInventory.style.display = '';
 
+    const openPending = async () => {
+        await loadInventoryWorkspace();
+        const pending = window.__lifecyclePending && window.__lifecyclePending.view === 'inventory-view'
+            ? window.__lifecyclePending
+            : null;
+        const hash = String(window.location.hash || '');
+        const idFromHash = new URLSearchParams(hash.split('?')[1] || '').get('id');
+        const id = (pending && pending.open) || idFromHash;
+        if (pending) window.__lifecyclePending = null;
+        if (!id) return;
+        const item = (state.items || []).find((row) => String(row.id || row.ID) === String(id));
+        if (item) openCrudModal('item', item);
+    };
+
     if (state.initialized) {
-        loadInventoryWorkspace().catch(err => showToast(err.message, 'error'));
+        openPending().catch(err => showToast(err.message, 'error'));
         return;
     }
 
@@ -2199,9 +2313,18 @@ export function initInventoryView() {
     });
     getEl('btnAddInventoryFolder')?.addEventListener('click', () => openCrudModal('folder'));
     getEl('btnAddInventoryCategory')?.addEventListener('click', () => openCrudModal('kind'));
-    getEl('btnAddInventoryItem')?.addEventListener('click', () => openInventorySharedModal());
+    getEl('btnAddInventoryItem')?.addEventListener('click', () => {
+        if (typeof window.switchDashboardSubView === 'function') {
+            window.switchDashboardSubView('physical-intakes-view');
+        }
+        const nav = document.getElementById('nav-physical-intakes');
+        if (nav) nav.click();
+        if (typeof window.startPhysicalIntake === 'function') {
+            setTimeout(() => window.startPhysicalIntake(), 0);
+        }
+    });
 
-    loadInventoryWorkspace().catch(err => showToast(err.message, 'error'));
+    openPending().catch(err => showToast(err.message, 'error'));
 }
 
 window.loadInventoryWorkspace = loadInventoryWorkspace;

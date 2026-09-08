@@ -2,15 +2,18 @@
 
 ## Current auth model
 
+See [`AUTH_INFRASTRUCTURE_IMPLEMENTATION.md`](./AUTH_INFRASTRUCTURE_IMPLEMENTATION.md) for the operator-facing login / signup / Remember Me / reset flow.
+
 1. User submits username / password / category / rememberMe to `POST /api/auth/login`.
-2. Password verified with **bcrypt** when hash looks like bcrypt; **plaintext compare still accepted** and then upgraded to bcrypt.
-3. JWT issued and set as httpOnly cookie `auth_token` (Bearer also supported).
-4. Optional `remember_token` stored hashed in `auth_tokens` (≈30 days).
+2. Password verified with **bcrypt** when hash looks like bcrypt; **plaintext compare still accepted** and then upgraded to bcrypt (passwords are never logged).
+3. JWT issued as an **httpOnly session cookie** `auth_token` (Bearer also supported). `Secure` is set in production / HTTPS.
+4. Optional persistent `remember_token` stored hashed in `auth_tokens` (≈30 days) only when Remember Me is checked.
 5. `GET /api/auth/me` restores session; may mint a new JWT from remember token.
 6. Role permissions loaded into an in-memory cache from `role_permissions`.
 7. Middleware: `authenticateJWT`, `authorizeRoles`, `requirePermission`.
+8. Public `POST /api/signup` always assigns role `user`; client-supplied roles are ignored.
 
-Frontend: `auth.js` + `fetchWithAuth` (single 401 retry).
+Frontend: `auth.js` + `fetchWithAuth` (single 401 retry). Remember Me defaults to **unchecked**.
 
 ---
 
@@ -45,7 +48,7 @@ Many routes lack `authenticateJWT`, including mutating ones in places, for examp
 
 ### 2. Open signup
 
-`POST /api/signup` creates users with role `user` without invite/admin approval.
+`POST /api/signup` creates users with role `user` (privileged roles cannot be self-assigned). There is still no invite/admin approval gate.
 
 ### 3. Default secrets in code
 
@@ -68,7 +71,7 @@ Observed risks (hygiene):
 
 ### 5. Cookie flags
 
-`secure: false` on auth cookies — problematic if served over HTTPS without tightening.
+Auth cookies set `httpOnly`, `SameSite=Lax`, `Path=/`. `Secure` follows `NODE_ENV=production`, `COOKIE_SECURE`, or HTTPS / `x-forwarded-proto`. Remember Me is the only persistent cookie; JWT is session-scoped.
 
 ### 6. Network credentials storage
 

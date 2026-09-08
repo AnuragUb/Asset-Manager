@@ -1,22 +1,30 @@
-console.log('MAIN.JS: Entry point (v7.03)');
-import { showView } from './utils.js?v=6.60';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.10';
+console.log('MAIN.JS: Entry point (v7.49)');
+import { showView, hasPermission, canOpenAppView } from './utils.js?v=7.39';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.49';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
-import { setupAuth, checkSession } from './auth.js?v=7.01';
+import { setupAuth, checkSession } from './auth.js?v=7.29';
 import { HierarchyManager } from './hierarchy.js?v=6.60';
 import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 // import { setupOcr } from './ocr.js?v=5.50';
 import { initWarrantyView } from './warranty.js?v=6.60';
-import { initProjectsView } from './projects.js?v=7.03';
-import { initInventoryView } from './inventory.js?v=7.10';
+import { initProjectsView } from './projects.js?v=7.26';
+import { initInventoryView } from './inventory.js?v=7.48';
+import { initKitSetsView } from './kitSets.js?v=7.28';
+import { initReceiptsView } from './receipts.js?v=7.28';
+import { initPurchaseOrdersView } from './purchase-orders.js?v=7.45';
+import { initProductsView } from './products.js?v=7.46';
+import { initOperationsView } from './operations.js?v=7.41';
+import { initReservationsView } from './reservations.js?v=7.28';
+import { initHistoryView } from './lifecycle-history.js?v=7.48';
+import { initPhysicalIntakesView } from './physical-intakes.js?v=7.48';
 import { initRecoveryCenterView, refreshRecoveryCenterBadge } from './recovery-center.js?v=7.07';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
 // import { initAssetsReportView } from './assetsReport.js?v=6.60';  // file does not exist; dead import caused ES6 module graph abort
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=6.60';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=7.29';
 import { initFormAutosave } from './formAutosave.js?v=6.60';
-import { initContextMenu } from './contextMenu.js?v=7.10';
+import { initContextMenu } from './contextMenu.js?v=7.44';
 import { initServicePortal } from './servicePortal.js?v=6.60';
 import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.60';
 
@@ -245,8 +253,16 @@ async function saveAsset(asset) {
     // Determine if this is an update or a new asset
     // Assets from the database will have an ID
     const isUpdate = asset.ID || asset.Id;
-    const method = isUpdate ? 'PUT' : 'POST';
-    const url = isUpdate ? `/api/assets/${asset.ID || asset.Id}` : '/api/assets';
+    if (!isUpdate) {
+        if (typeof showToast === 'function') {
+            showToast('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.', 'info');
+        } else {
+            alert('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.');
+        }
+        return null;
+    }
+    const method = 'PUT';
+    const url = `/api/assets/${asset.ID || asset.Id}`;
 
     try {
         const response = await fetch(url, {
@@ -305,6 +321,7 @@ function handleInitialUrl() {
     console.log(`[InitialURL] Parsed View: ${viewName}, ID: ${id}`);
 
     if (viewName === 'projects-view' && id) {
+        if (!canOpenAppView('projects-view')) return;
         console.log('[InitialURL] Triggering project details for:', id);
         // Switch to projects view first
         const navProjects = document.getElementById('nav-projects');
@@ -320,6 +337,7 @@ function handleInitialUrl() {
             }, 500);
         }
     } else if (viewName === 'dc-view' && id) {
+        if (!canOpenAppView('dc-view')) return;
         const navDc = document.getElementById('nav-dc');
         if (navDc) {
             navDc.click();
@@ -333,6 +351,27 @@ function handleInitialUrl() {
         console.log('[InitialURL] Triggering asset details for:', id);
         if (window.showAssetDetails) {
             window.showAssetDetails(id);
+        }
+    } else if (APP_VIEWS[viewName]) {
+        if (!canOpenAppView(viewName)) {
+            console.warn('[RBAC] blocked hash view:', viewName);
+            const fallback = canOpenAppView('operations-view')
+                ? 'operations-view'
+                : (canOpenAppView('arri-view') ? 'arri-view' : null);
+            if (fallback && typeof window.switchDashboardSubView === 'function') {
+                window.switchDashboardSubView(fallback);
+            }
+            return;
+        }
+        const navId = APP_VIEWS[viewName].navId;
+        const navEl = navId ? document.getElementById(navId) : null;
+        const hiddenByRbac = navEl && (navEl.classList.contains('hidden-by-rbac') || navEl.closest('.hidden-by-rbac'));
+        if (navEl && !hiddenByRbac) {
+            if (id) window.__lifecyclePending = { view: viewName, open: id, extra: Object.fromEntries(params.entries()) };
+            navEl.click();
+        } else if (typeof window.switchDashboardSubView === 'function') {
+            if (id) window.__lifecyclePending = { view: viewName, open: id, extra: Object.fromEntries(params.entries()) };
+            window.switchDashboardSubView(viewName);
         }
     }
 }
@@ -468,9 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // ------------------------------------------------------
 
             // --- SMART DEFAULT VIEW (RBAC AWARE) ---
-            const userPermissions = (user && user.permissions) ? user.permissions : [];
-            const isSuper = (user && user.role === 'superuser');
-            const canViewDashboard = isSuper || userPermissions.includes('view.dashboard');
+            const canViewDashboard = hasPermission('view.dashboard');
 
             if (canViewDashboard) {
                 console.log('Found dashboardView and permission ok, switching...');
@@ -478,17 +515,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Set nav-dashboard as active
                 document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-                document.getElementById('nav-dashboard')?.classList.add('active');
+                syncTopNavActive('operations-view');
 
-                // Show home-view subview by default
-                const subViews = ['home-view', 'sheet-view', 'employee-view', 'inventory-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
+                // Show operations overview by default (Assets is a top-level workspace)
+                const subViews = ['operations-view', 'home-view', 'sheet-view', 'employee-view', 'inventory-view', 'sets-view', 'receipts-view', 'purchase-orders-view', 'products-view', 'reservations-view', 'history-view', 'physical-intakes-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
                 subViews.forEach(sv => {
                     const el = document.getElementById(sv);
                     if (el) {
-                        if (sv === 'home-view') {
+                        if (sv === 'operations-view') {
                             el.classList.remove('hidden');
                             el.style.display = 'flex';
-                            el.style.flexDirection = 'column'; // Stack header and content vertically
+                            el.style.flexDirection = 'column';
                         } else {
                             el.classList.add('hidden');
                             el.style.display = 'none';
@@ -506,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 setupDashboard();
                 setupDashboardFormHandlers();
+                if (typeof initOperationsView === 'function') initOperationsView();
                 renderDashboard(assets, filteredAssets);
             } else {
                 // Dashboard restricted - Find first available tab based on RBAC
@@ -519,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const target = availableTabs.find(t => {
                     const perm = t.id.replace('nav-', 'view.');
-                    return userPermissions.includes(perm);
+                    return hasPermission(perm);
                 });
 
                 if (target) {
@@ -551,7 +589,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Ensure default view has a hash if none exists
             if (!window.location.hash) {
-                window.history.replaceState({ subView: 'home-view' }, '', '#home-view');
+                const landing = canOpenAppView('operations-view')
+                    ? 'operations-view'
+                    : (canOpenAppView('arri-view') ? 'arri-view' : null);
+                if (landing) {
+                    window.history.replaceState({ subView: landing }, '', '#' + landing);
+                }
             }
         } else {
             console.error('Could NOT find dashboardView element!');
@@ -592,10 +635,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- VIEW CONFIGURATION MODULE ---
 const APP_VIEWS = {
-    'home-view': { id: 'home-view', navId: 'nav-dashboard', sidebar: true, default: true },
+    'operations-view': { id: 'operations-view', navId: 'nav-operations', sidebar: false, default: true },
+    'home-view': { id: 'home-view', navId: 'nav-dashboard', sidebar: true },
     'sheet-view': { id: 'sheet-view', navId: 'nav-sheet', sidebar: true },
-    'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: false },
+    'employee-view': { id: 'employee-view', navId: 'nav-employees', sidebar: true },
     'inventory-view': { id: 'inventory-view', navId: 'nav-inventory', sidebar: true },
+    'physical-intakes-view': { id: 'physical-intakes-view', navId: 'nav-physical-intakes', sidebar: false },
+    'sets-view': { id: 'sets-view', navId: 'nav-sets', sidebar: false },
+    'receipts-view': { id: 'receipts-view', navId: 'nav-receipts', sidebar: false },
+    'purchase-orders-view': { id: 'purchase-orders-view', navId: 'nav-purchase-orders', sidebar: false },
+    'products-view': { id: 'products-view', navId: 'nav-products', sidebar: false },
+    'reservations-view': { id: 'reservations-view', navId: 'nav-reservations', sidebar: false },
+    'history-view': { id: 'history-view', navId: 'nav-history', sidebar: false },
     'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: false },
     'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: true },
     'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
@@ -608,6 +659,85 @@ const APP_VIEWS = {
     'arri-view': { id: 'arri-view', navId: 'nav-arri', sidebar: false }
 };
 
+const LOGISTICS_NAV_IDS = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-receipts', 'nav-dc'];
+
+function closeLogisticsMenu() {
+    const item = document.getElementById('nav-logistics-item');
+    const toggle = document.getElementById('nav-logistics');
+    const menu = document.getElementById('nav-logistics-menu');
+    if (item) item.classList.remove('open');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (menu) menu.hidden = true;
+}
+
+function positionLogisticsMenu() {
+    const toggle = document.getElementById('nav-logistics');
+    const menu = document.getElementById('nav-logistics-menu');
+    if (!toggle || !menu || menu.hidden) return;
+    const rect = toggle.getBoundingClientRect();
+    menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+    menu.style.left = `${Math.round(rect.left)}px`;
+}
+
+function openLogisticsMenu() {
+    const item = document.getElementById('nav-logistics-item');
+    const toggle = document.getElementById('nav-logistics');
+    const menu = document.getElementById('nav-logistics-menu');
+    if (!item || !toggle || !menu) return;
+    item.classList.add('open');
+    toggle.setAttribute('aria-expanded', 'true');
+    menu.hidden = false;
+    positionLogisticsMenu();
+}
+
+function syncTopNavActive(subViewName) {
+    document.querySelectorAll('.nav-link').forEach((n) => {
+        n.classList.remove('active');
+        n.classList.remove('is-current');
+        n.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('.menu-item-wrapper').forEach((w) => w.classList.remove('active'));
+    const navId = APP_VIEWS[subViewName] && APP_VIEWS[subViewName].navId;
+    const navLink = navId ? document.getElementById(navId) : null;
+    if (!navLink) return;
+    navLink.classList.add('is-current');
+    navLink.setAttribute('aria-current', 'page');
+    if (LOGISTICS_NAV_IDS.includes(navId)) {
+        document.getElementById('nav-logistics')?.classList.add('active');
+    } else if (navId === 'nav-physical-intakes') {
+        document.getElementById('nav-inventory')?.classList.add('active');
+    } else {
+        navLink.classList.add('active');
+        const wrapper = navLink.closest('.menu-item-wrapper');
+        if (wrapper) wrapper.classList.add('active');
+    }
+}
+
+function setupLogisticsMenu() {
+    const toggle = document.getElementById('nav-logistics');
+    const item = document.getElementById('nav-logistics-item');
+    if (!toggle || !item || toggle.dataset.navAttached) return;
+    toggle.dataset.navAttached = 'true';
+    toggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (item.classList.contains('open')) closeLogisticsMenu();
+        else openLogisticsMenu();
+    });
+    document.addEventListener('click', (e) => {
+        if (!item.contains(e.target)) closeLogisticsMenu();
+    });
+    window.addEventListener('resize', () => {
+        if (item.classList.contains('open')) positionLogisticsMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && item.classList.contains('open')) {
+            closeLogisticsMenu();
+            toggle.focus();
+        }
+    });
+}
+
 // Expose for external access if needed
 window.APP_VIEWS = APP_VIEWS;
 
@@ -617,18 +747,34 @@ const SIDEBAR_VIEW_IDS = Object.values(APP_VIEWS).filter(v => v.sidebar).map(v =
 
 function switchDashboardSubView(subViewName) {
     console.log(`Switching dashboard subview to: ${subViewName}`);
+    const rawName = String(subViewName || '').split('?')[0];
+    subViewName = rawName;
     
     // Validate view name
     if (!APP_VIEWS[subViewName]) {
-        console.warn(`Unknown view: ${subViewName}, defaulting to home-view`);
-        subViewName = 'home-view';
+        console.warn(`Unknown view: ${subViewName}, defaulting to operations-view`);
+        subViewName = 'operations-view';
     }
 
-    // Update browser history
-    // Only push state if it's different from current hash
-    const targetHash = '#' + subViewName;
-    if (window.location.hash !== targetHash) {
-        window.history.pushState({ subView: subViewName }, '', targetHash);
+        if (!canOpenAppView(subViewName)) {
+            console.warn('[RBAC] blocked view switch:', subViewName);
+            if (subViewName !== 'operations-view' && canOpenAppView('operations-view')) {
+                subViewName = 'operations-view';
+            } else if (canOpenAppView('arri-view')) {
+                subViewName = 'arri-view';
+            } else {
+                return;
+            }
+        }
+
+    // Update browser history — keep querystring when already on this view
+    const currentHash = String(window.location.hash || '').replace(/^#/, '');
+    const currentView = currentHash.split('?')[0];
+    const targetHash = currentView === subViewName && currentHash.includes('?')
+        ? '#' + currentHash
+        : '#' + subViewName;
+    if (window.location.hash !== targetHash && currentView !== subViewName) {
+        window.history.pushState({ subView: subViewName }, '', '#' + subViewName);
     }
 
     // Show/Hide Sidebar based on configuration
@@ -642,7 +788,7 @@ function switchDashboardSubView(subViewName) {
             const tree = document.getElementById('sidebar-tree');
             const systemMenu = document.getElementById('system-menu');
             if (tree && systemMenu) {
-                if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view'].includes(subViewName)) {
+                if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view', 'employee-view'].includes(subViewName)) {
                     tree.classList.add('hidden');
                     systemMenu.classList.remove('hidden');
                 } else {
@@ -674,19 +820,7 @@ function switchDashboardSubView(subViewName) {
     });
 
     // Update active nav link using configuration map
-    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-    document.querySelectorAll('.menu-item-wrapper').forEach(w => w.classList.remove('active'));
-    
-    const navId = APP_VIEWS[subViewName].navId;
-    if (navId) {
-        const navLink = document.getElementById(navId);
-        if (navLink) {
-            navLink.classList.add('active');
-            // Also activate wrapper if in system menu
-            const wrapper = navLink.closest('.menu-item-wrapper');
-            if (wrapper) wrapper.classList.add('active');
-        }
-    }
+    syncTopNavActive(subViewName);
 
     if (window.syncSidebarBubbles) window.syncSidebarBubbles();
     if (typeof refreshRecoveryCenterBadge === 'function') {
@@ -699,6 +833,7 @@ function switchDashboardSubView(subViewName) {
 // --- GLOBAL QoL: ESC KEY TO CLOSE MODALS ---
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        closeLogisticsMenu();
         console.log('[QoL] Esc key pressed, checking for open modals...');
         // Find all visible modals
         const modals = Array.from(document.querySelectorAll('.modal, .login-modal-overlay'));
@@ -749,6 +884,13 @@ window.addEventListener('popstate', (event) => {
         
         // Validate view name
         if (!APP_VIEWS[subViewName]) return;
+        if (!canOpenAppView(subViewName)) {
+            const fallback = canOpenAppView('operations-view')
+                ? 'operations-view'
+                : (canOpenAppView('arri-view') ? 'arri-view' : null);
+            if (fallback) switchDashboardSubView(fallback);
+            return;
+        }
 
         // Show/Hide Sidebar based on configuration
         const sidebar = document.getElementById('app-sidebar');
@@ -761,7 +903,7 @@ window.addEventListener('popstate', (event) => {
                 const tree = document.getElementById('sidebar-tree');
                 const systemMenu = document.getElementById('system-menu');
                 if (tree && systemMenu) {
-                    if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view'].includes(subViewName)) {
+                    if (['admin-view', 'settings-view', 'releases-view', 'recovery-center-view', 'employee-view'].includes(subViewName)) {
                         tree.classList.add('hidden');
                         systemMenu.classList.remove('hidden');
                     } else {
@@ -793,19 +935,7 @@ window.addEventListener('popstate', (event) => {
         });
         
         // Update active nav link using configuration map
-        document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-        document.querySelectorAll('.menu-item-wrapper').forEach(w => w.classList.remove('active'));
-        
-        const navId = APP_VIEWS[subViewName].navId;
-        if (navId) {
-            const navLink = document.getElementById(navId);
-            if (navLink) {
-                navLink.classList.add('active');
-                // Also activate wrapper if in system menu
-                const wrapper = navLink.closest('.menu-item-wrapper');
-                if (wrapper) wrapper.classList.add('active');
-            }
-        }
+        syncTopNavActive(subViewName);
 
         if (window.syncSidebarBubbles) window.syncSidebarBubbles();
         if (typeof refreshRecoveryCenterBadge === 'function') {
@@ -824,13 +954,18 @@ window.addEventListener('popstate', (event) => {
 
 function setupNavigation() {
     console.log('setupNavigation() called - Diagnostic Check');
+    setupLogisticsMenu();
     const navLinks = {
+        'nav-operations': {
+            view: 'dashboardView',
+            subView: 'operations-view',
+            init: () => typeof initOperationsView === 'function' && initOperationsView()
+        },
         'nav-dashboard': { 
             view: 'dashboardView', 
             subView: 'home-view', 
             init: () => {
                 console.log('nav-dashboard init');
-                // Reset to main asset board (All Assets) when clicking the Assets tab
                 window.currentDashboardParent = null;
                 window.filteredAssets = [...window.assets];
                 
@@ -838,8 +973,14 @@ function setupNavigation() {
                     renderDashboard(window.assets, () => window.assets);
                 }
                 
-                // Ensure we are in home-view not sheet-view
                 switchDashboardSubView('home-view');
+                const pending = window.__lifecyclePending;
+                const hashId = new URLSearchParams(String(window.location.hash || '').split('?')[1] || '').get('id');
+                const openId = (pending && pending.view === 'home-view' && pending.open) || hashId;
+                if (pending && pending.view === 'home-view') window.__lifecyclePending = null;
+                if (openId && typeof editAsset === 'function') {
+                    setTimeout(() => editAsset(openId), 200);
+                }
             } 
         },
         'nav-arri': {
@@ -869,6 +1010,41 @@ function setupNavigation() {
             view: 'dashboardView',
             subView: 'inventory-view',
             init: () => typeof initInventoryView === 'function' && initInventoryView()
+        },
+        'nav-sets': {
+            view: 'dashboardView',
+            subView: 'sets-view',
+            init: () => typeof initKitSetsView === 'function' && initKitSetsView()
+        },
+        'nav-receipts': {
+            view: 'dashboardView',
+            subView: 'receipts-view',
+            init: () => typeof initReceiptsView === 'function' && initReceiptsView()
+        },
+        'nav-purchase-orders': {
+            view: 'dashboardView',
+            subView: 'purchase-orders-view',
+            init: () => typeof initPurchaseOrdersView === 'function' && initPurchaseOrdersView()
+        },
+        'nav-products': {
+            view: 'dashboardView',
+            subView: 'products-view',
+            init: () => typeof initProductsView === 'function' && initProductsView()
+        },
+        'nav-reservations': {
+            view: 'dashboardView',
+            subView: 'reservations-view',
+            init: () => typeof initReservationsView === 'function' && initReservationsView()
+        },
+        'nav-history': {
+            view: 'dashboardView',
+            subView: 'history-view',
+            init: () => typeof initHistoryView === 'function' && initHistoryView()
+        },
+        'nav-physical-intakes': {
+            view: 'dashboardView',
+            subView: 'physical-intakes-view',
+            init: () => typeof initPhysicalIntakesView === 'function' && initPhysicalIntakesView()
         },
         'nav-dc': { 
             view: 'dashboardView', 
@@ -954,7 +1130,7 @@ function setupNavigation() {
                                 content.classList.remove('hidden');
                                 // Special init for RBAC
                                 if (targetId === 'admin-rbac-tab') {
-                                    import('./rbac.js').then(module => {
+                                    import('./rbac.js?v=7.39').then(module => {
                                         module.renderRBAC();
                                     });
                                 }
@@ -1188,10 +1364,15 @@ function setupNavigation() {
         const isSidebarOpen = () => {
             const s = document.getElementById('app-sidebar');
             if (!s) return false;
+            if (s.classList.contains('hidden')) return false;
             if (window.innerWidth <= 768) {
                 return s.classList.contains('mobile-open');
             }
             return !s.classList.contains('collapsed');
+        };
+
+        const syncSidebarToggleAria = () => {
+            newToggle.setAttribute('aria-expanded', isSidebarOpen() ? 'true' : 'false');
         };
 
         const updateCompactLayout = () => {
@@ -1206,6 +1387,7 @@ function setupNavigation() {
         if (isSidebarOpen()) {
              setStage(4);
         }
+        syncSidebarToggleAria();
 
         const toggleTopBar = () => {
             const appHeader = document.getElementById('app-header');
@@ -1292,6 +1474,7 @@ function setupNavigation() {
                         backdrop.classList.remove('active');
                         setStage(0);
                         updateCompactLayout();
+                        syncSidebarToggleAria();
                     });
                 }
                 if (isSidebarOpen()) {
@@ -1311,6 +1494,7 @@ function setupNavigation() {
             }
 
             updateCompactLayout();
+            syncSidebarToggleAria();
         };
 
         window.toggleSystemMenu = () => {
@@ -1330,6 +1514,7 @@ function setupNavigation() {
                 setStage(4);
                 if (window.syncSidebarBubbles) window.syncSidebarBubbles();
                 updateCompactLayout();
+                syncSidebarToggleAria();
                 return;
             }
 
@@ -1347,7 +1532,7 @@ function setupNavigation() {
                     // Already in system menu? Close sidebar or revert?
                     // User said: "clicking on it should hide the hierarchy pane... and open a list of pages"
                     // If we click again, we probably want to close it or revert to tree if on a tree view.
-                    const currentView = window.location.hash.replace('#', '') || 'home-view';
+                    const currentView = (window.location.hash.replace('#', '') || 'operations-view').split('?')[0];
                     const viewConfig = window.APP_VIEWS[currentView];
                     
                     if (viewConfig && viewConfig.sidebar) {
@@ -1371,6 +1556,7 @@ function setupNavigation() {
                 refreshRecoveryCenterBadge().catch(() => {});
             }
             updateCompactLayout();
+            syncSidebarToggleAria();
         };
 
         const onStart = (y) => {
@@ -1431,6 +1617,7 @@ function setupNavigation() {
             }
             startY = 0;
             isDragging = false;
+            syncSidebarToggleAria();
         };
 
         // Prevent default click behavior to avoid conflicts
@@ -1459,22 +1646,30 @@ function setupNavigation() {
     }
 
     // --- RBAC TAB VISIBILITY ENFORCEMENT ---
-    const userPermissions = (currentUser && currentUser.permissions) ? currentUser.permissions : [];
-    const isSuper = (currentUser && currentUser.role === 'superuser');
     const userCategory = (currentUser && currentUser.category) ? currentUser.category : 'IT';
-
-    const checkTabPermission = (perm) => isSuper || userPermissions.includes(perm);
+    const checkTabPermission = (perm) => hasPermission(perm);
 
     const navVisibility = {
-        'nav-dashboard': checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-operations': checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-dashboard': checkTabPermission('view.assets') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-arri': userCategory === 'SERVICE' || userCategory === 'In-House',
         'nav-projects': checkTabPermission('view.projects') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-dc': checkTabPermission('view.dc') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-employees': checkTabPermission('user.manage') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-inventory': checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-inventory': checkTabPermission('view.inventory') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-sets': checkTabPermission('view.sets') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-receipts': checkTabPermission('view.receipt_notes') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-purchase-orders': checkTabPermission('view.purchase_orders') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-products': checkTabPermission('view.products') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-reservations': checkTabPermission('view.reservations') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-history': checkTabPermission('view.history') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-physical-intakes': checkTabPermission('view.physical_intake') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-warranty': checkTabPermission('view.warranty') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-releases': checkTabPermission('view.releases'),
-        'nav-admin': checkTabPermission('view.admin')
+        'nav-admin': checkTabPermission('view.admin'),
+        'nav-settings': checkTabPermission('view.settings'),
+        'nav-recovery-center': checkTabPermission('view.recovery'),
+        'nav-scanner': checkTabPermission('view.scanner')
     };
 
     Object.entries(navVisibility).forEach(([id, isVisible]) => {
@@ -1493,6 +1688,19 @@ function setupNavigation() {
             }
         }
     });
+
+    const logisticsChildIds = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-receipts', 'nav-dc'];
+    const logisticsItem = document.getElementById('nav-logistics-item');
+    if (logisticsItem) {
+        const anyChild = logisticsChildIds.some((id) => {
+            const child = document.getElementById(id);
+            if (!child) return false;
+            const li = child.closest('#nav-logistics-menu li') || child.closest('li');
+            return li && li.style.display !== 'none' && !li.classList.contains('hidden-by-rbac') && !li.classList.contains('hidden');
+        });
+        logisticsItem.style.display = anyChild ? '' : 'none';
+        logisticsItem.classList.toggle('hidden-by-rbac', !anyChild);
+    }
     // ----------------------------------------
 
     Object.entries(navLinks).forEach(([id, config]) => {
@@ -1521,6 +1729,10 @@ function setupNavigation() {
 
                 e.preventDefault();
                 console.log(`[CLICK EVENT] Element ${id} clicked!`);
+                if (config.subView && !canOpenAppView(config.subView)) {
+                    console.warn('[RBAC] blocked nav click:', id, config.subView);
+                    return;
+                }
                 
                 try {
                     // 1. Show main view
@@ -1558,8 +1770,8 @@ function setupNavigation() {
                     }
 
                     // 3. Update active state in nav
-                    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
-                    el.classList.add('active');
+                    syncTopNavActive(config.subView);
+                    closeLogisticsMenu();
 
                     // 4. Run initialization
                     if (config.init) {

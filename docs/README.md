@@ -34,6 +34,13 @@ Single entry point for AssetEngine / CineEAM documentation.
 | [Archive](./archive/README.md) | Historical docs (not source of truth) |
 | [Repository modernization plan](./Repository_Modernization_Plan.md) | Phased repo cleanup plan |
 
+## In-progress design
+
+| Doc | Purpose |
+|-----|---------|
+| [Managed Sets / Kits](./MANAGED_SETS_ARCHITECTURE.md) | First-class Set model (Phase 0). **Do not** apply `20260824120000_create_managed_sets_tables.js` until this design is approved and the migration is revised. |
+| [Auth infrastructure](./AUTH_INFRASTRUCTURE_IMPLEMENTATION.md) | Signup, login, Remember Me, logout, password reset, cookie/session policy |
+
 ---
 
 ## Root engineering docs

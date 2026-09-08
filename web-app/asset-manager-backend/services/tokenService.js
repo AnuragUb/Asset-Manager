@@ -133,42 +133,51 @@ class TokenService {
     }
 
     /**
-     * Verify a password-reset token (valid signature + not expired).
-     * Returns username on success, null otherwise.
+     * Inspect a password-reset token without consuming it.
+     * @returns {{ status: 'ok'|'expired'|'used'|'invalid', username?: string }}
      */
-    async verifyResetToken(token) {
-        if (!token) return null;
-        console.log('[TokenService] Verifying reset token...');
+    async inspectResetToken(token) {
+        if (!token) return { status: 'invalid' };
         const tokenHash = this.hashToken(token);
-        const now = new Date().toISOString();
         try {
             const record = await db('password_resets')
                 .where('token_hash', tokenHash)
-                .select('email', 'expires_at', 'created_at')
                 .first();
-            if (!record) {
-                console.log('[TokenService] Reset token hash not found');
-                return null;
-            }
-            if (new Date(record.expires_at) <= new Date()) {
-                console.log('[TokenService] Reset token expired');
-                return null;
-            }
-            return String(record.email);
+            if (!record) return { status: 'invalid' };
+            if (record.used_at) return { status: 'used' };
+            if (new Date(record.expires_at) <= new Date()) return { status: 'expired' };
+            return { status: 'ok', username: String(record.email) };
         } catch (e) {
-            console.error('[TokenService] Error verifying reset token:', e.message || e);
-            return null;
+            console.error('[TokenService] Error inspecting reset token:', e.message || e);
+            return { status: 'invalid' };
         }
     }
 
     /**
-     * Consume (delete) a reset token so it can't be reused.
+     * Verify a password-reset token (valid signature + not expired + unused).
+     * Returns username on success, null otherwise.
+     */
+    async verifyResetToken(token) {
+        const inspected = await this.inspectResetToken(token);
+        return inspected.status === 'ok' ? inspected.username : null;
+    }
+
+    /**
+     * Consume a reset token so it can't be reused.
+     * Marks used_at when that column exists; otherwise deletes the row.
      */
     async consumeResetToken(token) {
         if (!token) return;
         const tokenHash = this.hashToken(token);
         try {
-            await db('password_resets').where('token_hash', tokenHash).delete();
+            const hasUsedAt = await db.schema.hasColumn('password_resets', 'used_at');
+            if (hasUsedAt) {
+                await db('password_resets')
+                    .where('token_hash', tokenHash)
+                    .update({ used_at: new Date().toISOString() });
+            } else {
+                await db('password_resets').where('token_hash', tokenHash).delete();
+            }
             console.log('[TokenService] Reset token consumed');
         } catch (e) {
             console.error('[TokenService] Error consuming reset token:', e.message || e);

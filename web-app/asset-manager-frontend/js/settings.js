@@ -1,5 +1,5 @@
 
-import { fetchWithAuth } from './auth.js?v=6.41';
+import { fetchWithAuth } from './auth.js?v=7.29';
 
 console.log('SETTINGS.JS: Module loaded');
 

@@ -118,29 +118,37 @@ async function main() {
   assert(grantSeen && grantVal === code && !!gTok, 'E grantToken path');
   ok('E_synthetic_authorization_code_grantToken');
 
-  // E2. completeOAuthWithCode clears stale FileStore then inits with code
-  let cleared = false;
-  const origClear = zoho._clearTokenFileForOAuthExchange.bind(zoho);
+  // E2. completeOAuthWithCode must NOT delete the token file before exchange
+  let unlinkedDuringExchange = false;
+  const origUnlinkExchange = fs.unlinkSync;
   const origInit = zoho.init.bind(zoho);
-  zoho._clearTokenFileForOAuthExchange = () => {
-    cleared = true;
+  const origExists = fs.existsSync;
+  const origRead = fs.readFileSync;
+  const origRetain = zoho._retainLatestFileStoreRow.bind(zoho);
+  fs.unlinkSync = (p) => {
+    if (String(p).includes('zoho_tokens')) {
+      unlinkedDuringExchange = true;
+      return;
+    }
+    return origUnlinkExchange(p);
   };
+  fs.existsSync = (p) => (String(p).includes('zoho_tokens') ? true : origExists(p));
+  fs.readFileSync = (p, e) => (String(p).includes('zoho_tokens') ? valid : origRead(p, e));
+  zoho._retainLatestFileStoreRow = () => {};
   zoho.init = async (opts) => {
-    assert(cleared === true, 'clear before init');
     assert(opts && opts.authorizationCode === 'synth_code', 'code to init');
-    const realE = fs.existsSync;
-    const realR = fs.readFileSync;
-    fs.existsSync = (p) => (String(p).includes('zoho_tokens') ? true : realE(p));
-    fs.readFileSync = (p, e) => (String(p).includes('zoho_tokens') ? valid : realR(p, e));
     zoho.initialized = true;
-    fs.existsSync = realE;
-    fs.readFileSync = realR;
   };
   const exchange = await zoho.completeOAuthWithCode('synth_code');
-  zoho._clearTokenFileForOAuthExchange = origClear;
+  fs.unlinkSync = origUnlinkExchange;
+  fs.existsSync = origExists;
+  fs.readFileSync = origRead;
   zoho.init = origInit;
-  assert(exchange.ok && exchange.authorized && cleared, 'E2 completeOAuth');
-  ok('E2_completeOAuth_clears_stale_FileStore');
+  zoho._retainLatestFileStoreRow = origRetain;
+  assert(exchange.ok && exchange.authorized, 'E2 completeOAuth');
+  assert(unlinkedDuringExchange === false, 'E2 must not delete token file');
+  assert(typeof zoho._clearTokenFileForOAuthExchange !== 'function', 'E2 destructive pre-clear removed');
+  ok('E2_completeOAuth_does_not_delete_token_file');
 
   // F. Disconnect removes auth; catalog marker untouched
   const catalogMarker = path.join(os.tmpdir(), 'zoho_catalog_marker_' + Date.now() + '.txt');
@@ -175,6 +183,146 @@ async function main() {
   assert(typeof zoho.syncDealsFromZoho === 'function', 'G syncDealsFromZoho');
   assert(typeof zoho.checkConnection === 'function', 'G checkConnection');
   ok('G_existing_sync_methods');
+
+  // H. SDK singleton reset uses real Initializer.LOCAL Map + initializer field
+  {
+    const Initializer = ZOHOCRMSDK.Initializer;
+    assert(Initializer && Initializer.LOCAL && typeof Initializer.LOCAL.clear === 'function', 'H LOCAL Map');
+    Initializer.LOCAL.set('forensic_test_key', { marker: true });
+    Initializer.initializer = { marker: true };
+    zoho._resetSdkSingleton();
+    assert(Initializer.LOCAL.size === 0, 'H LOCAL cleared');
+    assert(Initializer.initializer === undefined, 'H initializer undefined');
+    ok('H_resetSdkSingleton');
+  }
+
+  // I. syncProductsFromZoho handles APIException and never returns undefined
+  {
+    const cache = require('../services/cacheService');
+    const origCacheGet = cache.get;
+    const origInitSync = zoho.init.bind(zoho);
+    const origAdd = ZOHOCRMSDK.ParameterMap.prototype.add;
+    const origROGet = ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords;
+    const addedParams = [];
+    cache.get = async () => null;
+    zoho.init = async () => {};
+    ZOHOCRMSDK.ParameterMap.prototype.add = async function (param, value) {
+      addedParams.push({
+        name: param && typeof param.getName === 'function' ? param.getName() : String(param),
+        value
+      });
+      return origAdd.call(this, param, value);
+    };
+    ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords = async function () {
+      return {
+        getObject: () => {
+          const ex = Object.create(ZOHOCRMSDK.Record.APIException.prototype);
+          ex.getMessage = () => ({ getValue: () => 'REQUIRED_PARAM_MISSING' });
+          ex.getCode = () => ({ getValue: () => 'REQUIRED_PARAM_MISSING' });
+          return ex;
+        }
+      };
+    };
+    let thrown = null;
+    let syncResult = 'NOT_SET';
+    try {
+      syncResult = await zoho.syncProductsFromZoho();
+    } catch (e) {
+      thrown = e;
+    }
+    ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords = origROGet;
+    ZOHOCRMSDK.ParameterMap.prototype.add = origAdd;
+    zoho.init = origInitSync;
+    cache.get = origCacheGet;
+    assert(syncResult === 'NOT_SET', 'I did not return a value');
+    assert(thrown && thrown.code === 'ZOHO_API_EXCEPTION', 'I APIException code');
+    assert(String(thrown.message).includes('REQUIRED_PARAM_MISSING'), 'I APIException message');
+    const fieldsParam = addedParams.find((p) => p.name === 'fields');
+    assert(
+      fieldsParam &&
+        String(fieldsParam.value) ===
+          'Product_Name,Unit_Price,Description,Product_Code,Make,Model,HSN_Code',
+      'I Products fields param'
+    );
+    ok('I_syncProducts_APIException');
+  }
+
+  // J. Catalog pull paginates with PAGE / PER_PAGE and follows more_records
+  {
+    const src = fs.readFileSync(path.join(__dirname, '../services/zohoService.js'), 'utf8');
+    const pull = src.slice(src.indexOf('async syncProductsFromZoho()'), src.indexOf('async syncDealsFromZoho()'));
+    assert(pull.includes('GetRecordsParam.PAGE'), 'J uses PAGE');
+    assert(pull.includes('GetRecordsParam.PER_PAGE'), 'J uses PER_PAGE');
+    assert(pull.includes('GetRecordsParam.PAGE_TOKEN'), 'J uses PAGE_TOKEN when provided');
+    assert(pull.includes('getMoreRecords'), 'J follows more_records');
+    assert(pull.includes('CATALOG_PER_PAGE = 200') || pull.includes('PER_PAGE, CATALOG_PER_PAGE'), 'J per_page 200');
+    assert(!/zoho_catalog'\)\.del(ete|Where)/.test(pull) && !pull.includes(".delete("), 'J does not delete catalog rows');
+    ok('J_pagination_source');
+  }
+
+  {
+    const cache = require('../services/cacheService');
+    const origCacheGet = cache.get;
+    const origCacheSet = cache.set;
+    const origInitSync = zoho.init.bind(zoho);
+    const origLog = zoho.logSync.bind(zoho);
+    const origAdd = ZOHOCRMSDK.ParameterMap.prototype.add;
+    const origROGet = ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords;
+    const addedParams = [];
+    let getCalls = 0;
+    cache.get = async () => null;
+    cache.set = async () => {};
+    zoho.init = async () => {};
+    zoho.logSync = async () => {};
+    ZOHOCRMSDK.ParameterMap.prototype.add = async function (param, value) {
+      addedParams.push({
+        name: param && typeof param.getName === 'function' ? param.getName() : String(param),
+        value
+      });
+      return origAdd.call(this, param, value);
+    };
+    ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords = async function () {
+      getCalls += 1;
+      const more = getCalls === 1;
+      return {
+        getObject: () => {
+          const wrapper = Object.create(ZOHOCRMSDK.Record.ResponseWrapper.prototype);
+          wrapper.getData = () => [];
+          wrapper.getInfo = () => ({
+            getMoreRecords: () => more,
+            getNextPageToken: () => (more ? 'next-page-token' : null),
+            getPage: () => getCalls,
+            getPerPage: () => 200,
+            getCount: () => 0
+          });
+          return wrapper;
+        }
+      };
+    };
+    let result;
+    try {
+      result = await zoho.syncProductsFromZoho();
+    } finally {
+      ZOHOCRMSDK.Record.RecordOperations.prototype.getRecords = origROGet;
+      ZOHOCRMSDK.ParameterMap.prototype.add = origAdd;
+      zoho.init = origInitSync;
+      zoho.logSync = origLog;
+      cache.get = origCacheGet;
+      cache.set = origCacheSet;
+    }
+    assert(getCalls === 2, 'J fetched two pages');
+    assert(result && result.ok === true, 'J ok');
+    assert(result.pagesFetched === 2, 'J pagesFetched');
+    assert(result.recordsFetched === 0 && result.totalFound === 0 && result.recordsUpserted === 0, 'J empty upsert stats');
+    assert(result.syncCount === 0, 'J syncCount preserved');
+    const pageParam = addedParams.find((p) => p.name === 'page');
+    const perPageParam = addedParams.find((p) => p.name === 'per_page');
+    const tokenParam = addedParams.find((p) => p.name === 'page_token');
+    assert(pageParam && Number(pageParam.value) === 1, 'J first page param');
+    assert(perPageParam && Number(perPageParam.value) === 200, 'J per_page 200');
+    assert(tokenParam && String(tokenParam.value) === 'next-page-token', 'J follows page_token');
+    ok('J_pagination_loop');
+  }
 
   fs.unlinkSync(tmp);
   console.log('ALL_TESTS_PASS');

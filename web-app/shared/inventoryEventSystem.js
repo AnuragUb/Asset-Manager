@@ -50,7 +50,12 @@
     // Legacy asset qty-system names kept for compatibility mapping only
     ISSUE: 'ISSUE',
     SPLIT: 'SPLIT',
-    RECEIVE: 'RECEIVE'
+    RECEIVE: 'RECEIVE',
+    BREAK: 'BREAK',
+    BREAK_INACTIVATE: 'BREAK_INACTIVATE',
+    CONVERT: 'CONVERT',
+    CONVERT_RETURN: 'CONVERT_RETURN',
+    PHYSICAL_INTAKE: 'PHYSICAL_INTAKE'
   });
 
   const ENTITY_TYPES = Object.freeze({
@@ -88,7 +93,12 @@
     [EVENT_TYPES.AUDIT_CORRECTION]: 'Audit Correction',
     [EVENT_TYPES.ISSUE]: 'Issued',
     [EVENT_TYPES.SPLIT]: 'Quantity Split',
-    [EVENT_TYPES.RECEIVE]: 'Received'
+    [EVENT_TYPES.RECEIVE]: 'Received',
+    [EVENT_TYPES.BREAK]: 'Quantity Broken',
+    [EVENT_TYPES.BREAK_INACTIVATE]: 'Break Child Inactivated',
+    [EVENT_TYPES.CONVERT]: 'Converted Inventory to Asset',
+    [EVENT_TYPES.CONVERT_RETURN]: 'Returned Asset to Inventory',
+    [EVENT_TYPES.PHYSICAL_INTAKE]: 'Registered by Physical Intake'
   });
 
   /** Optional UI chrome (color / badge). Unknown types fall back safely. */
@@ -107,7 +117,12 @@
     [EVENT_TYPES.FOUND]: { color: '#10b981', badge: 'badge-success', icon: '✅' },
     [EVENT_TYPES.ISSUE]: { color: '#3b82f6', badge: 'badge-warning', icon: '📤' },
     [EVENT_TYPES.SPLIT]: { color: '#8b5cf6', badge: 'badge-info', icon: '✂️' },
-    [EVENT_TYPES.RECEIVE]: { color: '#10b981', badge: 'badge-success', icon: '📥' }
+    [EVENT_TYPES.RECEIVE]: { color: '#10b981', badge: 'badge-success', icon: '📥' },
+    [EVENT_TYPES.BREAK]: { color: '#6366f1', badge: 'badge-info', icon: '✂️' },
+    [EVENT_TYPES.BREAK_INACTIVATE]: { color: '#64748b', badge: 'badge-secondary', icon: '↩️' },
+    [EVENT_TYPES.CONVERT]: { color: '#0f766e', badge: 'badge-info', icon: '🔁' },
+    [EVENT_TYPES.CONVERT_RETURN]: { color: '#0369a1', badge: 'badge-info', icon: '↩️' },
+    [EVENT_TYPES.PHYSICAL_INTAKE]: { color: '#7c3aed', badge: 'badge-info', icon: '📋' }
   });
 
   /** Older / alternate stored type strings → canonical EVENT_TYPES values. */

@@ -1,4 +1,4 @@
-import { fetchWithAuth } from './auth.js?v=6.60';
+import { fetchWithAuth } from './auth.js?v=7.29';
 
 /**
  * Context Menu Logic for Hierarchy Pane
@@ -91,7 +91,7 @@ export function initContextMenu() {
         if (contextModule === 'inventory') {
             if (addFolderLabel) addFolderLabel.textContent = 'Add Inventory Folder';
             if (addCategoryLabel) addCategoryLabel.textContent = 'Add Inventory Category';
-            if (addItemLabel) addItemLabel.textContent = 'Add Inventory Item';
+            if (addItemLabel) addItemLabel.textContent = '+ Physical Intake';
             if (refreshLabel) refreshLabel.textContent = 'Refresh Inventory';
             if (addItemNode) addItemNode.style.display = 'block';
             if (zohoDivider) zohoDivider.style.display = 'none';
@@ -342,12 +342,14 @@ async function showZohoStatusModal() {
                 const parts = [];
                 if (health.status !== 'CONNECTED') {
                     parts.push(`<a id="btnZohoConnect" class="action-button" href="/api/zoho/oauth/authorize" style="background:#f59e0b;color:white;text-decoration:none;display:inline-flex;align-items:center;padding:8px 14px;border-radius:6px;font-weight:600;">Connect Zoho</a>`);
+                } else {
+                    parts.push(`<a id="btnZohoReauthorize" class="action-button" href="/api/zoho/oauth/authorize" style="background:#f59e0b;color:white;text-decoration:none;display:inline-flex;align-items:center;padding:8px 14px;border-radius:6px;font-weight:600;">Reauthorize Zoho</a>`);
                 }
                 if (health.status === 'CONNECTED' || health.config?.tokenFile === 'PRESENT' || health.status === 'TOKEN_REFRESH_FAILED') {
                     parts.push(`<button type="button" id="btnZohoDisconnect" class="action-button" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;">Disconnect Zoho</button>`);
                 }
                 if (health.status === 'CONNECTED') {
-                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Disconnect removes OAuth tokens only. Catalog and local Zoho IDs are kept.</span>`);
+                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Reauthorize asks Zoho for the current scope list (including Purchase Order READ). Tokens are replaced only after consent succeeds. Disconnect removes OAuth tokens only; catalog and local Zoho IDs are kept.</span>`);
                 } else {
                     parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Opens Zoho authorization (India). Tokens never appear in the browser.</span>`);
                 }

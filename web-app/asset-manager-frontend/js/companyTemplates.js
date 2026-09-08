@@ -1,5 +1,5 @@
 
-import { fetchWithAuth } from './auth.js?v=5.8';
+import { fetchWithAuth } from './auth.js?v=7.29';
 
 // Company Template Management Module
 

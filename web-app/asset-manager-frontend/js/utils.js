@@ -69,12 +69,90 @@ export function showView(viewName) {
 }
 
 /**
+ * Session user for RBAC. Prefer the live login object — localStorage
+ * `currentUser` is not written by the login path.
+ */
+export function currentAuthUser() {
+    if (typeof window !== 'undefined' && window.currentUser && (window.currentUser.role || window.currentUser.permissions)) {
+        return window.currentUser;
+    }
+    try {
+        return JSON.parse(localStorage.getItem('currentUser') || '{}');
+    } catch (_err) {
+        return {};
+    }
+}
+
+/**
+ * Canonical page-visibility keys. view.dashboard is Dashboard only.
+ * Unknown views are fail-closed in canOpenAppView().
+ */
+export const APP_VIEW_PERMISSIONS = {
+    'operations-view': 'view.dashboard',
+    'home-view': 'view.assets',
+    'inventory-view': 'view.inventory',
+    'sets-view': 'view.sets',
+    'receipts-view': 'view.receipt_notes',
+    'purchase-orders-view': 'view.purchase_orders',
+    'products-view': 'view.products',
+    'reservations-view': 'view.reservations',
+    'history-view': 'view.history',
+    'physical-intakes-view': 'view.physical_intake',
+    'projects-view': 'view.projects',
+    'dc-view': 'view.dc',
+    'employee-view': 'user.manage',
+    'warranty-view': 'view.warranty',
+    'releases-view': 'view.releases',
+    'admin-view': 'view.admin',
+    'settings-view': 'view.settings',
+    'recovery-center-view': 'view.recovery',
+    'scanner-view': 'view.scanner'
+};
+
+/** RBAC Settings tickers: page label → permission key that actually gates the page. */
+export const PAGE_ACCESS_PERMISSIONS = [
+    { page: 'Dashboard', key: 'view.dashboard' },
+    { page: 'Products', key: 'view.products' },
+    { page: 'Inventory', key: 'view.inventory' },
+    { page: 'Assets', key: 'view.assets' },
+    { page: 'History', key: 'view.history' },
+    { page: 'Reservations', key: 'view.reservations' },
+    { page: 'Purchase Orders', key: 'view.purchase_orders' },
+    { page: 'Receipt Notes', key: 'view.receipt_notes' },
+    { page: 'Sets', key: 'view.sets' },
+    { page: 'Projects', key: 'view.projects' },
+    { page: 'Create DC', key: 'view.dc' },
+    { page: 'Warranty', key: 'view.warranty' },
+    { page: 'Settings', key: 'view.settings' },
+    { page: 'Recovery', key: 'view.recovery' },
+    { page: 'Scanner', key: 'view.scanner' },
+    { page: 'Physical Intake', key: 'view.physical_intake' }
+];
+
+const SERVICE_PORTAL_HIDDEN_VIEWS = new Set([
+    'operations-view',
+    'home-view',
+    'inventory-view',
+    'sets-view',
+    'receipts-view',
+    'purchase-orders-view',
+    'products-view',
+    'reservations-view',
+    'history-view',
+    'physical-intakes-view',
+    'projects-view',
+    'dc-view',
+    'employee-view',
+    'warranty-view'
+]);
+
+/**
  * RBAC Helper: Check if current user has a specific permission
  * @param {string} permissionKey 
  * @returns {boolean}
  */
 export function hasPermission(permissionKey) {
-    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const user = currentAuthUser();
     const permissions = user.permissions || [];
     const role = user.role || '';
     
@@ -82,6 +160,28 @@ export function hasPermission(permissionKey) {
     if (role === 'superuser' || role === 'admin') return true;
     
     return permissions.includes(permissionKey);
+}
+
+/**
+ * Can this session open a named app view? Matches nav visibility, including
+ * admin/superuser bypass via hasPermission(). Unknown views are denied.
+ */
+export function canOpenAppView(viewId) {
+    const raw = String(viewId || '').split('?')[0];
+    if (!raw) return false;
+    const user = currentAuthUser();
+    const category = user.category || 'IT';
+    const servicePortal = category === 'SERVICE' || category === 'In-House';
+    if (raw === 'arri-view') return servicePortal;
+    if (servicePortal && SERVICE_PORTAL_HIDDEN_VIEWS.has(raw)) return false;
+    const perm = APP_VIEW_PERMISSIONS[raw];
+    if (!perm) return false;
+    return hasPermission(perm);
+}
+
+if (typeof window !== 'undefined') {
+    window.hasPermission = hasPermission;
+    window.canOpenAppView = canOpenAppView;
 }
 
 /**
@@ -139,10 +239,21 @@ export function applyRbacUiRestrictions(user) {
         navAdmin.style.display = 'none';
     }
 
-    // 4. Settings Module
+    // 4. Settings / Recovery / Scanner page visibility (canonical view.* keys)
     const navSettings = document.getElementById('nav-settings');
-    if (navSettings && !isAdmin && !permissions.includes('module.settings.access')) {
-        navSettings.style.display = 'none';
+    if (navSettings && !hasPermission('view.settings')) {
+        const wrap = navSettings.closest('li') || navSettings.closest('.menu-item-wrapper') || navSettings;
+        wrap.style.display = 'none';
+    }
+    const navRecovery = document.getElementById('nav-recovery-center');
+    if (navRecovery && !hasPermission('view.recovery')) {
+        const wrap = navRecovery.closest('li') || navRecovery.closest('.menu-item-wrapper') || navRecovery;
+        wrap.style.display = 'none';
+    }
+    const navScanner = document.getElementById('nav-scanner');
+    if (navScanner && !hasPermission('view.scanner')) {
+        const wrap = navScanner.closest('li') || navScanner.closest('.menu-item-wrapper') || navScanner;
+        wrap.style.display = 'none';
     }
 
     // 5. Category Management

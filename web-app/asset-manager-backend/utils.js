@@ -531,6 +531,110 @@ function generateProjectId(location) {
     return IdGenerator.generateProjectId(loc);
 }
 
+function generateProductId(now) {
+    return IdGenerator.generateProductId(now);
+}
+
+function verifyProductId(id) {
+    return IdGenerator.verifyProductId(id);
+}
+
+function generateReservationId(now) {
+    return IdGenerator.generateReservationId(now);
+}
+
+function verifyReservationId(id) {
+    return IdGenerator.verifyReservationId(id);
+}
+
+function generateConversionId(now) {
+    return IdGenerator.generateConversionId(now);
+}
+
+function verifyConversionId(id) {
+    return IdGenerator.verifyConversionId(id);
+}
+
+function generateSetId(now) {
+    return IdGenerator.generateSetId(now);
+}
+
+function verifySetId(id) {
+    return IdGenerator.verifySetId(id);
+}
+
+function generateRequirementId(now) {
+    return IdGenerator.generateRequirementId(now);
+}
+
+function verifyRequirementId(id) {
+    return IdGenerator.verifyRequirementId(id);
+}
+
+function generateAllocationId(now) {
+    return IdGenerator.generateAllocationId(now);
+}
+
+function verifyAllocationId(id) {
+    return IdGenerator.verifyAllocationId(id);
+}
+
+function generateReceiptNoteId(now) {
+    return IdGenerator.generateReceiptNoteId(now);
+}
+
+function verifyReceiptNoteId(id) {
+    return IdGenerator.verifyReceiptNoteId(id);
+}
+
+function generateReceiptLineId(now) {
+    return IdGenerator.generateReceiptLineId(now);
+}
+
+function verifyReceiptLineId(id) {
+    return IdGenerator.verifyReceiptLineId(id);
+}
+
+function generateProcurementPoId(now) {
+    return IdGenerator.generateProcurementPoId(now);
+}
+
+function verifyProcurementPoId(id) {
+    return IdGenerator.verifyProcurementPoId(id);
+}
+
+function generateProcurementPoLineId(now) {
+    return IdGenerator.generateProcurementPoLineId(now);
+}
+
+function verifyProcurementPoLineId(id) {
+    return IdGenerator.verifyProcurementPoLineId(id);
+}
+
+function generateProcurementSyncEventId(now) {
+    return IdGenerator.generateProcurementSyncEventId(now);
+}
+
+function verifyProcurementSyncEventId(id) {
+    return IdGenerator.verifyProcurementSyncEventId(id);
+}
+
+function generatePhysicalIntakeId(now) {
+    return IdGenerator.generatePhysicalIntakeId(now);
+}
+
+function verifyPhysicalIntakeId(id) {
+    return IdGenerator.verifyPhysicalIntakeId(id);
+}
+
+function verifyProcurementSyncEventId(id) {
+    return IdGenerator.verifyProcurementSyncEventId(id);
+}
+
+function computeProductChecksum(payload) {
+    return IdGenerator.computeProductChecksum(payload);
+}
+
 // Project QR Payload Generator
 function generateProjectQRPayload(project, ip, port) {
     // Return a direct URL to the project view
@@ -596,6 +700,31 @@ module.exports = {
     generateProjectId,
     generateProjectQRPayload,
     generateTempAssetId,
+    generateProductId,
+    verifyProductId,
+    generateReservationId,
+    verifyReservationId,
+    generateConversionId,
+    verifyConversionId,
+    generateSetId,
+    verifySetId,
+    generateRequirementId,
+    verifyRequirementId,
+    generateAllocationId,
+    verifyAllocationId,
+    generateReceiptNoteId,
+    verifyReceiptNoteId,
+    generateReceiptLineId,
+    verifyReceiptLineId,
+    generateProcurementPoId,
+    verifyProcurementPoId,
+    generateProcurementPoLineId,
+    verifyProcurementPoLineId,
+    generateProcurementSyncEventId,
+    verifyProcurementSyncEventId,
+    generatePhysicalIntakeId,
+    verifyPhysicalIntakeId,
+    computeProductChecksum,
     makeIdForAsset,
     assetsFile,
     usersFile,

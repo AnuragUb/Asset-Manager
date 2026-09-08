@@ -14,6 +14,10 @@ class EmailService {
         this.transporter = null;
     }
 
+    isConfigured() {
+        return !!this.getSmtpConfig();
+    }
+
     /**
      * Get SMTP configuration from dynamic.json
      * @returns {Object|null} SMTP config object or null if not enabled

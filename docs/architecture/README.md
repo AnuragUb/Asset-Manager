@@ -68,8 +68,9 @@ Do **not** treat `docs/archive/*` or deprecated PowerShell/Electron trees as the
 | Sprint 1 retrospective | [`SPRINT_1_RETROSPECTIVE.md`](./SPRINT_1_RETROSPECTIVE.md) |
 | Projects / inspection | `06` project routes + frontend project modules |
 | Inventory (gated) | `04` inventory + `09` current state |
-| Auth / RBAC | `07` + login/JWT middleware in backend |
+| Auth / RBAC | [`../AUTH_INFRASTRUCTURE_IMPLEMENTATION.md`](../AUTH_INFRASTRUCTURE_IMPLEMENTATION.md), `07` + login/JWT middleware in backend |
 | Zoho CRM OAuth + sync | [`ZOHO_CRM_INTEGRATION.md`](./ZOHO_CRM_INTEGRATION.md) |
+| Managed Sets / Kits (design) | [`../MANAGED_SETS_ARCHITECTURE.md`](../MANAGED_SETS_ARCHITECTURE.md) |
 | ARRI / service portal | Frontend `servicePortal.js` + related API |
 
 ---

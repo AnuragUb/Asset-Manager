@@ -5,6 +5,45 @@ console.log('[Projects] Module loading... (v6.41)');
 let allProjects = [];
 let currentProjectId = null;
 
+function goToPurchaseOrders(opts = {}) {
+    const nav = document.getElementById('nav-purchase-orders');
+    if (nav) nav.click();
+    else if (typeof window.initPurchaseOrdersView === 'function') window.initPurchaseOrdersView();
+    if (opts.importMode && typeof window.openPurchaseOrderImport === 'function') {
+        setTimeout(() => window.openPurchaseOrderImport(), 80);
+    }
+}
+
+function showProcurementInfoModal() {
+    let modal = document.getElementById('addOrderModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'addOrderModal';
+        modal.className = 'modal';
+        modal.style.zIndex = '10002';
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 560px; width: 92%;">
+            <span class="close-modal" onclick="document.getElementById('addOrderModal').style.display='none'">&times;</span>
+            <h3 style="margin: 0 0 12px 0;">Purchase Orders</h3>
+            <p class="po-zoho-banner" style="margin: 0 0 16px 0;">Purchase Orders are created and managed in Zoho. AssetEngine does not author, revise, or cancel commercial POs.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                <button type="button" class="action-button grey" id="btnPoInfoView">View Purchase Orders</button>
+                <button type="button" class="action-button blue" id="btnPoInfoImport">Import from Zoho</button>
+            </div>
+        </div>`;
+    modal.style.display = 'flex';
+    document.getElementById('btnPoInfoView')?.addEventListener('click', () => {
+        modal.style.display = 'none';
+        goToPurchaseOrders();
+    });
+    document.getElementById('btnPoInfoImport')?.addEventListener('click', () => {
+        modal.style.display = 'none';
+        goToPurchaseOrders({ importMode: true });
+    });
+}
+
 // --- Employee Search Helpers ---
 let cachedEmployees = [];
 
@@ -129,29 +168,7 @@ window.downloadPOExcel = async function(orderId) {
 };
 
 window.showPreviousPOFetcher = async function() {
-    let modal = document.getElementById('previousPOFetcherModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'previousPOFetcherModal';
-        modal.className = 'modal';
-        modal.style.zIndex = '10005';
-        document.body.appendChild(modal);
-    }
-    
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 600px;">
-            <span class="close-modal" onclick="document.getElementById('previousPOFetcherModal').style.display='none'">&times;</span>
-            <h3>Search Previous POs</h3>
-            <div style="margin-bottom: 15px;">
-                <input type="text" id="poSearchInput" class="form-input" placeholder="Search PO Number, Vendor..." oninput="window.searchPreviousPOs(this.value)">
-            </div>
-            <div id="poSearchResults" style="max-height: 400px; overflow-y: auto;">
-                <p style="text-align: center; color: #64748b;">Type at least 2 characters to search...</p>
-            </div>
-        </div>
-    `;
-    modal.style.display = 'flex';
-    document.getElementById('poSearchInput').focus();
+    showProcurementInfoModal();
 };
 
 window.searchPreviousPOs = async function(query) {
@@ -212,101 +229,8 @@ window.searchPreviousPOs = async function(query) {
     }
 };
 
-window.loadPOFromPrevious = async function(orderId) {
-    try {
-        console.log(`[PO Fetch] Loading details for: ${orderId}`);
-        const token = localStorage.getItem('token');
-        const headers = {};
-        if (token && token !== 'null' && token !== 'undefined') {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const res = await fetch(`/api/orders/${orderId}`, { headers });
-        if (!res.ok) throw new Error(`Failed to fetch PO details (${res.status})`);
-        
-        const data = await res.json();
-        // Handle variations in response structure
-        const order = data.orders?.[0] || data.data?.[0] || (data.PONumber ? data : null);
-        
-        if (!order) {
-            console.error('[PO Fetch] Data structure mismatch:', data);
-            throw new Error('PO data not found in response');
-        }
-
-        console.log('[PO Fetch] Populating fields for:', order.PONumber);
-
-        // 1. Ensure the PO Modal is initialized and visible
-        if (!document.getElementById('newPOVendor')) {
-            console.log('[PO Fetch] Initializing PO Modal content...');
-            // Use currentProjectId and current project data
-            window.showAddOrderModal(currentProjectId, window.currentProjectData || {});
-        } else {
-            // If it exists but is hidden, show it
-            const poModal = document.getElementById('addOrderModal');
-            if (poModal) poModal.style.display = 'flex';
-        }
-
-        // 2. Populate Header Fields (excluding PO Number/Date to avoid duplicates)
-        const fields = {
-            'newPOVendor': order.VendorName,
-            'poConsigneeName': order.ConsigneeName,
-            'poConsigneeAddress': order.ConsigneeAddress,
-            'poConsigneeGSTIN': order.ConsigneeGSTIN,
-            'poConsigneeState': order.ConsigneeState,
-            'poConsigneeStateCode': order.ConsigneeStateCode,
-            'poBuyerName': order.BuyerName,
-            'poBuyerAddress': order.BuyerAddress,
-            'poBuyerGSTIN': order.BuyerGSTIN,
-            'poBuyerState': order.BuyerState,
-            'poBuyerStateCode': order.BuyerStateCode
-        };
-
-        let populatedCount = 0;
-        for (const [id, val] of Object.entries(fields)) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.value = val || '';
-                // Trigger events so any listeners (like auto-save or validation) catch the change
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                populatedCount++;
-            } else {
-                console.warn(`[PO Fetch] Field not found: ${id}`);
-            }
-        }
-
-        // 3. Populate Line Items
-        const tbody = document.getElementById('poItemsBody');
-        if (tbody) {
-            tbody.innerHTML = '';
-            const items = order.items || [];
-            console.log(`[PO Fetch] Adding ${items.length} line items`);
-            
-            if (items.length > 0) {
-                items.forEach(item => {
-                    // We call the global addPOLineItem function
-                    if (typeof window.addPOLineItem === 'function') {
-                        // Create a clean copy without existing database IDs to ensure they are treated as NEW items for this project
-                        const newItem = { ...item };
-                        delete newItem.ID; 
-                        delete newItem.OrderID;
-                        window.addPOLineItem(newItem);
-                    }
-                });
-            }
-        } else {
-            console.error('[PO Fetch] Table body "poItemsBody" not found');
-        }
-
-        // 4. Close search modal
-        const searchModal = document.getElementById('previousPOFetcherModal');
-        if (searchModal) searchModal.style.display = 'none';
-        
-        showToast(`Imported ${populatedCount} fields and ${order.items?.length || 0} items`, 'success');
-    } catch (err) {
-        console.error('[PO Fetch] Error:', err);
-        alert('Error loading PO details: ' + err.message);
-    }
+window.loadPOFromPrevious = async function() {
+    showProcurementInfoModal();
 };
 
 window.deleteProject = async function(projectId) {
@@ -744,9 +668,14 @@ async function showProjectDetails(id) {
     window.currentProjectForOrders = project.ID;
     window.currentProjectData = project;
 
+    const btnViewPos = document.getElementById('btnViewProjectPurchaseOrders');
+    if (btnViewPos) btnViewPos.onclick = () => goToPurchaseOrders();
+    const btnImportPos = document.getElementById('btnImportProjectPurchaseOrder');
+    if (btnImportPos) btnImportPos.onclick = () => goToPurchaseOrders({ importMode: true });
     const btnAddOrder = document.getElementById('btnAddProjectOrder');
     if (btnAddOrder) {
-        btnAddOrder.onclick = () => showAddOrderModal(project.ID, project);
+        btnAddOrder.style.display = 'none';
+        btnAddOrder.onclick = () => showProcurementInfoModal();
     }
     
     // Reset tabs - always start with assets tab unless specified otherwise
@@ -1121,7 +1050,7 @@ async function loadProjectOrders(projectId) {
         const orders = Array.isArray(responseData) ? responseData : (responseData.orders || responseData.data || []);
         
         if (orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#666;">No Purchase Orders found. Create one to get started.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#666;">No historical local Purchase Orders on this project. Create and manage commercial POs in Zoho, then import them in Purchase Orders.</td></tr>';
             return;
         }
         
@@ -1137,11 +1066,10 @@ async function loadProjectOrders(projectId) {
                     <td><span class="status-badge" style="background:${order.Status==='Active'?'#e6fffa':'#f7fafc'}; color:${order.Status==='Active'?'#2c7a7b':'#4a5568'};">${order.Status}</span></td>
                     <td>
                         <div style="display: flex; gap: 5px;">
-                            <button class="action-button small blue" onclick="window.showEditOrderModal('${projectId}', '${order.ID}')">Edit</button>
+                            <button class="action-button small grey" onclick="window.viewProjectOrder('${order.ID}')">View</button>
                             <button class="action-button small" onclick="window.downloadPOExcel('${order.ID}')" style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;">Download</button>
                             <button class="action-button small" onclick="window.viewDCsForOrder('${poNum}')" style="background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe;">View DCs</button>
                             <button class="action-button small green" onclick="window.createDCFromPO('${projectId}', '${order.ID}')">Create DC</button>
-                            <button class="action-button small red" onclick="deleteProjectOrder('${projectId}', '${order.ID}')">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -1154,40 +1082,22 @@ async function loadProjectOrders(projectId) {
     }
 }
 
-window.showEditOrderModal = async function(projectId, orderId) {
-    try {
-        console.log(`[PO] Edit requested for PO: ${orderId} in Project: ${projectId}`);
-        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
-        if (!res.ok) {
-            const errText = await res.text();
-            console.error(`[PO] Fetch failed: ${res.status} ${errText}`);
-            throw new Error(`Failed to fetch PO details (${res.status})`);
-        }
-        const order = await res.json();
-        window.showAddOrderModal(projectId, { ...window.currentProjectData, existingOrder: order });
-    } catch (err) {
-        alert('Error: ' + err.message);
+window.showEditOrderModal = async function() {
+    showProcurementInfoModal();
+};
+
+window.viewProjectOrder = function(orderId) {
+    goToPurchaseOrders();
+    if (orderId && typeof window.openPurchaseOrderDetail === 'function') {
+        setTimeout(() => window.openPurchaseOrderDetail(orderId), 120);
     }
 };
 
-window.deleteProjectOrder = async function(projectId, orderId) {
-    const title = '⚠️  Delete Purchase Order Warning';
-    const body = `Are you SURE you want to DELETE this Purchase Order?
-
-Project ID: ${projectId}
-PO ID:      ${orderId}
-
-This will DELETE this PO and ALL its line items permanently.
-This action CANNOT be undone.`;
-    const confirmFn = (typeof window !== 'undefined' && window.safeConfirm) ? window.safeConfirm : async (t, m) => confirm(t + '\n\n' + m);
-    if (!(await confirmFn(title, body, { confirmBtnLabel: 'Yes, Delete PO' }))) return;
-    try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/orders/${orderId}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete');
-        showToast('PO deleted', 'success');
-        loadProjectOrders(projectId);
-    } catch (err) {
-        alert('Error deleting PO: ' + err.message);
+window.deleteProjectOrder = async function() {
+    if (typeof showToast === 'function') {
+        showToast('Purchase Orders are created and managed in Zoho. AssetEngine cannot delete commercial POs.', 'error');
+    } else {
+        alert('Purchase Orders are created and managed in Zoho. AssetEngine cannot delete commercial POs.');
     }
 };
 
@@ -1356,425 +1266,8 @@ window.createDCFromPO = async function(projectId, orderId) {
     }
 };
 
-window.showAddOrderModal = function(projectId, projectData) {
-    const existingOrder = projectData.existingOrder || null;
-    console.log('[PO] Opening PO modal. Existing order:', existingOrder);
-    let modal = document.getElementById('addOrderModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'addOrderModal';
-        modal.className = 'modal';
-        modal.style.display = 'none';
-        modal.style.zIndex = '10002';
-        modal.innerHTML = `
-            <div class="modal-content" style="max-width: 1000px; width: 95%;">
-                <span class="close-modal" onclick="document.getElementById('addOrderModal').style.display='none'">&times;</span>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 id="poModalTitle" style="margin: 0;">Create Purchase Order</h3>
-                    <button class="action-button small" onclick="window.showPreviousPOFetcher()" style="background: #fff; color: #2563eb; border: 1px solid #2563eb; font-weight: 600;">🔍 Fetch from Previous PO</button>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px;">
-                    <div class="form-group">
-                        <label>PO Number</label>
-                        <input type="text" id="newPONumber" class="form-input" placeholder="e.g. PO/2024/001">
-                    </div>
-                    <div class="form-group">
-                        <label>PO Date</label>
-                        <input type="date" id="newPODate" class="form-input">
-                    </div>
-                    <div class="form-group">
-                        <label>Vendor Name</label>
-                        <input type="text" id="newPOVendor" class="form-input" placeholder="Vendor Name">
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                    <div style="background: #fff; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: #0078d4;">Consignee Details</h4>
-                            <button class="action-button small" onclick="window.copyProjectConsigneeToPO()" style="padding: 4px 10px; font-size: 11px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-weight: 600;">Copy Default</button>
-                        </div>
-                        <input type="text" id="poConsigneeName" placeholder="Consignee Name" class="form-input" style="margin-bottom: 5px;">
-                        <textarea id="poConsigneeAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
-                            <input type="text" id="poConsigneeGSTIN" placeholder="GSTIN" class="form-input">
-                            <input type="text" id="poConsigneeState" placeholder="State" class="form-input">
-                            <input type="text" id="poConsigneeStateCode" placeholder="Code" class="form-input">
-                        </div>
-                    </div>
-                    <div style="background: #fff; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <h4 style="margin: 0; color: #0078d4;">Buyer Details</h4>
-                            <button class="action-button small" onclick="window.copyProjectBuyerToPO()" style="padding: 4px 10px; font-size: 11px; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-weight: 600;">Copy Default</button>
-                        </div>
-                        <input type="text" id="poBuyerName" placeholder="Buyer Name" class="form-input" style="margin-bottom: 5px;">
-                        <textarea id="poBuyerAddress" placeholder="Address" class="form-input" style="height: 60px; margin-bottom: 5px;"></textarea>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
-                            <input type="text" id="poBuyerGSTIN" placeholder="GSTIN" class="form-input">
-                            <input type="text" id="poBuyerState" placeholder="State" class="form-input">
-                            <input type="text" id="poBuyerStateCode" placeholder="Code" class="form-input">
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                    <h4 style="margin: 0;">Line Items (Excel View)</h4>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="action-button small" onclick="window.downloadPOTemplate()" style="background: #fff; color: #475569; border: 1px solid #cbd5e1;">📥 Download Template</button>
-                        <button class="action-button small" onclick="document.getElementById('poExcelInput').click()" style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;">📎 Import Excel</button>
-                        <input type="file" id="poExcelInput" style="display: none;" accept=".xlsx, .xls" onchange="window.importPOFromExcel(this)">
-                        <button class="action-button small" onclick="window.addPOLineItem()" style="background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e1;">+ Add Row</button>
-                    </div>
-                </div>
-
-                <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 20px;">
-                    <table class="data-table" style="margin: 0; min-width: 900px;" id="poItemsTable">
-                        <thead style="background: #f1f5f9;">
-                            <tr>
-                                <th style="width: 50px;">Sr</th>
-                                <th>Item Description</th>
-                                <th style="width: 100px;">Status</th>
-                                <th style="width: 120px;">Due Date</th>
-                                <th style="width: 80px;">Qty</th>
-                                <th style="width: 80px;">UOM</th>
-                                <th style="width: 120px;">Unit Price</th>
-                                <th style="width: 120px;">Total</th>
-                                <th style="width: 40px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="poItemsBody"></tbody>
-                        <tfoot style="background: #f8fafc; font-weight: bold;">
-                            <tr>
-                                <td colspan="7" style="text-align: right; padding-right: 15px;">Grand Total:</td>
-                                <td id="poGrandTotal">0.00</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-
-                <div class="modal-actions">
-                    <button id="btnSavePO" class="action-button blue">Save Purchase Order</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    }
-
-    document.getElementById('poModalTitle').textContent = existingOrder ? 'Edit Purchase Order' : 'Create Purchase Order';
-    document.getElementById('btnSavePO').textContent = existingOrder ? 'Update Purchase Order' : 'Save Purchase Order';
-
-    // Set Header Data
-    document.getElementById('newPONumber').value = existingOrder ? existingOrder.PONumber : '';
-    document.getElementById('newPODate').value = existingOrder ? existingOrder.PODate : new Date().toISOString().split('T')[0];
-    document.getElementById('newPOVendor').value = existingOrder ? existingOrder.VendorName : '';
-
-    // Set Consignee & Buyer Data
-    document.getElementById('poConsigneeName').value = existingOrder ? (existingOrder.ConsigneeName || '') : '';
-    document.getElementById('poConsigneeAddress').value = existingOrder ? (existingOrder.ConsigneeAddress || '') : '';
-    document.getElementById('poConsigneeGSTIN').value = existingOrder ? (existingOrder.ConsigneeGSTIN || '') : '';
-    document.getElementById('poConsigneeState').value = existingOrder ? (existingOrder.ConsigneeState || '') : '';
-    document.getElementById('poConsigneeStateCode').value = existingOrder ? (existingOrder.ConsigneeStateCode || '') : '';
-
-    document.getElementById('poBuyerName').value = existingOrder ? (existingOrder.BuyerName || '') : '';
-    document.getElementById('poBuyerAddress').value = existingOrder ? (existingOrder.BuyerAddress || '') : '';
-    document.getElementById('poBuyerGSTIN').value = existingOrder ? (existingOrder.BuyerGSTIN || '') : '';
-    document.getElementById('poBuyerState').value = existingOrder ? (existingOrder.BuyerState || '') : '';
-    document.getElementById('poBuyerStateCode').value = existingOrder ? (existingOrder.BuyerStateCode || '') : '';
-
-    window.copyProjectConsigneeToPO = () => {
-        const p = window.currentProjectData;
-        if (!p) return;
-        document.getElementById('poConsigneeName').value = p.ConsigneeName || '';
-        document.getElementById('poConsigneeAddress').value = p.ConsigneeAddress || '';
-        document.getElementById('poConsigneeGSTIN').value = p.ConsigneeGSTIN || '';
-        document.getElementById('poConsigneeState').value = p.ConsigneeState || '';
-        document.getElementById('poConsigneeStateCode').value = p.ConsigneeStateCode || '';
-        showToast('Consignee details copied', 'success');
-    };
-
-    window.copyProjectBuyerToPO = () => {
-        const p = window.currentProjectData;
-        if (!p) return;
-        document.getElementById('poBuyerName').value = p.BuyerName || '';
-        document.getElementById('poBuyerAddress').value = p.BuyerAddress || '';
-        document.getElementById('poBuyerGSTIN').value = p.BuyerGSTIN || '';
-        document.getElementById('poBuyerState').value = p.BuyerState || '';
-        document.getElementById('poBuyerStateCode').value = p.BuyerStateCode || '';
-        showToast('Buyer details copied', 'success');
-    };
-
-    window.downloadPOTemplate = () => {
-        try {
-            const data = [
-                ['Sr No', 'Item Description', 'Due Date (YYYY-MM-DD)', 'Quantity', 'UOM', 'Unit Price'],
-                [1, 'Sample Item Name', new Date().toISOString().split('T')[0], 10, 'Nos', 500]
-            ];
-            
-            const worksheet = XLSX.utils.aoa_to_sheet(data);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'PO_Template');
-            
-            // Set column widths
-            const wscols = [
-                { wch: 8 },  // Sr No
-                { wch: 40 }, // Description
-                { wch: 20 }, // Due Date
-                { wch: 10 }, // Qty
-                { wch: 10 }, // UOM
-                { wch: 15 }  // Price
-            ];
-            worksheet['!cols'] = wscols;
-            
-            XLSX.writeFile(workbook, 'PO_Import_Template.xlsx');
-            showToast('Template downloaded', 'success');
-        } catch (err) {
-            console.error('Download template error:', err);
-            alert('Error downloading template');
-        }
-    };
-
-    window.importPOFromExcel = (input) => {
-        const file = input.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(firstSheet);
-                
-                if (rows.length === 0) throw new Error('Excel file is empty');
-                
-                const headers = Object.keys(rows[0]);
-                window.showExcelMapper(headers, rows);
-            } catch (err) {
-                alert('Error reading Excel: ' + err.message);
-            } finally {
-                input.value = ''; 
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    };
-
-    window.showExcelMapper = (headers, rows) => {
-        let mapperModal = document.getElementById('excelMapperModal');
-        if (!mapperModal) {
-            mapperModal = document.createElement('div');
-            mapperModal.id = 'excelMapperModal';
-            mapperModal.className = 'modal';
-            mapperModal.style.zIndex = '10005';
-            document.body.appendChild(mapperModal);
-        }
-
-        const fields = [
-            { id: 'SrNo', label: 'Sr No' },
-            { id: 'ItemDescription', label: 'Item Description' },
-            { id: 'DueDate', label: 'Due Date' },
-            { id: 'QtyOrdered', label: 'Quantity' },
-            { id: 'UOM', label: 'UOM' },
-            { id: 'UnitPrice', label: 'Unit Price' }
-        ];
-
-        // Automatic guesser logic
-        const guess = (label) => {
-            const l = label.toLowerCase().replace(/[\s_-]/g, '');
-            if (l.includes('srno') || l === 'sr' || l === 'sno') return 'SrNo';
-            if (l.includes('desc') || l.includes('item') || l === 'particulars') return 'ItemDescription';
-            if (l.includes('due') || l.includes('date')) return 'DueDate';
-            if (l.includes('qty') || l.includes('quant') || l === 'q') return 'QtyOrdered';
-            if (l.includes('uom') || l === 'unit') return 'UOM';
-            if (l.includes('price') || l.includes('rate') || l === 'unitcost') return 'UnitPrice';
-            return '';
-        };
-
-        const fieldOptions = fields.map(f => `
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; background: #f8fafc; border-radius: 6px;">
-                <div style="flex: 1; font-weight: 600; color: #475569;">${f.label}</div>
-                <div style="flex: 1.5;">
-                    <select class="mapper-select" data-field="${f.id}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                        <option value="">-- Skip Field --</option>
-                        ${headers.map(h => `<option value="${h}" ${guess(h) === f.id ? 'selected' : ''}>Excel: ${h}</option>`).join('')}
-                    </select>
-                </div>
-            </div>
-        `).join('');
-
-        mapperModal.innerHTML = `
-            <div class="modal-content" style="max-width: 500px; padding: 30px;">
-                <h3 style="margin-top: 0; margin-bottom: 20px;">Excel Column Mapper</h3>
-                <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">Assign which Excel column corresponds to our PO fields.</p>
-                
-                <div id="mapperFieldsContainer">
-                    ${fieldOptions}
-                </div>
-
-                <div style="display: flex; gap: 10px; margin-top: 30px;">
-                    <button class="action-button" onclick="document.getElementById('excelMapperModal').style.display='none'" style="flex: 1; background: #f1f5f9; color: #475569;">Cancel</button>
-                    <button id="btnConfirmImport" class="action-button blue" style="flex: 1;">Confirm Import</button>
-                </div>
-            </div>
-        `;
-
-        document.getElementById('btnConfirmImport').onclick = () => {
-            const mapping = {};
-            mapperModal.querySelectorAll('.mapper-select').forEach(sel => {
-                if (sel.value) mapping[sel.getAttribute('data-field')] = sel.value;
-            });
-
-            // Clear existing rows
-            const tbody = document.getElementById('poItemsBody');
-            tbody.innerHTML = '';
-
-            rows.forEach((row, idx) => {
-                const item = {
-                    SrNo: row[mapping.SrNo] || (idx + 1),
-                    ItemDescription: row[mapping.ItemDescription] || '',
-                    Status: 'Pending',
-                    DueDate: row[mapping.DueDate] || '',
-                    QtyOrdered: parseFloat(row[mapping.QtyOrdered]) || 1,
-                    UOM: row[mapping.UOM] || 'Nos',
-                    UnitPrice: parseFloat(row[mapping.UnitPrice]) || 0,
-                    Total: 0
-                };
-                item.Total = item.QtyOrdered * item.UnitPrice;
-                window.addPOLineItem(item);
-            });
-
-            window.calculatePOTotals();
-            showToast(`Imported ${rows.length} items with custom mapping`, 'success');
-            mapperModal.style.display = 'none';
-        };
-
-        mapperModal.style.display = 'flex';
-    };
-
-    // Set Items
-    const poItemsBody = document.getElementById('poItemsBody');
-    poItemsBody.innerHTML = '';
-    
-    if (existingOrder && existingOrder.items && existingOrder.items.length > 0) {
-        console.log(`[PO] Loading ${existingOrder.items.length} existing items:`, existingOrder.items);
-        existingOrder.items.forEach(item => {
-            console.log(`[PO] Adding Item: ${item.ItemDescription}, Status: ${item.Status}`);
-            window.addPOLineItem(item);
-        });
-    } else {
-        // Add 3 empty rows by default for new PO
-        for(let i=0; i<3; i++) window.addPOLineItem();
-    }
-
-    window.calculatePOTotals();
-
-    // Save Handler
-    const btnSave = document.getElementById('btnSavePO');
-    btnSave.onclick = async () => {
-        const items = [];
-        const itemRows = document.querySelectorAll('#poItemsBody .po-item-row');
-        console.log(`[PO] Collecting items from ${itemRows.length} rows`);
-        
-        itemRows.forEach((row, index) => {
-            const descInput = row.querySelector('.item-desc');
-            const qtyInput = row.querySelector('.item-qty');
-            const uomInput = row.querySelector('.item-uom');
-            const priceInput = row.querySelector('.item-price');
-            const checkbox = row.querySelector('.item-checklist-toggle');
-
-            if (!descInput || !qtyInput) {
-                console.error(`[PO SAVE] Missing inputs in row ${index + 1}`);
-                return;
-            }
-
-            const desc = descInput.value;
-            const status = (checkbox && checkbox.checked) ? 'Shipped' : 'Pending';
-            
-            if (desc.trim()) {
-                const itemData = {
-                    SrNo: index + 1,
-                    ItemDescription: desc,
-                    Status: status,
-                    status: status,
-                    DueDate: row.querySelector('.item-due').value,
-                    QtyOrdered: parseFloat(qtyInput.value) || 0,
-                    UOM: uomInput.value,
-                    UnitPrice: parseFloat(priceInput.value) || 0,
-                    Total: parseFloat(row.querySelector('.item-total').textContent.replace(/,/g, '')) || 0
-                };
-
-                // Add existing item ID if it exists (CRITICAL FOR UPDATES)
-                if (row.dataset.poItemId) {
-                    itemData.ID = row.dataset.poItemId;
-                    itemData.id = row.dataset.poItemId;
-                }
-                
-                // Add AssetID if it exists in the row's data
-                const linkedAssetEl = row.querySelector('div[style*="color: #0078d4"]');
-                if (linkedAssetEl) {
-                    const match = linkedAssetEl.textContent.match(/🔗 Linked: (.*)/);
-                    if (match) itemData.AssetID = match[1];
-                }
-                
-                items.push(itemData);
-            }
-        });
-
-        if (items.length === 0) {
-            alert('Please add at least one line item with a description.');
-            return;
-        }
-
-        const payload = {
-            PONumber: document.getElementById('newPONumber').value,
-            PODate: document.getElementById('newPODate').value,
-            VendorName: document.getElementById('newPOVendor').value,
-            TotalAmount: parseFloat(document.getElementById('poGrandTotal').textContent.replace(/,/g, '')),
-            Status: 'Active',
-            items: items,
-            ConsigneeName: document.getElementById('poConsigneeName').value,
-            ConsigneeAddress: document.getElementById('poConsigneeAddress').value,
-            ConsigneeGSTIN: document.getElementById('poConsigneeGSTIN').value,
-            ConsigneeState: document.getElementById('poConsigneeState').value,
-            ConsigneeStateCode: document.getElementById('poConsigneeStateCode').value,
-            BuyerName: document.getElementById('poBuyerName').value,
-            BuyerAddress: document.getElementById('poBuyerAddress').value,
-            BuyerGSTIN: document.getElementById('poBuyerGSTIN').value,
-            BuyerState: document.getElementById('poBuyerState').value,
-            BuyerStateCode: document.getElementById('poBuyerStateCode').value
-        };
-
-        console.log('[PO] Final Payload to Send:', JSON.stringify(payload, null, 2));
-
-        try {
-            btnSave.disabled = true;
-            const url = existingOrder ? `/api/orders/${existingOrder.ID}` : `/api/projects/${encodeURIComponent(projectId)}/orders`;
-            const method = existingOrder ? 'PUT' : 'POST';
-            
-            const res = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!res.ok) throw new Error('Failed to save PO');
-            
-            showToast(existingOrder ? 'PO Updated' : 'PO Created', 'success');
-            modal.style.display = 'none';
-            loadProjectOrders(projectId);
-            // Also refresh workspace if active
-            if (currentProjectId === projectId) {
-                loadWorkspacePO(projectId);
-            }
-        } catch (err) {
-            alert('Error: ' + err.message);
-        } finally {
-            btnSave.disabled = false;
-        }
-    };
-
-    modal.style.display = 'flex';
+window.showAddOrderModal = function() {
+    showProcurementInfoModal();
 };
 
 window.addPOLineItem = function(data = null) {
@@ -1951,7 +1444,7 @@ async function loadProjectTempAssets(projectId) {
                 <td>${a.Quantity}</td>
                 <td>${a.Currency} ${a.EstimatedPrice}</td>
                 <td>
-                    <button class="action-button small" onclick="convertTempAsset('${a.ID}')" title="Convert to Permanent">Convert</button>
+            <button class="action-button small" onclick="convertTempAsset('${a.ID}')" title="Cannot promote without Receipt">Convert (disabled)</button>
                     <button class="action-button small danger" onclick="deleteTempAsset('${a.ID}')" title="Delete">Del</button>
                 </td>
             </tr>
@@ -1965,6 +1458,8 @@ async function loadProjectTempAssets(projectId) {
 
 // Expose these for onclick handlers
 window.convertTempAsset = async function(id) {
+    showToast('Temporary assets cannot be promoted to stock. New stock is created through Receipt Notes.', 'info');
+    return;
     if (!confirm('Convert this temporary asset to a permanent asset?')) return;
     try {
         const res = await fetch(`/api/temporary-assets/${id}/make-permanent`, { method: 'POST' });
@@ -2253,6 +1748,16 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
     const snContainer = document.getElementById('projectBatchSnList');
     const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
     const hasSerials = serials.length > 0;
+
+    const titleEl = splitModal.querySelector('h3');
+    const confirmBtn = document.getElementById('btnConfirmProjectSplit');
+    if (hasSerials) {
+        if (titleEl) titleEl.textContent = 'Select S/N to Split & Assign';
+        if (confirmBtn) confirmBtn.textContent = 'Split & Assign';
+    } else {
+        if (titleEl) titleEl.textContent = 'Break quantity and assign';
+        if (confirmBtn) confirmBtn.textContent = 'Break & Assign';
+    }
     
     if (hasSerials) {
         snContainer.innerHTML = serials.map(sn => `
@@ -2269,10 +1774,10 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
         snContainer.innerHTML = `
             <div style="padding: 10px;">
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">
-                    This is a bulk asset with no serial numbers. Enter the quantity you wish to split and assign to this project.
+                    This is a bulk quantity-tracked asset. Break the quantity you need, then assign the new child to this project.
                 </p>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label style="font-size: 11px; font-weight: bold; color: #475569;">Quantity to Assign (Max: ${qtyAvailable} ${unit})</label>
+                    <label style="font-size: 11px; font-weight: bold; color: #475569;">Quantity to Break (Max: ${qtyAvailable} ${unit})</label>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <input type="number" id="projSplitQty" min="1" max="${qtyAvailable}" value="1" 
                                style="flex: 1; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 16px;">
@@ -2309,31 +1814,53 @@ async function handleProjectBatchSplit(asset, projectId, onComplete = null) {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch('/api/assets/split', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                showToast(`Split & assigned ${data.count} unit(s) to project`, 'success');
-                splitModal.style.display = 'none';
-                
-                // Close the parent assignment modal if it exists
-                const assignModal = document.getElementById('assignAssetModal_v2');
-                if (assignModal) assignModal.style.display = 'none';
-                
-                // Refresh project assets
-                loadProjectAssets(projectId);
-
-                // Call the completion callback if provided (useful for Workspace)
-                if (typeof onComplete === 'function') {
-                    onComplete(data.assets || []);
-                }
+            let data;
+            if (hasSerials) {
+                alert('Legacy serial Split is disabled. Use Break to individualize quantity.');
+                return;
             } else {
-                const err = await response.json();
-                alert('Split failed: ' + (err.error || 'Unknown error'));
+                const breakRes = await fetch('/api/break', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: headers,
+                    body: JSON.stringify({
+                        holdingType: 'ASSET',
+                        parentId: asset.ID,
+                        mode: 'BREAK',
+                        amount: payload.quantity
+                    })
+                });
+                const broken = await breakRes.json().catch(() => ({}));
+                if (!breakRes.ok) {
+                    alert('Break failed: ' + (broken.error || broken.reasonCode || 'Unknown error'));
+                    return;
+                }
+                const children = broken.children || [];
+                for (const child of children) {
+                    const assignRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assign-asset`, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({ AssetID: child.id, Type: 'Permanent' })
+                    });
+                    if (!assignRes.ok) {
+                        const assignErr = await assignRes.json().catch(() => ({}));
+                        alert(`Broke ${child.id} but assignment failed: ` + (assignErr.error || 'Unknown error'));
+                        return;
+                    }
+                }
+                data = { count: children.length, assets: children };
+            }
+
+            showToast(`Assigned ${data.count} unit(s) to project`, 'success');
+            splitModal.style.display = 'none';
+            
+            const assignModal = document.getElementById('assignAssetModal_v2');
+            if (assignModal) assignModal.style.display = 'none';
+            
+            loadProjectAssets(projectId);
+
+            if (typeof onComplete === 'function') {
+                onComplete(data.assets || []);
             }
         } catch (err) {
             console.error('Project split error:', err);
@@ -2864,8 +2391,7 @@ function renderStagingArea() {
     // Add "Create Set" button if multiple assets are staged
     const headerHtml = workspaceStagedAssets.length > 1 ? `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #fffbeb; padding: 10px; border: 1px solid #fde68a; border-radius: 8px;">
-            <div style="font-size: 12px; color: #92400e; font-weight: 600;">Multiple items staged. Create a combined set?</div>
-            <button onclick="window.handleWorkspaceMakeSet()" class="action-button small" style="background: #fbbf24; color: #78350f; border: 1px solid #d97706; padding: 4px 12px; font-weight: 700;">Create Superset 📦</button>
+            <div style="font-size: 12px; color: #92400e; font-weight: 600;">Sets are assembled through Set Requirements and Allocation.</div>
         </div>
     ` : '';
 
@@ -2946,7 +2472,7 @@ window.handleUnsplit = async (childId, index) => {
             loadWorkspaceInventory(document.getElementById('workspaceSearch').value);
         } else {
             const data = await res.json();
-            alert('Unsplit failed: ' + (data.error || 'Unknown error'));
+            alert('Unsplit failed: ' + (data.error || data.reasonCode || 'Unknown error'));
         }
     } catch (err) {
         console.error('[Workspace] Unsplit Error:', err);
@@ -3063,6 +2589,8 @@ window.selectWorkspacePo = (poId) => {
 };
 
 window.handleWorkspaceMakeSet = function() {
+    showToast('Sets are assembled through Set Requirements and Allocation.', 'info');
+    return;
     if (workspaceStagedAssets.length < 2) {
         showToast('Please stage at least 2 assets to create a set.', 'warning');
         return;

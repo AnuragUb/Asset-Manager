@@ -2,7 +2,8 @@ import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showT
 import { HierarchyManager } from './hierarchy.js?v=6.59';
 import { DataProcessor } from './dataProcessor.js?v=6.59';
 import { initScannerView } from './networkScanner.js?v=6.59';
-import { fetchWithAuth } from './auth.js?v=6.60';
+import { fetchWithAuth } from './auth.js?v=7.29';
+import { setupAssetReturnUI } from './conversions.js?v=7.28';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
@@ -847,6 +848,164 @@ function toggleAssetSelection(asset) {
     updateBatchOverlay();
 }
 
+function setDcField(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value == null ? '' : String(value);
+}
+
+function applyZohoAccountToDc(account) {
+    if (!account) return;
+    const name = String(account.accountName || '').trim();
+    const shipAddr = String(account.shippingAddress || '').trim();
+    const billAddr = String(account.billingAddress || '').trim();
+    const shipState = String(account.shippingState || '').trim();
+    const billState = String(account.billingState || '').trim();
+    setDcField('dcCustomerName', name);
+    setDcField('dcZohoAccountId', account.zohoAccountId || '');
+    setDcField('dcConsigneeName', name);
+    setDcField('dcConsigneeAddress', shipAddr || billAddr);
+    setDcField('dcConsigneeState', shipState || billState);
+    setDcField('dcConsigneeStateCode', '');
+    setDcField('dcConsigneeGST', '');
+    setDcField('dcBuyerName', name);
+    setDcField('dcBuyerAddress', billAddr || shipAddr);
+    setDcField('dcBuyerState', billState || shipState);
+    setDcField('dcBuyerStateCode', '');
+    setDcField('dcBuyerGST', '');
+    const selected = document.getElementById('dcAccountSelected');
+    const selectedName = document.getElementById('dcAccountSelectedName');
+    if (selectedName) selectedName.textContent = name;
+    if (selected) selected.hidden = false;
+}
+
+function clearDcAccountSelection({ keepName = false } = {}) {
+    const idEl = document.getElementById('dcZohoAccountId');
+    if (idEl) idEl.value = '';
+    const selected = document.getElementById('dcAccountSelected');
+    if (selected) selected.hidden = true;
+    if (!keepName) setDcField('dcCustomerName', '');
+}
+
+function initDcAccountLookup() {
+    const input = document.getElementById('dcCustomerName');
+    const list = document.getElementById('dcAccountList');
+    if (!input || !list || input.dataset.accountLookup === '1') return;
+    input.dataset.accountLookup = '1';
+
+    let timer = null;
+    let items = [];
+    let activeIndex = -1;
+
+    const hideList = () => {
+        list.hidden = true;
+        list.innerHTML = '';
+        input.setAttribute('aria-expanded', 'false');
+        input.removeAttribute('aria-activedescendant');
+        activeIndex = -1;
+    };
+
+    const highlight = (index) => {
+        const options = list.querySelectorAll('[role="option"]');
+        options.forEach((opt, i) => {
+            opt.setAttribute('aria-selected', i === index ? 'true' : 'false');
+        });
+        if (index >= 0 && options[index]) {
+            input.setAttribute('aria-activedescendant', options[index].id);
+            options[index].scrollIntoView({ block: 'nearest' });
+        } else {
+            input.removeAttribute('aria-activedescendant');
+        }
+    };
+
+    const selectAccount = (account) => {
+        applyZohoAccountToDc(account);
+        hideList();
+        input.focus();
+    };
+
+    const renderList = (accounts, emptyMessage) => {
+        items = accounts || [];
+        activeIndex = items.length ? 0 : -1;
+        if (!items.length) {
+            list.innerHTML = `<div class="dc-account-empty">${escapeHtml(emptyMessage || 'No matching Zoho Account')}</div>`;
+            list.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            return;
+        }
+        list.innerHTML = items.map((account, i) => `
+            <div class="dc-account-option" role="option" data-index="${i}" aria-selected="${i === 0 ? 'true' : 'false'}" id="dcAccountOpt-${i}">
+                <span>${escapeHtml(account.accountName)}</span>
+            </div>
+        `).join('');
+        list.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+        list.querySelectorAll('.dc-account-option').forEach((opt) => {
+            opt.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                const idx = Number(opt.getAttribute('data-index'));
+                if (items[idx]) selectAccount(items[idx]);
+            });
+        });
+        highlight(activeIndex);
+    };
+
+    const searchAccounts = async (term) => {
+        const q = String(term || '').trim();
+        if (q.length < 2) {
+            hideList();
+            return;
+        }
+        try {
+            const response = await fetchWithAuth(`/api/zoho/accounts?q=${encodeURIComponent(q)}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const reason = data.reasonCode || '';
+                const message = reason === 'ACCOUNT_OAUTH_SCOPE_REQUIRED'
+                    ? (data.error || 'Zoho Account READ is not authorized.')
+                    : (data.error || 'Could not search Zoho Accounts');
+                renderList([], message);
+                return;
+            }
+            renderList(data.accounts || [], 'No matching Zoho Account. Type a Customer / Receiver name to continue without creating an Account.');
+        } catch (err) {
+            renderList([], err.message || 'Could not search Zoho Accounts');
+        }
+    };
+
+    input.addEventListener('input', () => {
+        const name = input.value.trim();
+        if (!name) clearDcAccountSelection();
+        clearTimeout(timer);
+        timer = setTimeout(() => searchAccounts(input.value), 220);
+    });
+
+    input.addEventListener('keydown', (event) => {
+        if (list.hidden) return;
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (!items.length) return;
+            activeIndex = (activeIndex + 1) % items.length;
+            highlight(activeIndex);
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!items.length) return;
+            activeIndex = (activeIndex - 1 + items.length) % items.length;
+            highlight(activeIndex);
+        } else if (event.key === 'Enter') {
+            if (activeIndex >= 0 && items[activeIndex]) {
+                event.preventDefault();
+                selectAccount(items[activeIndex]);
+            }
+        } else if (event.key === 'Escape') {
+            hideList();
+        }
+    });
+
+    input.addEventListener('blur', () => {
+        setTimeout(hideList, 150);
+    });
+}
+
 function initDCView() {
     console.log('initDCView() called');
     
@@ -1000,6 +1159,7 @@ function initDCView() {
     
     // --- Load Database Dropdowns ---
     loadDCDropdowns();
+    initDcAccountLookup();
     
     // --- Load Logo Dropdown ---
     if (typeof window.loadLogoDropdown === 'function') {
@@ -1104,6 +1264,10 @@ function initDCView() {
                     stateName: document.getElementById('dcCompanyState')?.value || '',
                     stateCode: document.getElementById('dcCompanyStateCode')?.value || ''
                 },
+                account: {
+                    zohoAccountId: (document.getElementById('dcZohoAccountId')?.value || '').trim() || null,
+                    accountName: customerName
+                },
                 consignee: {
                     name: document.getElementById('dcConsigneeName')?.value || '',
                     address: document.getElementById('dcConsigneeAddress')?.value || '',
@@ -1126,6 +1290,7 @@ function initDCView() {
                     dispatchDocNo: document.getElementById('dcDispatchDocNo')?.value || '',
                     otherReferences: document.getElementById('dcOtherReferences')?.value || '',
                     dispatchedThrough: document.getElementById('dcDispatchedThrough')?.value || '',
+                    pickup: document.getElementById('dcPickup')?.value || '',
                     destination: document.getElementById('dcDestination')?.value || '',
                     placeOfSupply: document.getElementById('dcPlaceOfSupply')?.value || '',
                     termsOfDelivery: document.getElementById('dcTermsOfDelivery')?.value || '',
@@ -1357,7 +1522,8 @@ function showDCPreview(result) {
     if (printable) {
         const rateAmountStyle = finalShowRateAmount ? '' : 'display: none;';
         const totalFooterStyle = finalShowTotalPrice ? '' : 'display: none;';
-        
+        const colCount = 7 + (finalShowRateAmount ? 2 : 0);
+
         const itemsHtml = items.map((it, idx) => {
             const qty = it.qty ?? '';
             const rate = it.rate ?? '';
@@ -1365,17 +1531,15 @@ function showDCPreview(result) {
             const srNo = it.srNo || it.serialNo || it.SrNo || '';
             return `
                 <tr>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">${idx + 1}</td>
-                    <td style="padding: 7px; border: 1px solid #222; font-family: monospace; white-space: nowrap; width: 150px;">${escapeHtml(it.assetId || '')}</td>
-                    <td style="padding: 7px; border: 1px solid #222;">
-                        <div style="font-weight: bold;">${escapeHtml(it.description || '')}</div>
-                    </td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 120px;">${escapeHtml(srNo)}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">${escapeHtml(it.hsn || '')}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px; font-variant-numeric: tabular-nums;">${escapeHtml(qty)}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">${escapeHtml(it.per || 'NO')}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; font-variant-numeric: tabular-nums; ${rateAmountStyle}">${escapeHtml(rate)}</td>
-                    <td style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; font-variant-numeric: tabular-nums; ${rateAmountStyle}">${escapeHtml(amount)}</td>
+                    <td class="ctr">${idx + 1}</td>
+                    <td class="desc">${escapeHtml(it.description || '')}</td>
+                    <td class="mono">${escapeHtml(it.assetId || '')}</td>
+                    <td class="ctr">${escapeHtml(srNo)}</td>
+                    <td class="ctr">${escapeHtml(it.hsn || '')}</td>
+                    <td class="num">${escapeHtml(qty)}</td>
+                    <td class="ctr">${escapeHtml(it.per || 'NO')}</td>
+                    <td class="num" style="${rateAmountStyle}">${escapeHtml(rate)}</td>
+                    <td class="num" style="${rateAmountStyle}">${escapeHtml(amount)}</td>
                 </tr>
             `;
         }).join('');
@@ -1385,139 +1549,146 @@ function showDCPreview(result) {
             return acc + (n === null ? 0 : n);
         }, 0);
         const totalWords = formatAmountWords(round2(totalAmount));
-        
+        const totalDisplay = round2(totalAmount);
+
         const challanNo = dcData.challanNo || dcData.ChallanNo || '';
         const dated = meta.deliveryDate || meta.dated || dcData.deliveryDate || dcData.DeliveryDate || '';
         const orderDate = meta.orderDate || '';
         const qrCode = dcData.qrCode || dcData.QRCode || '';
+        const consigneeName = consignee.name || meta.customerName || '';
+        const buyerName = buyer.name || '';
+        const termsSource = [meta.termsOfDelivery, meta.remarks].filter((v) => String(v || '').trim()).join('\n');
+        const termLines = String(termsSource || '')
+            .split(/\n+/)
+            .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
+            .filter(Boolean);
+        const kindAttn = meta.customerName && consigneeName && String(meta.customerName).trim() !== String(consigneeName).trim()
+            ? meta.customerName
+            : (buyerName && buyerName !== consigneeName ? buyerName : '');
+
+        const metaCell = (label, value, extraClass = '') => `
+            <div>
+                <div class="dc-qt-label">${escapeHtml(label)}</div>
+                <div class="dc-qt-value ${extraClass}">${escapeHtml(value || '—')}</div>
+            </div>
+        `;
 
         printable.innerHTML = `
-            <div style="border: 2px solid #222; padding: 14px; color: #111; font-family: Arial, sans-serif; position: relative; background: white;">
-                
-                <!-- Watermark Header -->
-                <div style="position: absolute; top: 10px; right: 14px; font-size: 12px; font-style: italic; font-weight: bold;">(ORIGINAL FOR CONSIGNEE)</div>
+            <article class="dc-qt-sheet">
+                <div class="dc-qt-top">
+                    <div class="dc-qt-logo">
+                        ${meta.logoUrl
+                            ? `<img src="${escapeHtml(meta.logoUrl)}" alt="">`
+                            : `<div class="dc-qt-logo-fallback">${escapeHtml(company.name || 'DELIVERY CHALLAN')}</div>`}
+                    </div>
+                    <div class="dc-qt-top-right">
+                        <div class="dc-qt-accent"></div>
+                        ${qrCode ? `<img class="dc-qt-qr" src="${qrCode}" alt="Validate">` : ''}
+                    </div>
+                </div>
 
-                <!-- Header Section -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 10px; padding-top: 25px;">
-                    <!-- Company Details (Left) -->
+                <div class="dc-qt-meta">
                     <div>
-                        ${meta.logoUrl ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${meta.logoUrl}" style="height: 75px; max-width: 200px; object-fit: contain;"></div>` : ''}
-                        <div style="font-size: 16px; font-weight: 800; letter-spacing: 0.3px;">${escapeHtml(company.name || '')}</div>
-                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(company.address || '')}</div>
-                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
-                            ${(company.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(company.gstin)}</div>` : ''}
-                            ${(company.cin || '').trim() ? `<div><span style="color:#555;">CIN:</span> ${escapeHtml(company.cin)}</div>` : ''}
-                            ${(company.stateName || company.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(company.stateName || '')}${company.stateCode ? ' (' + escapeHtml(company.stateCode) + ')' : ''}</div>` : ''}
+                        ${metaCell('DC No.', challanNo, 'dc-qt-value-red')}
+                        <div style="margin-top:10px;">
+                            <div class="dc-qt-label">Document</div>
+                            <div class="dc-qt-value">Original for Consignee</div>
                         </div>
                     </div>
-
-                    <!-- Title & Tracking Info (Right) -->
-                    <div style="border-left: 1px solid #222; padding-left: 12px; display: flex; flex-direction: column;">
-                        <!-- Centered Title -->
-                        <div style="text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 1px; margin-bottom: 15px; text-transform: uppercase;">DELIVERY NOTE</div>
-                        
-                        <div style="display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 12px;">
-                            <div style="color:#555;">Delivery Note No.</div><div style="font-weight:800;">${escapeHtml(challanNo)}</div>
-                            <div style="color:#555;">Dated</div><div style="font-weight:800;">${escapeHtml(dated)}</div>
-                            
-                            <div style="color:#555;">Reference No.</div><div>${escapeHtml(meta.referenceNo || '')}</div>
-                            <div style="color:#555;">Other References</div><div>${escapeHtml(meta.otherReferences || '')}</div>
-                            
-                            <div style="color:#555;">Buyer's Order No.</div><div>${escapeHtml(meta.buyerOrderNo || '')}</div>
-                            <div style="color:#555;">Dated</div><div>${escapeHtml(orderDate)}</div>
-                        </div>
+                    <div>
+                        ${metaCell('Date', dated)}
+                        ${orderDate ? `<div style="margin-top:10px;">${metaCell('Order Date', orderDate)}</div>` : ''}
+                    </div>
+                    <div>
+                        ${metaCell('Reference No.', meta.referenceNo || '')}
+                        ${meta.buyerOrderNo ? `<div style="margin-top:10px;">${metaCell("Buyer's Order No.", meta.buyerOrderNo)}</div>` : ''}
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                    <div style="border: 1px solid #222; padding: 10px;">
-                        <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px;">Consignee (Ship To)</div>
-                        <div style="font-size: 13px; font-weight: 800;">${escapeHtml(consignee.name || meta.customerName || '')}</div>
-                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(consignee.address || '')}</div>
-                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
-                            ${(consignee.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(consignee.gstin)}</div>` : ''}
-                            ${(consignee.stateName || consignee.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(consignee.stateName || '')}${consignee.stateCode ? ' (' + escapeHtml(consignee.stateCode) + ')' : ''}</div>` : ''}
-                        </div>
+                <div class="dc-qt-parties">
+                    <div>
+                        <div class="dc-qt-label">Deliver To</div>
+                        <div class="dc-qt-value">${escapeHtml(consigneeName)}</div>
+                        ${consignee.address ? `<div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(consignee.address)}</div>` : ''}
+                        ${kindAttn ? `<div class="dc-qt-kind"><span>Kind Attn:</span> ${escapeHtml(kindAttn)}</div>` : ''}
+                        ${(consignee.gstin || '').trim() ? `<div class="dc-qt-kind"><span>GSTIN:</span> ${escapeHtml(consignee.gstin)}</div>` : ''}
                     </div>
-                    <div style="border: 1px solid #222; padding: 10px;">
-                        <div style="font-size: 11px; font-weight: 700; margin-bottom: 6px;">Buyer (Bill To)</div>
-                        <div style="font-size: 13px; font-weight: 800;">${escapeHtml(buyer.name || meta.customerName || '')}</div>
-                        <div style="white-space: pre-wrap; font-size: 12px; margin-top: 4px;">${escapeHtml(buyer.address || '')}</div>
-                        <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; margin-top: 6px;">
-                            ${(buyer.gstin || '').trim() ? `<div><span style="color:#555;">GSTIN/UIN:</span> ${escapeHtml(buyer.gstin)}</div>` : ''}
-                            ${(buyer.stateName || buyer.stateCode) ? `<div><span style="color:#555;">State:</span> ${escapeHtml(buyer.stateName || '')}${buyer.stateCode ? ' (' + escapeHtml(buyer.stateCode) + ')' : ''}</div>` : ''}
-                        </div>
+                    <div class="dc-qt-party-right">
+                        <div class="dc-qt-label">Dispatched By</div>
+                        <div class="dc-qt-value">${escapeHtml(company.name || '')}</div>
+                        ${buyerName ? `
+                            <div class="dc-qt-label" style="margin-top:12px;">Bill To</div>
+                            <div class="dc-qt-value">${escapeHtml(buyerName)}</div>
+                            ${buyer.address ? `<div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(buyer.address)}</div>` : ''}
+                        ` : ''}
                     </div>
                 </div>
 
-                <div style="border: 1px solid #222; padding: 10px; margin-bottom: 10px;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
-                        <div><span style="color:#555;">Reference No</span>: ${escapeHtml(meta.referenceNo || '')}</div>
-                        <div><span style="color:#555;">Buyer’s Order No</span>: ${escapeHtml(meta.buyerOrderNo || '')}</div>
-                        
-                        <div><span style="color:#555;">Dispatch Doc No.</span>: ${escapeHtml(meta.dispatchDocNo || '')}</div>
-                        <div><span style="color:#555;">Other References</span>: ${escapeHtml(meta.otherReferences || '')}</div>
-                        
-                        <div><span style="color:#555;">Dispatched Through</span>: ${escapeHtml(meta.dispatchedThrough || '')}</div>
-                        <div><span style="color:#555;">Destination</span>: ${escapeHtml(meta.destination || '')}</div>
+                ${[meta.dispatchDocNo, meta.pickup, meta.destination, meta.placeOfSupply, meta.dispatchedThrough, meta.otherReferences].some((v) => String(v || '').trim()) ? `
+                <div class="dc-qt-dispatch">
+                    ${meta.dispatchDocNo ? metaCell('Dispatch Doc No.', meta.dispatchDocNo) : ''}
+                    ${meta.pickup ? metaCell('Pick-Up', meta.pickup) : ''}
+                    ${meta.destination ? metaCell('Destination', meta.destination) : ''}
+                    ${meta.placeOfSupply ? metaCell('Place of Supply', meta.placeOfSupply) : ''}
+                    ${meta.dispatchedThrough ? metaCell('Dispatched Through', meta.dispatchedThrough) : ''}
+                    ${meta.otherReferences ? metaCell('Other References', meta.otherReferences) : ''}
+                </div>` : ''}
 
-                        <div><span style="color:#555;">Place of Supply</span>: ${escapeHtml(meta.placeOfSupply || '')}</div>
-                    </div>
-                    ${(meta.termsOfDelivery || '').trim() ? `<div style="margin-top: 8px; font-size: 12px;"><span style="color:#555;">Terms of Delivery</span>: ${escapeHtml(meta.termsOfDelivery)}</div>` : ''}
-                </div>
-
-                <table style="width: 100%; border-collapse: collapse; border: 1px solid #222;">
+                <table class="dc-qt-table">
                     <thead>
-                        <tr style="background: #f4f4f4;">
-                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 34px;">Srl</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: left; width: 150px;">Asset ID</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: left;">Description of Goods</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 120px;">Serial No</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 80px;">HSN/SAC</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 60px;">Qty</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: center; width: 55px;">Per</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 90px; ${rateAmountStyle}">Rate</th>
-                            <th style="padding: 7px; border: 1px solid #222; text-align: right; width: 110px; ${rateAmountStyle}">Amount</th>
+                        <tr>
+                            <th class="ctr" style="width:28px;">#</th>
+                            <th>Description</th>
+                            <th>Asset ID</th>
+                            <th class="ctr">Serial No</th>
+                            <th class="ctr">HSN/SAC</th>
+                            <th class="num">Qty</th>
+                            <th class="ctr">Per</th>
+                            <th class="num" style="${rateAmountStyle}">Rate</th>
+                            <th class="num" style="${rateAmountStyle}">Amount</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${itemsHtml || `<tr><td colspan="${finalShowRateAmount ? 8 : 6}" style="padding: 12px; border: 1px solid #222; color:#666; text-align:center;">No items</td></tr>`}
-                        <tr style="${totalFooterStyle}">
-                            <td colspan="7" style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800;">Total</td>
-                            <td style="padding: 8px; border: 1px solid #222; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums;">${escapeHtml(round2(totalAmount))}</td>
-                        </tr>
+                        ${itemsHtml || `<tr><td class="dc-qt-empty" colspan="${colCount}">No items</td></tr>`}
                     </tbody>
                 </table>
 
-                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px; ${totalFooterStyle}">
-                    <div style="display: grid; grid-template-columns: 190px 1fr; gap: 8px;">
-                        <div style="color:#555;">Amount Chargeable (in words)</div>
-                        <div style="font-weight: 700;">${escapeHtml(totalWords)}</div>
+                <div class="dc-qt-summary" style="${totalFooterStyle}">
+                    <div class="dc-qt-words">
+                        <div class="dc-qt-label">Amount in Words</div>
+                        <div class="dc-qt-value">${escapeHtml(totalWords)}</div>
+                    </div>
+                    <div class="dc-qt-totals">
+                        <div class="dc-qt-totals-row"><span>Subtotal</span><span>${escapeHtml(totalDisplay)}</span></div>
+                        <div class="dc-qt-grand"><span>Grand Total</span><span>${escapeHtml(totalDisplay)}</span></div>
                     </div>
                 </div>
 
-                <!-- Remarks Section -->
-                ${(meta.remarks || '').trim() ? `
-                <div style="border: 1px solid #222; border-top: none; padding: 10px; font-size: 12px;">
-                    <div style="font-weight: 700; color: #555; margin-bottom: 4px;">Remarks:</div>
-                    <div style="white-space: pre-wrap;">${escapeHtml(meta.remarks)}</div>
+                ${termLines.length ? `
+                <div class="dc-qt-terms">
+                    <div class="dc-qt-terms-title">Terms &amp; Conditions</div>
+                    <ol>
+                        ${termLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+                    </ol>
                 </div>` : ''}
 
-                <div style="display: grid; grid-template-columns: 1fr 160px 1fr; gap: 12px; margin-top: 14px; align-items: end;">
-                    <div>
-                        <div style="height: 60px;"></div>
-                        <div style="border-top: 1px solid #222; width: 190px; padding-top: 6px; font-size: 12px;">Receiver's Signature</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 10px; color: #666; margin-bottom: 6px;">VALIDATE</div>
-                        <img src="${qrCode}" style="width: 120px; height: 120px; border: 1px solid #eee; padding: 6px;" />
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="height: 60px;"></div>
-                        <div style="border-top: 1px solid #222; width: 190px; padding-top: 6px; font-size: 12px; margin-left: auto;">Authorized Signatory</div>
-                    </div>
+                <div class="dc-qt-disclaimer">This is a computer-generated document and does not require physical signature.</div>
+
+                <div class="dc-qt-signs">
+                    <div><div class="dc-qt-sign-line">Receiver's Signature</div></div>
+                    <div><div class="dc-qt-sign-line dc-qt-sign-right">Authorized Signatory</div></div>
                 </div>
-            </div>
+
+                <div class="dc-qt-contact">
+                    ${(company.gstin || '').trim() ? `<span>GSTIN ${escapeHtml(company.gstin)}</span>` : ''}
+                    ${(company.cin || '').trim() ? `<span>CIN ${escapeHtml(company.cin)}</span>` : ''}
+                    ${(company.stateName || company.stateCode) ? `<span>${escapeHtml([company.stateName, company.stateCode].filter(Boolean).join(' / '))}</span>` : ''}
+                </div>
+                <div class="dc-qt-footer">
+                    <div class="dc-qt-footer-addr">${escapeHtml(company.address || company.name || '')}</div>
+                    <div class="dc-qt-footer-web">${escapeHtml(company.name || '')}</div>
+                </div>
+            </article>
         `;
     }
 
@@ -2156,30 +2327,9 @@ export function setupDashboard() {
 
     const btnMakeSet = document.getElementById('btnMakeSet');
     if (btnMakeSet) {
+        btnMakeSet.style.display = 'none';
         btnMakeSet.onclick = () => {
-            if (selectedBatchAssets.length < 2) {
-                showToast('Please select at least 2 assets to create a set.', 'warning');
-                return;
-            }
-            
-            // Show Make Set Modal
-            const modal = document.getElementById('makeSetModal');
-            const countEl = document.getElementById('makeSetCount');
-            const select = document.getElementById('makeSetParentSelect');
-            
-            if (!modal || !select) return;
-
-            countEl.textContent = selectedBatchAssets.length;
-            
-            // Populate parent select with selected assets
-            const options = selectedBatchAssets.map(asset => {
-                const assetId = asset.ID || asset.id;
-                const name = asset.ItemName || asset.itemname || assetId;
-                return `<option value="${assetId}">${name} (${assetId})</option>`;
-            }).join('');
-            
-            select.innerHTML = options;
-            modal.style.display = 'flex';
+            showToast('Sets are assembled through Set Requirements and Allocation.', 'info');
         };
     }
 
@@ -2193,47 +2343,9 @@ export function setupDashboard() {
     const confirmMakeSet = document.getElementById('confirmMakeSet');
     if (confirmMakeSet) {
         confirmMakeSet.onclick = async () => {
-            const parentId = document.getElementById('makeSetParentSelect').value;
-            const priceMode = document.getElementById('makeSetPriceMode').value;
-            const childIds = selectedBatchAssets.map(a => a.ID || a.id).filter(id => id !== parentId);
-
-            if (!parentId || childIds.length === 0) {
-                showToast('Parent ID and child IDs are required.', 'error');
-                return;
-            }
-
-            try {
-                const token = localStorage.getItem('token');
-                const headers = { 
-                    'Content-Type': 'application/json',
-                    'x-user': localStorage.getItem('username') || 'web'
-                };
-                if (token) headers['Authorization'] = `Bearer ${token}`;
-
-                const response = await fetch('/api/assets/make-set', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        parentAssetId: parentId,
-                        childAssetIds: childIds,
-                        setPriceMode: priceMode
-                    })
-                });
-
-                if (response.ok) {
-                    showToast('Set created successfully!', 'success');
-                    document.getElementById('makeSetModal').style.display = 'none';
-                    toggleSelectionMode(false);
-                    if (window.loadAssets) await window.loadAssets();
-                    renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
-                } else {
-                    const err = await response.json();
-                    showToast(`Failed to create set: ${err.error}`, 'error');
-                }
-            } catch (err) {
-                console.error('Make set error:', err);
-                showToast('Error creating set. Check console.', 'error');
-            }
+            showToast('Sets are assembled through Set Requirements and Allocation.', 'info');
+            const modal = document.getElementById('makeSetModal');
+            if (modal) modal.style.display = 'none';
         };
     }
 
@@ -2328,8 +2440,16 @@ export function setupDashboard() {
 
             // 2b. Handle Add Asset Item Button (top right)
             if (e.target.id === 'btnAddAssetItem' || e.target.closest('#btnAddAssetItem')) {
-                console.log('Add Asset Item button clicked');
-                openAddItemModal(); // Open without a pre-filled kind
+                console.log('Physical Intake button clicked');
+                if (typeof window.switchDashboardSubView === 'function') {
+                    window.switchDashboardSubView('physical-intakes-view');
+                }
+                if (typeof window.startPhysicalIntake === 'function') {
+                    window.startPhysicalIntake();
+                } else {
+                    const nav = document.getElementById('nav-physical-intakes');
+                    if (nav) nav.click();
+                }
                 return;
             }
 
@@ -2338,9 +2458,12 @@ export function setupDashboard() {
             if (addBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                const kind = addBtn.getAttribute('data-kind');
-                console.log('Add Asset Item button clicked for kind:', kind);
-                openAddItemModal(kind);
+                if (typeof window.switchDashboardSubView === 'function') {
+                    window.switchDashboardSubView('physical-intakes-view');
+                }
+                if (typeof window.startPhysicalIntake === 'function') {
+                    window.startPhysicalIntake();
+                }
                 return;
             }
 
@@ -3544,6 +3667,12 @@ This action CANNOT be undone once the 30-day window closes.`;
 };
 
 window.makeAssetPermanent = async function(id) {
+    if (typeof showToast === 'function') {
+        showToast('Temporary assets cannot be promoted to stock. New stock is created through Receipt Notes.', 'info');
+    } else {
+        alert('Temporary assets cannot be promoted to stock. New stock is created through Receipt Notes.');
+    }
+    return;
     const title = 'Convert Temporary Asset to Permanent?';
     const body = `Are you SURE you want to permanently convert this temporary asset?
 
@@ -4161,7 +4290,11 @@ export function renderSidebarTree() {
         const inventoryTreeHTML = inventoryManager.generateSidebarHTML(inventoryManager.tree, 0, inventoryActiveId);
         const assetsRootActive = !window.currentInventorySidebar && (!window.currentDashboardParent || window.currentDashboardParent.ID === null);
         const inventoryRootActive = window.currentInventorySidebar?.type === 'root';
-        const catalogRootActive = window.currentInventorySidebar?.type === 'catalog';
+        const catalogRootActive = Boolean(
+            document.getElementById('products-view')?.classList.contains('active')
+            && document.getElementById('zohoCatalogSection')
+            && !document.getElementById('zohoCatalogSection').classList.contains('hidden')
+        );
 
         sidebarMenu.innerHTML = `
             <li style="list-style: none;">
@@ -4369,11 +4502,12 @@ export function renderSidebarTree() {
                 e.preventDefault();
                 e.stopPropagation();
                 window.currentDashboardParent = null;
-                window.currentInventorySidebar = { type: 'catalog' };
+                window.currentInventorySidebar = null;
                 if (window.showView) window.showView('dashboardView');
-                if (window.switchDashboardSubView) window.switchDashboardSubView('inventory-view');
-                if (typeof window.openInventoryCatalog === 'function') {
-                    await window.openInventoryCatalog();
+                if (window.switchDashboardSubView) window.switchDashboardSubView('products-view');
+                if (typeof window.initProductsView === 'function') window.initProductsView();
+                if (typeof window.focusZohoCatalogInProducts === 'function') {
+                    window.focusZohoCatalogInProducts();
                 }
                 if (window.syncSidebarBubbles) window.syncSidebarBubbles();
             };
@@ -5847,6 +5981,137 @@ window.openPrintPreview = function(assetsToPrint) {
     modal.style.display = 'flex';
 };
 
+window.openInventoryPrintPreview = function(itemsToPrint) {
+    const modal = document.getElementById('qrPrintModal');
+    const container = document.getElementById('qrPrintContainer');
+    if (!modal || !container) return;
+    document.querySelectorAll('.modal:not(#qrPrintModal)').forEach(m => m.style.display = 'none');
+    const activeBtn = document.querySelector('.qr-size-btn.active');
+    const size = activeBtn ? activeBtn.dataset.size : '5cm';
+    const labelClass = size === '5cm' ? 'print-label-50mm' : (size === '2cm' ? 'print-label-2cm' : 'print-label-1cm');
+    container.className = `qr-print-${size}`;
+    container.innerHTML = (itemsToPrint || []).map(item => {
+        const id = item.ID || item.id;
+        const title = item.ItemName || item.itemname || 'Inventory QR';
+        const qrUrl = `/api/qr/dynamic/inventory/${encodeURIComponent(id)}?t=${Date.now()}`;
+        return `
+            <div class="batch-qr-item ${labelClass}" style="text-align: center; background: white; padding: 10mm; border: 1px dashed #eee; border-radius: 4px; display: inline-block; margin: 2mm;">
+                ${size !== '1cm' ? `<h2 style="margin: 0; font-size: 14pt; color: #333; font-family: sans-serif;">${title}</h2>` : ''}
+                <img src="${qrUrl}" class="batch-qr-img" style="display: block; margin: 5mm auto; max-width: 100%;">
+                ${size !== '1cm' ? `<div class="asset-id" style="margin-top: 5mm; font-weight: bold; font-family: monospace; font-size: 12pt;">${id}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+    modal.style.display = 'flex';
+};
+
+window.setupBreakLineageUI = async function setupBreakLineageUI({
+    holdingType,
+    record,
+    sectionId = 'breakLineageSection',
+    summaryId = 'breakLineageSummary',
+    amountId = 'breakAmountInput',
+    breakBtnId = 'btnBreakQuantity',
+    makeBtnId = 'btnMakeIndividual',
+    listId = 'breakChildrenList'
+} = {}) {
+    const section = document.getElementById(sectionId);
+    const summary = document.getElementById(summaryId);
+    const amountInput = document.getElementById(amountId);
+    const breakBtn = document.getElementById(breakBtnId);
+    const makeBtn = document.getElementById(makeBtnId);
+    const list = document.getElementById(listId);
+    if (!section || !record) return;
+
+    const id = record.ID || record.id;
+    const tracked = Number(record.is_quantity_tracked ?? record.IsQuantityTracked ?? 0) === 1;
+    if (!tracked || !id) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const reload = async () => {
+        const resp = await fetch(`/api/break/tree/${encodeURIComponent(holdingType)}/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+        if (!resp.ok) {
+            section.style.display = 'none';
+            return;
+        }
+        const data = await resp.json();
+        const rec = data.record || {};
+        const children = data.children || [];
+        const available = rec.quantity_available;
+        const total = rec.quantity_total;
+        const inactive = String(rec.lineage_status || 'ACTIVE').toUpperCase() === 'INACTIVE';
+        section.style.display = 'block';
+        summary.textContent = `${rec.id} · total ${total} · available ${available} · ${rec.lineage_status || 'ACTIVE'}${rec.product_id ? ` · product ${rec.product_id}` : ''}`;
+        if (amountInput) amountInput.value = '';
+        const canBreak = !inactive && Number(available) > 0;
+        if (breakBtn) breakBtn.disabled = !canBreak;
+        if (makeBtn) makeBtn.disabled = !canBreak;
+        if (list) {
+            list.innerHTML = children.length
+                ? children.map((c) => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:white; border:1px solid #e0e7ff; border-radius:6px; padding:6px 8px;">
+                        <div>
+                            <div style="font-weight:700; font-size:12px;">${c.id}</div>
+                            <div style="font-size:11px; color:#64748b;">qty ${c.quantity_total} · ${c.lineage_status}${c.product_id ? ` · ${c.product_id}` : ''}</div>
+                        </div>
+                        ${c.lineage_status === 'ACTIVE' ? `<button type="button" class="btn-inactivate-child" data-id="${c.id}" style="font-size:11px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; padding:4px 8px; cursor:pointer;">Inactivate</button>` : '<span style="font-size:11px; color:#94a3b8;">inactive</span>'}
+                    </div>
+                `).join('')
+                : '<div style="font-size:12px; color:#64748b;">No Break children. Aggregated quantity stays on this record.</div>';
+            list.querySelectorAll('.btn-inactivate-child').forEach((btn) => {
+                btn.onclick = async () => {
+                    if (!confirm(`Inactivate ${btn.getAttribute('data-id')} and restore its quantity to the parent? The child remains queryable.`)) return;
+                    const res = await fetch('/api/break/inactivate', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ holdingType, childId: btn.getAttribute('data-id') })
+                    });
+                    const payload = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        alert(payload.error || 'Inactivate failed');
+                        return;
+                    }
+                    await reload();
+                    if (holdingType === 'ASSET' && window.loadAssets) await window.loadAssets();
+                    if (holdingType === 'INVENTORY' && typeof window.loadInventoryItems === 'function') await window.loadInventoryItems();
+                };
+            });
+        }
+    };
+
+    const postBreak = async (mode) => {
+        const amount = Number(amountInput && amountInput.value);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            alert('Enter a quantity to separate');
+            return;
+        }
+        const parentTotal = record.quantity_total ?? record.QuantityTotal ?? '';
+        const label = mode === 'MAKE_INDIVIDUAL' ? 'Make Individual' : 'Break Quantity';
+        if (!confirm(`${label}\n\nParent: ${id}\nOriginal quantity: ${parentTotal}\nBreak quantity: ${amount}\n\nThis is not Split, Conversion, or Make Set. A child record is created and the parent quantity is reduced.`)) return;
+        const res = await fetch('/api/break', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ holdingType, parentId: id, mode, amount })
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(payload.error || 'Break failed');
+            return;
+        }
+        await reload();
+        if (holdingType === 'ASSET' && window.loadAssets) await window.loadAssets();
+        if (holdingType === 'INVENTORY' && typeof window.loadInventoryItems === 'function') await window.loadInventoryItems();
+    };
+
+    if (breakBtn) breakBtn.onclick = () => postBreak('BREAK');
+    if (makeBtn) makeBtn.onclick = () => postBreak('MAKE_INDIVIDUAL');
+    await reload();
+};
+
 export function openAddFolderModal() {
     console.log('openAddFolderModal() called');
     const modal = document.getElementById('addFolderModal');
@@ -6516,6 +6781,19 @@ export async function editAsset(asset) {
         isSetCheckbox.checked = isSetVal === 1 || isSetVal === true || isSetVal === 'true';
     }
 
+    (async () => {
+        const host = document.getElementById('managedSetSection');
+        let ms = asset.managedSet || asset.ManagedSet || null;
+        if (!ms && (asset.ID || asset.id)) {
+            try {
+                const r = await fetch(`/api/asset-details/${encodeURIComponent(asset.ID || asset.id)}`, { credentials: 'same-origin' });
+                const j = await r.json();
+                ms = j.asset?.managedSet || null;
+            } catch (_) { /* membership display is best-effort */ }
+        }
+        if (typeof window.paintManagedSetSection === 'function') window.paintManagedSetSection(host, ms);
+    })();
+
     // Handle Batch UI in Edit Modal
     const srNoInputEdit = document.getElementById('itemSrNo');
     const srNoBatchEdit = document.getElementById('itemSrNoBatch');
@@ -6528,7 +6806,7 @@ export async function editAsset(asset) {
     if (btnUnsplitEdit) {
         const pId = asset.ParentId || asset.parentid;
         if (pId) {
-            btnUnsplitEdit.style.display = 'block';
+            btnUnsplitEdit.style.display = 'none';
             btnUnsplitEdit.onclick = async () => {
                 if (confirm(`Are you sure you want to merge this asset back into its parent batch/set (${pId})?`)) {
                     try {
@@ -6548,7 +6826,7 @@ export async function editAsset(asset) {
                             if (window.loadAssets) await window.loadAssets();
                         } else {
                             const err = await response.json();
-                            alert('Unsplit failed: ' + (err.error || 'Unknown error'));
+                            alert('Unsplit failed: ' + (err.error || err.reasonCode || 'Unknown error'));
                         }
                     } catch (err) {
                         console.error('Unsplit error:', err);
@@ -6607,7 +6885,7 @@ export async function editAsset(asset) {
         if (srNoBatchEdit) srNoBatchEdit.style.display = 'none'; // Hide the textarea during edit, show the managed list
         if (batchListEdit) batchListEdit.style.display = 'block';
         if (btnToggleBatchEdit) btnToggleBatchEdit.style.display = 'none'; // Disable switching mode for existing batch
-        if (btnSplitEdit) btnSplitEdit.style.display = 'block';
+        if (btnSplitEdit) btnSplitEdit.style.display = 'none';
 
         const serials = (asset.SrNo || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
         if (batchListEdit) {
@@ -6617,39 +6895,39 @@ export async function editAsset(asset) {
                     <input type="checkbox" class="batch-sn-checkbox" data-sn="${sn}" style="width: 15px; height: 15px; cursor: pointer;">
                     <span style="font-family: 'Segoe UI', monospace; font-size: 12px; font-weight: 600; color: #334155;">${sn}</span>
                 </div>
-                <div style="display: flex; gap: 4px;">
-                    <button type="button" class="btn-quick-assign" data-sn="${sn}" style="font-size: 10px; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
-                        Split & Assign
-                    </button>
-                    <button type="button" class="btn-quick-project" data-sn="${sn}" style="font-size: 10px; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">
-                        Project
-                    </button>
-                </div>
+                <div style="display: flex; gap: 4px;"></div>
             </div>
         `).join('') || '<div style="padding: 10px; color: #94a3b8; font-style: italic; text-align: center;">No Serial Numbers found</div>';
 
         // Add handler for Quick Split & Assign
         batchListEdit.querySelectorAll('.btn-quick-assign').forEach(btn => {
             btn.onclick = async (e) => {
+                alert('Legacy serial Split is disabled. Use Break to individualize quantity.');
+                return;
                 const sn = btn.getAttribute('data-sn');
                 const employee = prompt(`Enter Employee Name to assign ${sn} to:`);
                 if (!employee) return;
 
                 try {
+                    const token = localStorage.getItem('token');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
                     const response = await fetch('/api/assets/split', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify({ 
                             parentId: asset.ID, 
                             serials: [sn],
                             autoAssign: employee
                         })
                     });
-                    
+                    const payload = await response.json().catch(() => ({}));
                     if (response.ok) {
                         alert(`Successfully split ${sn} and assigned to ${employee}`);
                         document.getElementById('addAssetItemModal').style.display = 'none';
                         if (window.loadAssets) await window.loadAssets();
+                    } else {
+                        alert('Split failed: ' + (payload.error || payload.reasonCode || 'Unknown error'));
                     }
                 } catch (err) {
                     console.error('Split/Assign error:', err);
@@ -6730,30 +7008,37 @@ export async function editAsset(asset) {
                             pResults.style.display = 'block';
                             pResults.querySelectorAll('.p-search-item').forEach(item => {
                                 item.onclick = async () => {
+                                    alert('Legacy serial Split is disabled. Use Break to individualize quantity.');
+                                    pModal.style.display = 'none';
+                                    return;
                                     const selectedId = item.getAttribute('data-id');
                                     pModal.style.display = 'none';
                                     
                                     try {
+                                        const token = localStorage.getItem('token');
+                                        const headers = { 'Content-Type': 'application/json' };
+                                        if (token) headers['Authorization'] = `Bearer ${token}`;
                                         const response = await fetch('/api/assets/split', {
                                             method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
+                                            headers,
                                             body: JSON.stringify({ 
                                                 parentId: asset.ID, 
                                                 serials: [sn],
                                                 projectId: selectedId
                                             })
                                         });
-                                        
+                                        const payload = await response.json().catch(() => ({}));
                                         if (response.ok) {
                                             alert(`Successfully split ${sn} and assigned to Project ${selectedId}`);
                                             document.getElementById('addAssetItemModal').style.display = 'none';
                                             if (window.loadAssets) await window.loadAssets();
-                                            // Refresh project assets if currently viewing a project
                                             if (window.location.hash.startsWith('#projects') || document.getElementById('projects-view').style.display !== 'none') {
                                                 if (typeof window.loadProjectAssets === 'function' && window.currentProjectId) {
                                                     window.loadProjectAssets(window.currentProjectId);
                                                 }
                                             }
+                                        } else {
+                                            alert('Split failed: ' + (payload.error || payload.reasonCode || 'Unknown error'));
                                         }
                                     } catch (err) {
                                         console.error('Split/Project error:', err);
@@ -6777,6 +7062,8 @@ export async function editAsset(asset) {
 
         if (btnSplitEdit) {
             btnSplitEdit.onclick = async () => {
+                alert('Legacy serial Split is disabled. Use Break to individualize quantity.');
+                return;
                 const selected = Array.from(batchListEdit.querySelectorAll('.batch-sn-checkbox:checked')).map(cb => cb.getAttribute('data-sn'));
                 if (selected.length === 0) {
                     alert('Please select at least one Serial Number to split.');
@@ -6785,9 +7072,12 @@ export async function editAsset(asset) {
 
                 if (confirm(`Are you sure you want to split ${selected.length} serial number(s) into individual assets?`)) {
                     try {
+                        const token = localStorage.getItem('token');
+                        const headers = { 'Content-Type': 'application/json' };
+                        if (token) headers['Authorization'] = `Bearer ${token}`;
                         const response = await fetch('/api/assets/split', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers,
                             body: JSON.stringify({ parentId: asset.ID, serials: selected })
                         });
                         
@@ -6803,8 +7093,8 @@ export async function editAsset(asset) {
                                 }
                             }
                         } else {
-                            const err = await response.text();
-                            alert('Split failed: ' + err);
+                            const err = await response.json().catch(() => ({}));
+                            alert('Split failed: ' + (err.error || err.reasonCode || 'Unknown error'));
                         }
                     } catch (err) {
                         console.error('Split error:', err);
@@ -6928,6 +7218,43 @@ export async function editAsset(asset) {
             qtyHint.style.border = '1px solid #e2e8f0';
             qtyHint.style.color = '#64748b';
             qtyHint.innerHTML = `<span style="font-style: italic;">Quantity tracking is not yet enabled for this asset. Fill the fields above to initialize it.</span>`;
+        }
+    }
+
+    if (typeof window.setupBreakLineageUI === 'function') {
+        window.setupBreakLineageUI({ holdingType: 'ASSET', record: asset }).catch((err) => {
+            console.error('Break lineage UI error:', err);
+        });
+    }
+    setupAssetReturnUI({ record: asset, sectionId: 'assetReturnSection' }).catch((err) => {
+        console.error('Asset return UI error:', err);
+    });
+    if (typeof window.setupReserveUI === 'function') {
+        window.setupReserveUI({
+            resourceType: 'ASSET',
+            resourceId: asset.ID || asset.id,
+            productId: asset.product_id || asset.productId,
+            productName: asset.ItemName || asset.itemname,
+            available: asset.quantity_available,
+            wholeRecord: true,
+            hostId: 'assetReserveSection'
+        });
+    }
+
+    const provenanceHost = document.getElementById('assetProvenanceSection');
+    if (provenanceHost) {
+        provenanceHost.style.display = 'none';
+        provenanceHost.innerHTML = '';
+        const intakeId = asset.physical_intake_id || asset.physicalIntakeId;
+        if (intakeId && typeof window.loadPhysicalIntakeProvenance === 'function') {
+            window.loadPhysicalIntakeProvenance(intakeId).then((intake) => {
+                if (!intake || typeof window.renderPhysicalIntakeProvenanceHtml !== 'function') return;
+                provenanceHost.innerHTML = window.renderPhysicalIntakeProvenanceHtml(intake, { compact: true });
+                provenanceHost.style.display = 'block';
+                if (typeof window.bindPhysicalIntakePoLink === 'function') {
+                    window.bindPhysicalIntakePoLink(provenanceHost, intake);
+                }
+            }).catch(() => {});
         }
     }
 
@@ -7327,7 +7654,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=7.00').then(() => {
+                    import('./inventory.js?v=7.26').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
@@ -7727,6 +8054,8 @@ async function handleBulkUpload(file, kind, category) {
                     return;
                 }
 
+                alert('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.');
+                return;
                 confirmBtn.disabled = true;
                 confirmBtn.innerText = 'Uploading...';
 
@@ -7969,6 +8298,15 @@ export function setupDashboardFormHandlers() {
                     const endpoint = inventoryPayload.ID
                         ? `/api/inventory/items/${encodeURIComponent(inventoryPayload.ID)}`
                         : '/api/inventory/items';
+
+                    if (!inventoryPayload.ID) {
+                        if (typeof showToast === 'function') {
+                            showToast('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.', 'info');
+                        } else {
+                            alert('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.');
+                        }
+                        return;
+                    }
 
                     const response = await fetch(endpoint, {
                         method: inventoryPayload.ID ? 'PUT' : 'POST',

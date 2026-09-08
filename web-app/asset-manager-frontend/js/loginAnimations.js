@@ -156,14 +156,13 @@ export function initSignupModal() {
             const formData = new FormData(signupForm);
             const data = Object.fromEntries(formData.entries());
             
-            // Validate passwords match
+            const msg = document.getElementById('signupMsg');
             if (data.password !== data.confirmPassword) {
-                alert('Passwords do not match!');
+                if (msg) msg.textContent = 'Passwords do not match.';
+                else alert('Passwords do not match.');
                 return;
             }
 
-            console.log('Signup attempt:', data.username);
-            
             try {
                 const response = await fetch('/api/signup', {
                     method: 'POST',
@@ -171,25 +170,29 @@ export function initSignupModal() {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        username: data.username,
-                        password: data.password,
                         email: data.email,
-                        employeeId: data.employeeId
+                        name: data.name,
+                        password: data.password,
+                        confirmPassword: data.confirmPassword
                     })
                 });
 
-                const result = await response.json();
+                const result = await response.json().catch(() => ({}));
 
                 if (response.ok) {
-                    alert('Sign up successful! Please log in.');
+                    alert('Sign up successful! Please sign in.');
                     modal.style.display = 'none';
                     signupForm.reset();
+                    if (msg) msg.textContent = '';
                 } else {
-                    alert('Sign up failed: ' + (result.message || 'Unknown error'));
+                    const text = result.message || 'Could not create this account.';
+                    if (msg) msg.textContent = text;
+                    else alert(text);
                 }
             } catch (err) {
                 console.error('Signup error:', err);
-                alert('An error occurred during sign up. Please try again.');
+                if (msg) msg.textContent = 'An error occurred during sign up. Please try again.';
+                else alert('An error occurred during sign up. Please try again.');
             }
         });
     }

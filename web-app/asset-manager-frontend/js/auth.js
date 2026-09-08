@@ -1,8 +1,30 @@
 /**
  * auth.js
  * Manages user login, session persistence, and module selection
- * Version: 4.0
+ * Version: 7.29
  */
+
+const AUTH_GENERIC_LOGIN = 'Invalid username or password.';
+const AUTH_SESSION_EXPIRED = 'Your session has expired. Please sign in again.';
+const AUTH_FORGOT_NEUTRAL = 'If an account exists for that address, a reset link has been sent.';
+
+function operatorAuthMessage(payload, fallback) {
+    if (!payload || typeof payload !== 'object') return fallback;
+    const raw = String(payload.message || payload.error || '').trim();
+    if (!raw) return fallback;
+    if (/stack|sql|postgres|knex|exception/i.test(raw)) return fallback;
+    return raw;
+}
+
+function showAuthMessage(id, text) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.textContent = text || '';
+        return true;
+    }
+    if (text) alert(text);
+    return false;
+}
 
 export async function checkSession() {
     try {
@@ -20,27 +42,18 @@ export async function checkSession() {
 /**
  * Wrapper for fetch that handles 401 Unauthorized by attempting session refresh.
  * Use this instead of native fetch for authenticated endpoints.
- * @param {string} url 
- * @param {object} options 
+ * @param {string} url
+ * @param {object} options
  */
 export async function fetchWithAuth(url, options = {}) {
     let response = await fetch(url, options);
 
     if (response.status === 401) {
-        console.warn('[FetchWithAuth] 401 Unauthorized detected. Attempting session refresh...');
-        
-        // Attempt to refresh session (via Remember Me cookie)
         const user = await checkSession();
-        
+
         if (user) {
-            console.log('[FetchWithAuth] Session refreshed successfully. Retrying request...');
-            // Retry the original request
             response = await fetch(url, options);
         } else {
-            console.error('[FetchWithAuth] Session refresh failed.');
-            // We don't force reload here to avoid infinite loops, but the UI will likely stay broken/empty
-            // until the user manually logs in. 
-            // Ideally we should trigger the login view.
             if (window.showView) window.showView('loginView');
         }
     }
@@ -50,43 +63,31 @@ export async function fetchWithAuth(url, options = {}) {
 
 export function setupAuth(onLoginSuccess) {
     const loginForm = document.getElementById('loginForm');
-    const loginView = document.getElementById('loginView');
     const logoutBtn = document.getElementById('logout-btn');
-    const moduleSelect = document.getElementById('assetCategory');
+    const rememberBox = document.getElementById('rememberMe');
+    if (rememberBox) rememberBox.checked = false;
 
-    // Attempt to restore session on initialization
     checkSession().then(user => {
         if (user) {
-            console.log('Session restored for:', user.username);
-            
-            // Restore category if missing or default
             if (!user.category || user.category === 'IT') {
                 let savedCategory = localStorage.getItem('selectedAssetCategory');
-                // Validate category - prevent UUIDs or invalid strings
                 if (savedCategory && (savedCategory.length > 20 || savedCategory.includes('-'))) {
-                    console.warn('Invalid category in localStorage:', savedCategory);
                     localStorage.removeItem('selectedAssetCategory');
                     savedCategory = null;
                 }
                 user.category = savedCategory || user.category || 'IT';
             }
-            
-            console.log(`[SessionRestore] Final category for user: ${user.category}`);
             onLoginSuccess(user);
         }
     });
 
     if (loginForm) {
-        // Use a flag to avoid multiple listeners instead of cloning (which breaks external listeners)
         if (loginForm.dataset.authInitialized) return;
         loginForm.dataset.authInitialized = "true";
-        
-        // Handle clicks on the form (Event Delegation)
+
         loginForm.addEventListener('click', (e) => {
-            // Handle Forgot Password Click
             if (e.target.matches('#forgotPasswordLink')) {
                 e.preventDefault();
-                console.log('Forgot password link clicked via delegation');
                 const modal = document.getElementById('forgotPasswordModal');
                 if (modal) modal.style.display = 'block';
             }
@@ -96,14 +97,9 @@ export function setupAuth(onLoginSuccess) {
             e.preventDefault();
             const username = loginForm.username.value;
             const password = loginForm.password.value;
-            const rememberMe = document.getElementById('rememberMe').checked;
-            
-            // Re-query the module select to get the current one in DOM
+            const rememberMe = document.getElementById('rememberMe') ? document.getElementById('rememberMe').checked : false;
             const currentModuleSelect = document.getElementById('assetCategory');
             const category = currentModuleSelect ? currentModuleSelect.value : 'IT';
-
-            console.log('[Auth] Attempting login:', { username, category, rememberMe });
-            console.log('[Auth] Current Cookies before login:', document.cookie);
 
             try {
                 const response = await fetch('/api/auth/login', {
@@ -111,27 +107,16 @@ export function setupAuth(onLoginSuccess) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password, category, rememberMe })
                 });
-                
-                console.log('[Auth] Login response status:', response.status);
 
                 if (response.ok) {
                     const payload = await response.json();
-                    console.log('[Auth] Login success payload:', payload);
-                    console.log('[Auth] Cookies after login:', document.cookie);
-                    
                     const user = payload && payload.user ? payload.user : payload;
                     user.category = category;
-                    // No longer using localStorage for session persistence, relying on cookie
-                    // localStorage.setItem('currentUser', JSON.stringify(user)); 
                     localStorage.setItem('selectedAssetCategory', category);
-                    
-                    console.log(`[Auth] User category set to: ${category}`);
-                    
-                    // Handle returnTo logic
+
                     const returnTo = sessionStorage.getItem('returnTo');
                     if (returnTo) {
                         sessionStorage.removeItem('returnTo');
-                        // Restore captured hash/query
                         const url = new URL(returnTo, window.location.origin);
                         if (url.hash) {
                              window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
@@ -139,15 +124,17 @@ export function setupAuth(onLoginSuccess) {
                     } else if (window.location.hash) {
                         window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
                     }
-                    
+
                     onLoginSuccess(user);
+                } else if (response.status === 401) {
+                    showAuthMessage('loginMsg', AUTH_GENERIC_LOGIN);
                 } else {
-                    const error = await response.json();
-                    alert(error.message || 'Login failed');
+                    const error = await response.json().catch(() => ({}));
+                    showAuthMessage('loginMsg', operatorAuthMessage(error, AUTH_GENERIC_LOGIN));
                 }
             } catch (err) {
                 console.error('Login error:', err);
-                alert('An error occurred during login. Please check if the server is running.');
+                showAuthMessage('loginMsg', 'Unable to sign in. Please try again.');
             }
         });
     }
@@ -157,37 +144,26 @@ export function setupAuth(onLoginSuccess) {
             try {
                 await fetch('/api/auth/logout', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
                 });
             } catch (err) {
                 console.error('Logout error:', err);
             }
-            // localStorage.removeItem('currentUser'); // No longer used
             localStorage.removeItem('selectedAssetCategory');
             window.location.href = '/';
         });
     }
 
-    // --- Forgot Password Logic (Global Modal Handling) ---
     const forgotModal = document.getElementById('forgotPasswordModal');
     const closeForgot = document.getElementById('closeForgotModal');
     const forgotForm = document.getElementById('forgotPasswordForm');
 
-    // Close button
     if (closeForgot && forgotModal) {
         closeForgot.addEventListener('click', () => {
             forgotModal.style.display = 'none';
         });
     }
-
-    // Click outside to close - DISABLED as per QoL requirements
-    /*
-    window.addEventListener('click', (e) => {
-        if (e.target === forgotModal) {
-            forgotModal.style.display = 'none';
-        }
-    });
-    */
 
     if (forgotForm) {
         forgotForm.addEventListener('submit', async (e) => {
@@ -206,25 +182,30 @@ export function setupAuth(onLoginSuccess) {
                     body: JSON.stringify({ email })
                 });
 
-                const result = await response.json();
+                const result = await response.json().catch(() => ({}));
+                if (response.status === 503) {
+                    showAuthMessage('forgotMsg', operatorAuthMessage(result, 'Password reset is temporarily unavailable.'));
+                    return;
+                }
                 if (!response.ok) {
-                    alert(result.message || result.error || 'Failed to process request.');
+                    showAuthMessage('forgotMsg', operatorAuthMessage(result, AUTH_FORGOT_NEUTRAL));
                     return;
                 }
 
-                let msg = result.message || 'Check your email for reset instructions.';
+                let msg = AUTH_FORGOT_NEUTRAL;
                 if (result.devResetLink) {
-                    msg += `\n\nReset link:\n${result.devResetLink}`;
+                    msg += `\n\nDevelopment reset link:\n${result.devResetLink}`;
                     try {
                         await navigator.clipboard.writeText(result.devResetLink);
                         msg += '\n\n(Link copied to clipboard.)';
                     } catch (_) { /* clipboard optional */ }
                 }
                 alert(msg);
+                showAuthMessage('forgotMsg', '');
                 if (forgotModal) forgotModal.style.display = 'none';
             } catch (err) {
                 console.error('Forgot password error:', err);
-                alert('Failed to process request.');
+                showAuthMessage('forgotMsg', 'Failed to process request.');
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
@@ -232,8 +213,6 @@ export function setupAuth(onLoginSuccess) {
         });
     }
 
-    // --- Reset Password Logic (URL Handling) ---
-    // Token may be in hash (/#reset-password?token=...) or query (?token=...)
     if (window.location.hash.includes('reset-password')) {
         let token = null;
 
@@ -256,9 +235,6 @@ export function setupAuth(onLoginSuccess) {
             tokenInput.value = token;
             tokenInput.setAttribute('value', token);
             resetModal.style.display = 'block';
-            console.log('Reset modal opened for token');
-        } else {
-            console.warn('Reset password detected but no token found or modal missing');
         }
 
         if (resetForm && !resetForm.dataset.resetBound) {
@@ -270,16 +246,16 @@ export function setupAuth(onLoginSuccess) {
                 const tokenVal = (document.getElementById('resetToken') || {}).value || token || '';
 
                 if (newPass !== confirmPass) {
-                    alert('Passwords do not match!');
+                    showAuthMessage('resetMsg', 'Passwords do not match.');
                     return;
                 }
                 if (!tokenVal) {
-                    alert('Missing reset token. Open the link from your email again.');
+                    showAuthMessage('resetMsg', 'This password reset link is no longer valid.');
                     return;
                 }
 
                 const btn = resetForm.querySelector('button');
-                const originalBtnText = btn ? btn.textContent : 'Set Password';
+                const originalBtnText = btn ? btn.textContent : 'Reset Password';
                 if (btn) {
                     btn.disabled = true;
                     btn.textContent = 'Resetting...';
@@ -289,20 +265,20 @@ export function setupAuth(onLoginSuccess) {
                     const response = await fetch('/api/auth/reset-password', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token: tokenVal, newPassword: newPass })
+                        body: JSON.stringify({ token: tokenVal, newPassword: newPass, confirmPassword: confirmPass })
                     });
 
-                    const result = await response.json();
+                    const result = await response.json().catch(() => ({}));
                     if (response.ok) {
-                        alert('Password reset successful! Please log in.');
+                        alert(operatorAuthMessage(result, 'Your password has been reset. Please sign in.'));
                         if (resetModal) resetModal.style.display = 'none';
                         window.location.href = '/';
                     } else {
-                        alert('Error: ' + (result.error || 'Reset failed'));
+                        showAuthMessage('resetMsg', operatorAuthMessage(result, 'This password reset link is no longer valid.'));
                     }
                 } catch (err) {
                     console.error('Reset error:', err);
-                    alert('Failed to reset password.');
+                    showAuthMessage('resetMsg', 'Failed to reset password.');
                 } finally {
                     if (btn) {
                         btn.disabled = false;

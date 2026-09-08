@@ -6,19 +6,56 @@ const { db } = require('../utils');
 const cache = require('./cacheService');
 
 /**
- * Minimum OAuth scopes for existing AssetEngine Zoho operations.
+ * Single source of truth for Zoho OAuth authorize/token scopes.
+ * Hard-coded here (not env / DB / config-file). buildAuthorizationUrl and
+ * /api/zoho/status both read this list. Do not duplicate elsewhere.
+ *
  * Products ALL covers catalog pull + asset product create/update.
  * Deals READ covers sync-deals.
  * settings.fields/modules READ required by SDK Utility.getFields
  * when autoRefreshFields(true) precedes Records API calls.
+ * purchaseorders.READ is the least-privilege scope for CRM GET
+ * Purchase_Orders / {id} (SDK RecordOperations('Purchase_Orders').getRecord).
+ * accounts.READ is the least-privilege scope for CRM GET Accounts
+ * used by Delivery Challan Customer / Receiver lookup.
  * findUser(false) avoids mandatory users/org READ scopes.
+ *
+ * Adding a scope here does not mutate the current refresh token.
+ * Explicit Reauthorize / Connect Zoho (prompt=consent) is required.
  */
 const ZOHO_OAUTH_SCOPES = [
     'ZohoCRM.modules.products.ALL',
     'ZohoCRM.modules.deals.READ',
     'ZohoCRM.settings.fields.READ',
-    'ZohoCRM.settings.modules.READ'
+    'ZohoCRM.settings.modules.READ',
+    'ZohoCRM.modules.purchaseorders.READ',
+    'ZohoCRM.modules.accounts.READ'
 ].join(',');
+
+/** CRM v8 getRecords requires `fields`. */
+const PRODUCT_GET_FIELDS = 'Product_Name,Unit_Price,Description,Product_Code,Make,Model,HSN_Code';
+const DEAL_GET_FIELDS = 'Deal_Name,Type,Project_ID';
+/** DC Account lookup — fields that exist on live Zoho Accounts metadata. No GSTIN on Accounts. */
+const ACCOUNT_GET_FIELDS = [
+    'Account_Name',
+    'Phone',
+    'Billing_Address',
+    'Billing_Street',
+    'Billing_City',
+    'Billing_State',
+    'Billing_Code',
+    'Billing_Country',
+    'Billing_Flat_House_No_Building_Apartment_Name',
+    'Shipping_Address',
+    'Shipping_Street',
+    'Shipping_City',
+    'Shipping_State',
+    'Shipping_Code',
+    'Shipping_Country',
+    'Shipping_Flat_House_No_Building_Apartment_Name'
+].join(',');
+const ACCOUNT_CACHE_KEY = 'zoho:dc:accounts:v1';
+const ACCOUNT_CACHE_TTL_SEC = 600;
 
 const OAUTH_STATE_TTL_SEC = 600;
 const TOKEN_FILE = path.join(__dirname, '../zoho_tokens.txt');
@@ -69,6 +106,56 @@ function parseZohoFileStoreCredentials(fileContents) {
 }
 
 /**
+ * Read SDK APIException Choice fields without assuming a specific shape.
+ * @param {object|null} responseObject
+ * @returns {string}
+ */
+function zohoApiExceptionMessage(responseObject) {
+    if (!responseObject) return 'Zoho APIException';
+    const readChoice = (getter) => {
+        try {
+            if (typeof responseObject[getter] !== 'function') return null;
+            const value = responseObject[getter]();
+            if (value == null) return null;
+            if (typeof value.getValue === 'function') return String(value.getValue());
+            return String(value);
+        } catch {
+            return null;
+        }
+    };
+    return readChoice('getMessage') || readChoice('getCode') || 'Zoho APIException';
+}
+
+/**
+ * Convert a stored Zoho record id to BigInt at the SDK boundary.
+ * DB/API values are strings (varchar) or numbers; Record.setId() requires BigInt.
+ * Does not alter stored values.
+ *
+ * @param {unknown} value
+ * @param {string} fieldName
+ * @returns {bigint}
+ */
+function toZohoRecordBigInt(value, fieldName = 'id') {
+    if (typeof value === 'bigint') {
+        return value;
+    }
+    if (value == null || value === '') {
+        throw new Error(`Zoho record ${fieldName} is missing`);
+    }
+    if (typeof value === 'number') {
+        if (!Number.isInteger(value) || !Number.isSafeInteger(value)) {
+            throw new Error(`Zoho record ${fieldName} is not a safe integer; store and pass a decimal string`);
+        }
+        return BigInt(value);
+    }
+    const asString = String(value).trim();
+    if (!/^\d+$/.test(asString)) {
+        throw new Error(`Zoho record ${fieldName} is not a valid numeric ID`);
+    }
+    return BigInt(asString);
+}
+
+/**
  * Zoho CRM Service
  *
  * Token persistence: FileStore (Option A — lowest risk).
@@ -113,19 +200,45 @@ class ZohoService {
     }
 
     /**
-     * Delete token file so OAuth code exchange is not poisoned by stale/header-only store.
-     * Does not touch catalog, assets, or DB.
+     * Reset the SDK process-wide singleton before a new authorization-code init.
+     *
+     * Verified against @zohocrm/nodejs-sdk-8.0 Initializer:
+     * - static LOCAL = new Map()
+     * - static initializer
+     * getInitializer() calls getEncodedKey() whenever LOCAL has keys.
+     * getEncodedKey() then toUTF8Array(key) where key is user/refresh/access.
+     * A grant-token-only OAuthToken (findUser(false)) leaves key undefined.
+     *
+     * Clearing LOCAL makes getInitializer() return Initializer.initializer
+     * without encoding. Setting initializer to undefined matches the class's
+     * uninitialized static field so InitializeBuilder treats this as a fresh init.
      */
-    _clearTokenFileForOAuthExchange() {
+    _resetSdkSingleton() {
+        const Initializer = ZOHOCRMSDK.Initializer;
+        if (!Initializer) return;
+        if (Initializer.LOCAL && typeof Initializer.LOCAL.clear === 'function') {
+            Initializer.LOCAL.clear();
+        }
+        Initializer.initializer = undefined;
+    }
+
+    /**
+     * After a successful code exchange, FileStore may append a new row beside
+     * a previous session. Keep header + latest data row only. Never called on
+     * a failed exchange.
+     */
+    _retainLatestFileStoreRow() {
         try {
-            if (fs.existsSync(TOKEN_FILE)) {
-                fs.unlinkSync(TOKEN_FILE);
-            }
+            if (!fs.existsSync(TOKEN_FILE)) return;
+            const raw = fs.readFileSync(TOKEN_FILE, 'utf8');
+            const lines = String(raw)
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .filter((l) => l.length > 0);
+            if (lines.length <= 2) return;
+            fs.writeFileSync(TOKEN_FILE, `${lines[0]}\n${lines[lines.length - 1]}`, 'utf8');
         } catch (err) {
-            console.error('[ZohoService] Failed to clear token file before OAuth exchange:', err.message);
-            const e = new Error('TOKEN_FILE_CLEAR_FAILED');
-            e.code = 'TOKEN_FILE_CLEAR_FAILED';
-            throw e;
+            console.error('[ZohoService] Failed to compact FileStore after OAuth:', err.message);
         }
     }
 
@@ -250,6 +363,12 @@ class ZohoService {
             // Re-init path after OAuth / disconnect
             this.initialized = false;
 
+            // Grant-token re-init must not run getEncodedKey() against a prior
+            // LOCAL map entry (SDK bug: toUTF8Array(undefined)).
+            if (authorizationCode) {
+                this._resetSdkSingleton();
+            }
+
             let builder = await new ZOHOCRMSDK.InitializeBuilder();
             await builder.environment(ZOHOCRMSDK.INDataCenter.PRODUCTION())
                 .token(token)
@@ -331,7 +450,9 @@ class ZohoService {
 
     /**
      * Complete server-based OAuth using authorization code from callback.
-     * Clears stale/header-only FileStore first so exchange is not poisoned.
+     * Does not delete the token file before exchange — a failed exchange must
+     * leave any existing FileStore row intact. FileStore persists the new
+     * tokens only after a successful grant.
      */
     async completeOAuthWithCode(authorizationCode) {
         if (!authorizationCode || !String(authorizationCode).trim()) {
@@ -342,8 +463,6 @@ class ZohoService {
 
         const exchange = (async () => {
             this.initialized = false;
-            // Do not treat existing FileStore as authorized — start clean for code exchange.
-            this._clearTokenFileForOAuthExchange();
             await this.init({
                 authorizationCode: String(authorizationCode).trim(),
                 force: true
@@ -353,6 +472,7 @@ class ZohoService {
                 err.code = 'TOKEN_PERSISTENCE_FAILED';
                 throw err;
             }
+            this._retainLatestFileStoreRow();
             return { ok: true, authorized: true };
         })();
 
@@ -371,6 +491,7 @@ class ZohoService {
      */
     async disconnect() {
         this.initialized = false;
+        this._resetSdkSingleton();
         try {
             if (fs.existsSync(TOKEN_FILE)) {
                 fs.unlinkSync(TOKEN_FILE);
@@ -466,7 +587,7 @@ class ZohoService {
             let mode = parent.zoho_product_id ? 'UPDATE' : 'CREATE';
 
             if (parent.zoho_product_id) {
-                record.setId(parent.zoho_product_id);
+                record.setId(toZohoRecordBigInt(parent.zoho_product_id, 'zoho_product_id'));
                 requestWrapper.setData([record]);
                 response = await recordOperations.updateRecords(requestWrapper);
             } else {
@@ -553,9 +674,23 @@ class ZohoService {
             await this.init();
             const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
             const paramInstance = new ZOHOCRMSDK.ParameterMap();
-            paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, 1);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, PRODUCT_GET_FIELDS);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, 1);
 
             const response = await recordOperations.getRecords(paramInstance);
+
+            if (response != null) {
+                const responseObject = response.getObject();
+                if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                    return {
+                        status: 'API_ERROR',
+                        message: zohoApiExceptionMessage(responseObject),
+                        timestamp,
+                        authorized: this.hasPersistedTokens(),
+                        config
+                    };
+                }
+            }
 
             if (response != null && [200, 201, 204].includes(response.getStatusCode())) {
                 return {
@@ -603,6 +738,8 @@ class ZohoService {
     /**
      * Pull Products from Zoho and sync them to the local Reference Catalog (zoho_catalog).
      * These are kept separate from native inventory as they are non-native.
+     * Paginates with the same PAGE / PER_PAGE / PAGE_TOKEN params used by Purchase Orders.
+     * Upserts only; never deletes catalog rows; never creates AssetEngine Products.
      */
     async syncProductsFromZoho() {
         await this.init();
@@ -611,68 +748,145 @@ class ZohoService {
         const lastSync = await cache.get('zoho:last_catalog_sync');
         if (lastSync && (Date.now() - lastSync) < 300000) { // 5 minutes cooldown
             console.log('[ZohoService] Catalog sync called too recently. Skipping API call.');
-            return { ok: true, syncCount: 0, totalFound: 0, fromCache: true };
+            return {
+                ok: true,
+                syncCount: 0,
+                totalFound: 0,
+                fromCache: true,
+                pagesFetched: 0,
+                recordsFetched: 0,
+                recordsUpserted: 0
+            };
         }
 
         try {
-            const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
-            const paramInstance = new ZOHOCRMSDK.ParameterMap();
-            
-            const response = await recordOperations.getRecords(paramInstance);
+            const CATALOG_PER_PAGE = 200;
+            const CATALOG_MAX_PAGES = 50;
+            const toNullString = (value) => {
+                if (value == null || value === '') return null;
+                return String(value);
+            };
+            const toUnitPrice = (value) => {
+                if (value == null || value === '') return 0;
+                const n = Number(value);
+                return Number.isFinite(n) ? n : 0;
+            };
 
-            if (response != null) {
+            let page = 1;
+            let pageToken = null;
+            let moreRecords = true;
+            let syncCount = 0;
+            let pagesFetched = 0;
+            let recordsFetched = 0;
+            let recordsUpserted = 0;
+            const seenIds = new Set();
+
+            while (moreRecords) {
+                if (pagesFetched >= CATALOG_MAX_PAGES) {
+                    const err = new Error('Zoho Products catalog pagination exceeded the page safety limit');
+                    err.code = 'ZOHO_CATALOG_PAGE_LIMIT';
+                    throw err;
+                }
+
+                const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
+                const paramInstance = new ZOHOCRMSDK.ParameterMap();
+                await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, PRODUCT_GET_FIELDS);
+                if (pageToken) {
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE_TOKEN, pageToken);
+                } else {
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE, page);
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, CATALOG_PER_PAGE);
+                }
+
+                const response = await recordOperations.getRecords(paramInstance);
+                if (response == null) {
+                    const err = new Error('Zoho Products getRecords returned no response');
+                    err.code = 'ZOHO_EMPTY_RESPONSE';
+                    throw err;
+                }
+
                 const responseObject = response.getObject();
-                if (responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper) {
-                    const products = responseObject.getData();
-                    let syncCount = 0;
+                if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                    const err = new Error(zohoApiExceptionMessage(responseObject));
+                    err.code = 'ZOHO_API_EXCEPTION';
+                    throw err;
+                }
+                if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+                    const err = new Error('Zoho Products getRecords returned an unexpected response');
+                    err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+                    throw err;
+                }
 
-                    for (const product of products) {
-                        const zohoId = product.getId();
-                        const productName = product.getFieldValue(ZOHOCRMSDK.Record.Field.Products.PRODUCT_NAME);
-                        const unitPrice = product.getFieldValue(ZOHOCRMSDK.Record.Field.Products.UNIT_PRICE);
-                        const description = product.getFieldValue(ZOHOCRMSDK.Record.Field.Products.DESCRIPTION);
-                        const sku = product.getFieldValue(ZOHOCRMSDK.Record.Field.Products.PRODUCT_CODE);
-                        const make = product.getKeyValue('Make'); 
-                        const model = product.getKeyValue('Model'); 
-                        const hsn = product.getKeyValue('HSN_Code'); 
+                const products = responseObject.getData() || [];
+                const info = typeof responseObject.getInfo === 'function' ? responseObject.getInfo() : null;
+                pagesFetched += 1;
+                recordsFetched += products.length;
+
+                for (const product of products) {
+                        // SDK 8.0 Record has getKeyValue(apiName), not getFieldValue.
+                        const zohoIdRaw = typeof product.getId === 'function' ? product.getId() : product.getKeyValue('id');
+                        if (zohoIdRaw == null || zohoIdRaw === '') continue;
+                        const zohoProductId = String(zohoIdRaw);
+                        seenIds.add(zohoProductId);
+
+                        const productName = product.getKeyValue('Product_Name');
+                        const unitPrice = product.getKeyValue('Unit_Price');
+                        const description = product.getKeyValue('Description');
+                        const sku = product.getKeyValue('Product_Code');
+                        const make = product.getKeyValue('Make');
+                        const model = product.getKeyValue('Model');
+                        const hsn = product.getKeyValue('HSN_Code');
 
                         const catalogData = {
-                            product_name: productName,
-                            unit_price: unitPrice || 0,
-                            description: description || null,
-                            sku: sku || null,
-                            make: make || null,
-                            model: model || null,
-                            hsn_code: hsn || null,
+                            product_name: toNullString(productName) || 'Unnamed Product',
+                            unit_price: toUnitPrice(unitPrice),
+                            description: toNullString(description),
+                            sku: toNullString(sku),
+                            make: toNullString(make),
+                            model: toNullString(model),
+                            hsn_code: toNullString(hsn),
                             last_synced_at: new Date().toISOString()
                         };
 
-                        const existing = await db('zoho_catalog').where('zoho_product_id', zohoId).first();
-                        
+                        const existing = await db('zoho_catalog').where('zoho_product_id', zohoProductId).first();
+
                         if (existing) {
-                            await db('zoho_catalog').where('zoho_product_id', zohoId).update(catalogData);
+                            await db('zoho_catalog').where('zoho_product_id', zohoProductId).update(catalogData);
                         } else {
                             await db('zoho_catalog').insert({
                                 ...catalogData,
-                                zoho_product_id: zohoId
+                                zoho_product_id: zohoProductId
                             });
                             syncCount++;
                         }
-                    }
+                        recordsUpserted += 1;
+                }
 
-                    // 2. Set cooldown in Redis
-                    await cache.set('zoho:last_catalog_sync', Date.now(), 300); // 5 min TTL
+                moreRecords = !!(info && typeof info.getMoreRecords === 'function' && info.getMoreRecords());
+                if (!moreRecords) break;
 
-                    await this.logSync({
-                        module: 'Products',
-                        operation: 'PULL_CATALOG',
-                        status: 'SUCCESS',
-                        response: { syncCount, totalFound: products.length }
-                    });
-
-                    return { ok: true, syncCount, totalFound: products.length };
+                const nextToken = info && typeof info.getNextPageToken === 'function' ? info.getNextPageToken() : null;
+                if (nextToken) {
+                    pageToken = String(nextToken);
+                } else {
+                    pageToken = null;
+                    page += 1;
                 }
             }
+
+            const totalFound = seenIds.size;
+            const stats = { syncCount, totalFound, pagesFetched, recordsFetched, recordsUpserted };
+
+            await cache.set('zoho:last_catalog_sync', Date.now(), 300);
+
+            await this.logSync({
+                module: 'Products',
+                operation: 'PULL_CATALOG',
+                status: 'SUCCESS',
+                response: stats
+            });
+
+            return { ok: true, ...stats };
         } catch (error) {
             await this.logSync({
                 module: 'Products',
@@ -692,17 +906,31 @@ class ZohoService {
         try {
             const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Deals');
             const paramInstance = new ZOHOCRMSDK.ParameterMap();
-            
-            // Fetch deals modified in the last 7 days (or just get latest 200)
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, DEAL_GET_FIELDS);
+
             const response = await recordOperations.getRecords(paramInstance);
+            if (response == null) {
+                const err = new Error('Zoho Deals getRecords returned no response');
+                err.code = 'ZOHO_EMPTY_RESPONSE';
+                throw err;
+            }
 
-            if (response != null) {
-                const responseObject = response.getObject();
-                if (responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper) {
-                    const deals = responseObject.getData();
-                    let syncCount = 0;
+            const responseObject = response.getObject();
+            if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                const err = new Error(zohoApiExceptionMessage(responseObject));
+                err.code = 'ZOHO_API_EXCEPTION';
+                throw err;
+            }
+            if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+                const err = new Error('Zoho Deals getRecords returned an unexpected response');
+                err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+                throw err;
+            }
 
-                    for (const deal of deals) {
+            const deals = responseObject.getData() || [];
+            let syncCount = 0;
+
+            for (const deal of deals) {
                         const dealId = deal.getId();
                         const dealName = deal.getFieldValue(ZOHOCRMSDK.Record.Field.Deals.DEAL_NAME);
                         const dealType = deal.getFieldValue(ZOHOCRMSDK.Record.Field.Deals.TYPE); // "Project" vs "Box Sale"
@@ -734,10 +962,8 @@ class ZohoService {
                             });
                             syncCount++;
                         }
-                    }
-                    return { ok: true, syncCount, totalFound: deals.length };
-                }
             }
+            return { ok: true, syncCount, totalFound: deals.length };
         } catch (error) {
             console.error('[ZohoService] Failed to sync deals:', error);
             throw error;
@@ -773,39 +999,426 @@ class ZohoService {
     }
 
     /**
-     * Inspect a module's fields to find API names for mapping
+     * Convert a Zoho record id from SDK details to a decimal string.
+     * Never uses Number/parseInt/parseFloat.
+     */
+    zohoIdToString(value) {
+        if (value == null || value === '') {
+            throw new Error('Zoho record id is missing');
+        }
+        if (typeof value === 'bigint') {
+            return value.toString();
+        }
+        if (typeof value === 'number') {
+            if (!Number.isInteger(value) || !Number.isSafeInteger(value)) {
+                throw new Error('Zoho record id is not a safe integer; store and pass a decimal string');
+            }
+            return String(value);
+        }
+        const asString = String(value).trim();
+        if (!/^\d+$/.test(asString)) {
+            throw new Error('Zoho record id is not a valid numeric ID');
+        }
+        return asString;
+    }
+
+    _applyApprovedProductFields(record, fields) {
+        const payload = fields && typeof fields === 'object' ? fields : {};
+        const forbidden = new Set([
+            'Unit_Price',
+            'Qty_in_Stock',
+            'Qty_Ordered',
+            'Qty_in_Demand',
+            'Reorder_Level',
+            'Product_Category',
+            'Usage_Unit'
+        ]);
+        for (const key of Object.keys(payload)) {
+            if (forbidden.has(key)) continue;
+            const value = payload[key];
+            if (value == null || value === '') continue;
+            if (key === 'Product_Name') {
+                record.addFieldValue(ZOHOCRMSDK.Record.Field.Products.PRODUCT_NAME, String(value));
+            } else if (key === 'Description') {
+                record.addFieldValue(ZOHOCRMSDK.Record.Field.Products.DESCRIPTION, String(value));
+            } else if (key === 'Product_Code') {
+                record.addFieldValue(ZOHOCRMSDK.Record.Field.Products.PRODUCT_CODE, String(value));
+            } else {
+                record.addKeyValue(key, String(value));
+            }
+        }
+    }
+
+    _readProductRecord(record) {
+        if (!record) return null;
+        const zohoIdRaw = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        const read = (apiName) => {
+            try {
+                const value = record.getKeyValue(apiName);
+                if (value == null || value === '') return null;
+                return String(value);
+            } catch {
+                return null;
+            }
+        };
+        return {
+            zohoId: this.zohoIdToString(zohoIdRaw),
+            name: read('Product_Name'),
+            description: read('Description'),
+            productCode: read('Product_Code'),
+            make: read('Make'),
+            model: read('Model'),
+            hsnCode: read('HSN_Code'),
+            unitPrice: read('Unit_Price')
+        };
+    }
+
+    _parseProductActionResponse(response, mode) {
+        if (response == null) {
+            const err = new Error('Zoho Products returned no response');
+            err.code = 'ZOHO_EMPTY_RESPONSE';
+            throw err;
+        }
+        const status = response.getStatusCode && response.getStatusCode();
+        const responseObject = response.getObject();
+        if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+            const err = new Error(zohoApiExceptionMessage(responseObject));
+            err.code = 'ZOHO_API_EXCEPTION';
+            err.httpStatus = status;
+            throw err;
+        }
+        if (responseObject instanceof ZOHOCRMSDK.Record.ActionWrapper) {
+            const actionResponses = responseObject.getData() || [];
+            const actionResponse = actionResponses[0];
+            if (actionResponse instanceof ZOHOCRMSDK.Record.SuccessResponse) {
+                const details = actionResponse.getDetails();
+                const rawId = details && typeof details.get === 'function' ? details.get('id') : null;
+                return { ok: true, mode, zohoId: this.zohoIdToString(rawId), httpStatus: status };
+            }
+            if (actionResponse instanceof ZOHOCRMSDK.Record.APIException) {
+                const err = new Error(zohoApiExceptionMessage(actionResponse));
+                err.code = 'ZOHO_API_EXCEPTION';
+                err.httpStatus = status;
+                throw err;
+            }
+        }
+        const err = new Error('Unknown Zoho Product API response');
+        err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+        err.httpStatus = status;
+        throw err;
+    }
+
+    _accountScalar(value) {
+        if (value == null || value === '') return '';
+        if (typeof value === 'object' && typeof value.getValue === 'function') {
+            try {
+                const inner = value.getValue();
+                return inner == null ? '' : String(inner).trim();
+            } catch {
+                return '';
+            }
+        }
+        return String(value).trim();
+    }
+
+    _accountAddress(preformatted, parts) {
+        const ready = this._accountScalar(preformatted);
+        if (ready) return ready;
+        return (parts || []).map((part) => this._accountScalar(part)).filter(Boolean).join('\n');
+    }
+
+    _mapAccountRecord(record) {
+        const rawId = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        let zohoAccountId = null;
+        try {
+            zohoAccountId = this.zohoIdToString(rawId);
+        } catch {
+            return null;
+        }
+        const name = this._accountScalar(record.getKeyValue('Account_Name'));
+        const billingAddress = this._accountAddress(record.getKeyValue('Billing_Address'), [
+            record.getKeyValue('Billing_Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Billing_Street'),
+            record.getKeyValue('Billing_City'),
+            record.getKeyValue('Billing_State'),
+            record.getKeyValue('Billing_Code'),
+            record.getKeyValue('Billing_Country')
+        ]);
+        const shippingAddress = this._accountAddress(record.getKeyValue('Shipping_Address'), [
+            record.getKeyValue('Shipping_Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Shipping_Street'),
+            record.getKeyValue('Shipping_City'),
+            record.getKeyValue('Shipping_State'),
+            record.getKeyValue('Shipping_Code'),
+            record.getKeyValue('Shipping_Country')
+        ]);
+        return {
+            zohoAccountId,
+            accountName: name,
+            phone: this._accountScalar(record.getKeyValue('Phone')) || null,
+            billingAddress: billingAddress || null,
+            billingState: this._accountScalar(record.getKeyValue('Billing_State')) || null,
+            billingCode: this._accountScalar(record.getKeyValue('Billing_Code')) || null,
+            shippingAddress: shippingAddress || null,
+            shippingState: this._accountScalar(record.getKeyValue('Shipping_State')) || null,
+            shippingCode: this._accountScalar(record.getKeyValue('Shipping_Code')) || null
+        };
+    }
+
+    _throwAccountReadError(error) {
+        if (error && error.reasonCode && error.statusCode) throw error;
+        const msg = String((error && error.message) || '');
+        const code = String((error && error.code) || '');
+        const combined = `${msg} ${code}`;
+        if (code === 'ZOHO_NOT_CONFIGURED' || code === 'ZOHO_NOT_AUTHORIZED') {
+            const err = new Error(msg || code);
+            err.statusCode = 401;
+            err.reasonCode = code;
+            throw err;
+        }
+        if (/OAUTH_SCOPE_MISMATCH|invalid oauth scope/i.test(combined)) {
+            const err = new Error(
+                'Zoho Account READ requires ZohoCRM.modules.accounts.READ. Reauthorize Zoho to grant this scope.'
+            );
+            err.statusCode = 403;
+            err.reasonCode = 'ACCOUNT_OAUTH_SCOPE_REQUIRED';
+            throw err;
+        }
+        if (/NO_PERMISSION/i.test(combined)) {
+            const err = new Error('The connected Zoho user does not have permission to the Accounts module.');
+            err.statusCode = 403;
+            err.reasonCode = 'ZOHO_MODULE_PERMISSION';
+            throw err;
+        }
+        if (error && error.statusCode) throw error;
+        const err = new Error(msg || 'Zoho Accounts could not be read');
+        err.statusCode = 502;
+        err.reasonCode = code || 'ZOHO_ACCOUNTS_ERROR';
+        throw err;
+    }
+
+    /**
+     * Read-only Zoho Accounts list for DC Customer / Receiver lookup.
+     * Does not write Zoho. Does not add OAuth scopes.
+     * Cached in Redis/memory; filtered in-process by q.
+     */
+    async listAccounts({ q, force = false } = {}) {
+        const query = String(q || '').trim().toLowerCase();
+        try {
+            await this.init();
+            let accounts = (!force && await cache.get(ACCOUNT_CACHE_KEY)) || null;
+            if (!Array.isArray(accounts)) {
+                accounts = [];
+                let page = 1;
+                let moreRecords = true;
+                const MAX_PAGES = 5;
+                const PER_PAGE = 200;
+                while (moreRecords && page <= MAX_PAGES) {
+                    const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Accounts');
+                    const paramInstance = new ZOHOCRMSDK.ParameterMap();
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, ACCOUNT_GET_FIELDS);
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE, page);
+                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, PER_PAGE);
+                    const response = await recordOperations.getRecords(paramInstance);
+                    if (response == null) {
+                        const err = new Error('Zoho Accounts getRecords returned no response');
+                        err.code = 'ZOHO_EMPTY_RESPONSE';
+                        throw err;
+                    }
+                    const responseObject = response.getObject();
+                    if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                        const err = new Error(zohoApiExceptionMessage(responseObject));
+                        err.code = 'ZOHO_API_EXCEPTION';
+                        throw err;
+                    }
+                    if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+                        const err = new Error('Zoho Accounts getRecords returned an unexpected response');
+                        err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+                        throw err;
+                    }
+                    const rows = responseObject.getData() || [];
+                    for (const record of rows) {
+                        const mapped = this._mapAccountRecord(record);
+                        if (mapped && mapped.accountName) accounts.push(mapped);
+                    }
+                    const info = typeof responseObject.getInfo === 'function' ? responseObject.getInfo() : null;
+                    moreRecords = !!(info && typeof info.getMoreRecords === 'function' && info.getMoreRecords());
+                    page += 1;
+                }
+                await cache.set(ACCOUNT_CACHE_KEY, accounts, ACCOUNT_CACHE_TTL_SEC);
+            }
+            const visible = query
+                ? accounts.filter((row) => String(row.accountName || '').toLowerCase().includes(query))
+                : accounts;
+            return { accounts: visible.slice(0, 50), totalCached: accounts.length };
+        } catch (error) {
+            this._throwAccountReadError(error);
+        }
+    }
+
+    classifyZohoError(error) {
+        const msg = String((error && error.message) || '');
+        const code = String((error && error.code) || '');
+        const httpStatus = error && error.httpStatus;
+        if (code === 'ZOHO_NOT_CONFIGURED' || code === 'ZOHO_NOT_AUTHORIZED' || /oauth|token|invalid_grant|MANDATORY_GRANT_TOKEN/i.test(msg)) {
+            return 'OAUTH';
+        }
+        if (httpStatus === 401 || /\b401\b/.test(msg)) return '401';
+        if (httpStatus === 403 || /\b403\b/.test(msg)) return '403';
+        if (httpStatus && httpStatus >= 500) return '5xx';
+        if (httpStatus && httpStatus >= 400) return '4xx';
+        if (/timeout|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(msg) || code === 'ETIMEDOUT') return 'TIMEOUT';
+        if (/rate limit|too many requests|429/i.test(msg) || httpStatus === 429) return 'RATE_LIMIT';
+        if (code === 'ZOHO_EMPTY_RESPONSE' || code === 'ZOHO_UNEXPECTED_RESPONSE' || /malformed|unexpected response/i.test(msg)) {
+            return 'MALFORMED';
+        }
+        return 'ERROR';
+    }
+
+    /**
+     * Product-centric GET. Does not write assets.zoho_product_id.
+     * @param {string} externalId
+     */
+    async getProductRecord(externalId) {
+        await this.init();
+        const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
+        const paramInstance = new ZOHOCRMSDK.ParameterMap();
+        await paramInstance.add(ZOHOCRMSDK.Record.GetRecordParam.FIELDS, PRODUCT_GET_FIELDS);
+        const response = await recordOperations.getRecord(
+            toZohoRecordBigInt(externalId, 'zoho_product_id'),
+            paramInstance
+        );
+        if (response == null) {
+            const err = new Error('Zoho Products getRecord returned no response');
+            err.code = 'ZOHO_EMPTY_RESPONSE';
+            throw err;
+        }
+        const status = response.getStatusCode();
+        if (status === 204 || status === 404) {
+            const err = new Error('Mapped Zoho Product was not found');
+            err.code = 'ZOHO_PRODUCT_NOT_FOUND';
+            err.httpStatus = status;
+            throw err;
+        }
+        const responseObject = response.getObject();
+        if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+            const err = new Error(zohoApiExceptionMessage(responseObject));
+            err.code = status === 404 ? 'ZOHO_PRODUCT_NOT_FOUND' : 'ZOHO_API_EXCEPTION';
+            err.httpStatus = status;
+            throw err;
+        }
+        if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+            const err = new Error('Zoho Products getRecord returned an unexpected response');
+            err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+            throw err;
+        }
+        const records = responseObject.getData() || [];
+        if (!records.length) {
+            const err = new Error('Mapped Zoho Product was not found');
+            err.code = 'ZOHO_PRODUCT_NOT_FOUND';
+            throw err;
+        }
+        return this._readProductRecord(records[0]);
+    }
+
+    /**
+     * Product-centric CREATE. Does not write assets.zoho_product_id.
+     */
+    async createProductRecord(fields) {
+        await this.init();
+        const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
+        const requestWrapper = new ZOHOCRMSDK.Record.BodyWrapper();
+        const record = new ZOHOCRMSDK.Record.Record();
+        this._applyApprovedProductFields(record, fields);
+        requestWrapper.setData([record]);
+        const response = await recordOperations.createRecords(requestWrapper);
+        return this._parseProductActionResponse(response, 'CREATE');
+    }
+
+    /**
+     * Product-centric UPDATE. Does not write assets.zoho_product_id.
+     */
+    async updateProductRecord(externalId, fields) {
+        await this.init();
+        const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Products');
+        const requestWrapper = new ZOHOCRMSDK.Record.BodyWrapper();
+        const record = new ZOHOCRMSDK.Record.Record();
+        record.setId(toZohoRecordBigInt(externalId, 'zoho_product_id'));
+        this._applyApprovedProductFields(record, fields);
+        requestWrapper.setData([record]);
+        const response = await recordOperations.updateRecord(
+            toZohoRecordBigInt(externalId, 'zoho_product_id'),
+            requestWrapper
+        );
+        const parsed = this._parseProductActionResponse(response, 'UPDATE');
+        if (!parsed.zohoId) parsed.zohoId = this.zohoIdToString(externalId);
+        return parsed;
+    }
+
+    serializeInspectedFields(fields) {
+        return (fields || []).map((field) => {
+            const read = (fn) => {
+                try {
+                    if (typeof field[fn] !== 'function') return null;
+                    const value = field[fn]();
+                    if (value == null) return null;
+                    if (typeof value.getValue === 'function') return String(value.getValue());
+                    return value;
+                } catch {
+                    return null;
+                }
+            };
+            return {
+                label: read('getFieldLabel'),
+                apiName: read('getAPIName'),
+                dataType: read('getDataType'),
+                custom: read('getCustomField')
+            };
+        }).filter((row) => row.apiName);
+    }
+
+    /**
+     * Inspect a module's fields (READ-ONLY). Returns SDK field objects.
+     * Throws on authorization / API failure — callers must not guess mappings.
      */
     async inspectModuleFields(moduleName) {
         await this.init();
-        try {
-            // Attempt 7: Standardize inspection and ensure delay for token persistence
-            const FieldsOperations = ZOHOCRMSDK.Fields.FieldsOperations;
-            const fieldOperations = new FieldsOperations();
-            const paramInstance = new ZOHOCRMSDK.ParameterMap();
-            
-            const GetFieldsParam = ZOHOCRMSDK.Fields.GetFieldsParam;
-            await paramInstance.add(GetFieldsParam.MODULE, moduleName);
-            
-            const response = await fieldOperations.getFields(paramInstance);
+        const FieldsOperations = ZOHOCRMSDK.Fields.FieldsOperations;
+        const fieldOperations = new FieldsOperations();
+        const paramInstance = new ZOHOCRMSDK.ParameterMap();
 
-            if (response != null) {
-                console.log(`[ZohoService] Inspecting ${moduleName} - Status Code: ${response.getStatusCode()}`);
-                let responseObject = response.getObject();
-                
-                if (responseObject instanceof ZOHOCRMSDK.Fields.ResponseWrapper) {
-                    let fields = responseObject.getFields();
-                    console.log(`--- Fields for module: ${moduleName} ---`);
-                    fields.forEach(field => {
-                        console.log(`Label: ${field.getFieldLabel().padEnd(35)} | API Name: ${field.getAPIName()}`);
-                    });
-                    return fields;
-                } else if (responseObject instanceof ZOHOCRMSDK.Fields.APIException) {
-                    console.log(`[ZohoService] API Error for ${moduleName}: ${responseObject.getMessage().getValue()}`);
-                }
-            }
-        } catch (error) {
-            console.error(`[ZohoService] Field inspection failed for ${moduleName}:`, error);
+        const GetFieldsParam = ZOHOCRMSDK.Fields.GetFieldsParam;
+        await paramInstance.add(GetFieldsParam.MODULE, moduleName);
+
+        const response = await fieldOperations.getFields(paramInstance);
+        if (response == null) {
+            const err = new Error(`Zoho field inspection returned no response for ${moduleName}`);
+            err.code = 'ZOHO_EMPTY_RESPONSE';
+            throw err;
         }
+
+        console.log(`[ZohoService] Inspecting ${moduleName} - Status Code: ${response.getStatusCode()}`);
+        const responseObject = response.getObject();
+
+        if (responseObject instanceof ZOHOCRMSDK.Fields.APIException) {
+            const err = new Error(zohoApiExceptionMessage(responseObject));
+            err.code = 'ZOHO_API_EXCEPTION';
+            throw err;
+        }
+        if (!(responseObject instanceof ZOHOCRMSDK.Fields.ResponseWrapper)) {
+            const err = new Error(`Zoho field inspection returned an unexpected response for ${moduleName}`);
+            err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+            throw err;
+        }
+
+        const fields = responseObject.getFields() || [];
+        console.log(`--- Fields for module: ${moduleName} ---`);
+        fields.forEach((field) => {
+            const label = typeof field.getFieldLabel === 'function' ? String(field.getFieldLabel() || '') : '';
+            const apiName = typeof field.getAPIName === 'function' ? String(field.getAPIName() || '') : '';
+            console.log(`Label: ${label.padEnd(35)} | API Name: ${apiName}`);
+        });
+        return fields;
     }
 
     /**
@@ -845,3 +1458,4 @@ class ZohoService {
 
 module.exports = new ZohoService();
 module.exports.parseZohoFileStoreCredentials = parseZohoFileStoreCredentials;
+module.exports.toZohoRecordBigInt = toZohoRecordBigInt;

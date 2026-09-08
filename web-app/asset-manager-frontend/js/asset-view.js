@@ -1,4 +1,4 @@
-import { checkSession, fetchWithAuth } from './auth.js?v=6.41';
+import { checkSession, fetchWithAuth } from './auth.js?v=7.29';
 
 // Asset View Module
 // Handles fetching and displaying asset details
@@ -137,6 +137,9 @@ async function renderAsset(data) {
             <div style="font-size: 40px; margin-bottom: 10px;">${getIcon(asset.Icon)}</div>
             <h1 style="font-size: 24px; margin-bottom: 5px;">${safe(asset.ItemName)}</h1>
             <div style="opacity: 0.9; font-size: 14px; font-family: monospace;">${safe(asset.ID)}</div>
+            <div style="margin-top: 8px; font-size: 13px; opacity: 0.95;">Individually identified physical holding</div>
+            ${asset.product_id ? `<div style="margin-top: 8px; font-size: 13px;">Product <a href="/#products-view?id=${encodeURIComponent(asset.product_id)}" style="color:#fff;font-weight:700;text-decoration:underline;">${safe(asset.product_id)}</a></div>` : ''}
+            ${asset.physical_intake_id ? `<div style="margin-top: 8px; font-size: 12px; opacity: 0.95;">Origin: NON-PROCUREMENT INTAKE</div>` : ''}
             <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px;">
                 <div class="status-pill" style="background: rgba(255,255,255,0.25); padding: 5px 15px; border-radius: 20px; display: inline-block; font-weight: 600;">
                     ${safe(asset.Status)}
@@ -150,14 +153,7 @@ async function renderAsset(data) {
             
             ${asset.ParentId ? `
                 <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;">
-                    <button id="btnUnsplitAssetView" class="action-button" 
-                            style="background: #fff; color: #2563eb; border: none; padding: 6px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <span>🔗</span> Unsplit & Merge back to Parent
-                    </button>
-                    <button id="btnBreakSet" class="action-button" 
-                            style="background: #fff; color: #ef4444; border: none; padding: 6px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <span>✂️</span> Break from Set
-                    </button>
+                    <div style="font-size:12px;opacity:0.85;">Parent ${safe(asset.ParentId)} — legacy Unsplit is not a normal operator action.</div>
                 </div>
             ` : ''}
         </div>
@@ -179,7 +175,7 @@ async function renderAsset(data) {
                 ${renderField('Purchase Date', formatDisplayDate(asset.PurchaseDate))}
                 ${renderField('Warranty', asset.WarrantyMonths ? `${asset.WarrantyMonths} Months` : 'N/A')}
                 ${renderField('Value', asset.AssetValue ? `${asset.AssetValue} ${asset.Currency || 'INR'}` : 'N/A')}
-                ${renderField('Department', asset.Department)}
+                ${renderField('Product', asset.product_id || '—')}
             </div>
             ${asset.Remarks ? `
                 <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
@@ -194,6 +190,7 @@ async function renderAsset(data) {
                 </div>
             ` : ''}
         </div>
+        <div id="assetViewProvenance"></div>
     `;
 
     // 2.5 Quantity Tracking (If Applicable)
@@ -457,21 +454,26 @@ async function renderAsset(data) {
 
     if (canSyncToZoho) {
         const zohoId = asset.zoho_product_id;
+        const productId = asset.product_id;
         html += `
             <div class="card" style="border-top: 4px solid #f59e0b;">
                 <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 24px;">🦊</span>
-                    Zoho CRM Integration
+                    LEGACY ZOHO PUBLISH
                 </h3>
-                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
-                    ${zohoId 
-                        ? 'This asset is linked to a Zoho Product. You can update its details and kit breakdown in Zoho.' 
-                        : 'Push this asset to Zoho CRM as a Product. If it is a Box Set, the kit breakdown will be automatically added to the description.'}
+                <p style="font-size: 13px; color: #92400e; margin-bottom: 15px; background:#fffbeb;padding:10px;border-radius:8px;">
+                    Products are published from the Product workspace. Asset-to-Zoho push is no longer a normal operator action.
                 </p>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <button id="btnSyncToZoho" style="background: #f59e0b; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; flex: 1; border: none; cursor: pointer;">
-                        ${zohoId ? '🔄 Update in Zoho' : '📤 Push to Zoho CRM'}
-                    </button>
+                ${productId ? `<p style="font-size:13px;margin-bottom:12px;">Linked AssetEngine Product: <span style="font-family:monospace;">${productId}</span></p>` : ''}
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                    ${productId
+                        ? 'Publish this AssetEngine Product to Zoho from here, or from the Product workspace.'
+                        : (zohoId
+                            ? 'This asset has a historical Zoho Product ID. Prefer updating via the Product workspace when mapped.'
+                            : 'Create and publish an AssetEngine Product instead of pushing this Asset to Zoho.')}
+                </p>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    ${productId ? `<button id="btnPublishProductZoho" style="background: #166534; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; flex: 1; border: none; cursor: pointer;">Publish Product to Zoho</button>` : ''}
                     ${zohoId ? `
                         <a href="${(typeof buildZohoProductUiUrl === 'function' ? buildZohoProductUiUrl(zohoId) : `https://crm.zoho.in/crm/org60021949576/tab/Products/${zohoId}`)}" target="_blank" style="background: #f3f4f6; color: #374151; padding: 10px; border-radius: 8px; text-decoration: none; display: flex; align-items: center; justify-content: center; min-width: 40px;" title="View in Zoho">
                             🔗
@@ -484,6 +486,40 @@ async function renderAsset(data) {
     }
 
     app.innerHTML = html;
+
+    const intakeId = asset.physical_intake_id || asset.physicalIntakeId;
+    const provenanceHost = document.getElementById('assetViewProvenance');
+    if (intakeId && provenanceHost) {
+        fetchWithAuth(`/api/physical-intakes/${encodeURIComponent(intakeId)}`)
+            .then((res) => res.ok ? res.json() : null)
+            .then((payload) => {
+                const intake = payload && (payload.intake || payload);
+                if (!intake || !intake.id) return;
+                const renderFallback = () => {
+                    const typeLabel = String(intake.intakeType || '').replace(/_/g, ' ');
+                    const source = intake.sourceSummary || intake.reason || '—';
+                    const cp = intake.commercialProvenance;
+                    provenanceHost.innerHTML = `
+                    <div class="card">
+                        <h3 style="margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px;">Origin</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px;">
+                            <div><div style="font-size:11px;color:#666;text-transform:uppercase;">Origin</div><div>NON-PROCUREMENT INTAKE</div></div>
+                            <div><div style="font-size:11px;color:#666;text-transform:uppercase;">Reason</div><div>${safe(typeLabel)}</div></div>
+                            <div><div style="font-size:11px;color:#666;text-transform:uppercase;">Source</div><div>${safe(source)}</div></div>
+                            <div><div style="font-size:11px;color:#666;text-transform:uppercase;">Intake</div><div style="font-family:monospace;">${safe(intake.id)}</div></div>
+                            ${cp ? `<div><div style="font-size:11px;color:#666;text-transform:uppercase;">Purchase Order Status</div><div>${safe(cp.poStatusLabel || '')}</div></div>` : ''}
+                        </div>
+                        <p style="margin:10px 0 0;font-size:12px;color:#64748b;">Physical identity is this Asset ID. The Intake ID is an audit reference.</p>
+                    </div>
+                    `;
+                };
+                import('/js/physical-intakes.js?v=7.48').then((mod) => {
+                    provenanceHost.innerHTML = mod.provenanceHtml(intake, { compact: true });
+                    mod.bindPhysicalIntakePoLink(provenanceHost, intake, { onLinked: () => window.location.reload() });
+                }).catch(renderFallback);
+            })
+            .catch(() => {});
+    }
 
     // Initialize Barcode if element exists
     if (asset.client_label && typeof JsBarcode !== 'undefined') {
@@ -552,7 +588,7 @@ async function renderAsset(data) {
                     window.location.href = `/asset/${encodeURIComponent(pId)}`;
                 } else {
                     const err = await response.json();
-                    alert('Unsplit failed: ' + (err.error || 'Unknown error'));
+                    alert('Unsplit failed: ' + (err.error || err.reasonCode || 'Unknown error'));
                 }
             } catch (err) {
                 console.error('[AssetView] Unsplit error:', err);
@@ -643,6 +679,33 @@ This action CANNOT be undone once the 30-day window closes.`;
     }
 
     // Zoho Sync Handler
+    const btnPublishProductZoho = document.getElementById('btnPublishProductZoho');
+    if (btnPublishProductZoho && asset.product_id) {
+        btnPublishProductZoho.onclick = async () => {
+            const statusEl = document.getElementById('zohoSyncStatus');
+            btnPublishProductZoho.disabled = true;
+            try {
+                const response = await fetchWithAuth(`/api/products/${encodeURIComponent(asset.product_id)}/publish`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Publish failed');
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.color = '#065f46';
+                    statusEl.style.background = '#d1fae5';
+                    statusEl.textContent = result.skipped ? 'Product publish skipped (unchanged)' : `Product published ${result.zohoId}`;
+                }
+            } catch (err) {
+                btnPublishProductZoho.disabled = false;
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.color = '#991b1b';
+                    statusEl.style.background = '#fee2e2';
+                    statusEl.textContent = err.message;
+                }
+            }
+        };
+    }
+
     const btnSyncToZoho = document.getElementById('btnSyncToZoho');
     if (btnSyncToZoho) {
         btnSyncToZoho.onclick = async () => {
@@ -685,7 +748,7 @@ This action CANNOT be undone once the 30-day window closes.`;
                 console.error('[ZohoSync] Error:', err);
                 btnSyncToZoho.disabled = false;
                 btnSyncToZoho.style.opacity = '1';
-                btnSyncToZoho.textContent = zohoId ? '🔄 Update in Zoho' : '📤 Push to Zoho CRM';
+                btnSyncToZoho.textContent = zohoId ? 'LEGACY: Update in Zoho' : 'LEGACY: Push to Zoho CRM';
                 if (statusEl) {
                     statusEl.style.color = '#991b1b';
                     statusEl.style.background = '#fee2e2';

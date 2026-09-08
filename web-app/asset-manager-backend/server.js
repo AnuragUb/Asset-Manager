@@ -97,11 +97,30 @@ const emailService = require('./services/emailService');
 const googleSheetsService = require('./services/googleSheetsService');
 const encryptionService = require('./services/encryptionService');
 const zohoService = require('./services/zohoService');
+const kitSetService = require('./services/kitSetService');
+const setService = require('./services/setService');
+const productService = require('./services/productService');
+const breakService = require('./services/breakService');
+const reservationService = require('./services/reservationService');
+const conversionService = require('./services/conversionService');
+const receiptService = require('./services/receiptService');
+const receiptProjectionService = require('./services/receiptProjectionService');
+const procurementService = require('./services/procurementService');
+const physicalIntakeService = require('./services/physicalIntakeService');
+const commercialProvenanceService = require('./services/commercialProvenanceService');
+const legacyBreakContainment = require('./services/legacyBreakContainment');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
 const JWT_EXPIRES_IN_SECONDS = parseInt(process.env.JWT_EXPIRES_IN_SECONDS || '3600', 10);
 const JWT_COOKIE_NAME = 'auth_token';
 const REMEMBER_COOKIE_NAME = 'remember_token';
+const AUTH_REMEMBER_DAYS = parseInt(process.env.AUTH_REMEMBER_DAYS || '30', 10);
+const AUTH_REMEMBER_MAX_AGE_MS = AUTH_REMEMBER_DAYS * 24 * 60 * 60 * 1000;
+const AUTH_INVALID_CREDENTIALS = 'Invalid username or password.';
+const AUTH_FORGOT_NEUTRAL = 'If an account exists for that address, a reset link has been sent.';
+const AUTH_PUBLIC_SIGNUP_ROLE = 'user';
+const AUTH_RATE_LIMIT_DISABLED = /^(1|true|yes)$/i.test(String(process.env.AUTH_RATE_LIMIT_DISABLED || ''));
+const authRateBuckets = new Map();
 const DEFAULT_COMPANY_NAME = 'CINEOM';
 let DEFAULT_COMPANY_ID = null;
 
@@ -140,10 +159,98 @@ function getAuthCookieOptions(req, maxAgeMs) {
   const opts = {
     httpOnly: true,
     secure: shouldUseSecureCookies(req),
-    sameSite: 'lax'
+    sameSite: 'lax',
+    path: '/'
   };
-  if (maxAgeMs !== undefined) opts.maxAge = maxAgeMs;
+  if (maxAgeMs === 0) {
+    opts.maxAge = 0;
+    opts.expires = new Date(0);
+  } else if (maxAgeMs !== undefined && maxAgeMs !== null) {
+    opts.maxAge = maxAgeMs;
+  }
   return opts;
+}
+
+function isProductionAuthEnv() {
+  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+}
+
+function allowAuthDevResetLink(req) {
+  if (isProductionAuthEnv()) return false;
+  const flag = String(process.env.AUTH_EXPOSE_RESET_LINK || '').trim().toLowerCase();
+  if (flag === 'true' || flag === '1' || flag === 'yes') return true;
+  const host = String((req && req.get && req.get('host')) || '');
+  return host.includes('9090') || host.includes('127.0.0.1') || host.includes('localhost');
+}
+
+function isRememberMeRequested(value) {
+  if (value === true) return true;
+  const s = String(value || '').trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'on' || s === 'yes';
+}
+
+function normalizeLoginCategory(category) {
+  const raw = String(category || 'IT').trim();
+  if (raw === 'SERVICE' || raw === 'In-House') return 'SERVICE';
+  if (raw === 'Rental' || raw === 'RENTAL') return 'Rental';
+  if (raw === 'Inventory' || raw === 'INVENTORY') return 'Inventory';
+  return 'IT';
+}
+
+function isAccountDisabled(user) {
+  if (!user) return true;
+  const status = String(user.status || '').trim().toUpperCase();
+  if (status === 'DISABLED' || status === 'INACTIVE') return true;
+  if (user.is_active === false || user.is_active === 0 || user.is_active === 'false') return true;
+  if (user.disabled === true || user.disabled === 1 || user.disabled === 'true') return true;
+  return false;
+}
+
+function consumeAuthRateLimit(key, max, windowMs) {
+  if (AUTH_RATE_LIMIT_DISABLED) return true;
+  const now = Date.now();
+  let bucket = authRateBuckets.get(key);
+  if (!bucket || now - bucket.startedAt > windowMs) {
+    bucket = { startedAt: now, count: 0 };
+  }
+  bucket.count += 1;
+  authRateBuckets.set(key, bucket);
+  if (authRateBuckets.size > 5000) {
+    for (const [k, v] of authRateBuckets) {
+      if (now - v.startedAt > windowMs) authRateBuckets.delete(k);
+    }
+  }
+  return bucket.count <= max;
+}
+
+function authClientKey(req) {
+  return String((req.headers['x-forwarded-for'] || req.ip || req.connection && req.connection.remoteAddress || 'unknown').split(',')[0]).trim();
+}
+
+function requireJsonContentType(req, res, next) {
+  const ct = String(req.headers['content-type'] || '').toLowerCase();
+  if (!ct.includes('application/json')) {
+    return res.status(415).json({ error: 'JSON body required', message: 'JSON body required' });
+  }
+  return next();
+}
+
+function rejectCrossSiteAuth(req, res, next) {
+  const origin = req.get('origin');
+  if (!origin) return next();
+  try {
+    const host = String(req.get('host') || '').toLowerCase();
+    if (new URL(origin).host.toLowerCase() !== host) {
+      return res.status(403).json({ error: 'Forbidden', message: 'Forbidden' });
+    }
+  } catch (err) {
+    return res.status(403).json({ error: 'Forbidden', message: 'Forbidden' });
+  }
+  return next();
+}
+
+function authWriteGuards() {
+  return [rejectCrossSiteAuth, requireJsonContentType];
 }
 
 /** Pathname only — never log OAuth codes/state or other sensitive query values. */
@@ -389,6 +496,7 @@ function rejectInventoryPreviewOnNonTest(res) {
  * ATOMIC PROMOTION LOGIC: Moves an item from 'components' to 'assets'.
  * Ensures the move is permanent, atomic, and logged in history.
  * Prevents duplicates by checking existence in both tables.
+ * INTERNAL: Projects component assignment. Not a public physical-birth path.
  */
 async function promoteToAsset(targetId, targetData, trx, user = 'system') {
     console.log(`[PROMOTION] Starting atomic promotion for ${targetId}`);
@@ -868,7 +976,7 @@ app.post('/api/assets/:id/release-to-store', authenticateJWT, async (req, res) =
 });
 
 
-app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
+app.get('/api/assets/retired', authenticateJWT, requirePermission('view.assets'), async (req, res) => {
     try {
         const assets = await db('assets')
             .where(function() {
@@ -906,7 +1014,7 @@ app.get('/api/assets/retired', authenticateJWT, async (req, res) => {
  * Recovery Center — platform soft-delete browse (multi-entity).
  * Phase 1 lists enabled entity types only (Assets).
  */
-app.get('/api/recovery-center/entity-types', authenticateJWT, async (req, res) => {
+app.get('/api/recovery-center/entity-types', authenticateJWT, requirePermission('view.recovery'), async (req, res) => {
   try {
     res.json({
       entities: recoveryCenter.listEntityTypes({ includeDisabled: String(req.query.all || '') === '1' }),
@@ -918,7 +1026,7 @@ app.get('/api/recovery-center/entity-types', authenticateJWT, async (req, res) =
   }
 });
 
-app.get('/api/recovery-center/items', authenticateJWT, async (req, res) => {
+app.get('/api/recovery-center/items', authenticateJWT, requirePermission('view.recovery'), async (req, res) => {
   try {
     const filters = {
       q: String(req.query.q || req.query.search || '').trim(),
@@ -938,7 +1046,7 @@ app.get('/api/recovery-center/items', authenticateJWT, async (req, res) => {
 });
 
 /** Badge total — sums recoverable counts across all enabled entity types. */
-app.get('/api/recovery-center/summary', authenticateJWT, async (req, res) => {
+app.get('/api/recovery-center/summary', authenticateJWT, requirePermission('view.recovery'), async (req, res) => {
   try {
     const summary = await recoveryCenter.getRecoverableSummary(db);
     res.json(summary);
@@ -974,7 +1082,7 @@ app.post('/api/recovery-center/:entityType/:id/restore', authenticateJWT, async 
 /**
  * Legacy asset recycle-bin endpoint — delegates to Recovery Center (Assets only).
  */
-app.get('/api/assets/recycle-bin', authenticateJWT, async (req, res) => {
+app.get('/api/assets/recycle-bin', authenticateJWT, requirePermission('view.recovery'), async (req, res) => {
   try {
     const items = await recoveryCenter.listDeletedItems(db, {
       entityType: INV_ENTITY_TYPES.ASSET,
@@ -997,7 +1105,7 @@ app.get('/api/assets/recycle-bin', authenticateJWT, async (req, res) => {
 });
 
 // --- Asset History Endpoint ---
-app.get('/api/assets/:id/history', async (req, res) => {
+app.get('/api/assets/:id/history', authenticateJWT, requireAnyPermission('view.assets', 'view.history'), async (req, res) => {
   try {
     const { id } = req.params;
     const history = await db('asset_history').whereRaw('LOWER(assetid) = LOWER(?)', [id]).orderBy('timestamp', 'desc');
@@ -1059,6 +1167,17 @@ async function initializeAuthTables() {
             });
             await db.schema.table('password_resets', table => {
                 table.index('token_hash', 'idx_password_resets_hash');
+            });
+        }
+
+        if (await db.schema.hasTable('users') && !(await db.schema.hasColumn('users', 'status'))) {
+            await db.schema.alterTable('users', (table) => {
+                table.string('status', 16).notNullable().defaultTo('ACTIVE');
+            });
+        }
+        if (await db.schema.hasTable('password_resets') && !(await db.schema.hasColumn('password_resets', 'used_at'))) {
+            await db.schema.alterTable('password_resets', (table) => {
+                table.timestamp('used_at').nullable();
             });
         }
         console.log('Auth tables checked/created in Knex');
@@ -1267,61 +1386,59 @@ app.post('/api/service/customers', authenticateJWT, async (req, res) => {
 
 // --- Auth Endpoints ---
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', ...authWriteGuards(), async (req, res) => {
   const { username, password, category, rememberMe } = req.body || {};
-  console.log(`[AUTH] Login attempt for: ${username} (${category})`);
+  const loginCategory = normalizeLoginCategory(category);
+  const remember = isRememberMeRequested(rememberMe);
+  console.log(`[AUTH] Login attempt for: ${String(username || '').slice(0, 80)} (${loginCategory}) rememberMe=${remember}`);
+
+  if (!consumeAuthRateLimit(`login:${authClientKey(req)}`, 20, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Too many attempts. Please try again later.', message: 'Too many attempts. Please try again later.' });
+  }
 
   if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+    return res.status(400).json({ error: AUTH_INVALID_CREDENTIALS, message: AUTH_INVALID_CREDENTIALS });
   }
   try {
-    const user = await getUserFromDb(username, category);
-    if (!user) {
-      console.log(`[AUTH] User not found: ${username} in category: ${category}`);
-      return res.status(401).json({ error: 'Invalid credentials', message: 'Invalid credentials' });
+    const user = await getUserFromDb(username, loginCategory);
+    if (!user || isAccountDisabled(user)) {
+      return res.status(401).json({ error: AUTH_INVALID_CREDENTIALS, message: AUTH_INVALID_CREDENTIALS });
     }
-    
-    const targetDb = getDbForCategory(category);
+
+    const targetDb = getDbForCategory(loginCategory);
     const stored = user.password || '';
     let passwordMatch = false;
-    
-    console.log(`[AUTH] Comparing for ${username}: Stored type=${typeof stored}, input length=${password.length}`);
-    
-    if (stored && typeof stored === 'string' && (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$'))) {
-      passwordMatch = await bcrypt.compare(password, stored);
-      console.log(`[AUTH] Bcrypt match result for ${username}: ${passwordMatch}`);
+
+    if (passwordService.looksLikeBcrypt(stored)) {
+      passwordMatch = await passwordService.comparePassword(password, stored);
     } else {
-      passwordMatch = (stored === password);
-      console.log(`[AUTH] Plaintext match result for ${username}: ${passwordMatch} (Stored: "${stored}", Input: "${password}")`);
+      passwordMatch = stored === password;
       if (passwordMatch) {
-        console.log(`[AUTH] Plaintext match for ${username}. Upgrading to bcrypt.`);
-        const newHash = await bcrypt.hash(password, 12);
+        console.log(`[AUTH] Upgrading legacy password hash for ${user.username}`);
+        const newHash = await passwordService.hashPassword(password);
         await targetDb('users').whereRaw('LOWER(username) = LOWER(?)', [user.username]).update({ password: newHash });
       }
     }
 
     if (!passwordMatch) {
-      console.log(`[AUTH] Password mismatch for: ${username}`);
-      return res.status(401).json({ error: 'Invalid credentials', message: 'Invalid credentials' });
+      return res.status(401).json({ error: AUTH_INVALID_CREDENTIALS, message: AUTH_INVALID_CREDENTIALS });
     }
 
-    // Generate JWT
-    const { token, claims } = signJwtForUser(user, category);
+    const { token, claims } = signJwtForUser(user, loginCategory);
 
-    // Set JWT Cookie (Secure on production HTTPS / COOKIE_SECURE=true)
-    res.cookie(JWT_COOKIE_NAME, token, getAuthCookieOptions(req, JWT_EXPIRES_IN_SECONDS * 1000));
+    // Session cookie: omitted Max-Age so a browser restart drops auth unless Remember Me is set.
+    res.cookie(JWT_COOKIE_NAME, token, getAuthCookieOptions(req));
 
-    // Handle Remember Me
-    if (rememberMe) {
+    if (remember) {
         const rememberToken = tokenService.generateToken();
-        await tokenService.storeRememberToken(user.username, rememberToken, 30);      
-
-        res.cookie(REMEMBER_COOKIE_NAME, rememberToken, getAuthCookieOptions(req, 30 * 24 * 60 * 60 * 1000));
+        await tokenService.storeRememberToken(user.username, rememberToken, AUTH_REMEMBER_DAYS);
+        res.cookie(REMEMBER_COOKIE_NAME, rememberToken, getAuthCookieOptions(req, AUTH_REMEMBER_MAX_AGE_MS));
+    } else {
+        res.cookie(REMEMBER_COOKIE_NAME, '', getAuthCookieOptions(req, 0));
     }
 
-    console.log(`[AUTH] Login successful for: ${username}`);
+    console.log(`[AUTH] Login successful for: ${user.username}`);
     const permissionsSet = new Set(rolePermissionCache[user.role] || []);
-    // SECURITY: Ensure 'admin' and 'superuser' always have manage.hierarchy
     if (claims.role === 'admin' || claims.role === 'superuser') {
         permissionsSet.add('manage.hierarchy');
     }
@@ -1338,23 +1455,21 @@ app.post('/api/auth/login', async (req, res) => {
         clientId: user.client_id,
         department: user.department,
         permissions: permissions,
-        category
+        category: loginCategory
       }
     });
   } catch (err) {
     console.error('[AUTH] Login error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', message: 'Internal server error' });
   }
 });
 
-app.post('/api/auth/logout', async (req, res) => {
-  // Invalidate Remember Token if present
+app.post('/api/auth/logout', ...authWriteGuards(), async (req, res) => {
   const cookies = parseCookies(req.headers.cookie || '');
   if (cookies[REMEMBER_COOKIE_NAME]) {
       await tokenService.invalidateRememberToken(cookies[REMEMBER_COOKIE_NAME]);
   }
 
-  // Clear Cookies (Secure flag must match how cookies were set)
   res.cookie(JWT_COOKIE_NAME, '', getAuthCookieOptions(req, 0));
   res.cookie(REMEMBER_COOKIE_NAME, '', getAuthCookieOptions(req, 0));
 
@@ -1381,6 +1496,9 @@ app.get('/api/auth/me', async (req, res) => {
                 user = normalizeResult(user);
 
                 if (user) {
+                    if (isAccountDisabled(user)) {
+                        return res.status(401).json({ error: AUTH_INVALID_CREDENTIALS, message: AUTH_INVALID_CREDENTIALS });
+                    }
                     const permissionsSet = new Set(rolePermissionCache[decoded.role] || []);
                     if (decoded.role === 'admin' || decoded.role === 'superuser') {
                         permissionsSet.add('manage.hierarchy');
@@ -1412,10 +1530,13 @@ app.get('/api/auth/me', async (req, res) => {
                 user = normalizeResult(user);
 
                 if (user) {
+                    if (isAccountDisabled(user)) {
+                        return res.status(401).json({ error: AUTH_INVALID_CREDENTIALS, message: AUTH_INVALID_CREDENTIALS });
+                    }
                     const category = 'IT';
                     const { token: newToken, claims } = signJwtForUser(user, category);
                     
-                    res.cookie(JWT_COOKIE_NAME, newToken, getAuthCookieOptions(req, JWT_EXPIRES_IN_SECONDS * 1000));
+                    res.cookie(JWT_COOKIE_NAME, newToken, getAuthCookieOptions(req));
 
                     const permissionsSet = new Set(rolePermissionCache[claims.role] || []);
                     if (claims.role === 'admin' || claims.role === 'superuser') {
@@ -1440,21 +1561,33 @@ app.get('/api/auth/me', async (req, res) => {
             }
         }
 
-        return res.status(401).json({ error: 'Not authenticated' });
+        return res.status(401).json({ error: 'Not authenticated', message: 'Your session has expired. Please sign in again.' });
     } catch (err) {
         console.error('Session check error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-app.post('/api/auth/forgot-password', async (req, res) => {
+app.post('/api/auth/forgot-password', ...authWriteGuards(), async (req, res) => {
     try {
-        const { email } = req.body;
-        const needle = String(email || '').trim();
+        if (!consumeAuthRateLimit(`forgot:${authClientKey(req)}`, 8, 15 * 60 * 1000)) {
+            return res.status(429).json({ ok: false, message: 'Too many attempts. Please try again later.' });
+        }
+
+        const smtpReady = emailService.isConfigured();
+        const devFallback = allowAuthDevResetLink(req);
+        if (!smtpReady && !devFallback) {
+            console.error('FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED');
+            return res.status(503).json({
+                ok: false,
+                message: 'Password reset is temporarily unavailable.',
+                reasonCode: 'FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED'
+            });
+        }
+
+        const needle = String((req.body && (req.body.email || req.body.username)) || '').trim();
         let user = null;
         if (needle) {
-            // Lookup by username OR stored users.email (grouped OR to avoid SQL precedence bugs).
-            // Reset delivery uses stored users.email only — never the typed needle as a mail target.
             user = await db('users')
                 .where(function () {
                     this.whereRaw('LOWER(username) = LOWER(?)', [needle])
@@ -1464,8 +1597,14 @@ app.post('/api/auth/forgot-password', async (req, res) => {
             user = normalizeResult(user);
         }
 
-        // Anti-enumeration: same outer response shape whether or not the account exists.
-        if (!user) return res.json({ ok: true, message: 'If an account exists, a reset email has been sent.' });
+        const payload = { ok: true, message: AUTH_FORGOT_NEUTRAL };
+        if (!smtpReady) {
+            payload.reasonCode = 'FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED';
+        }
+
+        if (!user || isAccountDisabled(user)) {
+            return res.json(payload);
+        }
 
         const storedEmail = String(user.email || '').trim();
         const toAddress = /@/.test(storedEmail) ? storedEmail : null;
@@ -1478,39 +1617,25 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         }
 
         const host = req.get('host');
-        const protocol = req.protocol;
+        const protocol = req.protocol === 'https' || String(req.get('x-forwarded-proto') || '').includes('https') ? 'https' : req.protocol;
         const resetLink = `${protocol}://${host}/#reset-password?token=${resetToken}`;
 
         let emailSent = false;
-        if (toAddress) {
+        if (smtpReady && toAddress) {
             try {
                 emailSent = await emailService.sendPasswordResetEmail(toAddress, resetLink);
             } catch (e) {
                 console.error('[AUTH] sendPasswordResetEmail threw:', e);
                 emailSent = false;
             }
+        } else if (!smtpReady) {
+            console.error('FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED');
         } else {
-            console.warn('[AUTH] Password reset requested but user has no stored email:', user.username);
+            console.warn('[AUTH] Password reset requested but user has no stored email');
         }
 
-        const isDevOrTestEnv =
-            (process.env.NODE_ENV !== 'production') ||
-            host.includes('9090') ||
-            host.includes('8080') ||
-            host.includes('127.0.0.1') ||
-            host.includes('localhost') ||
-            /^192\.168\./.test(host);
-
-        // Dev/test escape hatch when SMTP fails or email is missing — never expose in true production hosts.
-        const exposeLink = (!emailSent && isDevOrTestEnv) ? resetLink : null;
-        const payload = { ok: true };
-        if (exposeLink) {
-            payload.message = toAddress
-                ? 'Email could not be sent. Use this reset link (expires in 60 minutes).'
-                : 'No email on file for this account. Use this reset link (expires in 60 minutes), then set users.email.';
-            payload.devResetLink = exposeLink;
-        } else {
-            payload.message = 'If an account exists, a reset email has been sent.';
+        if (devFallback && !emailSent) {
+            payload.devResetLink = resetLink;
         }
         res.json(payload);
     } catch (err) {
@@ -1519,22 +1644,29 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     }
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
+app.post('/api/auth/reset-password', ...authWriteGuards(), async (req, res) => {
     try {
-        const { token, newPassword } = req.body;
-        if (!newPassword || String(newPassword).length < 6) {
-            return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+        const { token, newPassword, confirmPassword } = req.body || {};
+        const passwordError = passwordService.validatePassword(newPassword, confirmPassword);
+        if (passwordError) {
+            return res.status(400).json({ error: passwordError, message: passwordError });
         }
-        const username = await tokenService.verifyResetToken(token);
-        if (!username) return res.status(400).json({ error: 'Invalid or expired reset token' });
-        const passwordHash = await bcrypt.hash(newPassword, 12);
+        const inspected = await tokenService.inspectResetToken(token);
+        if (inspected.status === 'expired') {
+            return res.status(400).json({ error: 'This password reset link has expired.', message: 'This password reset link has expired.' });
+        }
+        if (inspected.status === 'used' || inspected.status === 'invalid' || !inspected.username) {
+            return res.status(400).json({ error: 'This password reset link is no longer valid.', message: 'This password reset link is no longer valid.' });
+        }
+        const username = inspected.username;
+        const passwordHash = await passwordService.hashPassword(newPassword);
         await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).update({ password: passwordHash });
         await tokenService.invalidateAllUserTokens(username);
         await tokenService.consumeResetToken(token);
-        res.json({ ok: true, message: 'Password reset successful' });
+        res.json({ ok: true, message: 'Your password has been reset. Please sign in.' });
     } catch (err) {
         console.error('Reset password error:', err);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', message: 'Internal server error' });
     }
 });
 
@@ -1598,9 +1730,9 @@ function authenticateJWT(req, res, next) {
   } catch (err) {
     console.log(`[AUTH] Token verification failed for ${req.path}: ${err.message}`);
     if (err && err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
+      return res.status(401).json({ error: 'Token expired', message: 'Your session has expired. Please sign in again.' });
     }
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token', message: 'Invalid token' });
   }
 }
 
@@ -1667,6 +1799,19 @@ function requirePermission(permissionKey) {
   };
 }
 
+function requireAnyPermission() {
+  const keys = Array.from(arguments);
+  return function (req, res, next) {
+    if (!req.user || !req.user.role) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (keys.some((key) => hasPermission(req.user.role, key))) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Forbidden' });
+  };
+}
+
 // --- Initialize Permissions Cache ---
 loadRolePermissionsIntoCache().then(() => {
   console.log('[AUTH] Permissions cache initialized from PostgreSQL');
@@ -1693,9 +1838,15 @@ function getRequestActor(req) {
 }
 
 async function getUserFromDb(username, category = 'IT') {
-  if (!username) return null
+  const needle = String(username || '').trim();
+  if (!needle) return null
   const targetDb = getDbForCategory(category);
-  const user = await targetDb('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
+  const hasEmail = await targetDb.schema.hasColumn('users', 'email');
+  let query = targetDb('users').whereRaw('LOWER(username) = LOWER(?)', [needle]);
+  if (hasEmail) {
+    query = query.orWhereRaw(`LOWER(COALESCE(email, '')) = LOWER(?)`, [needle]);
+  }
+  const user = await query.first();
   return normalizeResult(user);
 }
 
@@ -2402,7 +2553,7 @@ async function checkWarrantyStatuses() {
 cron.schedule('0 9 * * *', checkWarrantyStatuses);
 
 // API Endpoints for Email Settings
-app.get('/api/settings/email', (req, res) => {
+app.get('/api/settings/email', authenticateJWT, requirePermission('view.settings'), (req, res) => {
     const dynamic = readDynamic();
     const defaults = {
         enabled: false,
@@ -2423,7 +2574,7 @@ app.get('/api/settings/email', (req, res) => {
     res.json(safeSettings);
 });
 
-app.post('/api/settings/email', (req, res) => {
+app.post('/api/settings/email', authenticateJWT, requirePermission('view.settings'), (req, res) => {
     const dynamic = readDynamic();
     const newSettings = req.body;
     
@@ -2439,7 +2590,7 @@ app.post('/api/settings/email', (req, res) => {
 });
 
 // Test Email Endpoint
-app.post('/api/settings/email/test', async (req, res) => {
+app.post('/api/settings/email/test', authenticateJWT, requirePermission('view.settings'), async (req, res) => {
     const settings = req.body;
     const dynamic = readDynamic();
     
@@ -2482,7 +2633,7 @@ app.post('/api/settings/email/test', async (req, res) => {
 });
 
 // Run Warranty Check Now Endpoint
-app.post('/api/settings/email/run-check', async (req, res) => {
+app.post('/api/settings/email/run-check', authenticateJWT, requirePermission('view.settings'), async (req, res) => {
     try {
         await checkWarrantyStatuses();
         res.json({ success: true, message: 'Warranty status check completed' });
@@ -2694,24 +2845,33 @@ app.get('/api/public/assets/:label', async (req, res) => {
 // --- ZOHO CRM INTEGRATION ENDPOINTS ---
 
 /**
- * Pushes a Superset (Box Set) to Zoho CRM as a Product.
- * Returns the Zoho Product ID and sync status.
+ * LEGACY: Pushes an Asset to Zoho CRM as a Product.
+ * Contained in Phase 8. Prefer POST /api/products/:id/publish.
+ * Not used by Product UI or Set UI.
  */
-app.post('/api/zoho/sync-asset/:id', authenticateJWT, async (req, res) => {
+app.post('/api/zoho/sync-asset/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendLifecycleContained(
+        res,
+        410,
+        'LEGACY_ASSET_ZOHO_PUSH_CONTAINED',
+        'Products are published from the Product workspace. Asset-to-Zoho push is disabled.'
+    );
     const assetId = req.params.id;
-    console.log(`[ZOHO-SYNC] Triggering sync for asset: ${assetId}`);
+    console.log(`[ZOHO-SYNC] LEGACY asset push for: ${assetId}`);
 
     try {
         const result = await zohoService.syncAssetToZoho(assetId);
         res.json({
             success: true,
-            message: `Successfully ${result.mode}d record in Zoho`,
-            zohoId: result.zohoId
+            legacy: true,
+            message: `LEGACY: Successfully ${result.mode}d record in Zoho`,
+            zohoId: result.zohoId != null ? String(result.zohoId) : null
         });
     } catch (error) {
         console.error(`[ZOHO-SYNC] Error syncing asset ${assetId}:`, error.message);
         res.status(500).json({
             success: false,
+            legacy: true,
             error: error.message || 'Failed to sync with Zoho'
         });
     }
@@ -2725,6 +2885,9 @@ app.post('/api/zoho/sync-deals', authenticateJWT, async (req, res) => {
 
     try {
         const result = await zohoService.syncDealsFromZoho();
+        if (!result || typeof result.syncCount !== 'number') {
+            throw new Error('Zoho deal sync returned an incomplete result');
+        }
         res.json({
             success: true,
             message: `Successfully synced ${result.syncCount} new deals from Zoho.`,
@@ -2740,13 +2903,17 @@ app.post('/api/zoho/sync-deals', authenticateJWT, async (req, res) => {
 });
 
 /**
- * Pulls Products from Zoho CRM and syncs them to the local Assets catalog.
+ * Pulls Products from Zoho CRM into zoho_catalog only.
+ * Does not create AssetEngine Products.
  */
 app.post('/api/zoho/sync-products', authenticateJWT, async (req, res) => {
     console.log('[ZOHO-SYNC] Triggering Products sync from Zoho...');
 
     try {
         const result = await zohoService.syncProductsFromZoho();
+        if (!result || typeof result.syncCount !== 'number') {
+            throw new Error('Zoho product sync returned an incomplete result');
+        }
         res.json({
             success: true,
             message: `Successfully synced ${result.syncCount} products from Zoho.`,
@@ -2764,12 +2931,1115 @@ app.post('/api/zoho/sync-products', authenticateJWT, async (req, res) => {
 /**
  * Returns the non-native Zoho Catalog (Reference only)
  */
-app.get('/api/zoho/catalog', authenticateJWT, async (req, res) => {
+app.get('/api/zoho/catalog', authenticateJWT, requirePermission('view.products'), async (req, res) => {
     try {
+        const unlinked = req.query.unlinked === '1' || String(req.query.unlinked || '').toLowerCase() === 'true';
+        if (unlinked) {
+            const catalog = await productService.listUnlinkedCatalog();
+            return res.json({ success: true, catalog });
+        }
         const catalog = await db('zoho_catalog').orderBy('product_name', 'asc');
         res.json({ success: true, catalog });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/zoho/products/fields', authenticateJWT, authorizeRoles('admin', 'superuser'), async (req, res) => {
+    try {
+        const result = await productService.inspectProductFields();
+        res.json({ success: true, ...result });
+    } catch (err) {
+        const code = err.statusCode || 502;
+        res.status(code).json({ success: false, error: err.message, reasonCode: err.reasonCode || err.code });
+    }
+});
+
+app.get('/api/zoho/legacy-asset-product-report', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const rows = await productService.listLegacyAssetZohoReport();
+        res.json({ success: true, rows });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+function sendKitSetError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[managed-sets]', err.message);
+    return res.status(code).json({ success: false, error: err.message });
+}
+
+app.get('/api/managed-sets', authenticateJWT, async (req, res) => {
+    try {
+        const sets = await kitSetService.listSets({
+            q: req.query.q,
+            composition: req.query.composition || req.query.set_type,
+            status: req.query.status
+        });
+        res.json({ success: true, sets });
+    } catch (err) {
+        sendKitSetError(res, err);
+    }
+});
+
+app.get('/api/managed-sets/eligible-assets', authenticateJWT, async (req, res) => {
+    try {
+        const assets = await kitSetService.listEligibleAssets({ q: req.query.q, limit: req.query.limit });
+        res.json({ success: true, assets });
+    } catch (err) {
+        sendKitSetError(res, err);
+    }
+});
+
+app.get('/api/managed-sets/eligible-inventory', authenticateJWT, async (req, res) => {
+    try {
+        const items = await kitSetService.listEligibleInventory({ q: req.query.q, limit: req.query.limit });
+        res.json({ success: true, items });
+    } catch (err) {
+        sendKitSetError(res, err);
+    }
+});
+
+app.get('/api/managed-sets/:id', authenticateJWT, async (req, res) => {
+    try {
+        const set = await kitSetService.getSet(req.params.id);
+        res.json({ success: true, set });
+    } catch (err) {
+        sendKitSetError(res, err);
+    }
+});
+
+app.post('/api/managed-sets', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+app.put('/api/managed-sets/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+app.post('/api/managed-sets/:id/components', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+app.delete('/api/managed-sets/:id/components/:componentId', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+app.post('/api/managed-sets/:id/archive', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+app.post('/api/managed-sets/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendManagedSetWriteDisabled(res);
+});
+
+function sendManagedSetWriteDisabled(res) {
+    return res.status(410).json({
+        success: false,
+        error: 'Legacy Managed Set writes are disabled. Use /api/sets.',
+        reasonCode: 'LEGACY_MANAGED_SET_WRITES_DISABLED'
+    });
+}
+
+/**
+ * P0 physical-creation authority (containment, not a redesign).
+ *
+ * PATH                         STATUS
+ * ReceiptService               CANONICAL
+ * BreakService                 CANONICAL
+ * ConversionService            CANONICAL
+ * ReservationService           NO PHYSICAL CREATE
+ * SetService                   NO DIRECT PHYSICAL CREATE
+ * Inventory POST               CONTAINED
+ * Asset POST / bulk            CONTAINED
+ * Catalog Instantiate          CONTAINED (same Inventory POST)
+ * Make Set                     CONTAINED
+ * Legacy Split (quantity)      DELEGATE to Break only (no auto-assign / project)
+ * Legacy Split (serial)        CONTAINED
+ * Legacy Unsplit               CONTAINED (Phase 5 classification)
+ * Make Permanent               CONTAINED
+ * Asset → Zoho                 CONTAINED
+ * Sheets-sync new insert       CONTAINED
+ */
+function sendLifecycleContained(res, statusCode, reasonCode, error) {
+    return res.status(statusCode).json({
+        success: false,
+        error,
+        reasonCode
+    });
+}
+
+function sendSetError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[sets]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function setActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+function setIdempotencyKey(req) {
+    const body = req.body || {};
+    return body.idempotencyKey || body.idempotency_key || req.get('Idempotency-Key');
+}
+
+app.get('/api/sets', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await setService.listSets({
+            q: req.query.q,
+            status: req.query.status,
+            composition: req.query.composition,
+            completeness: req.query.completeness,
+            engine: req.query.engine
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const set = await setService.createSet({
+            name: body.name,
+            description: body.description,
+            setCode: body.set_code || body.setCode,
+            requirements: body.requirements,
+            actor: setActor(req)
+        });
+        res.json({ success: true, set });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/absorb', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        await setService.absorb();
+        res.status(501).json({ success: false, error: 'ABSORB is not implemented in Phase 6', reasonCode: 'NOT_IMPLEMENTED' });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/commercialize/preview', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const preview = await setService.previewCommercialize(req.params.id);
+        res.json({ success: true, preview });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/commercialize', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await setService.commercializeSet(req.params.id, req.body || {}, setActor(req));
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/requirements', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await setService.listRequirements(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/allocations', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await setService.allocate(req.params.id, {
+            requirementId: body.requirementId || body.requirement_id,
+            resourceType: body.resourceType || body.resource_type,
+            resourceId: body.resourceId || body.resource_id || body.asset_id || body.inventory_item_id,
+            quantity: body.quantity,
+            reason: body.reason,
+            actor: setActor(req),
+            idempotencyKey: setIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.delete('/api/sets/:id/allocations/:allocationId', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await setService.deallocate(req.params.id, req.params.allocationId, {
+            reason: (req.body || {}).reason,
+            actor: setActor(req),
+            idempotencyKey: setIdempotencyKey(req) || req.query.idempotencyKey
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/allocations/:allocationId/replace', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await setService.replaceAllocation(req.params.id, req.params.allocationId, {
+            resourceType: body.resourceType || body.resource_type,
+            resourceId: body.resourceId || body.resource_id || body.asset_id || body.inventory_item_id,
+            quantity: body.quantity,
+            reason: body.reason,
+            actor: setActor(req),
+            idempotencyKey: setIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/completeness', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await setService.getCompleteness(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/disband', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await setService.disband(req.params.id, {
+            reason: (req.body || {}).reason,
+            actor: setActor(req),
+            idempotencyKey: setIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/archive', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await setService.archiveSet(req.params.id, {
+            reason: (req.body || {}).reason,
+            actor: setActor(req),
+            idempotencyKey: setIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/history', authenticateJWT, requireAnyPermission('view.sets', 'view.history'), async (req, res) => {
+    try {
+        const result = await setService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/eligible-assets', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await setService.listEligibleAssets(req.params.id, {
+            requirementId: req.query.requirementId || req.query.requirement_id,
+            q: req.query.q,
+            limit: req.query.limit
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/eligible-inventory', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await setService.listEligibleInventory(req.params.id, {
+            requirementId: req.query.requirementId || req.query.requirement_id,
+            q: req.query.q,
+            limit: req.query.limit
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.post('/api/sets/:id/disassemble', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        await setService.disassemble();
+        res.status(501).json({ success: false, error: 'DISASSEMBLE is not implemented in Phase 6', reasonCode: 'NOT_IMPLEMENTED' });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.put('/api/sets/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const set = await setService.updateSet(req.params.id, req.body || {}, setActor(req));
+        res.json({ success: true, set });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id/procurement-need', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const result = await procurementService.getSetProcurementNeed(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+app.get('/api/sets/:id', authenticateJWT, requirePermission('view.sets'), async (req, res) => {
+    try {
+        const set = await setService.getSet(req.params.id);
+        res.json({ success: true, set });
+    } catch (err) {
+        sendSetError(res, err);
+    }
+});
+
+function sendProductError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[products]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function productActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+app.get('/api/products', authenticateJWT, requirePermission('view.products'), async (req, res) => {
+    try {
+        const result = await productService.listProducts({
+            q: req.query.q,
+            status: req.query.status,
+            origin: req.query.origin,
+            limit: req.query.limit,
+            offset: req.query.offset
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/from-catalog', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await productService.createProductFromCatalog(
+            (req.body || {}).external_id || (req.body || {}).zoho_product_id,
+            productActor(req)
+        );
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/publish', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await productService.publishProduct(req.params.id, productActor(req));
+        res.json({
+            success: true,
+            ...result,
+            zohoId: result.zohoId != null ? String(result.zohoId) : null
+        });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/refresh-zoho', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await productService.refreshProductFromZoho(req.params.id, productActor(req));
+        res.json({ success: true, ...result, zohoId: result.zohoId != null ? String(result.zohoId) : null });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.get('/api/products/:id/conflicts', authenticateJWT, requirePermission('view.products'), async (req, res) => {
+    try {
+        const conflicts = await productService.listNameConflicts(req.params.id);
+        res.json({ success: true, conflicts });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/conflicts/:conflictId/resolve', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const resolution = (req.body || {}).resolution;
+        const result = await productService.resolveNameConflict(
+            req.params.id,
+            req.params.conflictId,
+            resolution,
+            productActor(req)
+        );
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.get('/api/products/:id/external-refs', authenticateJWT, requirePermission('view.products'), async (req, res) => {
+    try {
+        const refs = await productService.listExternalRefs(req.params.id);
+        res.json({ success: true, refs });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/external-refs', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const ref = await productService.createExternalRef(req.params.id, req.body || {}, productActor(req));
+        res.json({ success: true, ref });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/archive', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const product = await productService.archiveProduct(req.params.id, productActor(req));
+        res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/restore', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const product = await productService.restoreProduct(req.params.id, productActor(req));
+        res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.get('/api/products/:id', authenticateJWT, requirePermission('view.products'), async (req, res) => {
+    try {
+        const product = await productService.getProduct(req.params.id);
+        res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const product = await productService.createProduct(req.body || {}, productActor(req));
+        res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.put('/api/products/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const allowed = ['name', 'description', 'make', 'model', 'manufacturer', 'hsn_code', 'unit', 'product_code', 'price'];
+        const body = req.body || {};
+        const patch = {};
+        for (const key of allowed) {
+            if (Object.prototype.hasOwnProperty.call(body, key)) patch[key] = body[key];
+        }
+        const product = await productService.updateProduct(req.params.id, patch, productActor(req));
+        res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+function sendBreakError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[break]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function sendLegacyBreakError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[legacy-break]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function resolveRequestHost(req) {
+    return req.get('host')
+        || process.env.PUBLIC_HOST
+        || process.env.STATIC_IP
+        || `${getLocalIP()}:${process.env.PORT || 8080}`;
+}
+
+app.post('/api/break', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await breakService.breakQuantity({
+            holdingType: body.holdingType || body.holding_type,
+            parentId: body.parentId || body.parent_id,
+            mode: body.mode || 'BREAK',
+            amount: body.amount,
+            children: body.children,
+            actor: productActor(req),
+            host: resolveRequestHost(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendBreakError(res, err);
+    }
+});
+
+app.post('/api/break/inactivate', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await breakService.inactivateChild({
+            holdingType: body.holdingType || body.holding_type,
+            childId: body.childId || body.child_id,
+            actor: productActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendBreakError(res, err);
+    }
+});
+
+app.get('/api/break/tree/:holdingType/:id', authenticateJWT, async (req, res) => {
+    try {
+        const tree = await breakService.getLineageTree(req.params.holdingType, req.params.id);
+        res.json({ success: true, ...tree });
+    } catch (err) {
+        sendBreakError(res, err);
+    }
+});
+
+function sendReservationError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[reservations]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+app.post('/api/reservations', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await reservationService.reserve({
+            resourceType: body.resourceType || body.resource_type,
+            resourceId: body.resourceId || body.resource_id,
+            quantity: body.quantity,
+            ownerType: body.ownerType || body.owner_type,
+            ownerId: body.ownerId || body.owner_id,
+            reason: body.reason,
+            reasonCode: body.reasonCode || body.reason_code,
+            reference: body.reference,
+            idempotencyKey: body.idempotencyKey || body.idempotency_key || req.get('Idempotency-Key'),
+            actor: productActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+app.post('/api/reservations/:id/release', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await reservationService.release({
+            id: req.params.id,
+            quantity: body.quantity,
+            reason: body.reason,
+            reasonCode: body.reasonCode || body.reason_code,
+            actor: productActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+app.post('/api/reservations/:id/transfer', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await reservationService.transfer({
+            id: req.params.id,
+            ownerType: body.ownerType || body.owner_type,
+            ownerId: body.ownerId || body.owner_id,
+            reason: body.reason,
+            reasonCode: body.reasonCode || body.reason_code,
+            actor: productActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+app.get('/api/reservations/resource/:resourceType/:resourceId', authenticateJWT, requirePermission('view.reservations'), async (req, res) => {
+    try {
+        const result = await reservationService.listForResource(req.params.resourceType, req.params.resourceId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+app.get('/api/reservations/:id', authenticateJWT, requirePermission('view.reservations'), async (req, res) => {
+    try {
+        const result = await reservationService.getById(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+app.get('/api/reservations', authenticateJWT, requirePermission('view.reservations'), async (req, res) => {
+    try {
+        const result = await reservationService.list(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReservationError(res, err);
+    }
+});
+
+function sendConversionError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[conversions]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+app.post('/api/conversions', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await conversionService.createConversion({
+            direction: body.direction,
+            sourceId: body.sourceId || body.source_id,
+            quantity: body.quantity,
+            granularity: body.granularity,
+            condition: body.condition,
+            reason: body.reason,
+            reasonCode: body.reasonCode || body.reason_code,
+            reference: body.reference,
+            idempotencyKey: body.idempotencyKey || body.idempotency_key || req.get('Idempotency-Key'),
+            actor: productActor(req),
+            host: resolveRequestHost(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendConversionError(res, err);
+    }
+});
+
+app.get('/api/conversions/resource/:resourceType/:resourceId', authenticateJWT, async (req, res) => {
+    try {
+        const result = await conversionService.listForResource(req.params.resourceType, req.params.resourceId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendConversionError(res, err);
+    }
+});
+
+app.get('/api/conversions/:id', authenticateJWT, async (req, res) => {
+    try {
+        const result = await conversionService.getById(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendConversionError(res, err);
+    }
+});
+
+app.get('/api/conversions', authenticateJWT, async (req, res) => {
+    try {
+        const result = await conversionService.list(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendConversionError(res, err);
+    }
+});
+
+function sendReceiptError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[receipt-notes]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function receiptActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+function receiptIdempotencyKey(req) {
+    const body = req.body || {};
+    return body.idempotencyKey || body.idempotency_key || req.get('Idempotency-Key');
+}
+
+app.get('/api/purchase-orders/:id/receipt-balance', authenticateJWT, async (req, res) => {
+    try {
+        const result = await receiptService.getPoBalance(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+function sendProcurementError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[procurement]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function procurementActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+app.get('/api/procurement/scope', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await procurementService.probeZohoScope();
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/purchase-orders/preview-zoho', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const zohoPoId = req.query.zohoPoId || req.query.zoho_po_id || req.query.external_id;
+        const result = await procurementService.previewPurchaseOrder(zohoPoId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/procurement/pos', authenticateJWT, requirePermission('view.purchase_orders'), async (req, res) => {
+    try {
+        const result = await procurementService.listUnified({
+            q: req.query.q,
+            status: req.query.status,
+            limit: req.query.limit
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/procurement/pos/:id/history', authenticateJWT, requireAnyPermission('view.purchase_orders', 'view.history'), async (req, res) => {
+    try {
+        const result = await procurementService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/procurement/pos/:id', authenticateJWT, requirePermission('view.purchase_orders'), async (req, res) => {
+    try {
+        const po = await procurementService.getPurchaseOrder(req.params.id);
+        res.json({ success: true, purchaseOrder: po });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.post('/api/purchase-orders/import-zoho', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const zohoPoId = (req.body || {}).zohoPoId || (req.body || {}).zoho_po_id || (req.body || {}).external_id;
+        const result = await procurementService.importPurchaseOrder(zohoPoId, procurementActor(req));
+        res.json({
+            success: true,
+            ...result,
+            zohoPoId: result.po && result.po.zohoPoId != null ? String(result.po.zohoPoId) : null
+        });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.post('/api/procurement/pos/import', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const zohoPoId = (req.body || {}).zohoPoId || (req.body || {}).zoho_po_id || (req.body || {}).external_id;
+        const result = await procurementService.importPurchaseOrder(zohoPoId, procurementActor(req));
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.post('/api/procurement/pos/:id/refresh', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await procurementService.refreshPurchaseOrder(req.params.id, procurementActor(req));
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.post('/api/purchase-orders/:id/refresh-zoho', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await procurementService.refreshPurchaseOrder(req.params.id, procurementActor(req));
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/receipt-notes', authenticateJWT, requirePermission('view.receipt_notes'), async (req, res) => {
+    try {
+        const result = await receiptService.listReceiptNotes(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.post('/api/receipt-notes', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await receiptService.createReceiptNote({
+            ...body,
+            actor: receiptActor(req),
+            idempotencyKey: receiptIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.get('/api/receipt-notes/:id/history', authenticateJWT, requireAnyPermission('view.receipt_notes', 'view.history'), async (req, res) => {
+    try {
+        const result = await receiptService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.post('/api/receipt-notes/:id/post', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await receiptService.postReceipt(req.params.id, {
+            ...body,
+            actor: receiptActor(req),
+            host: resolveRequestHost(req),
+            idempotencyKey: receiptIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.post('/api/receipt-notes/:id/cancel', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await receiptService.cancelReceipt(req.params.id, {
+            reason: body.reason,
+            actor: receiptActor(req),
+            idempotencyKey: receiptIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.post('/api/receipt-notes/:id/reverse', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await receiptService.reverseReceipt(req.params.id, {
+            reason: body.reason,
+            actor: receiptActor(req),
+            idempotencyKey: receiptIdempotencyKey(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.post('/api/receipt-notes/:id/project-to-zoho', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await receiptProjectionService.projectToZoho(req.params.id, receiptActor(req));
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.put('/api/receipt-notes/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await receiptService.updateReceiptNote(req.params.id, {
+            ...(req.body || {}),
+            actor: receiptActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+app.get('/api/receipt-notes/:id', authenticateJWT, requirePermission('view.receipt_notes'), async (req, res) => {
+    try {
+        const result = await receiptService.getReceiptNote(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendReceiptError(res, err);
+    }
+});
+
+function sendPhysicalIntakeError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[physical-intakes]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function physicalIntakeActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+function physicalIntakeIdempotencyKey(req) {
+    const body = req.body || {};
+    return body.idempotencyKey || body.idempotency_key || req.get('Idempotency-Key');
+}
+
+app.get('/api/physical-intakes', authenticateJWT, requirePermission('view.physical_intake'), async (req, res) => {
+    try {
+        const result = await physicalIntakeService.listPhysicalIntakes(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/linkable-pos', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await commercialProvenanceService.listLinkablePurchaseOrders(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/linkable-pos/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const purchaseOrder = await commercialProvenanceService.getLinkablePurchaseOrder(req.params.id);
+        res.json({ success: true, purchaseOrder });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/provenance', authenticateJWT, requirePermission('view.physical_intake'), async (req, res) => {
+    try {
+        const result = await commercialProvenanceService.listByState(req.query || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/holdings/:resourceType/:resourceId/provenance', authenticateJWT, requirePermission('view.physical_intake'), async (req, res) => {
+    try {
+        const commercialProvenance = await commercialProvenanceService.getHoldingProvenance(req.params.resourceType, req.params.resourceId);
+        const intake = await physicalIntakeService.getProvenanceForHolding(req.params.resourceType, req.params.resourceId);
+        res.json({ success: true, commercialProvenance, intake });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.post('/api/physical-intakes/link-po', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const commercialProvenance = await commercialProvenanceService.linkPurchaseOrder({
+            ...body,
+            actor: physicalIntakeActor(req)
+        });
+        await invalidateAssetsCache();
+        res.json({ success: true, commercialProvenance });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.post('/api/physical-intakes', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await physicalIntakeService.createPhysicalIntake({
+            ...body,
+            actor: physicalIntakeActor(req),
+            approvingActor: physicalIntakeActor(req),
+            host: resolveRequestHost(req),
+            idempotencyKey: physicalIntakeIdempotencyKey(req)
+        });
+        await invalidateAssetsCache();
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/:id/history', authenticateJWT, requireAnyPermission('view.physical_intake', 'view.history'), async (req, res) => {
+    try {
+        const result = await physicalIntakeService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/physical-intakes/:id', authenticateJWT, requirePermission('view.physical_intake'), async (req, res) => {
+    try {
+        const result = await physicalIntakeService.getPhysicalIntake(req.params.id);
+        res.json({ success: true, intake: result });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+
+app.get('/api/zoho/accounts', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
+    try {
+        const result = await zohoService.listAccounts({ q: req.query.q });
+        res.json({ success: true, accounts: result.accounts, totalCached: result.totalCached });
+    } catch (err) {
+        const code = err.statusCode || 502;
+        res.status(code).json({
+            success: false,
+            error: err.message,
+            reasonCode: err.reasonCode || err.code || 'ZOHO_ACCOUNTS_ERROR'
+        });
     }
 });
 
@@ -2896,7 +4166,7 @@ app.post('/api/zoho/oauth/disconnect', authenticateJWT, authorizeRoles('admin', 
     }
 });
 
-app.get('/api/assets', authenticateJWT, async (req, res) => {
+app.get('/api/assets', authenticateJWT, requirePermission('view.assets'), async (req, res) => {
   try {
     const { projectId, all } = req.query;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
@@ -2909,6 +4179,11 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
     const cachedData = await cache.get(cacheKey);
     if (cachedData) {
         console.log(`[CACHE] Serving assets from cache for key: ${cacheKey}`);
+        if (cachedData.data) {
+            cachedData.data = await kitSetService.attachManagedSetToAssets(cachedData.data);
+        } else if (Array.isArray(cachedData)) {
+            return res.json(await kitSetService.attachManagedSetToAssets(cachedData));
+        }
         return res.json(cachedData);
     }
 
@@ -3070,7 +4345,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
           )
           .orderBy('a.lastupdated', 'desc');
         
-        const processed = await processAssets(assets);
+        const processed = await kitSetService.attachManagedSetToAssets(await processAssets(assets));
         return res.json(processed);
     }
 
@@ -3196,7 +4471,7 @@ app.get('/api/assets', authenticateJWT, async (req, res) => {
       .limit(size)
       .offset(offset);
 
-    const processedAssets = await processAssets(assets);
+    const processedAssets = await kitSetService.attachManagedSetToAssets(await processAssets(assets));
 
     const response = {
         last_page: last_page,
@@ -3425,6 +4700,13 @@ app.get('/api/asset-details/:id', async (req, res) => {
     }
 
     console.log(`[API] Successfully fetched details for ${id}`);
+    if (normalizedAsset.isInventory) {
+      const wrapped = await kitSetService.attachManagedSetToInventory([normalizedAsset]);
+      Object.assign(normalizedAsset, wrapped[0]);
+    } else {
+      const wrapped = await kitSetService.attachManagedSetToAssets([normalizedAsset]);
+      Object.assign(normalizedAsset, wrapped[0]);
+    }
     const payload = { 
       asset: normalizedAsset, 
       children: children || [], 
@@ -3447,7 +4729,7 @@ app.get('/api/asset-details/:id', async (req, res) => {
 const QRCode = require('qrcode')
 
 // Tally Settings Endpoints
-app.get('/api/settings/tally', (req, res) => {
+app.get('/api/settings/tally', authenticateJWT, requirePermission('view.settings'), (req, res) => {
     try {
         const config = getTallyConfig();
         res.json(config);
@@ -3456,7 +4738,7 @@ app.get('/api/settings/tally', (req, res) => {
     }
 });
 
-app.post('/api/settings/tally', (req, res) => {
+app.post('/api/settings/tally', authenticateJWT, requirePermission('view.settings'), (req, res) => {
     try {
         const { host, port } = req.body;
         if (!host || !port) return res.status(400).json({ error: 'Host and port are required' });
@@ -3589,7 +4871,7 @@ app.get('/api/hsn', async (req, res) => {
 });
 
 // Delivery Challan Endpoints
-app.get('/api/dc', async (req, res) => {
+app.get('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
     const dcs = await db('delivery_challans').orderBy('timestamp', 'desc');
     const normalizedDcs = normalizeResult(dcs);
@@ -3635,7 +4917,7 @@ app.get('/api/dc', async (req, res) => {
   }
 });
 
-app.get('/api/dc/:id', async (req, res) => {
+app.get('/api/dc/:id', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
     const id = req.params.id;
     const row = await db('delivery_challans')
@@ -3673,7 +4955,7 @@ app.get('/api/dc/:id', async (req, res) => {
   }
 });
 
-app.post('/api/dc', async (req, res) => {
+app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
     const { CustomerName, DeliveryDate, AssetIds, CreatedBy, POReference, payload } = req.body || {};
     
@@ -3923,7 +5205,7 @@ app.post('/api/upload-logo', upload.single('logo'), (req, res) => {
 });
 
 // DC Remarks Templates Endpoints
-app.get('/api/dc-remarks', async (req, res) => {
+app.get('/api/dc-remarks', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
     try {
         const hasTable = await db.schema.hasTable('dc_remark_templates');
         if (!hasTable) {
@@ -3943,7 +5225,7 @@ app.get('/api/dc-remarks', async (req, res) => {
     }
 });
 
-app.post('/api/dc-remarks', async (req, res) => {
+app.post('/api/dc-remarks', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
     try {
         const { title, content } = req.body;
         if (!title || !content) {
@@ -3964,7 +5246,7 @@ app.post('/api/dc-remarks', async (req, res) => {
     }
 });
 
-app.put('/api/dc-remarks/:id', async (req, res) => {
+app.put('/api/dc-remarks/:id', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
     try {
         const { id } = req.params;
         const { title, content } = req.body;
@@ -3987,7 +5269,7 @@ app.put('/api/dc-remarks/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/dc-remarks/:id', async (req, res) => {
+app.delete('/api/dc-remarks/:id', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
     try {
         const { id } = req.params;
         const changes = await db('dc_remark_templates').where('id', id).delete();
@@ -4337,7 +5619,7 @@ app.post('/api/folders', async (req, res) => {
   }
 });
 
-app.get('/api/inventory/folders', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/folders', authenticateJWT, requireAnyPermission('view.inventory', 'view.assets'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4380,7 +5662,7 @@ app.post('/api/inventory/folders', authenticateJWT, authorizeRoles('superuser', 
   }
 });
 
-app.get('/api/inventory/kinds', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/kinds', authenticateJWT, requireAnyPermission('view.inventory', 'view.assets'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4616,7 +5898,7 @@ recoveryCenter.setAssetRestoreHandler(async (id, ctx) => {
   return { id, restored: true };
 });
 
-app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/items', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4636,7 +5918,7 @@ app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
 
     const items = await query.orderBy('itemname', 'asc');
 
-    res.json({ items: normalizeResult(items) });
+    res.json({ items: await kitSetService.attachManagedSetToInventory(normalizeResult(items)) });
   } catch (err) {
     console.error('Failed to fetch inventory items:', err);
     res.status(500).json({ error: err.message });
@@ -4647,7 +5929,7 @@ app.get('/api/inventory/items', authenticateJWT, async (req, res) => {
  * Inventory Movement System — type registry, apply CONSUME, consumed browse, movement history.
  * Future movement types enable via inventoryMovementService registry (not new UI redesign).
  */
-app.get('/api/inventory/movements/types', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/movements/types', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
     res.json({
@@ -4661,7 +5943,7 @@ app.get('/api/inventory/movements/types', authenticateJWT, async (req, res) => {
   }
 });
 
-app.get('/api/inventory/movements', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/movements', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
     const filters = {
@@ -4703,7 +5985,7 @@ app.post('/api/inventory/movements', authenticateJWT, authorizeRoles('superuser'
   }
 });
 
-app.get('/api/inventory/consumed', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/consumed', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
     const filters = {
@@ -4722,7 +6004,7 @@ app.get('/api/inventory/consumed', authenticateJWT, async (req, res) => {
   }
 });
 
-app.get('/api/inventory/item-details/:id', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/item-details/:id', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4758,8 +6040,10 @@ app.get('/api/inventory/item-details/:id', authenticateJWT, async (req, res) => 
 
     const quantityEvents = normalizeResult(events).map(e => presentInventoryEvent(e));
 
+    const [itemWithSet] = await kitSetService.attachManagedSetToInventory([item]);
+
     res.json({
-      item,
+      item: itemWithSet,
       children: mergedChildren,
       quantityEvents
     });
@@ -4769,7 +6053,7 @@ app.get('/api/inventory/item-details/:id', authenticateJWT, async (req, res) => 
   }
 });
 
-app.get('/api/inventory/quantity/events/:rootId', authenticateJWT, async (req, res) => {
+app.get('/api/inventory/quantity/events/:rootId', authenticateJWT, requirePermission('view.inventory'), async (req, res) => {
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4810,6 +6094,12 @@ app.get('/api/inventory/quantity/events/:rootId', authenticateJWT, async (req, r
 });
 
 app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  return sendLifecycleContained(
+    res,
+    409,
+    'PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED',
+    'New Inventory must be created through a Receipt Note (procurement) or Physical Intake (non-procurement).'
+  );
   try {
     if (rejectInventoryPreviewOnNonTest(res)) return;
 
@@ -4849,6 +6139,15 @@ app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'a
     const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [String(newId).toLowerCase()]).first();
     if (existing) {
       return res.status(409).json({ error: `Inventory ID ${newId} already exists.` });
+    }
+
+    const invParts = String(newId).split('-');
+    const inventoryClientLabel = `${invParts[0] || 'INV'}-${invParts[1] || 'LOC'}-${invParts[3] || '000000'}`;
+    let inventoryQr = null;
+    const inventoryNoQr = Number(item.NoQR ?? item.noqr ?? 0) === 1;
+    if (!inventoryNoQr) {
+      const invUrl = `http://${resolveRequestHost(req)}/inventory/${encodeURIComponent(newId)}`;
+      inventoryQr = await qrcode.toDataURL(invUrl, { width: 512, margin: 2 });
     }
 
     await db('inventory_items').insert({
@@ -4902,6 +6201,11 @@ app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'a
       catalog_uuid: item.CatalogUUID || item.catalog_uuid || null,
       quantity_parent_id: null,
       quantity_root_id: isQtyTracked ? newId : null,
+      quantity_original: isQtyTracked ? normalizedQtyTotal : null,
+      lineage_status: 'ACTIVE',
+      qrcode: inventoryQr,
+      noqr: inventoryNoQr ? 1 : 0,
+      client_label: inventoryClientLabel,
       quantity_updated_at: new Date().toISOString()
     });
 
@@ -5441,7 +6745,7 @@ app.delete('/api/asset_kinds/:name', authenticateJWT, async (req, res) => {
 });
 
 // Projects API
-app.get('/api/projects', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), async (req, res) => {
+app.get('/api/projects', authenticateJWT, requirePermission('view.projects'), authorizeRoles('superuser', 'admin', 'manager', 'user', 'it_user', 'it_manager'), async (req, res) => {
     try {
         const isAdmin = req.user.role === 'admin' || req.user.role === 'superuser';
         const userDept = req.user.department;
@@ -5787,40 +7091,77 @@ app.get('/api/company', authenticateJWT, async (req, res) => {
   }
 });
 
-app.post('/api/signup', async (req, res) => {
-  const { username, password, email, employeeId } = req.body;
-  console.log(`Signup attempt for user: ${username}`);
-  if (!username || !password) {
-    return res.status(400).json({ ok: false, message: 'Username and password are required' });
+async function handlePublicSignup(req, res) {
+  if (!consumeAuthRateLimit(`signup:${authClientKey(req)}`, 10, 15 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, message: 'Too many attempts. Please try again later.' });
   }
+
+  const body = req.body || {};
+  const email = String(body.email || '').trim().toLowerCase();
+  const username = String(body.username || email).trim();
+  const password = body.password;
+  const confirmPassword = body.confirmPassword;
+  const fullname = String(body.fullname || body.name || username).trim();
+  const employeeId = body.employeeId || null;
+
+  if (!username || !password) {
+    return res.status(400).json({ ok: false, message: 'Username/email and password are required.' });
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, message: 'Enter a valid email address.' });
+  }
+
+  const passwordError = passwordService.validatePassword(password, confirmPassword);
+  if (passwordError) {
+    return res.status(400).json({ ok: false, message: passwordError });
+  }
+
   try {
-    const existingUser = await db('users').whereRaw('LOWER(username) = LOWER(?)', [username]).first();
+    const hasEmail = await db.schema.hasColumn('users', 'email');
+    const existingUser = await db('users')
+      .where(function () {
+        this.whereRaw('LOWER(username) = LOWER(?)', [username]);
+        if (hasEmail && email) {
+          this.orWhereRaw(`LOWER(COALESCE(email, '')) = LOWER(?)`, [email]);
+        }
+      })
+      .first();
 
     if (existingUser) {
-      return res.status(409).json({ ok: false, message: 'Username already exists' });
+      return res.status(400).json({ ok: false, message: 'Could not create this account.' });
     }
-    const fullname = email || username;
-    const role = 'user';
-    const passwordHash = await bcrypt.hash(password, 12);
-    const companyId = DEFAULT_COMPANY_ID || DEFAULT_COMPANY_NAME;
-    
-    await db('users').insert({
-        username,
-        password: passwordHash,
-        fullname,
-        role,
-        employee_id: employeeId || null,
-        company_id: companyId,
-        client_id: companyId
-    });
-    
+
+    const passwordHash = await passwordService.hashPassword(password);
+    let companyId = DEFAULT_COMPANY_ID;
+    if (!companyId) {
+      const company = await db('companies').select('id').first();
+      companyId = company ? company.id : null;
+    }
+    const row = {
+      username,
+      password: passwordHash,
+      fullname: fullname || username,
+      role: AUTH_PUBLIC_SIGNUP_ROLE,
+      employee_id: employeeId || null,
+      company_id: companyId,
+      client_id: companyId
+    };
+    if (hasEmail && email) row.email = email;
+    if (await db.schema.hasColumn('users', 'status')) row.status = 'ACTIVE';
+    if (await db.schema.hasColumn('users', 'created_at')) row.created_at = new Date().toISOString();
+
+    await db('users').insert(row);
+
     console.log(`User ${username} created successfully`);
-    res.json({ ok: true, message: 'User registered successfully' });
+    return res.json({ ok: true, message: 'User registered successfully' });
   } catch (err) {
     console.error('Signup error:', err);
-    res.status(500).json({ ok: false, message: err.message });
+    return res.status(500).json({ ok: false, message: 'Could not create this account.' });
   }
-});
+}
+
+app.post('/api/signup', ...authWriteGuards(), handlePublicSignup);
+app.post('/api/auth/signup', ...authWriteGuards(), handlePublicSignup);
 
 // Network Credentials API
 app.get('/api/network/credentials', authenticateJWT, authorizeRoles('superuser', 'admin', 'it_user', 'it_manager'), async (req, res) => {
@@ -5972,7 +7313,7 @@ app.delete('/api/network/contacts/:id', authenticateJWT, authorizeRoles('superus
 
 // --- Project Search API for DC ---
 
-app.get('/api/projects/search', authenticateJWT, async (req, res) => {
+app.get('/api/projects/search', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { q } = req.query;
         if (!q) {
@@ -6109,6 +7450,27 @@ app.get('/api/qr/dynamic/asset/:id', async (req, res) => {
   }
 });
 
+app.get('/api/qr/dynamic/inventory/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const host = req.get('host') || STATIC_IP || `${getLocalIP()}:${process.env.PORT || 8080}`;
+    const urlText = `http://${host}/inventory/${encodeURIComponent(id)}`;
+    const size = parseInt(req.query.size) || 300;
+    const qrImage = await qrcode.toDataURL(urlText, { width: size, margin: 2 });
+    const base64Data = qrImage.replace(/^data:image\/png;base64,/, "");
+    const img = Buffer.from(base64Data, 'base64');
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': img.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+    });
+    res.end(img);
+  } catch (err) {
+    console.error('Dynamic inventory QR API error:', err);
+    res.status(500).send('Error generating dynamic inventory QR');
+  }
+});
+
 app.get('/api/qr/dynamic/project/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -6135,7 +7497,13 @@ app.get('/api/qr/dynamic/project/:id', async (req, res) => {
   }
 });
 
-app.post('/api/assets', authenticateJWT, async (req, res) => {
+app.post('/api/assets', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  return sendLifecycleContained(
+    res,
+    409,
+    'PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED',
+    'New Assets must be created through a Receipt Note (procurement) or Physical Intake (non-procurement).'
+  );
   try {
     const asset = req.body;
     const hasEditPrice = hasPermission(req.user.role, 'asset.edit_price');
@@ -6285,6 +7653,8 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
           quantity_total: 0,
           quantity_available: 0,
           quantity_precision: qtyPrecision || 0,
+          quantity_original: qtyTotal,
+          lineage_status: 'ACTIVE',
           quantity_updated_at: new Date().toISOString(),
           is_quantity_tracked: 1
         });
@@ -6394,127 +7764,12 @@ app.post('/api/assets', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/quantity/split', async (req, res) => {
-  try {
-    const actor = getRequestActor(req)
-    const parentId = String(req.body?.parentId || req.body?.ParentId || '').trim()
-    const amount = parseQtyNumber(req.body?.amount ?? req.body?.Amount)
-    const note = req.body?.note || null
-    const child = req.body?.child || {}
-
-    if (!parentId) return res.status(400).json({ success: false, error: 'parentId is required' })
-    if (amount === null || amount <= 0) return res.status(400).json({ success: false, error: 'amount must be > 0' })
-
-    const parent = getQuantityAsset(parentId)
-    if (!parent || !parent.quantity_root_id) return res.status(400).json({ success: false, error: 'Parent is not a quantity asset' })
-    if (!normalizeQtyUnit(parent.quantity_unit)) return res.status(400).json({ success: false, error: 'Parent is missing quantity unit' })
-
-    const rootId = parent.quantity_root_id
-    const unit = normalizeQtyUnit(parent.quantity_unit)
-    const precision = parent.quantity_precision ?? null
-
-    // Parse target to extract ProjectID if it's a project
-    let assignedTo = child.AssignedTo || ''
-    let projectId = parent.ProjectID || null
-    
-    if (assignedTo.startsWith('Project:')) {
-      const match = assignedTo.match(/\(([^)]+)\)$/)
-      if (match) {
-        projectId = match[1]
-        assignedTo = assignedTo.replace(/Project:\s*/, '').replace(/\s*\([^)]+\)$/, '').trim()
-      }
-    } else if (assignedTo.startsWith('Employee:')) {
-      assignedTo = assignedTo.replace(/Employee:\s*/, '').replace(/\s*\([^)]+\)$/, '').trim()
-    }
-
-    const newId = generateSplitAssetId(parentId)
-    const existing = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [newId]).first();
-    if (existing) return res.status(500).json({ success: false, error: 'Failed to generate unique child ID' })
-
-    let qrCode = child.QRCode || null
-    const noQr = child.NoQR ? 1 : 0
-    if (!qrCode && !noQr) {
-      const ip = getLocalIP()
-      const port = process.env.PORT || 9090
-      const urlText = `http://${ip}:${port}/asset/${encodeURIComponent(newId)}`
-      qrCode = await qrcode.toDataURL(urlText, { width: 512 })
-    }
-
-    const childId = await db.transaction(async (trx) => {
-      const now = new Date().toISOString();
-      
-      const record = normalizeDBData({
-        ID: newId,
-        ItemName: child.ItemName || `${parent.ItemName || 'Item'} (Split)`,
-        Status: child.Status || parent.Status || 'In Store',
-        Make: child.Make || '',
-        Model: child.Model || '',
-        SrNo: child.SrNo || '',
-        Type: child.Type || parent.Type || '',
-        Category: child.Category || '',
-        Icon: child.Icon || '',
-        isPlaceholder: 0,
-        ParentId: parentId,
-        CurrentLocation: child.CurrentLocation || parent.CurrentLocation || '',
-        DispatchReceiveDt: child.DispatchReceiveDt || '',
-        PurchaseDetails: child.PurchaseDetails || '',
-        Remarks: child.Remarks || '',
-        LastUpdated: now,
-        QRCode: qrCode,
-        AssignedTo: assignedTo,
-        NoQR: noQr ? 1 : 0,
-        warranty_months: child.warranty_months || 0,
-        amc_months: child.amc_months || 0,
-        asset_value: child.asset_value || 0,
-        Currency: child.Currency || 'INR',
-        PurchaseDate: child.PurchaseDate || null,
-        quantity_parent_id: parentId,
-        quantity_root_id: rootId,
-        quantity_unit: unit,
-        quantity_total: 0,
-        quantity_available: 0,
-        quantity_precision: precision,
-        quantity_updated_at: now
-      });
-
-      await trx('assets').insert(record);
-
-      if (projectId) {
-        await trx('project_assets').insert({
-          projectid: projectId,
-          assetid: newId,
-          assigneddate: now,
-          type: 'Permanent'
-        });
-      }
-
-      await applyQuantityEvent({
-        rootId,
-        type: 'SPLIT',
-        actor,
-        note,
-        metadata: { parentId, childId: newId },
-        lines: [
-          { assetId: parentId, unit, deltaAvailable: -amount, deltaTotal: -amount, precision },
-          { assetId: newId, unit, deltaAvailable: amount, deltaTotal: amount, precision }
-        ]
-      }, trx);
-
-      appendAudit({
-        Action: 'QTY_SPLIT',
-        User: actor,
-        AssetId: parentId,
-        Severity: 'INFO',
-        Details: `Split ${amount} ${unit} to ${newId}`
-      });
-
-      return newId;
-    });
-    res.json({ success: true, childId })
-  } catch (err) {
-    console.error('Quantity split failed:', err)
-    res.status(500).json({ success: false, error: err.message })
-  }
-})
+  return res.status(410).json({
+    success: false,
+    error: 'POST /api/quantity/split is disabled. Use authenticated POST /api/break.',
+    reasonCode: 'LEGACY_QUANTITY_SPLIT_DISABLED'
+  });
+});
 
 // --- SET LOGIC ENDPOINTS ---
 
@@ -6522,7 +7777,13 @@ app.post('/api/quantity/split', async (req, res) => {
  * Combine multiple standalone assets into a Set.
  * Can either use an existing asset as parent or create a brand new container asset.
  */
-app.post('/api/assets/make-set', authenticateJWT, async (req, res) => {
+app.post('/api/assets/make-set', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  return sendLifecycleContained(
+    res,
+    409,
+    'LEGACY_SET_OPERATION_DISABLED',
+    'Sets are assembled through Set Requirements and Allocation.'
+  );
   let finalParentId = null; // Declare and initialize at the very top of the function
   try {
     let { parentAssetId, childAssetIds, setPriceMode, createNewParent, newParentName, headAssetId, parentQtyToSplit, childSplits } = req.body;
@@ -7151,7 +8412,13 @@ app.get('/api/quantity/replay/:rootId', async (req, res) => {
   }
 })
 
-app.post('/api/assets/bulk', async (req, res) => {
+app.post('/api/assets/bulk', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+  return sendLifecycleContained(
+    res,
+    409,
+    'PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED',
+    'New Assets must be created through a Receipt Note (procurement) or Physical Intake (non-procurement).'
+  );
   try {
     const assets = req.body;
     if (!Array.isArray(assets)) {
@@ -7696,7 +8963,7 @@ app.get('/api/external/stats', checkApiKey, async (req, res) => {
 
 // --- Project Management Endpoints ---
 
-app.get('/api/projects', async (req, res) => {
+app.get('/api/projects', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { projectId } = req.query;
         let query = db('projects')
@@ -7720,7 +8987,7 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 
-app.get('/api/projects/:id', authenticateJWT, async (req, res) => {
+app.get('/api/projects/:id', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         
@@ -7740,7 +9007,7 @@ app.get('/api/projects/:id', authenticateJWT, async (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/history', async (req, res) => {
+app.get('/api/projects/:id/history', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         const rows = await db('project_history').where('projectid', id).orderBy('timestamp', 'asc');
@@ -7750,7 +9017,7 @@ app.get('/api/projects/:id/history', async (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
+app.get('/api/projects/:id/orders', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         console.log(`[PO] Fetching orders for project: ${id}`);
@@ -7958,76 +9225,19 @@ app.get('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 });
 
 app.post('/api/projects/:id/orders', authenticateJWT, async (req, res) => {
-    try {
-        const admin = await requireAdmin(req);
-        if (!admin) return res.status(403).json({ error: 'Forbidden: Admin access required' });
-        
-        const { id } = req.params;
-        console.log(`[PO] Creating order for project: ${id}`);
-        const { 
-            PONumber, PODate, VendorName, TotalAmount, Status, items,
-            ConsigneeName, ConsigneeAddress, ConsigneeGSTIN, ConsigneeState, ConsigneeStateCode,
-            BuyerName, BuyerAddress, BuyerGSTIN, BuyerState, BuyerStateCode
-        } = req.body;
-
-        const orderId = `PO-${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const ts = new Date().toISOString();
-
-        await db.transaction(async (trx) => {
-            console.log(`[PO] Inserting header: ${orderId}`);
-            const header = normalizeDBData({
-                id: orderId, 
-                projectid: id, 
-                ponumber: PONumber || null, 
-                podate: PODate || null, 
-                vendorname: VendorName || null, 
-                totalamount: TotalAmount || 0, 
-                status: Status || 'Active', 
-                consigneename: ConsigneeName || null, 
-                consigneeaddress: ConsigneeAddress || null, 
-                consigneegstin: ConsigneeGSTIN || null, 
-                consigneestate: ConsigneeState || null, 
-                consigneestatecode: ConsigneeStateCode || null,
-                buyername: BuyerName || null, 
-                buyeraddress: BuyerAddress || null, 
-                buyergstin: BuyerGSTIN || null, 
-                buyerstate: BuyerState || null, 
-                buyerstatecode: BuyerStateCode || null,
-                timestamp: ts
-            });
-
-            await trx('project_orders').insert(header);
-
-            if (items && Array.isArray(items)) {
-                console.log(`[PO] Inserting ${items.length} items`);
-                for (const [index, item] of items.entries()) {
-                    const line = {
-                        orderid: orderId, 
-                        srno: item.SrNo || (index + 1), 
-                        itemdescription: item.ItemDescription || '', 
-                        duedate: item.DueDate || null, 
-                        qtyordered: parseFloat(item.QtyOrdered || item.qtyordered) || 0, 
-                        uom: item.UOM || item.uom || 'Nos', 
-                        unitprice: parseFloat(item.UnitPrice || item.unitprice) || 0, 
-                        total: parseFloat(item.Total || item.total) || 0, 
-                        assetid: item.AssetID || item.assetid || null, 
-                        status: item.Status || item.status || 'Pending',
-                        timestamp: ts
-                    };
-                    await trx('project_order_items').insert(line);
-                }
-            }
-        });
-
-        console.log(`[PO] Success: ${orderId}`);
-        res.json({ success: true, id: orderId });
-    } catch (err) {
-        console.error('[PO] Failed to create project order:', err);
-        res.status(500).json({ error: err.message });
-    }
+    return res.status(409).json({
+        success: false,
+        error: 'Purchase Orders are created and managed in Zoho. Import an existing Zoho PO in AssetEngine.',
+        reasonCode: 'LOCAL_PO_CREATE_CONTAINED'
+    });
 });
 
 app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
+    return res.status(409).json({
+        success: false,
+        error: 'AssetEngine cannot edit commercial PO fields. Revise the Purchase Order in Zoho and refresh.',
+        reasonCode: 'LOCAL_PO_EDIT_CONTAINED'
+    });
     try {
         const { orderId } = req.params;
         const { 
@@ -8125,6 +9335,11 @@ app.put('/api/orders/:orderId', authenticateJWT, async (req, res) => {
 });
 
 app.delete('/api/projects/:projectId/orders/:orderId', authenticateJWT, async (req, res) => {
+    return res.status(409).json({
+        success: false,
+        error: 'AssetEngine cannot delete Purchase Orders. Cancel the document in Zoho.',
+        reasonCode: 'LOCAL_PO_EDIT_CONTAINED'
+    });
     try {
         const { projectId, orderId } = req.params;
         
@@ -8239,7 +9454,7 @@ app.get('/api/companies', async (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/assets', authenticateJWT, async (req, res) => {
+app.get('/api/projects/:id/assets', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         console.log(`Fetching assets for project: ${id}`);
@@ -8439,28 +9654,10 @@ app.delete('/api/projects/:id/unassign-asset/:assetId', authenticateJWT, async (
 
                 if (asset && (asset.ParentId || asset.parentid)) {
                     const pId = asset.ParentId || asset.parentid;
-                    // 1.1 Check if it's a split child (Batch/Quantity) vs a Set Component
                     const parentRow = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [pId.toLowerCase()]).first();
                     const parent = normalizeResult(parentRow);
-
-                    // ONLY delete and merge back if the parent is a BATCH or QUANTITY asset
-                    // If the parent is a SET, the child is a standalone asset and must be preserved!
                     if (parent && (parent.IsBatch || parent.IsQuantityTracked || (parent.is_batch || parent.is_quantity_tracked))) {
-                        console.log(`[UNASSIGN] Merging split child ${assetId} back into parent batch ${pId}`);
-                        isSplitChild = true;
-                        
-                        const qtyToRestore = parseFloat(asset.QuantityTotal || asset.quantity_total) || 1;
-                        await trx('assets')
-                            .whereRaw('LOWER(id) = LOWER(?)', [pId.toLowerCase()])
-                            .update({
-                                quantity_available: (parent.QuantityAvailable || parent.quantity_available || 0) + qtyToRestore,
-                                quantity_total: (parent.QuantityTotal || parent.quantity_total || 0) + qtyToRestore,
-                                lastupdated: new Date().toISOString()
-                            });
-                        
-                        await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [assetId.toLowerCase()]).delete();
-                        await logAssetHistory(pId, 'SPLIT_CHILD_RESTORED', null, null, 'System', `Merged ${qtyToRestore} units back from unassigned child ${assetId}`, trx);
-                        return;
+                        console.log(`[UNASSIGN] Child ${assetId} of quantity parent ${pId}: unassign-only. No hard-delete, no parent qty merge.`);
                     } else {
                         console.log(`[UNASSIGN] Asset ${assetId} is a component of SET ${pId}. Preserving identity.`);
                     }
@@ -8574,7 +9771,7 @@ app.post('/api/projects/:id/create-user', authenticateJWT, async (req, res) => {
     }
 });
 
-app.get('/api/projects/:id/temporary-assets', authenticateJWT, async (req, res) => {
+app.get('/api/projects/:id/temporary-assets', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         const assets = await db('temporary_assets').where('projectid', id).andWhere('ispermanent', 0);
@@ -8659,7 +9856,13 @@ app.post('/api/temporary-assets', authenticateJWT, async (req, res) => {
     }
 });
 
-app.post('/api/temporary-assets/:id/make-permanent', async (req, res) => {
+app.post('/api/temporary-assets/:id/make-permanent', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    return sendLifecycleContained(
+        res,
+        409,
+        'LEGACY_PHYSICAL_CREATE_CONTAINED',
+        'Temporary assets cannot be promoted to physical stock. New stock is created through Receipt Notes.'
+    );
     try {
         const { id } = req.params;
         
@@ -9218,6 +10421,11 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
 });
 
 app.put('/api/orders/:orderId/status', authenticateJWT, async (req, res) => {
+  return res.status(409).json({
+    success: false,
+    error: 'AssetEngine cannot change commercial PO status. Status is owned by Zoho.',
+    reasonCode: 'LOCAL_PO_EDIT_CONTAINED'
+  });
   try {
     const { orderId } = req.params;
     const { Status } = req.body;
@@ -9652,6 +10860,20 @@ app.get('/api/qr/:id', async (req, res) => {
       return res.send(png);
     }
 
+    const inventoryItem = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [id]).first();
+    if (inventoryItem) {
+      if (inventoryItem.qrcode && String(inventoryItem.qrcode).startsWith('data:image/')) {
+        const base64Data = inventoryItem.qrcode.split(',')[1];
+        const img = Buffer.from(base64Data, 'base64');
+        res.setHeader('Content-Type', 'image/png');
+        return res.send(img);
+      }
+      const host = req.get('host') || STATIC_IP || `${ip}:${port}`;
+      const invPng = await qrcode.toBuffer(`http://${host}/inventory/${encodeURIComponent(id)}`, { width: 512 });
+      res.setHeader('Content-Type', 'image/png');
+      return res.send(invPng);
+    }
+
     const png = await qrcode.toBuffer(id, { width: 512 });
     res.setHeader('Content-Type', 'image/png');
     res.send(png);
@@ -9735,7 +10957,7 @@ app.get('/project/:id', (req, res) => {
   res.sendFile(path.join(__dirname, '../asset-manager-frontend/project-view.html'))
 })
 
-app.get('/api/assets/search', authenticateJWT, async (req, res) => {
+app.get('/api/assets/search', authenticateJWT, requireAnyPermission('view.assets', 'view.projects', 'view.dc'), async (req, res) => {
   const queryText = req.query.q;
   const page = parseInt(req.query.page) || 1;
   const size = parseInt(req.query.size) || 20;
@@ -11197,7 +12419,7 @@ app.post('/api/ocr/export/word', express.json({ limit: '100mb' }), async (req, r
 });
 */
 
-app.post('/api/assets/split', async (req, res) => {
+app.post('/api/assets/split', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
   try {
     const { parentId, serials, quantity, autoAssign, projectId } = req.body;
     console.log(`[SPLIT] Request for Parent: ${parentId}, Serials: ${serials ? serials.join(', ') : 'None'}, Qty: ${quantity || 'None'}`);
@@ -11213,6 +12435,38 @@ app.post('/api/assets/split', async (req, res) => {
 
     const ts = new Date().toISOString();
     const actor = getRequestActor(req);
+    const quantityMode = Boolean(quantity && (!serials || serials.length === 0));
+
+    if (quantityMode) {
+      const qtyToSplit = parseFloat(quantity);
+      try {
+        const broken = await breakService.breakQuantity({
+          holdingType: 'ASSET',
+          parentId,
+          mode: 'BREAK',
+          amount: qtyToSplit,
+          actor,
+          host: resolveRequestHost(req)
+        });
+        const assets = broken.children || [];
+        return res.json({
+          success: true,
+          count: qtyToSplit,
+          assets,
+          shimmedToBreak: true,
+          delegatedToBreak: true
+        });
+      } catch (err) {
+        return sendBreakError(res, err);
+      }
+    }
+
+    return sendLifecycleContained(
+      res,
+      410,
+      'LEGACY_SPLIT_CONTAINED',
+      'Legacy serial Split is disabled. Use Break to individualize quantity.'
+    );
 
     let projectName = projectId || 'N/A';
     let projectInitials = 'NA';
@@ -11227,162 +12481,16 @@ app.post('/api/assets/split', async (req, res) => {
     }
 
     await db.transaction(async (trx) => {
+        await legacyBreakContainment.assertQuantityMutationAllowed({
+          resourceType: 'ASSET',
+          resourceId: parentId,
+          operation: 'SERIAL_SPLIT',
+          trx
+        });
+
         const createdChildren = [];
         let splitCount = 0;
-        
-        if (quantity && (!serials || serials.length === 0)) {
-            // --- QUANTITY-BASED SPLIT (Global Standard for Bulk Items) ---
-            const qtyToSplit = parseFloat(quantity);
-            const currentQty = parseFloat(parent.quantity_available || 0);
-            
-            if (qtyToSplit <= 0 || qtyToSplit > currentQty) {
-                throw new Error(`Invalid quantity. Available: ${currentQty}, Requested: ${qtyToSplit}`);
-            }
-            splitCount = qtyToSplit;
 
-            // 1. Update Parent Quantity (Use PascalCase since normalized)
-            await trx('assets')
-                .whereRaw('LOWER(id) = LOWER(?)', [parentId])
-                .update({
-                    quantity_total: (parent.QuantityTotal || 0) - qtyToSplit,
-                    quantity_available: (parent.QuantityAvailable || 0) - qtyToSplit,
-                    lastupdated: ts
-                });
-
-            // 2. Determine if we should MERGE into an existing split child in the same project/user
-            let targetChildId = null;
-            if (projectId) {
-                const existingChildRow = await trx('assets')
-                    .join('project_assets', 'assets.id', 'project_assets.assetid')
-                    .where('assets.parentid', parentId)
-                    .where('project_assets.projectid', projectId)
-                    .select('assets.*')
-                    .first();
-                const existingChild = normalizeResult(existingChildRow);
-
-                if (existingChild) {
-                    targetChildId = existingChild.ID;
-                    console.log(`[SPLIT] Found existing child ${targetChildId} in project ${projectId}. Merging qty ${qtyToSplit}`);
-                    
-                    const newTotal = (existingChild.QuantityTotal || 0) + qtyToSplit;
-                    const newAvailable = (existingChild.QuantityAvailable || 0) + qtyToSplit;
-                    const additionalValue = (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1));
-
-                    await trx('assets')
-                        .where('id', targetChildId)
-                        .update({
-                            quantity_total: newTotal,
-                            quantity_available: newAvailable,
-                            asset_value: (existingChild.AssetValue || 0) + additionalValue,
-                            lastupdated: ts
-                        });
-                    
-                    await logAssetHistory(targetChildId, 'QUANTITY_INCREASED', existingChild.QuantityTotal, newTotal, actor, `Merged ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId} via re-split`, trx);
-                }
-            } else if (autoAssign) {
-                const existingChildRow = await trx('assets')
-                    .where('parentid', parentId)
-                    .where('assignedto', autoAssign)
-                    .where('status', 'Assigned')
-                    .select('*')
-                    .first();
-                const existingChild = normalizeResult(existingChildRow);
-
-                if (existingChild) {
-                    targetChildId = existingChild.ID;
-                    console.log(`[SPLIT] Found existing child ${targetChildId} assigned to ${autoAssign}. Merging qty ${qtyToSplit}`);
-
-                    const newTotal = (existingChild.QuantityTotal || 0) + qtyToSplit;
-                    const newAvailable = (existingChild.QuantityAvailable || 0) + qtyToSplit;
-                    const additionalValue = (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1));
-
-                    await trx('assets')
-                        .where('id', targetChildId)
-                        .update({
-                            quantity_total: newTotal,
-                            quantity_available: newAvailable,
-                            asset_value: (existingChild.AssetValue || 0) + additionalValue,
-                            lastupdated: ts
-                        });
-                    
-                    await logAssetHistory(targetChildId, 'QUANTITY_INCREASED', existingChild.QuantityTotal, newTotal, actor, `Merged ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId} via re-split`, trx);
-                }
-            }
-
-            if (!targetChildId) {
-                // 3. Create One Child Asset with the split quantity (Standard logic)
-                const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
-                targetChildId = childId;
-                
-                let status = parent.Status;
-                let assignedTo = parent.AssignedTo;
-                let clientLabel = null;
-                
-                if (autoAssign) {
-                    status = 'Assigned';
-                    assignedTo = autoAssign;
-                } else if (projectId) {
-                    status = 'Project';
-                    assignedTo = `Project: ${projectName}`;
-                    const assetParts = childId.split('-');
-                    const assetKind = assetParts[0] || 'AST';
-                    const sixDigitCode = assetParts[3] || '000000';
-                    clientLabel = `${assetKind}-${projectInitials}-${sixDigitCode}`;
-                }
-
-                const childRecord = normalizeDBData({
-                    id: childId,
-                    itemname: parent.ItemName,
-                    itemdescription: parent.ItemDescription,
-                    status: status,
-                    make: parent.Make,
-                    model: parent.Model,
-                    srno: parent.SrNo, 
-                    type: parent.Type,
-                    category: parent.Category,
-                    icon: parent.Icon,
-                    isplaceholder: 0,
-                    parentid: parentId,
-                    currentlocation: parent.CurrentLocation,
-                    dispatchreceivedt: parent.DispatchReceiveDt,
-                    purchasedetails: parent.PurchaseDetails,
-                    remarks: parent.Remarks,
-                    purpose: parent.Purpose,
-                    lastupdated: ts,
-                    qrcode: null,
-                    assignedto: assignedTo,
-                    client_label: clientLabel,
-                    noqr: parent.NoQR,
-                    warranty_months: parent.WarrantyMonths || 0,
-                    amc_months: parent.AMCMonths || 0,
-                    asset_value: (parent.AssetValue || 0) * (qtyToSplit / (parent.QuantityTotal || 1)),
-                    currency: parent.Currency || 'INR',
-                    purchasedate: parent.PurchaseDate,
-                    is_quantity_tracked: 1,
-                    quantity_total: qtyToSplit,
-                    quantity_available: qtyToSplit,
-                    quantity_unit: parent.QuantityUnit || 'pcs',
-                    is_batch: 0
-                });
-
-                await trx('assets').insert(childRecord);
-                createdChildren.push(childRecord);
-
-                if (projectId) {
-                    await trx('project_assets').insert({
-                        projectid: projectId,
-                        assetid: childId,
-                        assigneddate: ts,
-                        type: 'Permanent'
-                    }).onConflict(['projectid', 'assetid']).merge();
-                }
-
-                await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, null, actor, `Split ${qtyToSplit} ${parent.QuantityUnit} from parent ${parentId}`, trx);
-            }
-
-            await logAssetHistory(parentId, 'QUANTITY_REDUCED', parent.QuantityAvailable, parent.QuantityAvailable - qtyToSplit, actor, `Split ${qtyToSplit} ${parent.QuantityUnit} to ${targetChildId}`, trx);
-
-        } else {
             // --- SERIAL-BASED SPLIT (Existing Logic for Serialized Items) ---
             let parentSrNo = parent.SrNo || parent.srno;
             if (parentSrNo) {
@@ -11410,6 +12518,7 @@ app.post('/api/assets/split', async (req, res) => {
             // 2. Create Children
             for (const sn of serials) {
                 const childId = generateModernAssetId(parent.CurrentLocation, parent.Type);
+                const qrDataUrl = await breakService.buildQrDataUrl(resolveRequestHost(req), 'asset', childId);
                 
                 let status = parent.Status;
                 let assignedTo = parent.AssignedTo;
@@ -11446,7 +12555,7 @@ app.post('/api/assets/split', async (req, res) => {
                     remarks: parent.Remarks,
                     purpose: parent.Purpose,
                     lastupdated: ts,
-                    qrcode: null,
+                    qrcode: qrDataUrl,
                     assignedto: assignedTo,
                     client_label: clientLabel,
                     noqr: parent.NoQR,
@@ -11455,6 +12564,7 @@ app.post('/api/assets/split', async (req, res) => {
                     asset_value: (parent.AssetValue || 0) / (currentSerials.length || 1),
                     currency: parent.Currency || 'INR',
                     purchasedate: parent.PurchaseDate,
+                    product_id: parent.ProductId || parent.product_id || null,
                     is_quantity_tracked: 0,
                     is_batch: 0
                 });
@@ -11474,7 +12584,6 @@ app.post('/api/assets/split', async (req, res) => {
                 await logAssetHistory(childId, 'SPLIT_CHILD_CREATED', null, sn, actor, `Created from parent ${parentId}`, trx);
             }
             await logAssetHistory(parentId, 'SPLIT_PARENT_UPDATED', currentSerials.join(', '), newSerials.join(', '), actor, `Split ${splitCount} units`, trx);
-        }
 
         res.locals.createdAssets = createdChildren.map(c => normalizeResult(c));
         res.locals.splitCount = splitCount;
@@ -11483,6 +12592,7 @@ app.post('/api/assets/split', async (req, res) => {
     res.json({ success: true, count: res.locals.splitCount, assets: res.locals.createdAssets });
   } catch (err) {
     console.error('[SPLIT] Fatal Error:', err);
+    if (err.statusCode) return sendLegacyBreakError(res, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -11490,7 +12600,7 @@ app.post('/api/assets/split', async (req, res) => {
 /**
  * Unsplit/Move back a child asset to its parent batch or set.
  */
-app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
+app.post('/api/assets/unsplit', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
   try {
     const { childIds, assetId, parentId: providedParentId } = req.body;
     const actor = getRequestActor(req);
@@ -11504,10 +12614,10 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
 
     console.log(`[UNSPLIT] Request to unsplit assets: ${idsToProcess.join(', ')}`);
 
-    await db.transaction(async (trx) => {
+    const processed = await db.transaction(async (trx) => {
+        const results = [];
         for (const id of idsToProcess) {
             console.log(`[UNSPLIT] Processing asset: ${id}`);
-            // 1. Check BOTH tables for the child
             let child = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).first();
             let isFullAsset = !!child;
             
@@ -11520,29 +12630,70 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
                 continue;
             }
 
-            const parentId = providedParentId || child.parentid || child.ParentId;
-            console.log(`[UNSPLIT] Found child ${id}, parentId in DB: ${child.parentid || child.ParentId}, providedParentId: ${providedParentId}`);
-            
-            if (!parentId) {
-                console.warn(`[UNSPLIT] No parentId found for child ${id}.`);
+            if (!isFullAsset) {
+                const parentId = providedParentId || child.parentid || child.ParentId;
+                if (!parentId) {
+                    console.warn(`[UNSPLIT] No parentId found for component ${id}.`);
+                    continue;
+                }
+                await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
+                await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
+                    parentid: null,
+                    lastupdated: ts
+                });
+                await logAssetHistory(id, 'BREAK_SET', parentId, 'STANDALONE', actor, `Broken out from set via unsplit. Returned to general store.`, trx);
+                results.push({ id, action: 'SET_CLEAR' });
                 continue;
             }
 
-            // 2. Get the parent
-            let parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()]).first();
-            parent = normalizeResult(parent);
-            
-            if (!parent) {
-                console.warn(`[UNSPLIT] Parent ${parentId} not found in database.`);
+            const hasAnyParent = providedParentId || child.parentid || child.quantity_parent_id;
+            if (!hasAnyParent) {
+                console.warn(`[UNSPLIT] No parentid or quantity_parent_id found for child ${id}.`);
                 continue;
             }
 
-            console.log(`[UNSPLIT] Found parent ${parent.ID}. IsBatch: ${parent.IsBatch}, IsQuantityTracked: ${parent.IsQuantityTracked}`);
+            const plan = await legacyBreakContainment.planUnsplitAction(trx, child, { providedParentId });
 
-            // CASE 1: Parent is a Batch or Quantity asset (Merge and Delete behavior)
-            if (parent.IsBatch || parent.IsQuantityTracked || parent.is_batch || parent.is_quantity_tracked) {
-                console.log(`[UNSPLIT] Merging split child ${id} back into parent batch ${parentId}`);
-                
+            if (plan.action === 'INACTIVATE') {
+                const inactivated = await breakService.inactivateChild({
+                    holdingType: 'ASSET',
+                    childId: id,
+                    actor,
+                    trx
+                });
+                results.push({ id, action: 'INACTIVATE', inactivated });
+                continue;
+            }
+
+            if (plan.action === 'SET_CLEAR') {
+                const parentId = plan.classified.parentId || providedParentId || child.parentid;
+                console.log(`[UNSPLIT] Breaking item ${id} out of SET ${parentId}`);
+                await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
+                await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
+                    parentid: null,
+                    status: 'In Store',
+                    currentlocation: 'Mumbai',
+                    assignedto: null,
+                    lastupdated: ts
+                });
+                await logAssetHistory(id, 'BREAK_SET', parentId, 'STANDALONE', actor, `Broken out from set via unsplit. Returned to general store.`, trx);
+                results.push({ id, action: 'SET_CLEAR' });
+                continue;
+            }
+
+            if (plan.action === 'LEGACY_DELETE') {
+                if (!legacyBreakContainment.flags().LEGACY_UNSPLIT_HARD_DELETE) {
+                    throw legacyBreakContainment.httpError(
+                        'Emergency unsplit delete is disabled. Canonical Break children are inactivated, not deleted.',
+                        409,
+                        'AMBIGUOUS_LINEAGE'
+                    );
+                }
+                await legacyBreakContainment.assertNoActiveReservation('ASSET', id, trx);
+                await legacyBreakContainment.assertConversionLineageProtected('ASSET', id, trx);
+                const parentId = plan.classified.parentId;
+                let parent = await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()]).first();
+                parent = normalizeResult(parent);
                 const qtyToRestore = parseFloat(child.quantity_total || child.QuantityTotal || child.quantity_available || 1);
                 await trx('assets')
                   .whereRaw('LOWER(id) = LOWER(?)', [parentId.toLowerCase()])
@@ -11551,46 +12702,28 @@ app.post('/api/assets/unsplit', authenticateJWT, async (req, res) => {
                     quantity_total: (parent.QuantityTotal || parent.quantity_total || 0) + qtyToRestore,
                     lastupdated: ts
                   });
-                
-                // Remove from project assignments too
                 await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
-                
                 await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).delete();
                 await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).delete();
-                
-                await logAssetHistory(parentId, 'SPLIT_CHILD_RESTORED', null, null, actor, `Merged ${qtyToRestore} units back from child ${id}`, trx);
-            } 
-            // CASE 2: Parent is a SET (Break from set, return to store)
-            else {
-                console.log(`[UNSPLIT] Breaking item ${id} out of SET ${parentId}`);
-                
-                // 1. Remove from project assignments
-                await trx('project_assets').whereRaw('LOWER(assetid) = LOWER(?)', [id.toLowerCase()]).delete();
-
-                // 2. Clear parent link and return to general store
-                if (isFullAsset) {
-                    await trx('assets').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
-                        parentid: null,
-                        status: 'In Store',
-                        currentlocation: 'Mumbai',
-                        assignedto: null,
-                        lastupdated: ts
-                    });
-                } else {
-                    await trx('components').whereRaw('LOWER(id) = LOWER(?)', [id.toLowerCase()]).update({
-                        parentid: null,
-                        lastupdated: ts
-                    });
-                }
-                await logAssetHistory(id, 'BREAK_SET', parentId, 'STANDALONE', actor, `Broken out from set via unsplit. Returned to general store.`, trx);
+                await logAssetHistory(parentId, 'SPLIT_CHILD_RESTORED', null, null, actor, `Emergency merge ${qtyToRestore} units back from child ${id}`, trx);
+                results.push({ id, action: 'LEGACY_DELETE' });
+                continue;
             }
+
+            throw legacyBreakContainment.httpError(
+                `Unsplit action ${plan.action} is not implemented`,
+                409,
+                'AMBIGUOUS_LINEAGE'
+            );
         }
+        return results;
     });
 
     await invalidateAssetsCache();
-    res.json({ success: true, message: `Successfully processed assets` });
+    res.json({ success: true, message: `Successfully processed assets`, results: processed });
   } catch (err) {
     console.error('[UNSPLIT] Error:', err);
+    if (err.statusCode) return sendLegacyBreakError(res, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -11672,6 +12805,10 @@ app.post('/api/external/sheets-sync', authenticateJWT, authorizeRoles('superuser
                     lastupdated: new Date().toISOString()
                 });
             } else {
+                const err = new Error('New Assets must be created through a Receipt Note (procurement) or Physical Intake (non-procurement).');
+                err.statusCode = 409;
+                err.reasonCode = 'PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED';
+                throw err;
                 await trx('assets').insert(normalizeDBData({
                     ID: assetId,
                     ItemName: itemName,
@@ -11698,11 +12835,14 @@ app.post('/api/external/sheets-sync', authenticateJWT, authorizeRoles('superuser
 
     } catch (err) {
         console.error('[SHEETS-SYNC] Failed:', err);
+        if (err.reasonCode === 'PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED') {
+            return sendLifecycleContained(res, 409, err.reasonCode, err.message);
+        }
         res.status(500).json({ error: 'Sync failed: ' + err.message });
     }
 });
 
-app.get('/api/projects/:id/available-inventory', authenticateJWT, async (req, res) => {
+app.get('/api/projects/:id/available-inventory', authenticateJWT, requirePermission('view.projects'), async (req, res) => {
     try {
         const { id } = req.params;
         console.log(`[INVENTORY] Fetching available inventory for project: ${id}`);
