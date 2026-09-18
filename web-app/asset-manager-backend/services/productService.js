@@ -205,10 +205,34 @@ async function insertProductWithRetry(payload, runner) {
   throw mapPgError(lastErr || httpError('Unable to allocate a unique Product ID', 500));
 }
 
-async function listProducts({ q, status, origin, limit, offset } = {}) {
+async function listProducts({ q, status, origin, source, linked, limit, offset } = {}) {
   await requireTables();
   const cap = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
   const skip = Math.max(parseInt(offset, 10) || 0, 0);
+  const term = blankToNull(q);
+  const sourceKey = String(source || '').trim().toUpperCase().replace(/-/g, '_');
+  const linkedRaw = linked == null || linked === '' ? null : String(linked).trim().toLowerCase();
+  let linkedFilter = null;
+  if (linkedRaw === '1' || linkedRaw === 'true' || linkedRaw === 'yes' || linkedRaw === 'linked') {
+    linkedFilter = true;
+  } else if (linkedRaw === '0' || linkedRaw === 'false' || linkedRaw === 'no' || linkedRaw === 'unlinked') {
+    linkedFilter = false;
+  }
+
+  // UI provenance filter (does not change stored origin values).
+  // ZOHO_DERIVED → origin ZOHO; STANDALONE → origin ASSETENGINE.
+  // Legacy `origin` query param remains for callers that pass raw DB origins.
+  let originFilter = blankToNull(origin);
+  if (!originFilter && sourceKey) {
+    if (sourceKey === 'ZOHO_DERIVED' || sourceKey === 'ZOHO') originFilter = 'ZOHO';
+    else if (sourceKey === 'STANDALONE' || sourceKey === 'STANDALONE_AE' || sourceKey === 'ASSETENGINE') {
+      originFilter = 'ASSETENGINE';
+    } else if (ORIGINS.includes(sourceKey)) {
+      originFilter = sourceKey;
+    } else {
+      throw httpError('source must be ZOHO_DERIVED or STANDALONE', 400);
+    }
+  }
 
   const applyFilters = (builder) => {
     if (status) {
@@ -217,13 +241,17 @@ async function listProducts({ q, status, origin, limit, offset } = {}) {
       }
       builder.andWhere('p.status', String(status).toUpperCase());
     }
-    if (origin) {
-      if (!ORIGINS.includes(String(origin).toUpperCase())) {
+    if (originFilter) {
+      if (!ORIGINS.includes(String(originFilter).toUpperCase())) {
         throw httpError('Invalid origin', 400);
       }
-      builder.andWhere('p.origin', String(origin).toUpperCase());
+      builder.andWhere('p.origin', String(originFilter).toUpperCase());
     }
-    const term = blankToNull(q);
+    if (linkedFilter === true) {
+      builder.whereNotNull('r.external_id');
+    } else if (linkedFilter === false) {
+      builder.whereNull('r.external_id');
+    }
     if (term) {
       const like = `%${term}%`;
       builder.andWhere((inner) => {
@@ -232,6 +260,7 @@ async function listProducts({ q, status, origin, limit, offset } = {}) {
           .orWhereILike('p.id', like)
           .orWhereILike('p.make', like)
           .orWhereILike('p.model', like)
+          .orWhereILike('p.manufacturer', like)
           .orWhereILike('p.product_code', like)
           .orWhereILike('r.external_id', like);
       });
@@ -269,23 +298,85 @@ async function listProducts({ q, status, origin, limit, offset } = {}) {
   applyFilters(rowsQuery);
   const rows = await rowsQuery;
 
+  const products = rows.map((row) => {
+    const product = publicProduct(row, {
+      external_id: row.zoho_external_id_col,
+      link_origin: row.zoho_link_origin_col,
+      system: row.zoho_system_col,
+      module: row.zoho_module_col,
+      last_pushed_at: row.zoho_last_pushed_at_col,
+      last_pulled_at: row.zoho_last_pulled_at_col,
+      last_error: row.zoho_last_error_col,
+      last_error_at: row.zoho_last_error_at_col
+    });
+    if (term) product.matched_on = detectProductMatch(product, term);
+    return product;
+  });
+
+  let unlinkedCatalogRefs = [];
+  if (term && (await db.schema.hasTable('zoho_catalog'))) {
+    const like = `%${term}%`;
+    const linkedIds = db('product_external_ref')
+      .select('external_id')
+      .where({ system: 'ZOHO_CRM', module: 'Products' });
+    const catalogRows = await db('zoho_catalog')
+      .where((inner) => {
+        inner
+          .whereILike('zoho_product_id', like)
+          .orWhereILike('product_name', like)
+          .orWhereILike('sku', like)
+          .orWhereILike('make', like)
+          .orWhereILike('model', like);
+      })
+      .whereNotIn('zoho_product_id', linkedIds)
+      .orderBy('product_name', 'asc')
+      .limit(20);
+    unlinkedCatalogRefs = catalogRows.map((row) => ({
+      zoho_product_id: row.zoho_product_id != null ? String(row.zoho_product_id) : null,
+      product_name: row.product_name,
+      sku: row.sku,
+      make: row.make,
+      model: row.model,
+      hsn_code: row.hsn_code,
+      usage_unit: row.usage_unit,
+      created_by: row.created_by,
+      description: row.description,
+      matched_on: detectCatalogMatch(row, term),
+      reference_only: true
+    }));
+  }
+
   return {
     total,
     limit: cap,
     offset: skip,
-    products: rows.map((row) =>
-      publicProduct(row, {
-        external_id: row.zoho_external_id_col,
-        link_origin: row.zoho_link_origin_col,
-        system: row.zoho_system_col,
-        module: row.zoho_module_col,
-        last_pushed_at: row.zoho_last_pushed_at_col,
-        last_pulled_at: row.zoho_last_pulled_at_col,
-        last_error: row.zoho_last_error_col,
-        last_error_at: row.zoho_last_error_at_col
-      })
-    )
+    products,
+    unlinked_catalog_refs: unlinkedCatalogRefs
   };
+}
+
+function detectProductMatch(product, term) {
+  const t = String(term || '').trim().toLowerCase();
+  if (!t) return null;
+  if (String(product.id || '').toLowerCase().includes(t)) return 'Product ID';
+  if (String(product.zoho_external_id || '').toLowerCase().includes(t)) return 'Zoho Product ID';
+  if (String(product.product_code || '').toLowerCase().includes(t)) return 'OEM SKU';
+  if (String(product.model || '').toLowerCase().includes(t)) return 'Model';
+  if (String(product.make || '').toLowerCase().includes(t)) return 'Make';
+  if (String(product.manufacturer || '').toLowerCase().includes(t)) return 'Manufacturer';
+  if (String(product.name || '').toLowerCase().includes(t)) return 'Product Name';
+  return null;
+}
+
+function detectCatalogMatch(row, term) {
+  const t = String(term || '').trim().toLowerCase();
+  if (!t) return null;
+  if (String(row.zoho_product_id || '').toLowerCase().includes(t)) return 'Zoho Product ID';
+  if (String(row.sku || '').toLowerCase().includes(t)) return 'OEM SKU';
+  if (String(row.model || '').toLowerCase().includes(t)) return 'Model';
+  if (String(row.make || '').toLowerCase().includes(t)) return 'Make';
+  if (String(row.product_name || '').toLowerCase().includes(t)) return 'Product Name';
+  return null;
 }
 
 async function getProduct(id) {
@@ -295,6 +386,107 @@ async function getProduct(id) {
   const ref = await zohoRefFor(id);
   const openConflict = await openNameConflict(id);
   return publicProduct(row, ref, { openConflict });
+}
+
+function holdingQtyNum(value) {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Active quantity-tracked Assets / Inventory linked to a Product (for Receipt add-to-existing). */
+async function listProductHoldings(productId, { mode } = {}) {
+  await requireTables();
+  const id = String(productId || '').trim();
+  if (!id) throw httpError('Product id is required', 400);
+  const product = await db('product').where({ id }).first();
+  if (!product) throw httpError('Product not found', 404);
+
+  const modeKey = String(mode || '').toUpperCase();
+  const wantInv = !modeKey || modeKey === 'INVENTORY';
+  const wantAsset = !modeKey || modeKey === 'ASSET' || modeKey === 'ASSET_GROUPED';
+  const holdings = [];
+
+  if (wantInv && (await db.schema.hasColumn('inventory_items', 'product_id'))) {
+    const rows = await db('inventory_items')
+      .where({ product_id: id })
+      .where('is_quantity_tracked', 1)
+      .where(function activeLineage() {
+        this.where('lineage_status', 'ACTIVE').orWhereNull('lineage_status');
+      })
+      .select(
+        'id',
+        'itemname',
+        'quantity_total',
+        'quantity_available',
+        'quantity_unit',
+        'currentlocation',
+        'status',
+        'folderid',
+        'kindid'
+      )
+      .orderBy('itemname')
+      .orderBy('id');
+    for (const row of rows) {
+      holdings.push({
+        resourceType: 'INVENTORY',
+        resourceId: row.id,
+        name: row.itemname || row.id,
+        quantityTotal: holdingQtyNum(row.quantity_total),
+        quantityAvailable: holdingQtyNum(row.quantity_available),
+        unit: row.quantity_unit || product.unit || 'Nos',
+        location: row.currentlocation || '',
+        status: row.status || null,
+        folderId: row.folderid || null,
+        kindId: row.kindid || null
+      });
+    }
+  }
+
+  if (wantAsset && (await db.schema.hasColumn('assets', 'product_id'))) {
+    const rows = await db('assets')
+      .where({ product_id: id })
+      .where('is_quantity_tracked', 1)
+      .where(function activeLineage() {
+        this.where('lineage_status', 'ACTIVE').orWhereNull('lineage_status');
+      })
+      .where(function notSet() {
+        this.where('is_set', 0).orWhereNull('is_set');
+      })
+      .select(
+        'id',
+        'itemname',
+        'quantity_total',
+        'quantity_available',
+        'quantity_unit',
+        'currentlocation',
+        'status',
+        'type',
+        'category'
+      )
+      .orderBy('itemname')
+      .orderBy('id');
+    for (const row of rows) {
+      holdings.push({
+        resourceType: 'ASSET',
+        resourceId: row.id,
+        name: row.itemname || row.id,
+        quantityTotal: holdingQtyNum(row.quantity_total),
+        quantityAvailable: holdingQtyNum(row.quantity_available),
+        unit: row.quantity_unit || product.unit || 'Nos',
+        location: row.currentlocation || '',
+        status: row.status || null,
+        type: row.type || null,
+        category: row.category || null
+      });
+    }
+  }
+
+  return {
+    productId: id,
+    productName: product.name,
+    holdings
+  };
 }
 
 async function createProduct(input, actor) {
@@ -1083,7 +1275,7 @@ async function createProductFromCatalog(zohoProductId, actor) {
     model: catalog.model || null,
     manufacturer: null,
     hsn_code: catalog.hsn_code || null,
-    unit: null,
+    unit: catalog.usage_unit || null,
     product_code: catalog.sku || null,
     price: null,
     status: 'ACTIVE',
@@ -1119,8 +1311,30 @@ async function listUnlinkedCatalog() {
       make: row.make,
       model: row.model,
       sku: row.sku,
-      hsn_code: row.hsn_code
+      hsn_code: row.hsn_code,
+      usage_unit: row.usage_unit,
+      created_by: row.created_by,
+      description: row.description
     }));
+}
+
+/** Count Zoho catalog rows that have no AssetEngine Product mapping. */
+async function countUnlinkedCatalog() {
+  if (!(await db.schema.hasTable('zoho_catalog'))) return 0;
+  if (!(await db.schema.hasTable('product_external_ref'))) {
+    const row = await db('zoho_catalog').count('* as count').first();
+    return Number(row && row.count ? row.count : 0);
+  }
+  const row = await db('zoho_catalog as z')
+    .leftJoin('product_external_ref as r', function joinMap() {
+      this.on(db.raw('r.external_id::text'), '=', db.raw('z.zoho_product_id::text'))
+        .andOn('r.system', '=', db.raw('?', ['ZOHO_CRM']))
+        .andOn('r.module', '=', db.raw('?', ['Products']));
+    })
+    .whereNull('r.id')
+    .countDistinct('z.zoho_product_id as count')
+    .first();
+  return Number(row && row.count ? row.count : 0);
 }
 
 async function listLegacyAssetZohoReport() {
@@ -1192,6 +1406,7 @@ module.exports = {
   tablesReady,
   listProducts,
   getProduct,
+  listProductHoldings,
   createProduct,
   updateProduct,
   archiveProduct,
@@ -1213,6 +1428,7 @@ module.exports = {
   loadSetRequirementRows,
   createProductFromCatalog,
   listUnlinkedCatalog,
+  countUnlinkedCatalog,
   listLegacyAssetZohoReport,
   inspectProductFields,
   insertProductWithRetry,

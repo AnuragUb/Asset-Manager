@@ -1,0 +1,2052 @@
+{
+  "mode": "DRY-RUN",
+  "database": "asset_manager_phase1_scratch",
+  "generated_at": "2026-08-27T10:23:26.047Z",
+  "counts": {
+    "candidates": 203,
+    "class_a": 200,
+    "class_b": 1,
+    "class_c": 1,
+    "class_d": 1,
+    "create": 201,
+    "already_linked": 0,
+    "quarantine": 1,
+    "escalate": 1,
+    "created": 0,
+    "asset_links": 0
+  },
+  "created": [
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001280003",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Sample",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001236013",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "AJA converter",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001172038",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Vmix 4k",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001172036",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Vmix",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001172034",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Vmix HD",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001172031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Vmix Pro",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001137003",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Wired Anchor Belt pack Passive IFB Beltpack w/ 1/4\" Jack (for connection to matrix output)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001137001",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Partyline Beltpack, 4-pin female headset(F.01U.118.089 PH-1 Single Side Headset , A4M)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001129004",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Stulz Precision AC 10 TR",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001129002",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Stulz Precision AC 5 TR",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113011",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Digital Audio Processor 5-band",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113009",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Compact Studio Monitor",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113007",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Studio headphone",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113005",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Rode PSA1+ Studio Boom/Arm",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113003",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Syskonics 43-47mm Microphone Shock Mount With Double Mesh Pop Filter & Screw Adapter, Adjustable Anti Vibration High Iso",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113001",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Condensor Microphone",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087033",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "IFB Earpiece 125 omh Receiver Kit with Coilled Tube",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Single-Sided Full Cushion Headset with 4-Pin XLR Female Connector, 50Hz-15kHz Headset Frequency, 150Ohms Headset and Mic",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087028",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Partyline Power Supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087017",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Multimode fiber module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087015",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "16 Port Digital Matrix",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087013",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Gooseneck Microphone 12\"",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001087011",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "16 keys panel for matrix",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074061",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "27-inch (68.58 Cm) Full HD SuperClear® IPS Monitor, 100Hz, 1ms, 109% sRGB, HDMI, VGA, Dual Speakers, Eye ProTech+, Win. & Mac OS Tested, Borderless Design, Wall mount.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074060",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "The PTC-140 is a low-cost SDI/HDMI PTZ camera featuring 20x optical zoom and 10x digital zoom.The PTC-140 is also an IP camera supporting H.264 /H.265 video compression and dual stream outputs.*Features 1/2.8 inch CMOS sensor. Resolution is up to 1920x108",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074059",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "32 Button Single Bus Control Panel",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074058",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Redundant Power Supply for MFR-3232RPS",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074057",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "32 X 32 Routing Switcher Main frame with single Power supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074056",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "1.8M USB KVM Cable",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074055",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "1U17”LCDConsoleWithtouchpad Mouse&KB,",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074054",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "USB VGA Virtual Media KVM Adapter",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074053",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ATENHDMIUSBVirtualMediaKVMAdapterCable",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074052",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ATENDisplayPortUSBVirtualMediaKVMAdapterCable",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074051",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "16-PortCat5KVMSwitchW/Daisy-Chain",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074050",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Equinox 4 Channel HD/SD-HDMI Logger with 90 days storage @512Kbps(Four channel recording)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074049",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Equinox 8 Channel Analog Logger with 90 days storage @512Kbps",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074047",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Bring UHD 4K quality video to your production with the white AW-UE150W UHD 4K 20x PTZ Camera from Panasonic. This pro PTZ camera outputs up to UHD 4K 60p over a variety of 4K connections including 12G-SDI, HDMI, optical fiber, and IP streaming. It feature",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074046",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Media Production Suite software - Auto-Tracking Plugin key",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074045",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Professional 1\"-4K/60p PTZ Camera with 12G/OFC, ST2110, FreeD Output, OLPF to reduce moire against Video Wall",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074044",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "The Datavideo RMC-300A stands out as a multi-functional multi-camera controller with advanced control protocols. It supports various control protocols such as Sony VISCA, VISCA over IP-S, VISCA over IP-C, and Datavideo DVIP.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074043",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Audio Mixer - Yamaha MG10X 10-Channel Analog Mixer, with 4 Microphone Preamps, 3 Dedicated Stereo Line Channels, 1 Aux Send, EQ, 1-knob Compressors, and Digital Effects",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074042",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "TS-832PXU-RP-4G8-Bay AL324 quad-core 1.7 GHz rackmount NAS with 250W redundant PSU, 4GB DDR4 UDIMM RAM (max 16GB), SATA 6Gb/s, 2x 10GbE SFP+, 2x 2.5GbE, 1x PCIe Gen2 x2 slot8 x 16TB Enterprise SATA HDD (Warranty: 3 years on NAS & 5 years on HDD)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074041",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "MixWizard4 12:2 Desk/Rack Mountable Professional Mixing Console",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074040",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "85\" QBC Series 4K Signage Display , ITS professional grade panel",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074037",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ethernet 25G passive copper cable, SFP28, 2m　",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074036",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "U.3 NVMe SSD, PCIe Gen4, 3.84TB, DWPD=1 for R model Cache",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074035",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EonStor GS/GSe File SSD Cache License",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074034",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Toshiba 3.5\" HDD, SAS 12Gb/s, 7200 RPM, 12TB",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044102",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "12G-SDI Relay Bypass with 1x4 Distribution w/Rear Module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074033",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EonStor GS 3000T G3 4U/40bay, cloud-integrated unified storage, supportsNAS, SAN, object protocol, cloud gateway, dual redundant controller subsystem including 4x12Gb/s SAS EXP. ports, 4x25GbE ports(SFP28), 4xhost board slots, 6x16GB memory, 2x PSU, 1x fa",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074032",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "QNAP TS-h1886XU-RP-R2-D1622-32G ( 120TB RAW )- 12 + 6 - Bay NAS, - SATA 6G,- Xeon D-1622 4 cores / 8 threads 2.60 GHz (boost up to 3.20GHz),- 32 GB ECC RAM, (2 x 16GB) (Max 128 GB RAM),- 4 x Giga LAN, 2 x 10Gb ports- iSCSI, RAID 0,1, 5, 6, 10, 5+spare, 6+",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "12-Port 10G-Gigabit/Multi-Gigabit Ethernet Switch",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074030",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "SQ-5 48ch digital mixer, 96kHz, 16 Mic/Line 12 XLR out, 8FX, 17 faders, touchscreen, SLink & I/O Port, rackmountable",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074029",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Dolby Integrated Media Server IMS3000",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074028",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Atomos 7\" Shogun Ultra Monitor-Recorder",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074027",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Hollyland LARK M2S Ultimate Combo 2-Person Wireless Microphone System for Cameras and Mobile Devices (2.4 GHz, Space Gray)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074026",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Frame Synchroniser",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074025",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Editor Interface Option",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074024",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Redundant power supply for control unit",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074023",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "18 Button 2ME Operation unit",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074022",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Redundant power supply for main unit",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074021",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "12G compatibale 4K Digital Video Switcher. Main unit in 3 RU, equippedwith Standard 10 12G input. In HD Mode 40 inputs with 2 M/Es video switcher. 2 Channel Multiviewer.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054024",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "WinMedia Basic Logger",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054022",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "WinMedia Basic Traffic",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054020",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "WinMedia Basic Music",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054018",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "WinMedia Internet",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054016",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "WinMedia Medium Onair",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001054014",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "12 Channel Digital Audio Console",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044131",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "IPS 100Hz Full HD Coding Monitor with USB-C (65W PD), Daisy Chain, 99% sRGB, Coding Mode, & Noise Cancelling Microphone",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044130",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "KVM Extender Kit over CATx - 4K, DisplayPort, USB 2.0 Hub, Serial, Audio, Local Video",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044129",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "USB I/O",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044128",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "48x1G, 2x10G, 2xSFP+ Fully Managed Switch",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044127",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "HDMI Extender",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044126",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Fusion ServerDell poweredge R660XS/R470Intel dual Xeon 16 core or Single Xeon Performace 24 Core32 GB RAM2 X 480GB SSD2 X 10G Ethernet portsDual Hot power plug power Supply3 Years support from DELL",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044125",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "NITRO 1400G Media ServerPorts are bidirectional and can be configured as Playout or ingest or preview14TB raw -12 TB Usable 10K HDD- Dual 10G network interface- LINUX Operating System- 3 Years support",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044124",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Sony ZX Series MDR-ZX310AP Wired Headband Stereo On Ear Headset -Black",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044123",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "YAMAHA DM3-D 22 Channel Ultracompact Digital Mixing Console With Dante, Black",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044122",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "24x1G PoE+ 300W 2x1G and 4xSFP Managed Switch (DANTE SWITCH)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044121",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Micro Converter SDI to HDMI 12G PSU",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044120",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "SmartScope Duo 4K 2",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044119",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Audio - MPA SeriesSimple 1RU SDI audio monitor: Front panel display with16 Level Meters, Source Names, Audio Phase and Videoconfidence display. 2 x 3G/HD/SD SDI Inputs + 1 xAES3id input and 2 x Balanced Analogue inputs. 1 xBalanced Stereo Output, 1 x Re-c",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044118",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Remote control unit",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044117",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Remote control unit color corrector function",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044116",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3D LUT conversion with Dynamic range conversion",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044115",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Up/down/cross conversion functionality for 2 channels",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044114",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Dante audio card, Enables sending/receiving of Dante audio. Supports RJ45x2, RX/TX 64ch each.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044113",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Multi Channel processor, 1RU, 12G/3G/HD-SDI supported 16 inputs/outputs BNC",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044112",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ROI:3G-SDI to HDMI/3G-SDI Scan Converterwith Region of Interest Scaling",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044028",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Ultra Solo / CB9 Panel - Rack Mount Kit",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044109",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Blackmagic MultiView 16",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044108",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Av Matrix MMV1630 – 16CH SDI Mutltivewer & Switcher",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044107",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Equinox Single Channel HD-SDI Logger with 90 days storage @512Kbps.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044106",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "All-round 5-input, 5-output processor (2-way distribution). Capable of 5 frame synchronization, color correction, 3G-Level A/B conversion and Up/down/cross conversion on all 5 channels. various audio conversions(Including FA-505UD Up Down convertor & FA-5",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044105",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "GPS AntennaMulti-GNSS (GPS, GLONASS) rooftop antenna that works with the integrated GNSS receiver of the SPG9000 with option SPG9000-GNSS.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044103",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ultrix Online Commissioning",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044101",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "DVE (1 Channel) License for MC1-GATOR Platform",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044100",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Master Control License for MC1-GATOR Platform",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044099",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "MC1 Mixer/Keyer - SDI 6in/6out + balanced AES w/Rear Module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044098",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Remote Control Module (4 Buttons)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044097",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Flexible and Economical Solution for Switching between 2 or 4 MD-SDI signals, with 10-BNC Rear Module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044096",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G/HD/SD-SDI Frame Synchronizer with Rear Module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044095",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Video Utility Distribution Amplifier with 20-Slot frame Rear Module, R2-8705",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044094",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "High Performance 3G Reclocking DA w/ Rear Module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044093",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G/HD/SD 4 Channel Analog Audio Demultiplexer with rear I/O",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044092",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "HD/SD 4 Channel Analog audio Multiplexer with rear I/O",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044091",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Redundant power supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044090",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "I/O board -16x16, Advanced Connectivity, 2 AUX I/O",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044089",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ultrix New Style 2RU Frame w/ 16x16 plus 2 AUX (Ultrimix and Ultriclean included)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044088",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "8-way Intercom/communication and tally light systemRack-mountable 8-way wired intercom system, selectable talk, broadcast to all or mute,2x 15Pin DSub sockets for Tally A & B, built-in speaker,(included: 1x LP-1 Gooseneck Light, 1x MC-2 Gooseneck Mic, 4 s",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044087",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "PT Remote controller for camera",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044086",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Micro Converter SDI to HDMI 3G",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044085",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "JBL Professional 305PMKII-EU 5-inch 2-Way Powered Studio Monitor (Black) | TRS",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044084",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ear piece",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044083",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Sennheiser EW IEM G4-TWIN-A Wireless In-Ear Monitoring System",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044082",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "miliboo MTT609A Aluminum Fluid Head Camera Video Tripod for Camcorder,Black",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044081",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "4K NDI PTZ Camera with 15x Zoom (Satin Black)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044080",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Sony PXW-Z300 4K HDR Camcorder",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044079",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Remote Product Training per day* for maximum number of 5people",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044078",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Remote Commissioning - per day",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044077",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EditShare Annual Support Contract Standard : 9x5 RegionalBusiness Hours, Telephone, Portal and Email Support, coveringHardware, Software updates and upgrades. SLA starts fromshipment date to customer. Advance Replacement of parts onstandard shipping",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044076",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EditShare Quality Tested 12TB Hard Drive",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044075",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Adds FLOW Unlimited Core Licenses to EFS Single Node andARK Master Software. Unlimited FLOW concurrent software:Includes the fundamentals of Media Asset Management: Search,Manage, file logging/tagging, Adobe and Resolve FLOW panels.*subject to workflow re",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044074",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "10G SFP+ Short Range Transceiver",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044073",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Dual-Port 10 Gb/s Ethernet PCI Express x8 Network InterfaceCard. Transceivers Not Included",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044072",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3U 16x12TB Storage Node with Platform and Storage License.Includes onboard dual 10G network controller.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044071",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Rear Support Brackets 21 1/2 Inches (long option) for HPF-9000High Power Frame.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044070",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Power Supply for HPF-9000 High Power Frame",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044069",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "20-slot openGear® High Power Frame - 2 Rack Unit with Fans and Metal Plates on Rear I/O - Includes one PS-9000 Power Supply and HPF-9500-FC Network Controller Card. Orders for frame only without Cobalt Digital cards will not be accepted.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044027",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Ultra Solo All In One Production switcher",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044026",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "8 port Ethernet switch netgear",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044067",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G/HD/SD-SDI Up/Down/Cross Converter, Frame Sync, AudioEmbedder/De-Embedder, 4 Analog Audio and Composite AnalogCVBS Video I/O",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044066",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "20-Slot Frame Rear I/O Module (Standard Width) (1) 3G/HD/SD-SDI Input BNC, (1) 3G/HD/SD-SDI Output BNC, (8) Balanced Analog Audio I/O, (2) COMM I/O, 8 Unbalanced AES I/O (coaxial; HD-BNC)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044065",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G/HD/SD-SDI 16 Channel Un-Balanced AES and Balanced Analog Audio Embedder/De-Embedder",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044064",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "20-Slot Frame Rear I/O Module (Standard Width) (2) 3G/HD/SD-SDI Input BNC, (8) 3G/HD/SD-SDI Output BNCs",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044063",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G/HD/SD-SDI/ASI Dual-Channel Multi-Rate Reclocking Distribution Amplifier with x4 Output Crosspoint (16 outputs)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044062",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "20-Slot Frame Rear I/O Module (Standard Width) (1) Analog Video Input BNC, (8) Analog DA Output BNCs, (1) Input Loop Output BNC",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044061",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Video Looping 1x8 Distribution Amplifier",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044060",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Intel Core Ultra9 285K 5.70G 36 MB 24 cores 125W CPU128GB (4x32GB) DDR5 5600 UDIMM NECC MemoryNVIDIA RTX PRO 2000 Blackwell 16 GB 4mDP GraphicsHP 1TB PCIe-4x4 2280 Value M.2 Solid State DriveHP 125 v2 Black Wired KeyboardHP Black 125 Wired MouseNo Load Fl",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044059",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "36x10G/Multi-Gig PoE++ (280W base, up to 1,760W) and 4xSFP28 25GManaged Switch , 920Gbps",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044058",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "10GBASE-T SFP+ to RJ-45 copper transceiver module",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044057",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Toshiba Enterprise 3.5\" SAS 12Gb/s HDD, 18TB, 7200RPM",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044056",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EonStor host board with 2 x 10Gb/s iSCSI ports (SFP+), type2",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044055",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "EonStor GS 1000 G3 3U/16bay, cloud-integrated unified storage, supports NAS, block, object storage and cloud gateway, dual redundant controller subsystem including 2x12Gb SAS EXP. Port, 2x host board slot(s), 4x8GB, 2x(PSU+FAN Module),2x(SuperCap.+Flash m",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044054",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Blackmagic Audio Monitor 12G G3",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044053",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Sync/Video to Fiber Transmitter",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044052",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Decimator",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044051",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Digital Video to Analog, HD/SD",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044050",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Video 1x6 Distribution Amplifier",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044049",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Analog Video 1x9 openGear Distribution Amplifier",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044048",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G-SDI 4-Channel Analog Audio Embedder/Disembedder, Balance XLR, DashBoard Support",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044047",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "2x4 or 1x8 3G-SDI Reclocking DA, DashBoard Support",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044046",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "3G-SDI Utility Frame Sync, SDI and HDMI simultaneous outputs, DashBoard support",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044045",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "OGX Frame Rear Support Brackets",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044044",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "600 Watt Universal Power Supply for OGX Frame",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044043",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "openGear OGX Frame with Cooling and Advanced Networking",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044042",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "16 port Ethernet switch POE+ unmanaged Network",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044041",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Multi-GNSS (GPS, GLONASS, Galileo, BeiDou) dual-band (L1 & L5) rooftop antenna that works with the integrated GNSS receiver of the SPG9000. Includes mounting bracket and connectors",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044040",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ECO (automatic changeover) base unit - 3 x BNC channels (black burst: HD tri-level sync: AES/DARS: word clock)-ECO8000Add a second hot-swappable redundant (backup) power supply (a second power cord option is required -ECO8000 DPWAdd 4 x LTC channels- ECO8",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044039",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "License; SPG9000, Enable internal GNSS receiver and time synchronization features",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044038",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Includes two hotswappable power supply modules for a redundant (primary + backup) pair",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044037",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "SPG9000 timing andreference generator;includes loop-through genlock input, 6 analog black/tri-level outputs, 4 LTC outputs, word clock output, DARS output, general-purpose interface, and management LAN interface",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044036",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "MAM & Storage extended coverage",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044035",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ROSS Professional ServicesFor online commissioning services for upgrade to HD",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044034",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "PCIe 2.0 8-Channel I/O, raster independent channels, 4K capable, short PCIe bracket, includes 9x 101999-02 cables",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044032",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "18.5inch multi-functional monitor that supports full video formats. It provides with waveform, vectorscope, audio meter and so on professional broadcast features. Efficient features makes it a nice choice for post-production,editing applications.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "55\" QMC Series 4K Signage Display QM55C",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044029",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "XPression LiveCG Software Only License",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978028",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "TouchDrive 2 ME 25 XPT S Series Panel",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001284002",
+      "origin": "ASSET",
+      "origin_ref": "HAR-MUM-0726-55QOFA-R",
+      "link_origin": "PUSH",
+      "name": "Trimble Bullet 720",
+      "class": "B",
+      "would_link_asset": "HAR-MUM-0726-55QOFA-R"
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001280017",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ursa Fur Circle BROWN (x9 + 30 Stickies)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001113013",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "MONFRPCINX/ Focusrite RedNet PCIeNX 128 x 128 PCIe Audio Interface - 128-in/128-out PCIe Audio Interface, 24-bit/192kHz,",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074048",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "A compact, hardware-based controller for use with Panasonic PTZ remote cameras. The AW-RP60 features an improved joystick for smooth and responsive camera control of up to 200 robotic cameras, as well as easy management of up to 100 camera presets.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074039",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "The RMC-180 MARK II is a camera controller, which allows you to control up to 4 compatible Datavideo PTZ, block cameras, or Robotic Pan Tilt Heads via RS-422.",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001074038",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "The Datavideo 4K Auto Tracking PTZ Camera PTC-305 is a high-performance tool designed for live production settings. This camera operates at 4K 50/60p with advanced auto-tracking capabilities. (with AI tracking)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044111",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Live U Decoder:HD 1U rack-mount decoder for the highest video quality. Receive, decode, playout, stream and distribute any HEVC/H.264 or multi-camera video feeds",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044110",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Hollyland Wireless Tally System Set, 2,600ft Range utilizes Adaptive Frequency Hopping Technology for Live Shooting cue lamp Video Mixer Video switcher Video switcher (4 Lights)",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044068",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "20-Slot Frame Rear I/O Module (Standard Width) (2) 3G/HD/SD-SDI Inputs, (1) CVBS Input, (8) AES Inputs, (2) Balanced Analog Audio Inputs, (2) 3G/HD/SD-SDI Outputs, (1) CVBS Processed Output, (8) AES Outputs, (2) Balanced Analog Audio Outputs (All coaxial",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044033",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Automation Server HardwareDell PowerEdge R7725 RACK server2 x MD EPYC 9275F 4.10GHz, 24C/48T, 256 Cache (320W) DDR5-64004 x 64GB RDIMM, 6400MT/s, Dual Rank2 x 960GB SSD SATA Mixed Use 6Gbps 512e 2.5in Hot-plug AG Drive, 3 DWPDDual, Fully Redundant (1+1),",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044025",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ultimatte Smart Remote 4 G2",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044024",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ultimatte 12 HD",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044023",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Power Supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044022",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Touch Panel Remote Camera Controller",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001044021",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "The Panasonic AW-UE150A is a premium, professional-grade 4K pan-tilt-zoom (PTZ) camera designed for broadcast studios, live events, and lecture halls. It features a large 1-inch MOS sensor, 20x optical zoom, and outputs up to UHD 4K 60p, offering exceptio",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001035009",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Online Commissioning - 1 Day",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001035007",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "HDBNC to BNC kit with 8 cables",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001035005",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "ADD HD MultiViewer 2 and 4",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001035003",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Add All HD FSFC/CC/PA",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001035001",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "HD ME 2 License",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000001007002",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Ultra Engine NO PSU Included",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000989001",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "CUFR-ADD-ME1",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000980010",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "V Mix 4K License",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000979042",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Modular power supply for Ultripower rack mount PS frame",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000979040",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "2101AR-230-01 - Ultrix rackmount 1RU power supply frame with 1 power supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000979031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "\"Software Defined Production Engine\nNote: Add on to existing ULTRIX-FR5, SN# 30172647005.\"",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000979017",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Software Defined Production Engine",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978034",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Ultrix Online Training, 1 Day",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978033",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Online Training - 1 Day",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978032",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Pre Paid Service Expense Trip 1",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978031",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Commissioning - 1 Day",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978030",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "Carbonite Ultra Standard Power Supply",
+      "class": "A",
+      "would_link_asset": null
+    },
+    {
+      "product_id": "(dry-run)",
+      "external_id": "1205624000000978029",
+      "origin": "ZOHO",
+      "origin_ref": null,
+      "link_origin": "PULL",
+      "name": "TouchDrive TouchScreen Display",
+      "class": "A",
+      "would_link_asset": null
+    }
+  ],
+  "already_linked": [],
+  "quarantined": [
+    {
+      "external_id": "ZP-SAMPLE-0001",
+      "catalog_name": "Sample Catalog Product (Hardcoded)",
+      "reason": "Non-numeric or seeded sample Zoho ID; not a real Zoho Product"
+    }
+  ],
+  "escalated": [
+    {
+      "external_id": "1205624000001313001",
+      "asset_ids": [
+        "HAR-MUM-0826-IEIZP5-U"
+      ],
+      "is_set": [
+        1
+      ],
+      "in_catalog": false,
+      "reason": "Legacy Set/Asset anomaly HAR-MUM-0826-IEIZP5-U; deferred to Set phase"
+    }
+  ],
+  "asset_links": []
+}

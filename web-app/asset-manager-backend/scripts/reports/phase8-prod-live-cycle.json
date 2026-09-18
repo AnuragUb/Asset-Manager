@@ -1,0 +1,526 @@
+{
+  "steps": [],
+  "before": {
+    "product": 201,
+    "mappings": 201,
+    "catalog": 203,
+    "logs": 15,
+    "assets": 4,
+    "inventory": 2,
+    "reservations": 0,
+    "conversions": 0,
+    "receipts": 1,
+    "sets": 9,
+    "requirements": 2,
+    "setEvents": 6,
+    "pos": 2,
+    "poLines": 2,
+    "assetZoho": {
+      "checksum": "ba1c8f97b784cb81ea08f1d9fedf4e83",
+      "n": 2
+    },
+    "inventoryQty": "6d01a69d6d9c90bb9394e1ef27bd7b62",
+    "assetQty": "efd25aa9de3951a4dc1f6eefbcfc40d4"
+  },
+  "oauthLive": {
+    "http": 200,
+    "health": "CONNECTED",
+    "scopes": "ZohoCRM.modules.products.ALL,ZohoCRM.modules.deals.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.modules.READ"
+  },
+  "productCreate": {
+    "http": 200,
+    "product": {
+      "id": "PRD-0826-ELGTDI-0",
+      "name": "AE Phase8 Close-out Probe",
+      "description": "AssetEngine Phase 8 close-out description",
+      "make": "AETest",
+      "model": "P8",
+      "manufacturer": null,
+      "hsn_code": "8525",
+      "unit": "Nos",
+      "product_code": "AE-P8-CLOSEOUT",
+      "price": null,
+      "status": "ACTIVE",
+      "origin": "ASSETENGINE",
+      "origin_ref": null,
+      "archived_at": null,
+      "created_at": "2026-08-29T07:28:47.863Z",
+      "updated_at": "2026-08-29T07:28:47.863Z",
+      "created_by": "admin",
+      "updated_by": "admin",
+      "composition_hash": null,
+      "zoho_external_id": null,
+      "zoho_link_origin": null,
+      "zoho_system": null,
+      "zoho_module": null,
+      "sync_status": "UNLINKED",
+      "open_conflict": null,
+      "zoho_last_error": null
+    }
+  },
+  "selected": {
+    "id": "PRD-0826-ELGTDI-0",
+    "name": "AE Phase8 Close-out Probe",
+    "description": "AssetEngine Phase 8 close-out description",
+    "make": "AETest",
+    "model": "P8",
+    "hsn_code": "8525",
+    "unit": "Nos",
+    "product_code": "AE-P8-CLOSEOUT",
+    "price": null,
+    "origin": "ASSETENGINE",
+    "status": "ACTIVE",
+    "mappingBefore": null
+  },
+  "publish1": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "skipped": false,
+      "mode": "CREATE",
+      "zohoId": "1205624000001349001",
+      "product": {
+        "id": "PRD-0826-ELGTDI-0",
+        "name": "AE Phase8 Close-out Probe",
+        "description": "AssetEngine Phase 8 close-out description",
+        "make": "AETest",
+        "model": "P8",
+        "manufacturer": null,
+        "hsn_code": "8525",
+        "unit": "Nos",
+        "product_code": "AE-P8-CLOSEOUT",
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "ASSETENGINE",
+        "origin_ref": null,
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:47.863Z",
+        "updated_at": "2026-08-29T07:28:47.863Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": null,
+        "zoho_external_id": "1205624000001349001",
+        "zoho_link_origin": "PUSH",
+        "zoho_system": "ZOHO_CRM",
+        "zoho_module": "Products",
+        "sync_status": "SYNCED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      }
+    }
+  },
+  "publish2": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "skipped": true,
+      "reason": "UNCHANGED_HASH",
+      "mode": "SKIP",
+      "zohoId": "1205624000001349001",
+      "product": {
+        "id": "PRD-0826-ELGTDI-0",
+        "name": "AE Phase8 Close-out Probe",
+        "description": "AssetEngine Phase 8 close-out description",
+        "make": "AETest",
+        "model": "P8",
+        "manufacturer": null,
+        "hsn_code": "8525",
+        "unit": "Nos",
+        "product_code": "AE-P8-CLOSEOUT",
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "ASSETENGINE",
+        "origin_ref": null,
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:47.863Z",
+        "updated_at": "2026-08-29T07:28:47.863Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": null,
+        "zoho_external_id": "1205624000001349001",
+        "zoho_link_origin": "PUSH",
+        "zoho_system": "ZOHO_CRM",
+        "zoho_module": "Products",
+        "sync_status": "SYNCED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      }
+    }
+  },
+  "refresh": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "nameChanged": false,
+      "zohoId": "1205624000001349001",
+      "product": {
+        "id": "PRD-0826-ELGTDI-0",
+        "name": "AE Phase8 Close-out Probe",
+        "description": "AssetEngine Phase 8 close-out description",
+        "make": "AETest",
+        "model": "P8",
+        "manufacturer": null,
+        "hsn_code": "8525",
+        "unit": "Nos",
+        "product_code": "AE-P8-CLOSEOUT",
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "ASSETENGINE",
+        "origin_ref": null,
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:47.863Z",
+        "updated_at": "2026-08-29T07:28:48.969Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": null,
+        "zoho_external_id": "1205624000001349001",
+        "zoho_link_origin": "PUSH",
+        "zoho_system": "ZOHO_CRM",
+        "zoho_module": "Products",
+        "sync_status": "SYNCED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      }
+    }
+  },
+  "mappingAfter": [
+    {
+      "id": "PER-20260829-10160A6D",
+      "product_id": "PRD-0826-ELGTDI-0",
+      "system": "ZOHO_CRM",
+      "module": "Products",
+      "external_id": "1205624000001349001",
+      "link_origin": "PUSH",
+      "baseline_name": "AE Phase8 Close-out Probe",
+      "baseline_captured_at": "2026-08-29T07:28:48.272Z",
+      "last_pushed_hash": "6ef338325c4afe0e97f620567f016c6ee3a0f9b42fdb3c3a03ad66bd5ac8a10b",
+      "last_pulled_at": "2026-08-29T07:28:48.975Z",
+      "last_pushed_at": "2026-08-29T07:28:48.272Z",
+      "created_at": "2026-08-29T07:28:48.256Z",
+      "updated_at": "2026-08-29T07:28:48.975Z"
+    }
+  ],
+  "setCreate": {
+    "http": 200,
+    "set": {
+      "id": "SET-0826-RHDPGL-K",
+      "setCode": "SET-0826-RHDPGL-K",
+      "name": "AE Phase8 Close-out Canonical Set",
+      "description": "Disposable canonical Set for Phase 8 close-out. Do not treat as operational.",
+      "status": "ACTIVE",
+      "sourceSetId": null,
+      "absorbedIntoSetId": null,
+      "productId": null,
+      "zohoProductId": null,
+      "engine": "CANONICAL",
+      "reviewBucket": null,
+      "composition": "EMPTY",
+      "completeness": "EMPTY",
+      "completenessLines": [
+        {
+          "requirementId": "REQ-0826-RX2GUA-R",
+          "productId": "PRD-0826-QN1EIW-T",
+          "required": 1,
+          "allocated": 0,
+          "unit": "Nos",
+          "state": "SHORT"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "REQ-0826-RX2GUA-R",
+          "setId": "SET-0826-RHDPGL-K",
+          "productId": "PRD-0826-QN1EIW-T",
+          "productName": "1.8M USB KVM Cable",
+          "make": "Aten",
+          "model": "2L-5003U",
+          "quantity": 1,
+          "unit": "Nos",
+          "sortOrder": 0,
+          "createdAt": "2026-08-29T07:28:49.044Z",
+          "createdBy": "admin"
+        }
+      ],
+      "allocations": [],
+      "createdBy": "admin",
+      "updatedBy": "admin",
+      "createdAt": "2026-08-29T07:28:49.044Z",
+      "updatedAt": "2026-08-29T07:28:49.044Z",
+      "archivedAt": null
+    }
+  },
+  "setPreview": {
+    "http": 200,
+    "preview": {
+      "setId": "SET-0826-RHDPGL-K",
+      "setName": "AE Phase8 Close-out Canonical Set",
+      "existingProductId": null,
+      "proposedName": "AE Phase8 Close-out Canonical Set",
+      "description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+      "fingerprint": "2458858bf8193fb046fdee38156aa69746d9f3222e5e741ba8625ef5da30cf6e",
+      "requirements": [
+        {
+          "productId": "PRD-0826-QN1EIW-T",
+          "productName": "1.8M USB KVM Cable",
+          "quantity": "1.000000",
+          "unit": "Nos",
+          "make": "Aten",
+          "model": "2L-5003U"
+        }
+      ],
+      "reuseCandidates": [],
+      "productIdAllocatedOnConfirm": false
+    }
+  },
+  "setCommercialize": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "idempotent": false,
+      "reused": false,
+      "product": {
+        "id": "PRD-0826-LKJBZ7-A",
+        "name": "AE Phase8 Close-out Canonical Set",
+        "description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+        "make": null,
+        "model": null,
+        "manufacturer": null,
+        "hsn_code": null,
+        "unit": null,
+        "product_code": null,
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "SET",
+        "origin_ref": "SET-0826-RHDPGL-K",
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:49.170Z",
+        "updated_at": "2026-08-29T07:28:49.170Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": "2458858bf8193fb046fdee38156aa69746d9f3222e5e741ba8625ef5da30cf6e",
+        "zoho_external_id": null,
+        "zoho_link_origin": null,
+        "zoho_system": null,
+        "zoho_module": null,
+        "sync_status": "UNLINKED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      },
+      "set": {
+        "id": "SET-0826-RHDPGL-K",
+        "setCode": "SET-0826-RHDPGL-K",
+        "name": "AE Phase8 Close-out Canonical Set",
+        "description": "Disposable canonical Set for Phase 8 close-out. Do not treat as operational.",
+        "status": "ACTIVE",
+        "sourceSetId": null,
+        "absorbedIntoSetId": null,
+        "productId": "PRD-0826-LKJBZ7-A",
+        "zohoProductId": null,
+        "engine": "CANONICAL",
+        "reviewBucket": null,
+        "composition": "EMPTY",
+        "completeness": "EMPTY",
+        "completenessLines": [
+          {
+            "requirementId": "REQ-0826-RX2GUA-R",
+            "productId": "PRD-0826-QN1EIW-T",
+            "required": 1,
+            "allocated": 0,
+            "unit": "Nos",
+            "state": "SHORT"
+          }
+        ],
+        "requirements": [
+          {
+            "id": "REQ-0826-RX2GUA-R",
+            "setId": "SET-0826-RHDPGL-K",
+            "productId": "PRD-0826-QN1EIW-T",
+            "productName": "1.8M USB KVM Cable",
+            "make": "Aten",
+            "model": "2L-5003U",
+            "quantity": 1,
+            "unit": "Nos",
+            "sortOrder": 0,
+            "createdAt": "2026-08-29T07:28:49.044Z",
+            "createdBy": "admin"
+          }
+        ],
+        "allocations": [],
+        "createdBy": "admin",
+        "updatedBy": "admin",
+        "createdAt": "2026-08-29T07:28:49.044Z",
+        "updatedAt": "2026-08-29T07:28:49.170Z",
+        "archivedAt": null
+      }
+    }
+  },
+  "setPublish1": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "skipped": false,
+      "mode": "CREATE",
+      "zohoId": "1205624000001350001",
+      "product": {
+        "id": "PRD-0826-LKJBZ7-A",
+        "name": "AE Phase8 Close-out Canonical Set",
+        "description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+        "make": null,
+        "model": null,
+        "manufacturer": null,
+        "hsn_code": null,
+        "unit": null,
+        "product_code": null,
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "SET",
+        "origin_ref": "SET-0826-RHDPGL-K",
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:49.170Z",
+        "updated_at": "2026-08-29T07:28:49.170Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": "2458858bf8193fb046fdee38156aa69746d9f3222e5e741ba8625ef5da30cf6e",
+        "zoho_external_id": "1205624000001350001",
+        "zoho_link_origin": "PUSH",
+        "zoho_system": "ZOHO_CRM",
+        "zoho_module": "Products",
+        "sync_status": "SYNCED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      }
+    }
+  },
+  "setPublish2": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "skipped": true,
+      "reason": "UNCHANGED_HASH",
+      "mode": "SKIP",
+      "zohoId": "1205624000001350001",
+      "product": {
+        "id": "PRD-0826-LKJBZ7-A",
+        "name": "AE Phase8 Close-out Canonical Set",
+        "description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+        "make": null,
+        "model": null,
+        "manufacturer": null,
+        "hsn_code": null,
+        "unit": null,
+        "product_code": null,
+        "price": null,
+        "status": "ACTIVE",
+        "origin": "SET",
+        "origin_ref": "SET-0826-RHDPGL-K",
+        "archived_at": null,
+        "created_at": "2026-08-29T07:28:49.170Z",
+        "updated_at": "2026-08-29T07:28:49.170Z",
+        "created_by": "admin",
+        "updated_by": "admin",
+        "composition_hash": "2458858bf8193fb046fdee38156aa69746d9f3222e5e741ba8625ef5da30cf6e",
+        "zoho_external_id": "1205624000001350001",
+        "zoho_link_origin": "PUSH",
+        "zoho_system": "ZOHO_CRM",
+        "zoho_module": "Products",
+        "sync_status": "SYNCED",
+        "open_conflict": null,
+        "zoho_last_error": null
+      }
+    }
+  },
+  "syncLogs": [
+    {
+      "module": "Products",
+      "operation": "PUSH_PRODUCT_CREATE",
+      "status": "SUCCESS",
+      "localId": "PRD-0826-ELGTDI-0",
+      "zohoId": "1205624000001349001",
+      "payloadKeys": [
+        "Description",
+        "Product_Name",
+        "Make",
+        "Model",
+        "HSN_Code",
+        "Product_Code"
+      ],
+      "payload": {
+        "Description": "AssetEngine Phase 8 close-out description",
+        "Product_Name": "AE Phase8 Close-out Probe",
+        "Make": "AETest",
+        "Model": "P8",
+        "HSN_Code": "8525",
+        "Product_Code": "AE-P8-CLOSEOUT"
+      }
+    },
+    {
+      "module": "Products",
+      "operation": "PULL_PRODUCT_REFRESH",
+      "status": "SUCCESS",
+      "localId": "PRD-0826-ELGTDI-0",
+      "zohoId": "1205624000001349001",
+      "payloadKeys": [],
+      "payload": null
+    },
+    {
+      "module": "Products",
+      "operation": "PUSH_PRODUCT_CREATE",
+      "status": "SUCCESS",
+      "localId": "PRD-0826-LKJBZ7-A",
+      "zohoId": "1205624000001350001",
+      "payloadKeys": [
+        "Description",
+        "Product_Name"
+      ],
+      "payload": {
+        "Description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+        "Product_Name": "AE Phase8 Close-out Canonical Set"
+      }
+    }
+  ],
+  "after": {
+    "product": 203,
+    "mappings": 203,
+    "catalog": 204,
+    "logs": 18,
+    "assets": 4,
+    "inventory": 2,
+    "reservations": 0,
+    "conversions": 0,
+    "receipts": 1,
+    "sets": 10,
+    "requirements": 3,
+    "setEvents": 10,
+    "pos": 2,
+    "poLines": 2,
+    "assetZoho": {
+      "checksum": "ba1c8f97b784cb81ea08f1d9fedf4e83",
+      "n": 2
+    },
+    "inventoryQty": "6d01a69d6d9c90bb9394e1ef27bd7b62",
+    "assetQty": "efd25aa9de3951a4dc1f6eefbcfc40d4"
+  },
+  "deltas": {
+    "product": 2,
+    "mappings": 2,
+    "catalog": 1,
+    "logs": 3,
+    "assets": 0,
+    "inventory": 0,
+    "reservations": 0,
+    "conversions": 0,
+    "receipts": 0,
+    "sets": 1,
+    "requirements": 1,
+    "setEvents": 4,
+    "pos": 0,
+    "poLines": 0
+  },
+  "physical": {
+    "assetZohoChecksumUnchanged": true,
+    "assetQtyUnchanged": true,
+    "inventoryQtyUnchanged": true,
+    "assetZohoCountBefore": 2,
+    "assetZohoCountAfter": 2
+  }
+}

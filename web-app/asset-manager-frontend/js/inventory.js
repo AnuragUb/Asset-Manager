@@ -266,7 +266,37 @@ function getSelectedNode() {
     return manager.findNode(state.selectedNodeId);
 }
 
+function matchesInventoryQuery(item, query) {
+    if (!query) return true;
+    // Normalize to the shape matchesQuery expects (PascalCase + lowercase mirrors)
+    const shaped = {
+        ID: item.ID || item.id,
+        ItemName: item.ItemName || item.itemname || item.Name || item.name,
+        Make: item.Make || item.make,
+        Model: item.Model || item.model,
+        SrNo: item.SrNo || item.srno || item.SerialNo || item.serialno,
+        CurrentLocation: item.CurrentLocation || item.currentlocation,
+        AssignedTo: item.AssignedTo || item.assignedto || item.assigned_to,
+        Type: item.Type || item.type,
+        Category: item.Category || item.category,
+        Status: item.Status || item.status,
+        Remarks: item.Remarks || item.remarks,
+        ParentId: item.ParentId || item.parentid || item.ParentID
+    };
+    if (typeof window.matchesQuery === 'function') {
+        return window.matchesQuery(shaped, query);
+    }
+    const q = String(query).toLowerCase();
+    return Object.values(shaped).some((v) => v != null && String(v).toLowerCase().includes(q));
+}
+
 function getFilteredInventoryItems() {
+    const searchQ = String(window.currentInventorySearchQuery || '').trim();
+    // Global sidebar search: ignore hierarchy and match across all inventory holdings
+    if (searchQ) {
+        return (state.items || []).filter((item) => matchesInventoryQuery(item, searchQ));
+    }
+
     if (!state.selectedNodeId) return [...state.items];
 
     const manager = buildHierarchyManager();
@@ -547,6 +577,12 @@ function openInventorySharedModal(existingItem = null) {
     setVal('itemMake', existingItem?.Make || existingItem?.make || '');
     setVal('itemModel', existingItem?.Model || existingItem?.model || '');
     setVal('itemSrNo', existingItem?.SrNo || existingItem?.srno || '');
+    if (typeof window.bindSerialIdentityPanel === 'function') window.bindSerialIdentityPanel();
+    if (itemId && typeof window.loadSerialIdentityPanel === 'function') {
+        window.loadSerialIdentityPanel('INVENTORY', itemId);
+    } else if (typeof window.hideSerialIdentityPanel === 'function') {
+        window.hideSerialIdentityPanel();
+    }
     setVal('itemLocation', existingItem?.CurrentLocation || existingItem?.currentlocation || 'Mumbai');
     setVal('itemDate', existingItem?.DispatchReceiveDt || existingItem?.dispatchreceivedt || '');
     setVal('itemPurchase', existingItem?.PurchaseDetails || existingItem?.purchasedetails || '');
@@ -1009,8 +1045,11 @@ function renderInventoryItemCards(items) {
                         <span class="status-badge ${statusClass}">${status}</span>
                         ${fromCatalog ? `<span class="status-badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a;">Catalog</span>` : ''}
                     </div>
-                    <div style="font-size: 11px; color: #666; margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap;">
-                        <span><strong>Total Quantity:</strong> ${total}</span>
+                    <div style="font-size: 11px; color: #666; margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                        <button type="button" class="inv-row-qty-usage" data-id="${escapeAttr(item.ID || item.id || '')}" title="Where currently used"
+                            style="color:#0078d4;background:#eff6ff;padding:2px 8px;border-radius:6px;border:1px solid #bfdbfe;font-size:11px;font-weight:700;cursor:pointer;">
+                            Total Quantity: ${total} ▾
+                        </button>
                         <span><strong>Available Quantity:</strong> ${available}</span>
                     </div>
                 </div>
@@ -1051,7 +1090,10 @@ function renderInventoryItemsTable(items) {
         const iconHtml = renderIconHtml(item.Icon, '📦').replace('48px', '28px').replace('40px', '22px').replace('48px', '28px');
         const make = escapeHtml(item.Make || item.make || '-');
         const model = escapeHtml(item.Model || item.model || '-');
-        const srno = escapeHtml(item.SerialNo || item.serialno || item.SrNo || item.srno || '-');
+        const srnoRaw = item.SerialNo || item.serialno || item.SrNo || item.srno || '';
+        const srnoCell = (typeof window.serialsTableCellHtml === 'function')
+            ? window.serialsTableCellHtml('INVENTORY', id, srnoRaw)
+            : `<span style="font-family: monospace; font-size: 11px;">${escapeHtml(srnoRaw || '-')}</span>`;
         const location = escapeHtml(item.CurrentLocation || item.currentlocation || '-');
         const assigned = escapeHtml(item.AssignedTo || item.assignedto || item.assigned_to || '-');
         const purchase = fmtDate(item.PurchaseDate || item.purchasedate);
@@ -1073,12 +1115,18 @@ function renderInventoryItemsTable(items) {
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
                 <td>${make}</td>
                 <td>${model}</td>
-                <td style="font-family: monospace; font-size: 11px;">${srno}</td>
+                <td>${srnoCell}</td>
                 <td>${location}</td>
                 <td>${assigned}</td>
                 <td style="white-space: nowrap;">${purchase}</td>
                 <td>${warranty}</td>
-                <td style="text-align: right; font-weight: 600;">${total}</td>
+                <td style="text-align: right;">
+                    <button type="button" class="inv-row-qty-usage" data-id="${idAttr}" title="Where currently used"
+                        style="display:inline-flex;align-items:center;gap:4px;color:#0078d4;background:#eff6ff;padding:4px 8px;border-radius:6px;border:1px solid #bfdbfe;font-size:11px;font-weight:700;cursor:pointer;">
+                        <strong>${total}</strong>
+                        <span style="font-size:10px;opacity:0.85;">▾ use</span>
+                    </button>
+                </td>
                 <td style="font-family: monospace; font-size: 11px;">${parentId}</td>
                 <td style="white-space: nowrap;">
                     <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
@@ -1139,38 +1187,44 @@ function renderInventoryItems() {
     }
 
     setWorkspaceChrome('inventory');
-    const selectedNode = getSelectedNode();
+    const searchQ = String(window.currentInventorySearchQuery || '').trim();
+    const selectedNode = searchQ ? null : getSelectedNode();
     const manager = buildHierarchyManager();
     const items = getFilteredInventoryItems().sort((a, b) => String(a.ItemName || a.itemname || '').localeCompare(String(b.ItemName || b.itemname || '')));
 
-    title.textContent = getNodeLabel(selectedNode);
-    subtitle.textContent = selectedNode
-        ? 'Inventory records linked to this hierarchy node.'
-        : 'Standalone inventory workspace for 9090.';
+    title.textContent = searchQ
+        ? `Search results`
+        : getNodeLabel(selectedNode);
+    subtitle.textContent = searchQ
+        ? `${items.length} inventory match${items.length === 1 ? '' : 'es'} for “${searchQ}”`
+        : (selectedNode
+            ? 'Inventory records linked to this hierarchy node.'
+            : 'Standalone inventory workspace for 9090.');
 
-    const displayNodes = selectedNode ? (selectedNode.children || []) : (manager.tree || []);
-    const isLeafKind = selectedNode && selectedNode.type === 'kind' && (!selectedNode.children || selectedNode.children.length === 0);
+    const displayNodes = searchQ ? [] : (selectedNode ? (selectedNode.children || []) : (manager.tree || []));
+    const isLeafKind = !searchQ && selectedNode && selectedNode.type === 'kind' && (!selectedNode.children || selectedNode.children.length === 0);
 
     // ---- View Mode Resolution: TABLE for leaf Kinds (category lists), CARDS for folder hierarchy ----
     // Auto-suggested mode if user not explicitly set
-    const autoMode = isLeafKind ? 'table' : 'cards';
+    const autoMode = (searchQ || isLeafKind) ? 'table' : 'cards';
     let viewMode = state.viewMode || autoMode;
-    if (!isLeafKind && viewMode === 'table' && displayNodes.length > 0) {
+    if (!searchQ && !isLeafKind && viewMode === 'table' && displayNodes.length > 0) {
         // When we also have child nodes (folder cards) to show, stick to cards
         viewMode = 'cards';
     }
-    const showItems = isLeafKind || (!selectedNode && items.length > 0);
+    const showItems = searchQ || isLeafKind || (!selectedNode && items.length > 0);
 
     const nodePageMeta = paginateRows(displayNodes, `nodes:${selectedNode ? selectedNode.ID : 'root'}`);
     const nodeCardsHtml = nodePageMeta.pageItems.length ? renderInventoryNodeCards(nodePageMeta.pageItems, manager) : '';
-    const uncategorized = !selectedNode
+    const uncategorized = !searchQ && !selectedNode
         ? items.filter(item => !String(item.FolderId || item.folderid || '').trim() && !String(item.KindId || item.kindid || '').trim())
         : [];
-    const itemPageMeta = showItems ? paginateRows(isLeafKind ? items : uncategorized, isLeafKind ? `items:${selectedNode?.ID || 'root'}` : 'uncategorized:root') : null;
+    const itemSource = (searchQ || isLeafKind) ? items : uncategorized;
+    const itemPageMeta = showItems ? paginateRows(itemSource, searchQ ? `search:${searchQ}` : (isLeafKind ? `items:${selectedNode?.ID || 'root'}` : 'uncategorized:root')) : null;
     const pageItems = itemPageMeta?.pageItems || [];
     const itemCardsHtml = itemPageMeta && viewMode === 'cards' ? renderInventoryItemCards(pageItems) : '';
     const itemTableHtml = itemPageMeta && viewMode === 'table' ? renderInventoryItemsTable(pageItems) : '';
-    const uncategorizedPageMeta = !selectedNode && uncategorized.length > 0 ? paginateRows(uncategorized, 'uncategorized:root') : null;
+    const uncategorizedPageMeta = !searchQ && !selectedNode && uncategorized.length > 0 ? paginateRows(uncategorized, 'uncategorized:root') : null;
     const uncategorizedHtml = uncategorizedPageMeta && viewMode === 'cards' ? renderInventoryItemCards(uncategorizedPageMeta.pageItems) : (uncategorizedPageMeta && viewMode === 'table' ? renderInventoryItemsTable(uncategorizedPageMeta.pageItems) : '');
     const haveAnyItemsToShow = Boolean(itemCardsHtml || itemTableHtml || uncategorizedHtml);
 
@@ -1203,6 +1257,7 @@ function renderInventoryItems() {
     ` : '';
 
     stats.innerHTML = `
+        ${searchQ ? `<span style="background:#e7f3ff;color:#0078d4;padding:2px 8px;border-radius:12px;font-size:11px;display:inline-flex;align-items:center;gap:5px;border:1px solid #0078d4;">🔍 "${escapeHtml(searchQ)}" <span id="btnClearInvSearch" style="cursor:pointer;font-weight:bold;">&times;</span></span>` : ''}
         ${viewToggleHtml}
         <div id="btnToggleInventoryOverview" style="
             display: inline-flex;
@@ -1224,6 +1279,13 @@ function renderInventoryItems() {
 
     renderInventoryOverviewWidget(items, title.textContent || 'Inventory');
     const toggle = getEl('btnToggleInventoryOverview');
+    getEl('btnClearInvSearch')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.currentInventorySearchQuery = '';
+        const input = document.getElementById('globalSidebarSearch') || document.querySelector('.sidebar-search input');
+        if (input) input.value = '';
+        renderInventoryItems();
+    });
     if (toggle) {
         toggle.onclick = (e) => {
             e.stopPropagation();
@@ -1342,7 +1404,28 @@ function renderInventoryItems() {
             }
         });
     });
-
+    content.querySelectorAll('.inv-row-qty-usage').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const itemId = btn.getAttribute('data-id');
+            if (!itemId) return;
+            const item = state.items.find(entry => String(entry.ID || entry.id) === String(itemId))
+                || state.consumedItems.find(entry => String(entry.ID || entry.id) === String(itemId));
+            const open = () => window.showQuantityUsageModal('INVENTORY', itemId, item);
+            if (typeof window.showQuantityUsageModal === 'function') open();
+            else {
+                import('./quantity-usage-modal.js?v=7.112').then(() => open())
+                    .catch(err => console.error('[INV-QTY-USAGE] import err', err));
+            }
+        });
+    });
+    if (typeof window.bindSerialsBrowseButtons === 'function') {
+        window.bindSerialsBrowseButtons(content);
+    } else {
+        import('./serialIdentityUi.js?v=7.112').then((m) => {
+            if (m.bindSerialsBrowseButtons) m.bindSerialsBrowseButtons(content);
+        }).catch(() => {});
+    }
     content.querySelectorAll('.inv-row-print-qr').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2179,7 +2262,7 @@ function renderConsumedInventoryView() {
     `;
 
     // Reuse table action wiring for consumed rows (lookup from consumedItems)
-    content.querySelectorAll('.inv-row-edit, .inv-row-details, .inv-row-qty-history, .inv-row-print-qr, .inv-row-consume').forEach((btn) => {
+    content.querySelectorAll('.inv-row-edit, .inv-row-details, .inv-row-qty-history, .inv-row-qty-usage, .inv-row-print-qr, .inv-row-consume').forEach((btn) => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const itemId = btn.getAttribute('data-id');
@@ -2191,6 +2274,13 @@ function renderConsumedInventoryView() {
             if (btn.classList.contains('inv-row-qty-history') && typeof window.showInventoryQuantityHistoryModal === 'function') {
                 window.showInventoryQuantityHistoryModal(itemId);
             }
+            if (btn.classList.contains('inv-row-qty-usage')) {
+                const open = () => window.showQuantityUsageModal('INVENTORY', itemId, item);
+                if (typeof window.showQuantityUsageModal === 'function') open();
+                else {
+                    import('./quantity-usage-modal.js?v=7.96').then(() => open()).catch(() => {});
+                }
+            }
             if (btn.classList.contains('inv-row-print-qr')) {
                 if (typeof window.openInventoryPrintPreview === 'function') {
                     window.openInventoryPrintPreview([item || { ID: itemId }]);
@@ -2200,7 +2290,9 @@ function renderConsumedInventoryView() {
             }
         });
     });
-
+    if (typeof window.bindSerialsBrowseButtons === 'function') {
+        window.bindSerialsBrowseButtons(content);
+    }
     getEl('btnConsumedReport')?.addEventListener('click', downloadConsumedReport);
     getEl('btnConsumedApplyFilters')?.addEventListener('click', async () => {
         state.consumedFilters.q = getEl('consumedSearch')?.value || '';
@@ -2277,6 +2369,10 @@ export function initInventoryView() {
     const navInventory = getEl('nav-inventory');
     if (navInventory) navInventory.style.display = '';
 
+    if (typeof window.syncGlobalSearchPlaceholder === 'function') {
+        window.syncGlobalSearchPlaceholder();
+    }
+
     const openPending = async () => {
         await loadInventoryWorkspace();
         const pending = window.__lifecyclePending && window.__lifecyclePending.view === 'inventory-view'
@@ -2329,6 +2425,16 @@ export function initInventoryView() {
 
 window.loadInventoryWorkspace = loadInventoryWorkspace;
 window.openInventoryItemModal = openInventorySharedModal;
+window.renderInventoryItems = renderInventoryItems;
+window.applyInventorySearch = function applyInventorySearch(query) {
+    window.currentInventorySearchQuery = String(query || '').trim();
+    if (state.catalogMode || state.consumedMode) {
+        state.catalogMode = false;
+        state.consumedMode = false;
+        setWorkspaceChrome('inventory');
+    }
+    renderInventoryItems();
+};
 window.initInventoryView = initInventoryView;
 window.openConsumedInventoryView = openConsumedInventoryView;
 window.openInventoryRoot = async () => {

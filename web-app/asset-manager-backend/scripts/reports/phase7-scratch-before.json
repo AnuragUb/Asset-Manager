@@ -1,0 +1,136 @@
+{
+  "assets": [
+    {
+      "id": "APP-MUM-0526-MMKBX9-W",
+      "parentid": "HAR-MUM-0726-55QOFA-R",
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "0.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": "",
+      "linked_po_item_id": 2,
+      "receipt_line_id": null
+    },
+    {
+      "id": "APP-MUM-0526-PZ2J6E-8",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": null,
+      "quantity_available": null,
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": "26/0001",
+      "linked_po_item_id": null,
+      "receipt_line_id": null
+    },
+    {
+      "id": "HAR-MUM-0726-55QOFA-R",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": "PRD-0826-W3TB7U-Z",
+      "quantity_total": "1.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": "",
+      "linked_po_item_id": null,
+      "receipt_line_id": null
+    },
+    {
+      "id": "HAR-MUM-0826-IEIZP5-U",
+      "parentid": null,
+      "is_set": 1,
+      "product_id": null,
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "Anurag Satish Ubhalkar",
+      "sentagainstdc": "",
+      "linked_po_item_id": null,
+      "receipt_line_id": null
+    }
+  ],
+  "inventory": [
+    {
+      "id": "MIS-MUM-0826-H4XVLL-W",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "3.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000",
+      "receipt_line_id": null
+    }
+  ],
+  "pos": [
+    {
+      "id": "PO-1779691453564-194",
+      "ponumber": "ARM-PO-01-26-27",
+      "vendorname": null,
+      "status": "Active",
+      "is_deleted": 0
+    },
+    {
+      "id": "PO-1779796181621-757",
+      "ponumber": "PO980",
+      "vendorname": null,
+      "status": "Active",
+      "is_deleted": 0
+    }
+  ],
+  "poLines": [
+    {
+      "id": 2,
+      "orderid": "PO-1779691453564-194",
+      "itemdescription": "Apple MacBook Air 24 ",
+      "qtyordered": 1,
+      "status": "Shipped",
+      "assetid": "APP-MUM-0526-MMKBX9-W"
+    },
+    {
+      "id": 3,
+      "orderid": "PO-1779796181621-757",
+      "itemdescription": "MacBook",
+      "qtyordered": 1,
+      "status": "Pending",
+      "assetid": null
+    }
+  ],
+  "temps": {
+    "n": 0
+  },
+  "products": {
+    "n": 201
+  },
+  "catalog": {
+    "n": 202,
+    "checksum": "c76988c90fb62edcaef63a21e4d3095a"
+  },
+  "reservations": {
+    "n": 0
+  },
+  "conversions": {
+    "n": 0
+  },
+  "sets": {
+    "n": 9
+  },
+  "receipts": {
+    "n": 0
+  },
+  "receiptLines": {
+    "n": 0
+  },
+  "outputs": {
+    "n": 0
+  },
+  "events": {
+    "n": 0
+  },
+  "outbox": {
+    "n": 0
+  }
+}

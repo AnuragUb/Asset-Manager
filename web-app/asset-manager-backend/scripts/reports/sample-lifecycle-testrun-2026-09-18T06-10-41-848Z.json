@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "error": "Receipt Note not found",
+  "reasonCode": "NOT_FOUND",
+  "statusCode": 404,
+  "stack": [
+    "Error: Receipt Note not found",
+    "    at httpError (/app/web-app/asset-manager-backend/services/receiptService.js:28:15)",
+    "    at /app/web-app/asset-manager-backend/services/receiptService.js:1315:24",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)"
+  ]
+}

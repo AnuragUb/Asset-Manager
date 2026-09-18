@@ -22,7 +22,7 @@ function humanAction(type) {
     const t = String(type || '').toUpperCase();
     const map = {
         CREATED: 'Record created',
-        POSTED: 'Receipt posted',
+        POSTED: 'Posted',
         CANCELLED: 'Cancelled',
         REVERSED: 'Receipt reversed',
         RESERVE: 'Reservation created',
@@ -46,7 +46,13 @@ function humanAction(type) {
         PO_EXPECTED: 'Purchase Order expected later',
         PO_LINKED: 'Purchase Order linked',
         PRODUCT_LINKED: 'Product linked to Zoho',
-        PO_IMPORTED: 'PO imported'
+        PO_IMPORTED: 'PO imported',
+        UPDATED: 'Updated',
+        VOIDED: 'Voided',
+        PHYSICAL_ALLOCATED: 'Physical allocated to Purchase Book',
+        PHYSICAL_RELEASED: 'Physical released from Purchase Book',
+        DC_CONSUMED: 'Purchase Book qty used on DC',
+        DC_RELEASED: 'Purchase Book DC consumption released'
     };
     return map[t] || String(type || 'Event').replace(/_/g, ' ');
 }
@@ -68,7 +74,30 @@ function eventCard(ev) {
 
 function pushEvent(list, ev) {
     if (!ev || !ev.when) return;
-    list.push(ev);
+    const ts = Date.parse(ev.when);
+    if (!Number.isFinite(ts)) return;
+    list.push({ ...ev, _ts: ts });
+}
+
+function feedSort(events) {
+    return events.sort((a, b) => (b._ts || 0) - (a._ts || 0));
+}
+
+function poActivityAction(po) {
+    if (po.source === 'LOCAL') return 'Legacy local PO (contained)';
+    const synced = po.lastSyncedAt ? Date.parse(po.lastSyncedAt) : NaN;
+    const created = po.createdAt ? Date.parse(po.createdAt) : NaN;
+    if (Number.isFinite(synced) && Number.isFinite(created) && synced - created > 5000) {
+        return 'PO refreshed from Zoho';
+    }
+    return 'PO imported';
+}
+
+function syncEventAction(operation) {
+    const op = String(operation || '').toUpperCase();
+    if (op.includes('IMPORT')) return 'PO imported';
+    if (op.includes('REFRESH') || op.includes('SYNC') || op.includes('UPDATE')) return 'PO refreshed from Zoho';
+    return humanAction(op || 'REFRESHED');
 }
 
 const FEED_MODULE_VIEWS = {
@@ -77,7 +106,9 @@ const FEED_MODULE_VIEWS = {
     receipts: 'receipts-view',
     pos: 'purchase-orders-view',
     intakes: 'physical-intakes-view',
-    products: 'products-view'
+    products: 'products-view',
+    books: 'purchase-books-view',
+    dc: 'dc-view'
 };
 
 function allowFeedModule(module) {
@@ -88,7 +119,7 @@ function allowFeedModule(module) {
 
 export async function gatherLifecycleFeed({ limit = 80 } = {}) {
     const events = [];
-    const [conv, rsv, receipts, pos, intakes, products] = await Promise.all([
+    const [conv, rsv, receipts, pos, intakes, products, poSync, pbEvents, dcEvents] = await Promise.all([
         allowFeedModule('conversions')
             ? lifecycleApi('/api/conversions?limit=50').catch(() => ({ conversions: [] }))
             : Promise.resolve({ conversions: [] }),
@@ -106,7 +137,16 @@ export async function gatherLifecycleFeed({ limit = 80 } = {}) {
             : Promise.resolve({ intakes: [] }),
         allowFeedModule('products')
             ? lifecycleApi('/api/products?limit=50').catch(() => ({ products: [] }))
-            : Promise.resolve({ products: [] })
+            : Promise.resolve({ products: [] }),
+        allowFeedModule('pos')
+            ? lifecycleApi('/api/procurement/sync-events?limit=40').catch(() => ({ events: [] }))
+            : Promise.resolve({ events: [] }),
+        allowFeedModule('books')
+            ? lifecycleApi('/api/purchase-books/recent-events?limit=40').catch(() => ({ events: [] }))
+            : Promise.resolve({ events: [] }),
+        allowFeedModule('dc')
+            ? lifecycleApi('/api/dc/recent-events?limit=40').catch(() => ({ events: [] }))
+            : Promise.resolve({ events: [] })
     ]);
 
     (conv.conversions || []).forEach((c) => {
@@ -150,11 +190,30 @@ export async function gatherLifecycleFeed({ limit = 80 } = {}) {
             module: 'receipts'
         });
     });
-    (pos.purchaseOrders || []).forEach((po) => {
+    const syncPoIds = new Set();
+    (poSync.events || []).forEach((ev) => {
+        const poId = ev.procurementPoId || ev.procurement_po_id;
+        if (poId) syncPoIds.add(String(poId));
         pushEvent(events, {
-            when: po.importedAt || po.updatedAt || po.createdAt || po.poDate,
-            actor: po.importedBy,
-            action: po.source === 'LOCAL' ? 'Legacy local PO (contained)' : 'PO imported',
+            when: ev.createdAt || ev.created_at,
+            actor: ev.actor,
+            action: syncEventAction(ev.operation),
+            source: ev.zohoPoId || ev.zoho_po_id,
+            dest: ev.poNumber || poId,
+            ref: poId,
+            refView: 'purchase-orders-view',
+            module: 'pos',
+            tech: ev.id ? `Sync ${ev.id} · ${ev.status || ''}`.trim() : ''
+        });
+    });
+    (pos.purchaseOrders || []).forEach((po) => {
+        // Prefer discrete sync events when available; otherwise one row from sync/create time.
+        if (syncPoIds.has(String(po.id))) return;
+        const when = po.lastSyncedAt || po.updatedAt || po.createdAt || po.importedAt || null;
+        pushEvent(events, {
+            when,
+            actor: po.updatedBy || po.createdBy || po.importedBy,
+            action: poActivityAction(po),
             source: po.zohoPoId,
             dest: po.poNumber || po.id,
             ref: po.id,
@@ -179,8 +238,8 @@ export async function gatherLifecycleFeed({ limit = 80 } = {}) {
     });
     (products.products || []).forEach((p) => {
         pushEvent(events, {
-            when: p.created_at,
-            actor: p.created_by,
+            when: p.created_at || p.createdAt,
+            actor: p.created_by || p.createdBy,
             action: 'Product created',
             ref: p.id,
             refView: 'products-view',
@@ -188,13 +247,50 @@ export async function gatherLifecycleFeed({ limit = 80 } = {}) {
             dest: p.name
         });
     });
+    (pbEvents.events || []).forEach((ev) => {
+        const type = String(ev.type || '').toUpperCase();
+        const actionMap = {
+            CREATED: 'Purchase Book created',
+            UPDATED: 'Purchase Book updated',
+            POSTED: 'Purchase Book posted',
+            VOIDED: 'Purchase Book voided',
+            PHYSICAL_ALLOCATED: 'Physical allocated to Purchase Book',
+            PHYSICAL_RELEASED: 'Physical released from Purchase Book',
+            DC_CONSUMED: 'Purchase Book qty used on DC',
+            DC_RELEASED: 'Purchase Book DC consumption released'
+        };
+        pushEvent(events, {
+            when: ev.timestamp || ev.createdAt,
+            actor: ev.actor,
+            action: actionMap[type] || humanAction(ev.type),
+            source: ev.procurementPoId || null,
+            dest: ev.vendorInvoiceNo || ev.purchaseBookId,
+            ref: ev.purchaseBookId,
+            refView: 'purchase-books-view',
+            module: 'books',
+            tech: ev.note || (ev.id ? `PB event ${ev.id}` : '')
+        });
+    });
+    (dcEvents.events || []).forEach((ev) => {
+        const meta = ev.metadata || {};
+        pushEvent(events, {
+            when: ev.timestamp || ev.createdAt,
+            actor: ev.actor,
+            action: ev.type === 'VOIDED' ? 'Delivery Challan voided' : (ev.type === 'CREATED' ? 'Delivery Challan created' : humanAction(ev.type)),
+            source: meta.customerName || null,
+            dest: ev.challanNo || meta.challanNo || ev.deliveryChallanId,
+            ref: ev.deliveryChallanId,
+            refView: 'dc-view',
+            module: 'dc',
+            tech: ev.note || (ev.id ? `DC event ${ev.id}` : '')
+        });
+    });
 
-    events.sort((a, b) => String(b.when).localeCompare(String(a.when)));
-    return events.slice(0, limit);
+    return feedSort(events).slice(0, limit).map(({ _ts, ...rest }) => rest);
 }
 
 async function gatherFeed() {
-    return gatherLifecycleFeed({ limit: 80 });
+    return gatherLifecycleFeed({ limit: 200 });
 }
 
 async function lookupHistory(id) {
@@ -204,11 +300,15 @@ async function lookupHistory(id) {
     const tries = [];
     if (upper.startsWith('PRD') || upper.includes('PRODUCT')) tries.push({ path: `/api/products/${encodeURIComponent(key)}`, view: 'products-view' });
     if (upper.startsWith('RN') || upper.includes('RECEIPT')) tries.push({ path: `/api/receipt-notes/${encodeURIComponent(key)}/history`, view: 'receipts-view' });
+    if (upper.startsWith('PBK') || upper.startsWith('PBL')) tries.push({ path: `/api/purchase-books/${encodeURIComponent(key)}/history`, view: 'purchase-books-view' });
+    if (upper.startsWith('DC') || /^\d{2}\/\d{4}$/.test(upper)) tries.push({ path: `/api/dc/${encodeURIComponent(key)}/history`, view: 'dc-view' });
     if (upper.startsWith('SET') || upper.startsWith('MS')) tries.push({ path: `/api/sets/${encodeURIComponent(key)}/history`, view: 'sets-view' });
     if (upper.startsWith('RSV') || upper.startsWith('RES')) tries.push({ path: `/api/reservations/${encodeURIComponent(key)}`, view: 'reservations-view' });
     if (upper.startsWith('CONV')) tries.push({ path: `/api/conversions/${encodeURIComponent(key)}`, view: 'history-view' });
     if (upper.startsWith('INTAKE')) tries.push({ path: `/api/physical-intakes/${encodeURIComponent(key)}/history`, view: 'physical-intakes-view' });
     tries.push({ path: `/api/procurement/pos/${encodeURIComponent(key)}/history`, view: 'purchase-orders-view' });
+    tries.push({ path: `/api/purchase-books/${encodeURIComponent(key)}/history`, view: 'purchase-books-view' });
+    tries.push({ path: `/api/dc/${encodeURIComponent(key)}/history`, view: 'dc-view' });
     tries.push({ path: `/api/assets/${encodeURIComponent(key)}/history`, view: 'home-view' });
     tries.push({ path: `/api/receipt-notes/${encodeURIComponent(key)}/history`, view: 'receipts-view' });
     tries.push({ path: `/api/sets/${encodeURIComponent(key)}/history`, view: 'sets-view' });
@@ -269,14 +369,68 @@ function eventsFromLookup(result) {
     return [];
 }
 
-async function renderHistory(query) {
+let historyPage = 0;
+const HISTORY_PAGE_SIZE = 8;
+let lastHistoryEvents = [];
+let lastHistoryQuery = '';
+
+function renderHistoryPager(total) {
+    const pages = Math.max(1, Math.ceil(Number(total || 0) / HISTORY_PAGE_SIZE));
+    if (historyPage > pages - 1) historyPage = pages - 1;
+    if (historyPage < 0) historyPage = 0;
+    const from = total ? historyPage * HISTORY_PAGE_SIZE + 1 : 0;
+    const to = Math.min(total, (historyPage + 1) * HISTORY_PAGE_SIZE);
+    return `<div class="prd-pager hist-pager" role="navigation" aria-label="History pages">
+        <span class="prd-pager-meta">${total ? `${from}–${to} of ${total}` : '0 events'}</span>
+        <div class="prd-pager-actions">
+            <button type="button" class="action-button grey prd-pager-btn" id="btnHistoryPagePrev" ${historyPage <= 0 ? 'disabled' : ''}>Previous</button>
+            <span class="prd-pager-page">Page ${historyPage + 1} of ${pages}</span>
+            <button type="button" class="action-button grey prd-pager-btn" id="btnHistoryPageNext" ${historyPage >= pages - 1 ? 'disabled' : ''}>Next</button>
+        </div>
+    </div>`;
+}
+
+function bindHistoryPager() {
+    const total = lastHistoryEvents.length;
+    const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+    el('btnHistoryPagePrev')?.addEventListener('click', () => {
+        if (historyPage <= 0) return;
+        historyPage -= 1;
+        paintHistoryPage();
+    });
+    el('btnHistoryPageNext')?.addEventListener('click', () => {
+        if (historyPage >= pages - 1) return;
+        historyPage += 1;
+        paintHistoryPage();
+    });
+}
+
+function paintHistoryPage() {
     const host = el('historyContent');
     if (!host) return;
-    if (query) {
+    const total = lastHistoryEvents.length;
+    const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+    if (historyPage > pages - 1) historyPage = Math.max(0, pages - 1);
+    const start = historyPage * HISTORY_PAGE_SIZE;
+    const slice = lastHistoryEvents.slice(start, start + HISTORY_PAGE_SIZE);
+    const heading = lastHistoryQuery
+        ? `<p class="lc-muted">History for <span class="lc-mono">${escapeHtml(lastHistoryQuery)}</span></p>`
+        : '';
+    host.innerHTML = `${heading}${slice.map(eventCard).join('')}${renderHistoryPager(total)}`;
+    bindHistoryPager();
+}
+
+async function renderHistory(query, { resetPage = true } = {}) {
+    const host = el('historyContent');
+    if (!host) return;
+    if (resetPage) historyPage = 0;
+    lastHistoryQuery = String(query || '').trim();
+    if (lastHistoryQuery) {
         host.innerHTML = '<p class="lc-muted">Looking up…</p>';
-        const found = await lookupHistory(query);
+        const found = await lookupHistory(lastHistoryQuery);
         const events = eventsFromLookup(found);
         if (!found || !events.length) {
+            lastHistoryEvents = [];
             host.innerHTML = emptyState({
                 title: 'No history for that reference.',
                 body: 'Try a Product, PO, Receipt Note, Asset, Inventory, Reservation, or Set ID.',
@@ -285,21 +439,23 @@ async function renderHistory(query) {
             });
             return;
         }
-        host.innerHTML = `<p class="lc-muted">History for <span class="lc-mono">${escapeHtml(query)}</span></p>
-            ${events.map(eventCard).join('')}`;
+        lastHistoryEvents = events;
+        paintHistoryPage();
         return;
     }
     const events = await gatherFeed();
     if (!events.length) {
+        lastHistoryEvents = [];
         host.innerHTML = emptyState({
             title: 'No lifecycle events yet.',
-            body: 'History appears as Products are linked, POs imported, receipts posted, and stock reserved or assembled.',
+            body: 'History appears as Products are linked, POs imported, Purchase Books posted, DCs created, receipts posted, and stock reserved or assembled.',
             actionLabel: 'Open Dashboard',
             actionView: 'operations-view'
         });
         return;
     }
-    host.innerHTML = events.map(eventCard).join('');
+    lastHistoryEvents = events;
+    paintHistoryPage();
 }
 
 let bound = false;
@@ -308,18 +464,18 @@ export function initHistoryView() {
         bound = true;
         el('btnReloadHistory')?.addEventListener('click', () => {
             const q = el('historySearch')?.value || '';
-            renderHistory(q).catch((err) => toastOperatorError(err));
+            renderHistory(q, { resetPage: true }).catch((err) => toastOperatorError(err));
         });
         el('historySearch')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                renderHistory(el('historySearch').value).catch((err) => toastOperatorError(err));
+                renderHistory(el('historySearch').value, { resetPage: true }).catch((err) => toastOperatorError(err));
             }
         });
     }
     const pending = consumeOpen('history-view');
     const q = (pending && pending.open) || (pending && pending.extra && pending.extra.q) || '';
     if (el('historySearch') && q) el('historySearch').value = q;
-    renderHistory(q).catch((err) => {
+    renderHistory(q, { resetPage: true }).catch((err) => {
         toastOperatorError(err);
         showToast(err.message, 'error');
     });

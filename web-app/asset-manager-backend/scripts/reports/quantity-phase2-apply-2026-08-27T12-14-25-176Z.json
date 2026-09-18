@@ -1,0 +1,141 @@
+{
+  "database": "asset_manager_phase2_scratch",
+  "dryRun": false,
+  "host": "192.168.6.237:8080",
+  "generatedAt": "2026-08-27T12:14:25.063Z",
+  "before": {
+    "assets": [
+      {
+        "id": "APP-MUM-0526-MMKBX9-W",
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "quantity_total": "0.000000",
+        "quantity_available": "0.000000",
+        "parentid": "HAR-MUM-0726-55QOFA-R",
+        "product_id": null,
+        "is_set": 0
+      },
+      {
+        "id": "APP-MUM-0526-PZ2J6E-8",
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "quantity_total": null,
+        "quantity_available": null,
+        "parentid": null,
+        "product_id": null,
+        "is_set": 0
+      },
+      {
+        "id": "HAR-MUM-0726-55QOFA-R",
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "quantity_total": "1.000000",
+        "quantity_available": "0.000000",
+        "parentid": null,
+        "product_id": "PRD-0826-W3TB7U-Z",
+        "is_set": 0
+      },
+      {
+        "id": "HAR-MUM-0826-IEIZP5-U",
+        "quantity_root_id": "HAR-MUM-0826-IEIZP5-U",
+        "quantity_original": "1.000000",
+        "quantity_total": "1.000000",
+        "quantity_available": "1.000000",
+        "parentid": null,
+        "product_id": null,
+        "is_set": 1
+      }
+    ],
+    "inventory": [
+      {
+        "id": "MIS-MUM-0826-H4XVLL-W",
+        "quantity_root_id": "MIS-MUM-0826-H4XVLL-W",
+        "quantity_original": "3.000000",
+        "quantity_total": "3.000000",
+        "quantity_available": "1.000000",
+        "has_qr": false,
+        "client_label": null
+      }
+    ]
+  },
+  "plannedRepairs": [
+    {
+      "table": "assets",
+      "id": "HAR-MUM-0726-55QOFA-R",
+      "quantity_root_id": "HAR-MUM-0726-55QOFA-R",
+      "quantity_original": "1.000000",
+      "reason": "quantity-tracked, no parent, not a Set, missing root id",
+      "before": {
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "parentid": null,
+        "is_set": 0
+      }
+    }
+  ],
+  "skipped": [],
+  "qrActions": [
+    {
+      "id": "MIS-MUM-0826-H4XVLL-W",
+      "action": "CREATE_ONE_INVENTORY_QR",
+      "per_unit": false,
+      "client_label": "MIS-MUM-H4XVLL"
+    }
+  ],
+  "physical_marking_rows": 0,
+  "after": {
+    "assets": [
+      {
+        "id": "APP-MUM-0526-MMKBX9-W",
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "quantity_total": "0.000000",
+        "quantity_available": "0.000000",
+        "parentid": "HAR-MUM-0726-55QOFA-R",
+        "product_id": null,
+        "is_set": 0
+      },
+      {
+        "id": "APP-MUM-0526-PZ2J6E-8",
+        "quantity_root_id": null,
+        "quantity_original": null,
+        "quantity_total": null,
+        "quantity_available": null,
+        "parentid": null,
+        "product_id": null,
+        "is_set": 0
+      },
+      {
+        "id": "HAR-MUM-0726-55QOFA-R",
+        "quantity_root_id": "HAR-MUM-0726-55QOFA-R",
+        "quantity_original": "1.000000",
+        "quantity_total": "1.000000",
+        "quantity_available": "0.000000",
+        "parentid": null,
+        "product_id": "PRD-0826-W3TB7U-Z",
+        "is_set": 0
+      },
+      {
+        "id": "HAR-MUM-0826-IEIZP5-U",
+        "quantity_root_id": "HAR-MUM-0826-IEIZP5-U",
+        "quantity_original": "1.000000",
+        "quantity_total": "1.000000",
+        "quantity_available": "1.000000",
+        "parentid": null,
+        "product_id": null,
+        "is_set": 1
+      }
+    ],
+    "inventory": [
+      {
+        "id": "MIS-MUM-0826-H4XVLL-W",
+        "quantity_root_id": "MIS-MUM-0826-H4XVLL-W",
+        "quantity_original": "3.000000",
+        "quantity_total": "3.000000",
+        "quantity_available": "1.000000",
+        "has_qr": true,
+        "client_label": "MIS-MUM-H4XVLL"
+      }
+    ]
+  }
+}

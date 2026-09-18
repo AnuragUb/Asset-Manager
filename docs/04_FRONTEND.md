@@ -9,7 +9,7 @@
 | Entry | `js/main.js` |
 | Tables/grids | Tabulator (CDN) |
 | Excel | SheetJS / xlsx (CDN) |
-| Charts | Chart.js (CDN) |
+| Charts | **Chart.js 4.4.9** — npm pin + vendored UMD `js/vendor/chart.umd.js` (not CDN). Helper: `js/charts.js` |
 | QR in browser | qrcode / html5-qrcode (CDN) |
 | Build | Optional copy/minify to `dist/` (`package.json` scripts); **live server currently serves SOURCE** |
 
@@ -20,7 +20,7 @@ Path: `web-app/asset-manager-frontend/`
 ## Boot sequence
 
 1. Browser loads `index.html`.
-2. CDN scripts + `sidebar-raul.js` (classic script) load.
+2. Local Chart.js UMD (`/js/vendor/chart.umd.js`) + other CDN scripts + `sidebar-raul.js` (classic script) load.
 3. `main.js` loads as `type="module"`.
 4. `auth.js` → `GET /api/auth/me` restores session (cookie).
 5. On success: load folders/kinds/assets, init nav, show dashboard home.
@@ -37,6 +37,7 @@ Cache busting: imports use query strings, e.g. `./dashboard.js?v=7.00`.
 |------|----------------|-------------|
 | `main.js` | Router, bootstrap, hierarchy load, tenant user admin wiring | ~70KB |
 | `dashboard.js` | Assets home, cards/table, CRUD, DC UI, bulk import, sets | ~472KB |
+| `operations.js` | Dashboard lifecycle board; Holdings pie/doughnut via Chart.js | ~20KB |
 | `projects.js` | Kanban, assign/unassign, orders, temp assets | ~175KB |
 | `inventory.js` | Inventory tree, items, Zoho catalog mode | ~97KB |
 | `employees.js` | Employee directory, quotas, bulk | ~43KB |
@@ -58,6 +59,7 @@ Cache busting: imports use query strings, e.g. `./dashboard.js?v=7.00`.
 | `formAutosave.js` | Form draft restore | ~5KB |
 | `loginAnimations.js` | Login UX + signup modal | ~7KB |
 | `utils.js` | showView, toasts, Tabulator helpers, RBAC UI helpers | ~9KB |
+| `charts.js` | Chart.js native helper (8 types: bar, line, scatter, bubble, pie, doughnut, polarArea, radar) | small |
 | `itAssets.js` | Legacy IT assets view helper | small |
 
 ### Likely unused / orphaned modules
@@ -149,10 +151,30 @@ Production *intent* was to serve `dist/` on 8080.
 
 ---
 
+## Charts (Chart.js)
+
+Live UI uses **Chart.js 4.4.9**, not a CDN.
+
+| Piece | Role |
+|--------|------|
+| `chart.js` in `package.json` | Pinned npm dependency (`4.4.9`, not a caret range) |
+| `js/vendor/chart.umd.js` | UMD copy Express serves. Required because Docker hides frontend `node_modules` and the browser cannot import from there |
+| `js/charts.js` | Only the eight native types, using Chart.js `{ type, data, options }` |
+| `npm run vendor:chartjs` | Recopy UMD from `node_modules` after an upgrade; commit the vendor file |
+
+Native types: `bar`, `line`, `scatter`, `bubble`, `pie`, `doughnut`, `polarArea`, `radar`.
+
+Dashboard Holdings uses pie (Assets) and doughnut (Inventory) via `nativeArcDataset` / `nativeArcOptions` (rounded arcs, slice gaps, hover lift). Warranty still calls `new Chart(...)` on the same global. New charts should go through `createNativeChart` in `charts.js`.
+
+This is **not** a React/Vite introduction. See [`FRONTEND_REACT_ADR.md`](./FRONTEND_REACT_ADR.md).
+
+---
+
 ## Guidance for changes
 
 - Prefer editing the owning module, not stuffing more into `dashboard.js` when avoidable.
 - Preserve `window.*` contracts if HTML/onclick depends on them.
 - Bump `?v=` when shipping JS.
-- Do not rewrite to React/Vue without an explicit architectural decision.
+- Do not load Chart.js from a CDN; use `/js/vendor/chart.umd.js` and `js/charts.js`.
+- Do not rewrite to React/Vue now. Owner direction is [`FRONTEND_REACT_ADR.md`](./FRONTEND_REACT_ADR.md): keep the vanilla SPA until the product is stable, then add React as frontend logic. Express stays the server. That ADR does **not** authorize starting React.
 - Search for API string usage before renaming backend routes.

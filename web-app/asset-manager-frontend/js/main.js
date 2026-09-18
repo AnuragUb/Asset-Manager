@@ -1,6 +1,7 @@
-console.log('MAIN.JS: Entry point (v7.49)');
-import { showView, hasPermission, canOpenAppView } from './utils.js?v=7.39';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.49';
+console.log('MAIN.JS: Entry point (v7.61)');
+import { showView, hasPermission, canOpenAppView } from './utils.js?v=7.40';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.114';
+import './dcDocumentView.js?v=1.3';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
 import { setupAuth, checkSession } from './auth.js?v=7.29';
@@ -9,15 +10,16 @@ import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 // import { setupOcr } from './ocr.js?v=5.50';
 import { initWarrantyView } from './warranty.js?v=6.60';
 import { initProjectsView } from './projects.js?v=7.26';
-import { initInventoryView } from './inventory.js?v=7.48';
-import { initKitSetsView } from './kitSets.js?v=7.28';
-import { initReceiptsView } from './receipts.js?v=7.28';
-import { initPurchaseOrdersView } from './purchase-orders.js?v=7.45';
-import { initProductsView } from './products.js?v=7.46';
-import { initOperationsView } from './operations.js?v=7.41';
+import { initInventoryView } from './inventory.js?v=7.114';
+import { initKitSetsView } from './kitSets.js?v=7.53';
+import { initReceiptsView } from './receipts.js?v=7.102';
+import { initPurchaseOrdersView } from './purchase-orders.js?v=7.104';
+import { initPurchaseBooksView } from './purchase-books.js?v=7.110';
+import { initProductsView } from './products.js?v=7.80';
+import { initOperationsView } from './operations.js?v=7.78';
 import { initReservationsView } from './reservations.js?v=7.28';
-import { initHistoryView } from './lifecycle-history.js?v=7.48';
-import { initPhysicalIntakesView } from './physical-intakes.js?v=7.48';
+import { initHistoryView } from './lifecycle-history.js?v=7.113';
+import { initPhysicalIntakesView } from './physical-intakes.js?v=7.84';
 import { initRecoveryCenterView, refreshRecoveryCenterBadge } from './recovery-center.js?v=7.07';
 import { initSettingsView } from './settings.js?v=6.60';
 import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
@@ -26,7 +28,18 @@ import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from '.
 import { initFormAutosave } from './formAutosave.js?v=6.60';
 import { initContextMenu } from './contextMenu.js?v=7.44';
 import { initServicePortal } from './servicePortal.js?v=6.60';
-import { initDCProjectFetcher, initDCAliasLogic } from './dcProjectFetcher.js?v=6.60';
+import { initDCProjectFetcher, initDCAliasLogic, initDCPoFetcher } from './dcProjectFetcher.js?v=7.111';
+import { bindSerialIdentityPanel } from './serialIdentityUi.js?v=7.112';
+import './lifecycle.js?v=7.33';
+import './quantity-usage-modal.js?v=7.112';
+
+// Mark the ES module graph as successfully evaluated. The index.html watchdog
+// only means "main.js (or a dependency) failed to import" — not that every
+// feature init finished. Set this immediately so slow/optional inits cannot
+// false-trigger the red banner on other PCs/networks.
+window.mainLoaded = true;
+console.log('MAIN.JS: Module graph loaded (v7.93)');
+try { bindSerialIdentityPanel(); } catch (e) { console.warn('[serials] bind failed', e); }
 
 // Expose showView to global scope for other modules
 window.showView = showView;
@@ -54,14 +67,19 @@ window.checkWarranty = () => {
 };
 
 // Initialize Company Templates
-initCompanyTemplates();
+try { initCompanyTemplates(); } catch (err) { console.error('initCompanyTemplates failed:', err); }
 
 // Initialize DC Project Fetcher
-initDCProjectFetcher();
-initDCAliasLogic();
+try {
+    initDCProjectFetcher();
+    initDCPoFetcher();
+    initDCAliasLogic();
+} catch (err) {
+    console.error('DC fetcher init failed:', err);
+}
 
 // Initialize Form Autosave
-initFormAutosave();
+try { initFormAutosave(); } catch (err) { console.error('initFormAutosave failed:', err); }
 
 // --- RELEASES VIEW RENDERING ---
 export function renderReleases() {
@@ -251,9 +269,9 @@ async function saveAsset(asset) {
     const username = currentUser ? currentUser.username : (localStorage.getItem('username') || 'web');
     
     // Determine if this is an update or a new asset
-    // Assets from the database will have an ID
-    const isUpdate = asset.ID || asset.Id;
-    if (!isUpdate) {
+    // Assets from the database will have an ID (API may send ID, Id, or id)
+    const assetId = String(asset.ID || asset.Id || asset.id || '').trim();
+    if (!assetId) {
         if (typeof showToast === 'function') {
             showToast('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.', 'info');
         } else {
@@ -262,7 +280,7 @@ async function saveAsset(asset) {
         return null;
     }
     const method = 'PUT';
-    const url = `/api/assets/${asset.ID || asset.Id}`;
+    const url = `/api/assets/${encodeURIComponent(assetId)}`;
 
     try {
         const response = await fetch(url, {
@@ -518,7 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncTopNavActive('operations-view');
 
                 // Show operations overview by default (Assets is a top-level workspace)
-                const subViews = ['operations-view', 'home-view', 'sheet-view', 'employee-view', 'inventory-view', 'sets-view', 'receipts-view', 'purchase-orders-view', 'products-view', 'reservations-view', 'history-view', 'physical-intakes-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
+                const subViews = ['operations-view', 'home-view', 'sheet-view', 'employee-view', 'inventory-view', 'sets-view', 'receipts-view', 'purchase-orders-view', 'purchase-books-view', 'products-view', 'reservations-view', 'history-view', 'physical-intakes-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
                 subViews.forEach(sv => {
                     const el = document.getElementById(sv);
                     if (el) {
@@ -644,6 +662,7 @@ const APP_VIEWS = {
     'sets-view': { id: 'sets-view', navId: 'nav-sets', sidebar: false },
     'receipts-view': { id: 'receipts-view', navId: 'nav-receipts', sidebar: false },
     'purchase-orders-view': { id: 'purchase-orders-view', navId: 'nav-purchase-orders', sidebar: false },
+    'purchase-books-view': { id: 'purchase-books-view', navId: 'nav-purchase-books', sidebar: false },
     'products-view': { id: 'products-view', navId: 'nav-products', sidebar: false },
     'reservations-view': { id: 'reservations-view', navId: 'nav-reservations', sidebar: false },
     'history-view': { id: 'history-view', navId: 'nav-history', sidebar: false },
@@ -659,7 +678,7 @@ const APP_VIEWS = {
     'arri-view': { id: 'arri-view', navId: 'nav-arri', sidebar: false }
 };
 
-const LOGISTICS_NAV_IDS = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-receipts', 'nav-dc'];
+const LOGISTICS_NAV_IDS = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
 
 function closeLogisticsMenu() {
     const item = document.getElementById('nav-logistics-item');
@@ -684,6 +703,11 @@ function openLogisticsMenu() {
     const toggle = document.getElementById('nav-logistics');
     const menu = document.getElementById('nav-logistics-menu');
     if (!item || !toggle || !menu) return;
+    // Portal to body so fixed z-index escapes nav stacking (bubbles/ul) and
+    // still clears sticky view toolbars — without raising #app-header over modals.
+    if (menu.parentElement !== document.body) {
+        document.body.appendChild(menu);
+    }
     item.classList.add('open');
     toggle.setAttribute('aria-expanded', 'true');
     menu.hidden = false;
@@ -705,7 +729,8 @@ function syncTopNavActive(subViewName) {
     if (LOGISTICS_NAV_IDS.includes(navId)) {
         document.getElementById('nav-logistics')?.classList.add('active');
     } else if (navId === 'nav-physical-intakes') {
-        document.getElementById('nav-inventory')?.classList.add('active');
+        navLink.classList.add('active');
+        document.getElementById('nav-logistics')?.classList.add('active');
     } else {
         navLink.classList.add('active');
         const wrapper = navLink.closest('.menu-item-wrapper');
@@ -725,7 +750,9 @@ function setupLogisticsMenu() {
         else openLogisticsMenu();
     });
     document.addEventListener('click', (e) => {
-        if (!item.contains(e.target)) closeLogisticsMenu();
+        const menu = document.getElementById('nav-logistics-menu');
+        if (item.contains(e.target) || (menu && menu.contains(e.target))) return;
+        closeLogisticsMenu();
     });
     window.addEventListener('resize', () => {
         if (item.classList.contains('open')) positionLogisticsMenu();
@@ -828,6 +855,16 @@ function switchDashboardSubView(subViewName) {
     } else if (window.refreshRecoveryCenterBadge) {
         window.refreshRecoveryCenterBadge().catch(() => {});
     }
+
+    // pushState does not fire hashchange — keep global search scoped to the active module
+    if (typeof window.syncGlobalSearchPlaceholder === 'function') {
+        window.syncGlobalSearchPlaceholder();
+    }
+    const searchInputEl = document.getElementById('globalSidebarSearch')
+        || document.querySelector('.sidebar-search input');
+    if (searchInputEl && typeof searchInputEl.oninput === 'function') {
+        searchInputEl.dispatchEvent(new Event('input'));
+    }
 }
 
 // --- GLOBAL QoL: ESC KEY TO CLOSE MODALS ---
@@ -866,14 +903,12 @@ window.addEventListener('keydown', (e) => {
 });
 
 // Initialize Context Menu
-    initContextMenu();
+try { initContextMenu(); } catch (err) { console.error('initContextMenu failed:', err); }
 
     // Initialize Service Portal
-    initServicePortal();
+try { initServicePortal(); } catch (err) { console.error('initServicePortal failed:', err); }
 
-    // Mark modules as loaded for watchdog
-window.mainLoaded = true;
-console.log('MAIN.JS: All modules initialized and loaded.');
+console.log('MAIN.JS: Feature inits finished.');
 window.switchDashboardSubView = switchDashboardSubView;
 
 // Handle Browser Back/Forward Navigation
@@ -1025,6 +1060,11 @@ function setupNavigation() {
             view: 'dashboardView',
             subView: 'purchase-orders-view',
             init: () => typeof initPurchaseOrdersView === 'function' && initPurchaseOrdersView()
+        },
+        'nav-purchase-books': {
+            view: 'dashboardView',
+            subView: 'purchase-books-view',
+            init: () => typeof initPurchaseBooksView === 'function' && initPurchaseBooksView()
         },
         'nav-products': {
             view: 'dashboardView',
@@ -1660,6 +1700,7 @@ function setupNavigation() {
         'nav-sets': checkTabPermission('view.sets') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-receipts': checkTabPermission('view.receipt_notes') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-purchase-orders': checkTabPermission('view.purchase_orders') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-purchase-books': (checkTabPermission('view.purchase_books') || checkTabPermission('view.purchase_orders')) && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-products': checkTabPermission('view.products') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-reservations': checkTabPermission('view.reservations') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-history': checkTabPermission('view.history') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
@@ -1689,7 +1730,7 @@ function setupNavigation() {
         }
     });
 
-    const logisticsChildIds = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-receipts', 'nav-dc'];
+    const logisticsChildIds = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
     const logisticsItem = document.getElementById('nav-logistics-item');
     if (logisticsItem) {
         const anyChild = logisticsChildIds.some((id) => {

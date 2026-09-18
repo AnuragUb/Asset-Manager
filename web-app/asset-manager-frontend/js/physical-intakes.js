@@ -14,7 +14,7 @@ import {
     go,
     consumeOpen,
     lifecycleApi
-} from './lifecycle.js?v=7.48';
+} from './lifecycle.js?v=7.52';
 
 export const PO_STATUS_LABELS = {
     EXPECTED: 'PO Expected Later',
@@ -24,10 +24,18 @@ export const PO_STATUS_LABELS = {
     PO_LINKED: 'Purchase Order linked'
 };
 
-export function defaultPoStatusForType(intakeType) {
-    if (intakeType === 'EXTERNAL_ACQUISITION') return 'EXPECTED';
-    if (intakeType === 'OTHER_APPROVED') return '';
-    return 'NOT_REQUIRED';
+export const INTAKE_TYPE_LABELS = {
+    OPENING_BALANCE: 'Opening Balance',
+    LEGACY_EXISTING_STOCK: 'Legacy Existing Stock',
+    EXTERNAL_ACQUISITION: 'External Acquisition',
+    INTERNAL_TRANSFER: 'Internal Transfer',
+    DONATION: 'Donation',
+    NON_PO_ACQUISITION: 'Non-PO Acquisition',
+    OTHER_APPROVED: 'Other Approved'
+};
+
+export function defaultPoStatusForType(_intakeType) {
+    return 'EXPECTED';
 }
 
 function poStatusLabel(choiceOrState) {
@@ -36,6 +44,10 @@ function poStatusLabel(choiceOrState) {
 
 function el(id) {
     return document.getElementById(id);
+}
+
+function wizardHost() {
+    return document.getElementById('physicalIntakesContent');
 }
 
 function canMutate() {
@@ -57,15 +69,35 @@ const wizard = {
     quantity: '',
     unit: '',
     location: 'Mumbai',
+    folderId: '',
+    folderName: '',
+    kindId: '',
+    kindName: '',
+    category: '',
     reason: '',
     source: {},
-    poStatus: '',
+    poStatus: 'EXPECTED',
     expectedPoNumber: '',
     expectedVendorRef: '',
     selectedPo: null,
     selectedLine: null,
     result: null
 };
+
+let intakeHierarchy = {
+    invFolders: [],
+    invKinds: [],
+    assetFolders: [],
+    assetKinds: []
+};
+
+function clearHierarchySelection() {
+    wizard.folderId = '';
+    wizard.folderName = '';
+    wizard.kindId = '';
+    wizard.kindName = '';
+    wizard.category = '';
+}
 
 function resetWizard() {
     wizard.holdingType = '';
@@ -74,14 +106,115 @@ function resetWizard() {
     wizard.quantity = '';
     wizard.unit = '';
     wizard.location = 'Mumbai';
+    clearHierarchySelection();
     wizard.reason = '';
     wizard.source = {};
-    wizard.poStatus = '';
+    wizard.poStatus = 'EXPECTED';
     wizard.expectedPoNumber = '';
     wizard.expectedVendorRef = '';
     wizard.selectedPo = null;
     wizard.selectedLine = null;
     wizard.result = null;
+}
+
+function rowId(row) {
+    return String(row?.id || row?.ID || '');
+}
+
+function rowName(row) {
+    return String(row?.name || row?.Name || rowId(row));
+}
+
+function rowFolderId(row) {
+    return String(row?.folderid || row?.FolderId || row?.folderId || '');
+}
+
+function rowModule(row) {
+    return String(row?.module || row?.Module || '');
+}
+
+function assetKindName(row) {
+    return String(row?.name || row?.Name || '');
+}
+
+function assetKindParent(row) {
+    return String(row?.parentname || row?.ParentName || row?.parentName || '');
+}
+
+function currentModule() {
+    return localStorage.getItem('selectedAssetCategory') || 'IT';
+}
+
+function assetFolderById(id) {
+    return intakeHierarchy.assetFolders.find((f) => rowId(f) === String(id || ''));
+}
+
+function invFolderOptionsHtml(selected) {
+    const current = String(selected || '');
+    return ['<option value="">Select folder</option>']
+        .concat(intakeHierarchy.invFolders.map((folder) => {
+            const id = rowId(folder);
+            return `<option value="${escapeHtml(id)}" ${id === current ? 'selected' : ''}>${escapeHtml(rowName(folder))}</option>`;
+        }))
+        .join('');
+}
+
+function invKindOptionsHtml(folderId, selected) {
+    const current = String(selected || '');
+    const kinds = intakeHierarchy.invKinds.filter((kind) => !folderId || rowFolderId(kind) === String(folderId));
+    return ['<option value="">Select category</option>']
+        .concat(kinds.map((kind) => {
+            const id = rowId(kind);
+            return `<option value="${escapeHtml(id)}" ${id === current ? 'selected' : ''}>${escapeHtml(rowName(kind))}</option>`;
+        }))
+        .join('');
+}
+
+function assetFolderOptionsHtml(selected) {
+    const module = currentModule();
+    const current = String(selected || '');
+    const folders = intakeHierarchy.assetFolders.filter((f) => {
+        const mod = rowModule(f);
+        return !mod || mod === module;
+    });
+    return ['<option value="">Select folder</option>']
+        .concat(folders.map((folder) => {
+            const id = rowId(folder);
+            return `<option value="${escapeHtml(id)}" ${id === current ? 'selected' : ''}>${escapeHtml(rowName(folder))}</option>`;
+        }))
+        .join('');
+}
+
+function assetKindOptionsHtml(folderId, selected) {
+    const current = String(selected || '');
+    const folder = assetFolderById(folderId);
+    const folderName = folder ? rowName(folder) : '';
+    const kinds = intakeHierarchy.assetKinds.filter((kind) => {
+        const parent = assetKindParent(kind);
+        if (!folderName) return !parent;
+        return parent === folderName || parent === rowId(folder);
+    });
+    return ['<option value="">Select category</option>']
+        .concat(kinds.map((kind) => {
+            const name = assetKindName(kind);
+            return `<option value="${escapeHtml(name)}" ${name === current ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+        }))
+        .join('');
+}
+
+async function loadIntakeHierarchy() {
+    const [invFolders, invKinds, assetFolders, assetKinds] = await Promise.all([
+        api('/api/inventory/folders').catch(() => ({ folders: [] })),
+        api('/api/inventory/kinds').catch(() => ({ kinds: [] })),
+        api('/api/folders').catch(() => []),
+        api('/api/asset_kinds').catch(() => [])
+    ]);
+    intakeHierarchy = {
+        invFolders: invFolders.folders || [],
+        invKinds: invKinds.kinds || [],
+        assetFolders: Array.isArray(assetFolders) ? assetFolders : (assetFolders.folders || []),
+        assetKinds: Array.isArray(assetKinds) ? assetKinds : (assetKinds.kinds || [])
+    };
 }
 
 export function provenanceHtml(intake, opts = {}) {
@@ -95,6 +228,7 @@ export function provenanceHtml(intake, opts = {}) {
     const resourceId = out.resourceId || intake.physicalId || '';
     const poLabel = cp ? poStatusLabel(cp.state || cp.poStatusLabel) : '';
     const showLink = !opts.hideLink && cp && cp.state === 'AWAITING_PO' && canMutate() && resourceType && resourceId;
+    const showNotRequired = showLink;
     const poBits = cp ? `
             <div><div class="lc-k">Purchase Order Status</div><div>${escapeHtml(cp.poStatusLabel || poLabel || '—')}</div></div>
             ${cp.expectedPoNumber ? `<div><div class="lc-k">Expected PO Number</div><div>${escapeHtml(cp.expectedPoNumber)}</div></div>` : ''}
@@ -116,6 +250,7 @@ export function provenanceHtml(intake, opts = {}) {
         </div>
         <p class="lc-muted" style="margin:8px 0 0;">Physical identity is the Asset or Inventory ID. The Intake ID is an audit reference.</p>
         ${showLink ? `<button type="button" class="action-button blue pi-link-po" style="margin-top:10px;" data-resource-type="${escapeHtml(resourceType)}" data-resource-id="${escapeHtml(resourceId)}" data-intake-id="${escapeHtml(intake.id || '')}">Link Purchase Order</button>` : ''}
+        ${showNotRequired ? `<button type="button" class="action-button grey pi-mark-not-required" style="margin-top:10px;margin-left:8px;" data-resource-type="${escapeHtml(resourceType)}" data-resource-id="${escapeHtml(resourceId)}">No PO Required</button>` : ''}
     </section>`;
 }
 
@@ -258,8 +393,67 @@ function collectSource() {
     }
 }
 
-function wizardHost() {
-    return el('physicalIntakesContent');
+function isAwaitingHash() {
+    return String(window.location.hash || '').includes('awaiting=1');
+}
+
+async function renderAwaitingAdoptionList() {
+    const host = wizardHost();
+    if (!host) return;
+    const data = await api('/api/physical-intakes/provenance?state=AWAITING_PO&limit=200');
+    const items = data.items || [];
+    if (el('physicalIntakeCountBadge')) {
+        el('physicalIntakeCountBadge').textContent = `${items.length} Awaiting Adoption`;
+    }
+    if (!items.length) {
+        host.innerHTML = emptyState({
+            title: 'Nothing awaiting adoption.',
+            body: 'Newly registered Physical Intake holdings appear here until an operator links a Purchase Order or marks No PO Required.'
+        });
+        return;
+    }
+    host.innerHTML = `
+        <p class="lc-muted">Adopted holdings still waiting. Leave them here, mark No PO Required, or link a Purchase Order. Each ID opens the physical holding.</p>
+        <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid #e5e7eb;color:#667085;">
+                    <th style="padding:8px;">Holding</th>
+                    <th style="padding:8px;">Type</th>
+                    <th style="padding:8px;">Name</th>
+                    <th style="padding:8px;">Quantity</th>
+                    <th style="padding:8px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${items.map((item) => {
+                    const view = item.resourceType === 'INVENTORY' ? 'inventory-view' : 'home-view';
+                    return `<tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:8px;" class="lc-mono">
+                            <button type="button" class="lc-crumb-link" data-lc-go="${view}" data-lc-open="${escapeHtml(item.resourceId)}">${escapeHtml(item.resourceId)}</button>
+                        </td>
+                        <td style="padding:8px;">${escapeHtml(item.resourceType)}</td>
+                        <td style="padding:8px;">${escapeHtml(item.holdingName || '—')}</td>
+                        <td style="padding:8px;">${escapeHtml(String(item.quantity ?? '—'))}</td>
+                        <td style="padding:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                            <button type="button" class="action-button blue pi-link-po" data-resource-type="${escapeHtml(item.resourceType)}" data-resource-id="${escapeHtml(item.resourceId)}">Link PO</button>
+                            <button type="button" class="action-button grey pi-mark-not-required" data-resource-type="${escapeHtml(item.resourceType)}" data-resource-id="${escapeHtml(item.resourceId)}">No PO Required</button>
+                        </td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    bindPhysicalIntakePoLink(host, null, {
+        onLinked: () => renderAwaitingAdoptionList().catch((err) => toastOperatorError(err))
+    });
+}
+
+async function renderIntakeHome() {
+    if (isAwaitingHash()) {
+        await renderAwaitingAdoptionList();
+        return;
+    }
+    await renderIntakeList();
 }
 
 function renderList(intakes) {
@@ -352,6 +546,7 @@ function renderStepHolding() {
         </div>
     `;
     bindChoiceClicks(host, 'holdingType', (value) => {
+        if (wizard.holdingType !== value) clearHierarchySelection();
         wizard.holdingType = value;
         renderStepType();
     });
@@ -484,6 +679,103 @@ function renderStepQty() {
             showToast('Quantity must be greater than zero.', 'error');
             return;
         }
+        renderStepCategory();
+    });
+}
+
+async function renderStepCategory() {
+    const host = wizardHost();
+    const isAsset = wizard.holdingType === 'ASSET';
+    host.innerHTML = `
+        <div class="pi-wizard">
+            <h3>Folder &amp; Category</h3>
+            <p class="lc-muted">${isAsset
+                ? `Choose Parent Folder and Kind for this Asset under module ${escapeHtml(currentModule())}. Same hierarchy as Add Asset.`
+                : 'Choose Inventory Folder and Category. Same hierarchy as Add Inventory.'}</p>
+            <p class="lc-muted" id="piHierarchyLoading">Loading folders…</p>
+            <div id="piHierarchyFields" style="display:none;max-width:480px;flex-direction:column;gap:10px;">
+                <div>
+                    <label class="lc-k">Parent Folder</label>
+                    <select id="piFolder" class="form-input"></select>
+                </div>
+                <div>
+                    <label class="lc-k">${isAsset ? 'Kind / Category' : 'Category'}</label>
+                    <select id="piKind" class="form-input"></select>
+                </div>
+            </div>
+            <div class="pi-nav">
+                <button type="button" class="action-button grey" id="piBack">Back</button>
+                <button type="button" class="action-button blue" id="piNext" disabled>Next</button>
+            </div>
+        </div>
+    `;
+
+    const folderSelect = el('piFolder');
+    const kindSelect = el('piKind');
+    const nextBtn = el('piNext');
+    const fields = el('piHierarchyFields');
+    const loading = el('piHierarchyLoading');
+
+    function syncNextEnabled() {
+        if (nextBtn) nextBtn.disabled = !(folderSelect?.value && kindSelect?.value);
+    }
+
+    function refreshKindOptions() {
+        if (!kindSelect || !folderSelect) return;
+        const prev = kindSelect.value || wizard.kindId || '';
+        kindSelect.innerHTML = isAsset
+            ? assetKindOptionsHtml(folderSelect.value, prev)
+            : invKindOptionsHtml(folderSelect.value, prev);
+        if (prev && ![...kindSelect.options].some((o) => o.value === prev)) {
+            kindSelect.value = '';
+        }
+        syncNextEnabled();
+    }
+
+    try {
+        await loadIntakeHierarchy();
+        if (loading) loading.style.display = 'none';
+        if (fields) fields.style.display = 'flex';
+        if (folderSelect) {
+            folderSelect.innerHTML = isAsset
+                ? assetFolderOptionsHtml(wizard.folderId)
+                : invFolderOptionsHtml(wizard.folderId);
+        }
+        refreshKindOptions();
+    } catch (err) {
+        if (loading) loading.textContent = 'Could not load folders.';
+        toastOperatorError(err);
+    }
+
+    folderSelect?.addEventListener('change', () => {
+        wizard.kindId = '';
+        wizard.kindName = '';
+        refreshKindOptions();
+    });
+    kindSelect?.addEventListener('change', syncNextEnabled);
+
+    el('piBack')?.addEventListener('click', renderStepQty);
+    nextBtn?.addEventListener('click', () => {
+        const folderId = folderSelect?.value || '';
+        const kindId = kindSelect?.value || '';
+        if (!folderId || !kindId) {
+            showToast('Select Parent Folder and Category before continuing.', 'error');
+            return;
+        }
+        wizard.folderId = folderId;
+        wizard.kindId = kindId;
+        if (isAsset) {
+            const folder = assetFolderById(folderId);
+            wizard.folderName = folder ? rowName(folder) : '';
+            wizard.kindName = kindId;
+            wizard.category = currentModule();
+        } else {
+            const folder = intakeHierarchy.invFolders.find((f) => rowId(f) === folderId);
+            const kind = intakeHierarchy.invKinds.find((k) => rowId(k) === kindId);
+            wizard.folderName = folder ? rowName(folder) : '';
+            wizard.kindName = kind ? rowName(kind) : '';
+            wizard.category = wizard.kindName;
+        }
         renderStepSource();
     });
 }
@@ -502,7 +794,7 @@ function renderStepSource() {
             </div>
         </div>
     `;
-    el('piBack')?.addEventListener('click', renderStepQty);
+    el('piBack')?.addEventListener('click', renderStepCategory);
     el('piNext')?.addEventListener('click', () => {
         collectSource();
         if ((wizard.intakeType === 'NON_PO_ACQUISITION' || wizard.intakeType === 'OTHER_APPROVED') && !wizard.reason) {
@@ -527,7 +819,7 @@ function poRadio(value, label, selected) {
 
 function collectPoStatus() {
     const picked = document.querySelector('input[name="piPoStatus"]:checked');
-    wizard.poStatus = picked ? picked.value : '';
+    wizard.poStatus = picked ? picked.value : 'EXPECTED';
     wizard.expectedPoNumber = el('piExpectedPoNumber')?.value?.trim() || '';
     wizard.expectedVendorRef = el('piExpectedVendor')?.value?.trim() || '';
 }
@@ -625,15 +917,15 @@ function renderExpectedFields() {
 
 function renderStepPoStatus() {
     const host = wizardHost();
-    const selected = wizard.poStatus || '';
+    const selected = wizard.poStatus === 'AVAILABLE' ? 'AVAILABLE' : 'EXPECTED';
+    wizard.poStatus = selected;
     host.innerHTML = `
         <div class="pi-wizard">
             <h3>Purchase Order Status</h3>
-            <p class="lc-muted">This records commercial provenance for the holding. It does not create a Receipt Note.</p>
+            <p class="lc-muted">Every intake starts as PO Expected Later and appears on Dashboard Awaiting Adoption after register. Link a Purchase Order now only if it is already available. Mark No PO Required later from Awaiting Adoption.</p>
             <fieldset class="pi-po-status pi-choices" style="border:0;padding:0;margin:0;">
                 <legend class="lc-k">Purchase Order Status</legend>
                 ${poRadio('EXPECTED', 'PO Expected Later', selected)}
-                ${poRadio('NOT_REQUIRED', 'No PO Required', selected)}
                 ${poRadio('AVAILABLE', 'Purchase Order Already Available', selected)}
             </fieldset>
             <div id="piPoStatusExtra">
@@ -698,6 +990,9 @@ function renderStepReview() {
                 <dt>Product</dt><dd>${escapeHtml(wizard.product?.id || '')} · ${escapeHtml(wizard.product?.name || '')}</dd>
                 <dt>Quantity</dt><dd>${qty} ${escapeHtml(wizard.unit || '')}</dd>
                 <dt>Unit</dt><dd>${escapeHtml(wizard.unit || '')}</dd>
+                <dt>Folder</dt><dd>${escapeHtml(wizard.folderName || wizard.folderId || '—')}</dd>
+                <dt>Kind / Category</dt><dd>${escapeHtml(wizard.kindName || wizard.kindId || '—')}</dd>
+                ${wizard.holdingType === 'ASSET' ? `<dt>Module</dt><dd>${escapeHtml(wizard.category || currentModule())}</dd>` : ''}
                 <dt>Reason</dt><dd>${escapeHtml(wizard.reason || '—')}</dd>
                 <dt>Purchase Order Status</dt><dd>${escapeHtml(poStatusLabel(wizard.poStatus))}</dd>
                 ${wizard.poStatus === 'EXPECTED' && wizard.expectedPoNumber ? `<dt>Expected PO Number</dt><dd>${escapeHtml(wizard.expectedPoNumber)}</dd>` : ''}
@@ -736,6 +1031,11 @@ async function submitIntake() {
             quantity: Number(wizard.quantity),
             unit: wizard.unit,
             location: wizard.location,
+            folderId: wizard.folderId,
+            kindId: wizard.kindId,
+            parentFolder: wizard.folderName || undefined,
+            type: wizard.holdingType === 'ASSET' ? (wizard.kindName || wizard.kindId) : (wizard.kindName || undefined),
+            category: wizard.holdingType === 'ASSET' ? (wizard.category || currentModule()) : (wizard.category || wizard.kindName || undefined),
             reason: wizard.reason,
             source: wizard.source,
             commercialPoChoice: wizard.poStatus,
@@ -828,13 +1128,21 @@ async function openDetail(id) {
             </article>`).join('') || '<p class="lc-muted">No history.</p>'}
         </div>
     `;
-    el('piBackList')?.addEventListener('click', () => renderIntakeList().catch((err) => toastOperatorError(err)));
+    el('piBackList')?.addEventListener('click', () => {
+        const hash = String(window.location.hash || '');
+        if (hash.includes('awaiting=1')) {
+            renderAwaitingAdoptionList().catch((err) => toastOperatorError(err));
+            return;
+        }
+        renderIntakeList().catch((err) => toastOperatorError(err));
+    });
     bindPhysicalIntakePoLink(host, intake);
 }
 
 function eventTypeLabel(type) {
     if (type === 'PO_EXPECTED') return 'Purchase Order expected later';
     if (type === 'PO_LINKED') return 'Purchase Order linked';
+    if (type === 'PO_NOT_REQUIRED') return 'No PO Required';
     if (type === 'PHYSICAL_INTAKE_CREATED') return 'Physical Intake registered';
     if (type === 'PHYSICAL_INTAKE_ASSET_CREATED') return 'Asset registered by Physical Intake';
     if (type === 'PHYSICAL_INTAKE_INVENTORY_CREATED') return 'Inventory registered by Physical Intake';
@@ -865,6 +1173,31 @@ export function bindPhysicalIntakePoLink(root, intake, opts = {}) {
                     }
                 }
             });
+        });
+    });
+    host.querySelectorAll('.pi-mark-not-required').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('Mark this holding as No PO Required? It will leave Awaiting Adoption.')) return;
+            try {
+                await api('/api/physical-intakes/mark-not-required', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        resourceType: btn.getAttribute('data-resource-type'),
+                        resourceId: btn.getAttribute('data-resource-id')
+                    })
+                });
+                showToast('Marked No PO Required', 'success');
+                if (typeof opts.onLinked === 'function') {
+                    opts.onLinked();
+                    return;
+                }
+                if (intake && intake.id && wizardHost()) {
+                    openDetail(intake.id).catch((err) => toastOperatorError(err));
+                }
+            } catch (err) {
+                toastOperatorError(err);
+            }
         });
     });
 }
@@ -1019,7 +1352,7 @@ export function initPhysicalIntakesView() {
     if (!bound) {
         bound = true;
         el('btnReloadPhysicalIntakes')?.addEventListener('click', () => {
-            renderIntakeList().catch((err) => toastOperatorError(err));
+            renderIntakeHome().catch((err) => toastOperatorError(err));
         });
         el('btnStartPhysicalIntake')?.addEventListener('click', () => {
             if (!canMutate()) {
@@ -1042,6 +1375,10 @@ export function initPhysicalIntakesView() {
     }
     if (pending && pending.extra && pending.extra.start) {
         startWizard();
+        return;
+    }
+    if ((pending && pending.extra && pending.extra.awaiting) || isAwaitingHash()) {
+        renderAwaitingAdoptionList().catch((err) => toastOperatorError(err));
         return;
     }
     renderIntakeList().catch((err) => toastOperatorError(err));

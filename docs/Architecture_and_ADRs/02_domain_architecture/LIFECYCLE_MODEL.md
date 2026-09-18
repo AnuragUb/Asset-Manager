@@ -96,6 +96,19 @@ Call sites that enforce transitions should use `assertTransition` — do not har
 
 Do **not** create a second lifecycle enum in a feature module.
 
+## Commercial birth class (not these states)
+
+`ACTIVE` / `RETIRED` / `DELETED` describe **operational** state of a holding.
+
+How the holding got a commercial parent is a different axis, locked in [`../LIFECYCLE_SOURCED_ADOPTED_ADR.md`](../LIFECYCLE_SOURCED_ADOPTED_ADR.md):
+
+| Class | Path |
+|-------|------|
+| **Sourced** | Purchase Order → Receipt Note → Asset / Inventory |
+| **Adopted** | Physical Intake → Asset / Inventory (always starts Awaiting PO) → Dashboard Awaiting Adoption → leave waiting, mark No PO Required, or PO + adoption Receipt Note |
+
+Parentless Adopted holdings are **Awaiting Adoption** on the Operations Dashboard. That is not a new `LIFECYCLE_STATES` code. Do not fold Sourced/Adopted into `ACTIVE`/`RETIRED`.
+
 ## Import examples
 
 ```js

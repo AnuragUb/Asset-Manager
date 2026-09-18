@@ -1,0 +1,31 @@
+{
+  "assets": {
+    "n": 4,
+    "checksum": "49ea5ac1b0a0ecce4802bd3c4c9114ec"
+  },
+  "inventory": {
+    "n": 2,
+    "checksum": "3160dcadc45a50236ec6e6ffcbb5a479"
+  },
+  "catalog": {
+    "n": 203,
+    "checksum": "bd8fb7f6f366a877bbbf959e699eec85"
+  },
+  "sets": 9,
+  "comps": 12,
+  "history": {
+    "n": 25,
+    "max_ts": "2026-08-17 07:26:00.718+00"
+  },
+  "invEvents": {
+    "n": 3,
+    "max_ts": "2026-08-29T04:45:50.554Z"
+  },
+  "qtyEvents": 1,
+  "zohoLogs": 15,
+  "assetProductLinks": {
+    "linked": 1,
+    "pairs": "HAR-MUM-0726-55QOFA-R=PRD-0826-W3TB7U-Z"
+  },
+  "inventoryProductLinks": 1
+}

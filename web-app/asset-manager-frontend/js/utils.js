@@ -94,6 +94,7 @@ export const APP_VIEW_PERMISSIONS = {
     'sets-view': 'view.sets',
     'receipts-view': 'view.receipt_notes',
     'purchase-orders-view': 'view.purchase_orders',
+    'purchase-books-view': ['view.purchase_books', 'view.purchase_orders'],
     'products-view': 'view.products',
     'reservations-view': 'view.reservations',
     'history-view': 'view.history',
@@ -118,6 +119,7 @@ export const PAGE_ACCESS_PERMISSIONS = [
     { page: 'History', key: 'view.history' },
     { page: 'Reservations', key: 'view.reservations' },
     { page: 'Purchase Orders', key: 'view.purchase_orders' },
+    { page: 'Purchase Books', key: 'view.purchase_books' },
     { page: 'Receipt Notes', key: 'view.receipt_notes' },
     { page: 'Sets', key: 'view.sets' },
     { page: 'Projects', key: 'view.projects' },
@@ -136,6 +138,7 @@ const SERVICE_PORTAL_HIDDEN_VIEWS = new Set([
     'sets-view',
     'receipts-view',
     'purchase-orders-view',
+    'purchase-books-view',
     'products-view',
     'reservations-view',
     'history-view',
@@ -176,6 +179,7 @@ export function canOpenAppView(viewId) {
     if (servicePortal && SERVICE_PORTAL_HIDDEN_VIEWS.has(raw)) return false;
     const perm = APP_VIEW_PERMISSIONS[raw];
     if (!perm) return false;
+    if (Array.isArray(perm)) return perm.some((key) => hasPermission(key));
     return hasPermission(perm);
 }
 

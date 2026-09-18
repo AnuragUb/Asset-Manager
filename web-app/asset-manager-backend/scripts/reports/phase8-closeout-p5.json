@@ -1,0 +1,151 @@
+{
+  "assets": [
+    {
+      "id": "APP-MUM-0526-MMKBX9-W",
+      "parentid": "HAR-MUM-0726-55QOFA-R",
+      "quantity_parent_id": null,
+      "quantity_root_id": null,
+      "quantity_total": "0.000000",
+      "quantity_available": "0.000000",
+      "quantity_original": null,
+      "quantity_reserved": "0.000000",
+      "quantity_converted": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": null,
+      "conversion_source_id": null,
+      "conversion_id": null,
+      "is_set": 0,
+      "is_quantity_tracked": 0,
+      "has_qr": true,
+      "assignedto": "",
+      "sentagainstdc": ""
+    },
+    {
+      "id": "APP-MUM-0526-PZ2J6E-8",
+      "parentid": null,
+      "quantity_parent_id": null,
+      "quantity_root_id": null,
+      "quantity_total": null,
+      "quantity_available": null,
+      "quantity_original": null,
+      "quantity_reserved": "0.000000",
+      "quantity_converted": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": null,
+      "conversion_source_id": null,
+      "conversion_id": null,
+      "is_set": 0,
+      "is_quantity_tracked": 0,
+      "has_qr": true,
+      "assignedto": "",
+      "sentagainstdc": "26/0001"
+    },
+    {
+      "id": "HAR-MUM-0726-55QOFA-R",
+      "parentid": null,
+      "quantity_parent_id": null,
+      "quantity_root_id": "HAR-MUM-0726-55QOFA-R",
+      "quantity_total": "1.000000",
+      "quantity_available": "0.000000",
+      "quantity_original": "1.000000",
+      "quantity_reserved": "0.000000",
+      "quantity_converted": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": "PRD-0826-W3TB7U-Z",
+      "conversion_source_id": null,
+      "conversion_id": null,
+      "is_set": 0,
+      "is_quantity_tracked": 1,
+      "has_qr": true,
+      "assignedto": "",
+      "sentagainstdc": ""
+    },
+    {
+      "id": "HAR-MUM-0826-IEIZP5-U",
+      "parentid": null,
+      "quantity_parent_id": null,
+      "quantity_root_id": "HAR-MUM-0826-IEIZP5-U",
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_original": "1.000000",
+      "quantity_reserved": "0.000000",
+      "quantity_converted": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": null,
+      "conversion_source_id": null,
+      "conversion_id": null,
+      "is_set": 1,
+      "is_quantity_tracked": 1,
+      "has_qr": true,
+      "assignedto": "Anurag Satish Ubhalkar",
+      "sentagainstdc": ""
+    }
+  ],
+  "inventory": [
+    {
+      "id": "MIS-MUM-0826-H4XVLL-W",
+      "parentid": null,
+      "quantity_parent_id": null,
+      "quantity_root_id": "MIS-MUM-0826-H4XVLL-W",
+      "quantity_total": "3.000000",
+      "quantity_available": "1.000000",
+      "quantity_original": "3.000000",
+      "quantity_converted": "0.000000",
+      "quantity_reserved": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": null,
+      "has_qr": true,
+      "client_label": "MIS-MUM-H4XVLL"
+    },
+    {
+      "id": "MIS-MUM-0826-ZN5BF4-G",
+      "parentid": null,
+      "quantity_parent_id": null,
+      "quantity_root_id": "MIS-MUM-0826-ZN5BF4-G",
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_original": "1.000000",
+      "quantity_converted": "0.000000",
+      "quantity_reserved": "0.000000",
+      "lineage_status": "ACTIVE",
+      "product_id": "PRD-0826-2FB5I8-2",
+      "has_qr": true,
+      "client_label": "MIS-MUM-ZN5BF4"
+    }
+  ],
+  "history": {
+    "n": 25,
+    "max_ts": "2026-08-17 07:26:00.718+00"
+  },
+  "qtyEvents": {
+    "n": 1
+  },
+  "invEvents": {
+    "n": 3
+  },
+  "products": {
+    "n": 201
+  },
+  "catalog": {
+    "n": 203,
+    "checksum": "bd8fb7f6f366a877bbbf959e699eec85"
+  },
+  "sets": {
+    "n": 9
+  },
+  "projects": {
+    "n": 2
+  },
+  "projectAssets": {
+    "n": 1
+  },
+  "conversions": {
+    "n": 0
+  },
+  "reservations": {
+    "n": 0
+  },
+  "orphanHistory": {
+    "n": 5
+  }
+}

@@ -29,7 +29,6 @@ const INTAKE_TYPES = Object.freeze([
 const REASON_REQUIRED_TYPES = Object.freeze(['NON_PO_ACQUISITION', 'OTHER_APPROVED']);
 const ID_RE = /^[A-Z0-9]{2,8}-[A-Z0-9]{2,8}-\d{4}-[A-Z0-9]{6}-[A-Z0-9]$/;
 const INTAKE_ID_RE = /^INTAKE-[0-9]{4}-[A-Z0-9]{6}-[A-Z0-9]$/;
-const MIS_ID = 'MIS-MUM-0826-H4XVLL-W';
 
 function httpError(message, statusCode, reasonCode, details) {
   const err = new Error(message);
@@ -394,18 +393,54 @@ function sameFingerprint(row, fp) {
 async function resolveInventoryFolder(trx, args) {
   const folderId = trimText(args.folderId || args.folder_id);
   const kindId = trimText(args.kindId || args.kind_id);
-  if (folderId && kindId) {
-    return { folderid: folderId, kindid: kindId };
+  if (!folderId) {
+    throw httpError('Parent Folder is required.', 400, 'INTAKE_FOLDER_REQUIRED');
   }
-  const mis = await trx('inventory_items').where({ id: MIS_ID }).first();
-  if (mis && mis.folderid && mis.kindid) {
-    return { folderid: mis.folderid, kindid: mis.kindid, type: mis.type, category: mis.category };
+  if (!kindId) {
+    throw httpError('Kind / Category is required.', 400, 'INTAKE_KIND_REQUIRED');
   }
-  const kind = await trx('inventory_kinds').first();
+  const kind = await trx('inventory_kinds')
+    .where({ id: kindId })
+    .where(function () {
+      this.where('is_deleted', 0).orWhereNull('is_deleted');
+    })
+    .first();
   if (!kind) {
-    throw httpError('Inventory folder/kind is required to register Inventory.', 409, 'INVENTORY_KIND_REQUIRED');
+    throw httpError('Inventory kind was not found.', 400, 'INTAKE_KIND_REQUIRED');
   }
-  return { folderid: kind.folderid, kindid: kind.id, type: kind.name, category: kind.name };
+  const kindFolder = trimText(kind.folderid || kind.FolderId || kind.folder_id);
+  if (kindFolder && kindFolder !== folderId) {
+    throw httpError('Inventory kind does not belong to the selected folder.', 400, 'INTAKE_KIND_REQUIRED');
+  }
+  const typeName = trimText(args.type) || trimText(kind.name || kind.Name) || 'Inventory';
+  const categoryName = trimText(args.category) || typeName;
+  return {
+    folderid: folderId,
+    kindid: kindId,
+    type: typeName,
+    category: categoryName
+  };
+}
+
+async function resolveAssetHierarchy(trx, args) {
+  const folderId = trimText(args.folderId || args.folder_id);
+  const kindId = trimText(args.kindId || args.kind_id);
+  if (!folderId) {
+    throw httpError('Parent Folder is required.', 400, 'INTAKE_FOLDER_REQUIRED');
+  }
+  if (!kindId) {
+    throw httpError('Kind / Category is required.', 400, 'INTAKE_KIND_REQUIRED');
+  }
+  let parentFolder = trimText(args.parentFolder || args.parent_folder || args.folderName);
+  if (!parentFolder) {
+    const folder = await trx('folders')
+      .where({ id: folderId })
+      .first();
+    parentFolder = trimText(folder?.name || folder?.Name) || folderId;
+  }
+  const type = trimText(args.type) || kindId;
+  const category = trimText(args.category || args.module) || 'IT';
+  return { folderId, kindId, parentFolder, type, category };
 }
 
 async function loadActiveProduct(productId) {
@@ -479,7 +514,27 @@ function validateRequest(args) {
       throw httpError('Select a Purchase Order and PO line before registering.', 400, 'PO_LINE_REQUIRED');
     }
   }
-  return { holdingType, intakeType, quantity, source, reason, commercialChoice };
+  const folderId = trimText(args.folderId || args.folder_id);
+  const kindId = trimText(args.kindId || args.kind_id);
+  if (!folderId) {
+    throw httpError('Parent Folder is required.', 400, 'INTAKE_FOLDER_REQUIRED');
+  }
+  if (!kindId) {
+    throw httpError('Kind / Category is required.', 400, 'INTAKE_KIND_REQUIRED');
+  }
+  return {
+    holdingType,
+    intakeType,
+    quantity,
+    source,
+    reason,
+    commercialChoice,
+    folderId,
+    kindId,
+    parentFolder: trimText(args.parentFolder || args.parent_folder || args.folderName),
+    type: trimText(args.type),
+    category: trimText(args.category || args.module)
+  };
 }
 
 async function createInventoryRow(trx, { product, qty, unit, location, host, actor, intakeId, folder }) {
@@ -542,11 +597,14 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
   return { resourceType: 'INVENTORY', resourceId: holdingId, quantity: qty, qr: true, outputId };
 }
 
-async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId }) {
-  const holdingId = await uniqueHoldingId(trx, 'assets', location, product.make || 'GEN');
+async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId, hierarchy }) {
+  const type = hierarchy?.type || product.make || 'GEN';
+  const category = hierarchy?.category || 'IT';
+  const parentFolder = hierarchy?.parentFolder || '';
+  const holdingId = await uniqueHoldingId(trx, 'assets', location, type);
   const now = new Date().toISOString();
   const qr = await buildQrDataUrl(host, 'asset', holdingId);
-  await trx('assets').insert({
+  const row = {
     id: holdingId,
     itemname: product.name,
     itemdescription: product.description || '',
@@ -554,8 +612,8 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
     make: product.make || '',
     model: product.model || '',
     srno: '',
-    type: product.make || 'GEN',
-    category: product.model || '',
+    type,
+    category,
     isplaceholder: 0,
     parentid: null,
     currentlocation: location || '',
@@ -582,7 +640,11 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
     receipt_line_id: null,
     physical_intake_id: intakeId,
     quantity_updated_at: now
-  });
+  };
+  if (await trx.schema.hasColumn('assets', 'parent_folder')) {
+    row.parent_folder = parentFolder;
+  }
+  await trx('assets').insert(row);
   const outputInserted = await trx('physical_intake_output').insert({
     physical_intake_id: intakeId,
     resource_type: 'ASSET',
@@ -699,8 +761,8 @@ async function createPhysicalIntake(args = {}) {
         reason: validated.reason,
         source_json: JSON.stringify(sourceJson),
         location,
-        folder_id: trimText(args.folderId || args.folder_id),
-        kind_id: trimText(args.kindId || args.kind_id),
+        folder_id: validated.folderId,
+        kind_id: validated.kindId,
         actor,
         approving_actor: approvingActor,
         idempotency_key: key,
@@ -734,7 +796,12 @@ async function createPhysicalIntake(args = {}) {
 
       let created;
       if (validated.holdingType === 'INVENTORY') {
-        const folder = await resolveInventoryFolder(trx, args);
+        const folder = await resolveInventoryFolder(trx, {
+          folderId: validated.folderId,
+          kindId: validated.kindId,
+          type: validated.type,
+          category: validated.category
+        });
         created = await createInventoryRow(trx, {
           product,
           qty: validated.quantity,
@@ -757,6 +824,13 @@ async function createPhysicalIntake(args = {}) {
           resourceId: created.resourceId
         });
       } else {
+        const hierarchy = await resolveAssetHierarchy(trx, {
+          folderId: validated.folderId,
+          kindId: validated.kindId,
+          parentFolder: validated.parentFolder,
+          type: validated.type,
+          category: validated.category
+        });
         created = await createAssetRow(trx, {
           product,
           qty: validated.quantity,
@@ -764,7 +838,8 @@ async function createPhysicalIntake(args = {}) {
           location,
           host,
           actor,
-          intakeId
+          intakeId,
+          hierarchy
         });
         await writeIntakeEvent(trx, {
           physicalIntakeId: intakeId,

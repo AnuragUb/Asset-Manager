@@ -1,0 +1,89 @@
+{
+  "startedAt": "2026-09-18T06:27:04.850Z",
+  "zohoPoId": "1205624000001535001",
+  "dryRun": false,
+  "steps": {
+    "physicalIntakeAsset": {
+      "intakeId": "INTAKE-0926-737UPV-Y",
+      "resourceId": "HAR-MUM-0926-1MQF9Q-W",
+      "resourceType": "ASSET",
+      "productId": "PRD-0926-XE2KYG-Z"
+    },
+    "physicalIntakeInventory": {
+      "intakeId": "INTAKE-0926-JZPF23-S",
+      "resourceId": "BOX-MUM-0926-74PQCL-E",
+      "resourceType": "INVENTORY",
+      "productId": "PRD-0926-XE2KYG-Z"
+    },
+    "poImport": {
+      "id": "PPO-0926-3NP8BT-M",
+      "zohoPoId": "1205624000001535001",
+      "poNumber": "P001/08/V.1",
+      "status": "APPROVED",
+      "lineCount": 3
+    },
+    "receiptCreate": {
+      "id": "RN-0926-IJBIHQ-Q",
+      "status": "OPEN",
+      "poId": "PPO-0926-3NP8BT-M",
+      "lineId": "POL-0926-FSBMVN-L",
+      "productId": "PRD-0926-XE2KYG-Z",
+      "qty": 1
+    },
+    "receiptPost": {
+      "id": "RN-0926-IJBIHQ-Q",
+      "status": "POSTED",
+      "outputs": [
+        {
+          "resourceType": "ASSET",
+          "resourceId": "DAT-MUM-0926-K2SDRR-8",
+          "quantity": 1
+        }
+      ]
+    },
+    "dcFromReceipt": {
+      "http": 200,
+      "id": "DC1789712828713",
+      "challanNo": "26/0008",
+      "holdings": [
+        "DAT-MUM-0926-K2SDRR-8"
+      ]
+    },
+    "dcFromIntake": {
+      "http": 200,
+      "id": "DC1789712828886",
+      "challanNo": "26/0009",
+      "holdings": [
+        "HAR-MUM-0926-1MQF9Q-W",
+        "BOX-MUM-0926-74PQCL-E"
+      ]
+    }
+  },
+  "database": "asset_manager",
+  "discovery": {
+    "productAsset": {
+      "id": "PRD-0926-XE2KYG-Z",
+      "name": "Belt Back"
+    },
+    "productInv": {
+      "id": "PRD-0926-XE2KYG-Z",
+      "name": "Belt Back"
+    },
+    "hierAsset": {
+      "folderId": "F1781858492867",
+      "kindId": "Hardware",
+      "type": "Hardware",
+      "category": "IT",
+      "parentFolder": "Cineom Assets"
+    },
+    "hierInv": {
+      "folderId": "IF-1789117990770-833",
+      "kindId": "IK-1789458816379-167",
+      "type": "Box Selling",
+      "category": "Box Selling",
+      "parentFolder": null
+    }
+  },
+  "finishedAt": "2026-09-18T06:27:08.992Z",
+  "ok": true
+}

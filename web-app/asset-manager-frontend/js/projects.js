@@ -1520,7 +1520,7 @@ async function showAssignAssetModal() {
         console.warn('[Projects] Modal element #assignAssetModal_v2 not found in DOM. Injecting dynamically...');
         
         const modalHtml = `
-            <div id="assignAssetModal_v2" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); align-items: center; justify-content: center;">
+            <div id="assignAssetModal_v2" class="modal" style="display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); align-items: center; justify-content: center;">
                 <div class="modal-content" style="background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 900px; min-height: 400px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); position: relative; display: flex; flex-direction: column;">
                     <span class="close-modal" id="btnCloseAssignAsset_v2" style="color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
                     <h3 style="margin-top: 0; color: #333;">Assign Asset to Project</h3>

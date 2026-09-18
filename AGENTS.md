@@ -81,7 +81,7 @@ Permanent Cursor rule (always apply): `.cursor/rules/assetengine-engineering-sta
 | Need | Document |
 |------|----------|
 | Docs map | [`docs/README.md`](./docs/README.md) |
-| Architecture nav | [`docs/architecture/README.md`](./docs/architecture/README.md) |
+| Architecture nav | [`docs/Architecture_and_ADRs/README.md`](./docs/Architecture_and_ADRs/README.md) |
 | API domains | [`docs/06_API.md`](./docs/06_API.md) |
 | Security posture | [`SECURITY.md`](./SECURITY.md), [`docs/07_SECURITY.md`](./docs/07_SECURITY.md) |
 | Debt / risks | [`docs/08_TECHNICAL_DEBT.md`](./docs/08_TECHNICAL_DEBT.md) |

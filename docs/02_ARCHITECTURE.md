@@ -4,7 +4,7 @@
 
 ```text
 Browser (Vanilla JS SPA)
-  ├── index.html shell + CDN libs (Tabulator, SheetJS, Chart.js, QR)
+  ├── index.html shell + vendored Chart.js UMD + CDN libs (Tabulator, SheetJS, QR)
   ├── main.js (router / bootstrap)
   ├── domain modules (dashboard, projects, inventory, ...)
   └── fetch('/api/...') + httpOnly JWT cookie
@@ -27,7 +27,7 @@ Integrations: Zoho CRM, Google Sheets, SMTP, optional Tally
 
 1. **Web app only** — PowerShell/Electron are deprecated.
 2. **Domain logic in the backend** — especially asset lifecycle helpers.
-3. **Frontend is a modular SPA without a framework** — ES modules + globals.
+3. **Frontend is a modular SPA without a framework** — ES modules + globals. Live UI stays vanilla until the owner is happy with current behaviour; React is deferred (`ADR-FRONTEND-001`).
 4. **Postgres via Knex** — not SQLite (despite older docs).
 5. **Redis delete-on-write caching** for assets/projects lists.
 6. **Case bridge** — DB `lowercase` ↔ UI `PascalCase` via `normalizeResult()`.
@@ -157,7 +157,7 @@ Confirm source of truth before push/deploy.
 ## What this architecture is *not*
 
 - Not microservices
-- Not React/Vue/Angular
+- Not React/Vue/Angular **in the live app today** — React is the intended later UI layer (`ADR-FRONTEND-001`), not a current rewrite
 - Not a clean hexagonal layout (yet)
 - Not fully JWT-locked (legacy LAN-trust routes remain)
 

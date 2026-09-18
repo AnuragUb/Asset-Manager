@@ -11,13 +11,13 @@ const RESOURCE_TYPES = Object.freeze(['ASSET', 'INVENTORY']);
 const STATES = Object.freeze(['NOT_REQUIRED', 'AWAITING_PO', 'PO_LINKED']);
 const CHOICES = Object.freeze(['EXPECTED', 'NOT_REQUIRED', 'AVAILABLE']);
 const DEFAULT_CHOICE_BY_INTAKE_TYPE = Object.freeze({
-  OPENING_BALANCE: 'NOT_REQUIRED',
-  LEGACY_EXISTING_STOCK: 'NOT_REQUIRED',
-  DONATION: 'NOT_REQUIRED',
-  NON_PO_ACQUISITION: 'NOT_REQUIRED',
+  OPENING_BALANCE: 'EXPECTED',
+  LEGACY_EXISTING_STOCK: 'EXPECTED',
+  DONATION: 'EXPECTED',
+  NON_PO_ACQUISITION: 'EXPECTED',
   EXTERNAL_ACQUISITION: 'EXPECTED',
-  INTERNAL_TRANSFER: 'NOT_REQUIRED',
-  OTHER_APPROVED: null
+  INTERNAL_TRANSFER: 'EXPECTED',
+  OTHER_APPROVED: 'EXPECTED'
 });
 const PO_STATUS_LABELS = Object.freeze({
   EXPECTED: 'PO Expected Later',
@@ -72,9 +72,10 @@ async function requireTables(runner = db) {
 
 function defaultChoiceForIntakeType(intakeType) {
   const key = String(intakeType || '').trim().toUpperCase();
-  return Object.prototype.hasOwnProperty.call(DEFAULT_CHOICE_BY_INTAKE_TYPE, key)
-    ? DEFAULT_CHOICE_BY_INTAKE_TYPE[key]
-    : null;
+  if (Object.prototype.hasOwnProperty.call(DEFAULT_CHOICE_BY_INTAKE_TYPE, key)) {
+    return DEFAULT_CHOICE_BY_INTAKE_TYPE[key];
+  }
+  return 'EXPECTED';
 }
 
 function normalizeChoice(raw) {
@@ -101,16 +102,15 @@ function choiceFromArgs(args) {
 
 function resolveRegistrationChoice(intakeType, args) {
   const explicit = choiceFromArgs(args);
-  if (explicit) return explicit;
-  const fallback = defaultChoiceForIntakeType(intakeType);
-  if (!fallback) {
+  if (explicit === 'NOT_REQUIRED') {
     throw httpError(
-      'Choose Purchase Order Status before registering this intake.',
+      'Mark No PO Required after the holding is registered, from Awaiting Adoption.',
       400,
-      'PO_STATUS_REQUIRED'
+      'NOT_REQUIRED_AT_REGISTER'
     );
   }
-  return fallback;
+  if (explicit) return explicit;
+  return defaultChoiceForIntakeType(intakeType);
 }
 
 function stateForChoice(choice) {
@@ -453,6 +453,102 @@ async function linkPurchaseOrder(args = {}) {
   }
 }
 
+async function insertIntakeEvent(trx, payload) {
+  try {
+    await trx('physical_intake_event').insert(payload);
+  } catch (err) {
+    if (String(err.code) === '23514') return;
+    throw err;
+  }
+}
+
+async function markNotRequired(args = {}) {
+  await requireTables();
+  const resourceType = String(args.resourceType || args.resource_type || '').trim().toUpperCase();
+  const resourceId = trimText(args.resourceId || args.resource_id);
+  const actor = trimText(args.actor || args.updatedBy);
+  if (!RESOURCE_TYPES.includes(resourceType) || !resourceId) {
+    throw httpError('A physical holding is required.', 400, 'MISSING_ID');
+  }
+  return db.transaction(async (trx) => {
+    const table = tableFor(resourceType);
+    const holding = await trx(table).where({ id: resourceId }).forUpdate().first();
+    if (!holding) {
+      throw httpError('That Asset or Inventory holding was not found.', 404, 'NOT_FOUND');
+    }
+    const existing = await trx('commercial_provenance')
+      .where({ resource_type: resourceType, resource_id: resourceId })
+      .forUpdate()
+      .first();
+    if (!existing) {
+      throw httpError('This holding has no Purchase Order expectation to close.', 409, 'PROVENANCE_NOT_AWAITING');
+    }
+    if (existing.state === 'NOT_REQUIRED') {
+      return publicProvenance(existing, { replayed: true });
+    }
+    if (existing.state !== 'AWAITING_PO') {
+      throw httpError('This holding is not waiting for a Purchase Order.', 409, 'PROVENANCE_NOT_AWAITING');
+    }
+    const now = new Date().toISOString();
+    await trx('commercial_provenance').where({ id: existing.id }).update({
+      state: 'NOT_REQUIRED',
+      expected_po_number: null,
+      expected_vendor_ref: null,
+      expected_zoho_po_id: null,
+      state_changed_at: now
+    });
+    if (existing.physical_intake_id) {
+      await insertIntakeEvent(trx, {
+        physical_intake_id: existing.physical_intake_id,
+        type: 'PO_NOT_REQUIRED',
+        product_id: holding.product_id || null,
+        quantity: qtyNum(existing.quantity),
+        unit: holding.quantity_unit || null,
+        actor,
+        timestamp: now,
+        reason: 'No PO Required',
+        resource_type: resourceType,
+        resource_id: resourceId,
+        metadata_json: JSON.stringify({ fromState: 'AWAITING_PO', toState: 'NOT_REQUIRED' })
+      });
+    }
+    if (resourceType === 'ASSET' && (await trx.schema.hasTable('asset_history'))) {
+      await trx('asset_history').insert({
+        assetid: resourceId,
+        action: 'PO_NOT_REQUIRED',
+        oldvalue: 'AWAITING_PO',
+        newvalue: 'NOT_REQUIRED',
+        user: actor || 'web',
+        timestamp: now,
+        details: 'Operator marked No PO Required from Awaiting Adoption'
+      });
+    }
+    const updated = await trx('commercial_provenance').where({ id: existing.id }).first();
+    return publicProvenance(updated);
+  });
+}
+
+async function holdingLabelMap(rows) {
+  const assets = rows.filter((row) => row.resource_type === 'ASSET').map((row) => row.resource_id);
+  const inventories = rows.filter((row) => row.resource_type === 'INVENTORY').map((row) => row.resource_id);
+  const labels = new Map();
+  if (assets.length) {
+    const found = await db('assets').whereIn('id', assets).select('id', 'itemname', 'make', 'model', 'status', 'purpose');
+    found.forEach((row) => labels.set(`ASSET:${row.id}`, row));
+  }
+  if (inventories.length) {
+    const found = await db('inventory_items').whereIn('id', inventories).select('id', 'itemname', 'make', 'model', 'status', 'purpose');
+    found.forEach((row) => labels.set(`INVENTORY:${row.id}`, row));
+  }
+  return labels;
+}
+
+async function countAwaitingAdoption() {
+  if (!(await tablesReady())) return 0;
+  const row = await db('commercial_provenance').where({ state: 'AWAITING_PO' }).count({ n: '*' }).first();
+  return Number(row && row.n ? row.n : 0);
+}
+
 async function listByState(query = {}) {
   await requireTables();
   const state = String(query.state || '').trim().toUpperCase();
@@ -464,8 +560,18 @@ async function listByState(query = {}) {
   if (RESOURCE_TYPES.includes(resourceType)) q = q.where('resource_type', resourceType);
   const countRow = await q.clone().clearOrder().count({ n: '*' }).first();
   const rows = await q.limit(limit).offset(offset);
+  const labels = await holdingLabelMap(rows);
   return {
-    items: rows.map((row) => publicProvenance(row)),
+    items: rows.map((row) => {
+      const holding = labels.get(`${row.resource_type}:${row.resource_id}`) || {};
+      return publicProvenance(row, {
+        holdingName: holding.itemname || row.resource_id,
+        holdingStatus: holding.status || null,
+        holdingPurpose: holding.purpose || null,
+        make: holding.make || null,
+        model: holding.model || null
+      });
+    }),
     total: Number(countRow && countRow.n ? countRow.n : 0),
     limit,
     offset
@@ -524,6 +630,8 @@ module.exports = {
   attachAtIntake,
   writeIntakeProvenanceEvents,
   linkPurchaseOrder,
+  markNotRequired,
+  countAwaitingAdoption,
   listByState,
   listLinkablePurchaseOrders,
   getLinkablePurchaseOrder

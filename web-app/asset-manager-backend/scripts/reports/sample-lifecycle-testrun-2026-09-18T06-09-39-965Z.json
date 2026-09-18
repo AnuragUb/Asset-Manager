@@ -1,0 +1,18 @@
+{
+  "ok": false,
+  "error": "select \"type\", \"category\", \"parent_folder\" from \"assets\" where \"type\" is not null and \"parent_folder\" is not null and (\"is_set\" is null or \"is_set\" = $1 or \"is_set\" = $2) and (\"is_deleted\" is null or \"is_deleted\" = $3) order by \"lastupdated\" desc limit $4 - invalid input syntax for type integer: \"false\"",
+  "reasonCode": null,
+  "statusCode": null,
+  "stack": [
+    "error: select \"type\", \"category\", \"parent_folder\" from \"assets\" where \"type\" is not null and \"parent_folder\" is not null and (\"is_set\" is null or \"is_set\" = $1 or \"is_set\" = $2) and (\"is_deleted\" is null or \"is_deleted\" = $3) order by \"lastupdated\" desc limit $4 - invalid input syntax for type integer: \"false\"",
+    "    at parseErrorMessage (/app/web-app/asset-manager-backend/node_modules/pg-protocol/dist/parser.js:305:11)",
+    "    at Parser.handlePacket (/app/web-app/asset-manager-backend/node_modules/pg-protocol/dist/parser.js:143:27)",
+    "    at Parser.parse (/app/web-app/asset-manager-backend/node_modules/pg-protocol/dist/parser.js:37:38)",
+    "    at Socket.<anonymous> (/app/web-app/asset-manager-backend/node_modules/pg-protocol/dist/index.js:11:42)",
+    "    at Socket.emit (node:events:524:28)",
+    "    at addChunk (node:internal/streams/readable:561:12)",
+    "    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)",
+    "    at Readable.push (node:internal/streams/readable:392:5)",
+    "    at TCP.onStreamRead (node:internal/stream_base_commons:191:23)"
+  ]
+}

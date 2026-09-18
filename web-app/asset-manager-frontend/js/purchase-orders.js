@@ -9,8 +9,10 @@ import {
     section,
     consumeOpen,
     toastOperatorError,
-    formatQty
-} from './lifecycle.js?v=7.31';
+    formatQty,
+    formatIstDate,
+    formatIstDateTime
+} from './lifecycle.js?v=7.33';
 
 function el(id) {
     return document.getElementById(id);
@@ -85,16 +87,20 @@ async function loadAeProductNames(productIds) {
 
 function productColumnHtml(line, names) {
     if (line.mappingRequired) {
+        const zohoName = line.productName || line.zohoProductName || '';
         const zohoRef = line.zohoProductId
             ? `<div class="po-product-zoho">Zoho Product reference ${escapeHtml(String(line.zohoProductId))}</div>`
             : '';
-        return `<span style="color:#991b1b;font-weight:700;">PRODUCT MAPPING REQUIRED</span>${zohoRef}`;
+        return `<span style="color:#991b1b;font-weight:700;">PRODUCT MAPPING REQUIRED</span>
+            ${zohoName ? `<div class="po-product-name">${escapeHtml(zohoName)}</div>` : ''}
+            ${zohoRef}`;
     }
     if (!line.productId) return dash(line.productId);
     const aeName = names[line.productId];
+    const zohoName = line.productName || line.zohoProductName || '';
     return `<div class="po-product-cell">
         <button type="button" class="lc-crumb-link po-product-id" data-lc-go="products-view" data-lc-open="${escapeHtml(line.productId)}" aria-label="Open AssetEngine Product ${escapeHtml(line.productId)}">${escapeHtml(line.productId)}</button>
-        ${aeName ? `<div class="po-product-name">${escapeHtml(aeName)}</div>` : ''}
+        ${aeName ? `<div class="po-product-name">${escapeHtml(aeName)}</div>` : (zohoName ? `<div class="po-product-name">${escapeHtml(zohoName)}</div>` : '')}
     </div>`;
 }
 
@@ -158,8 +164,8 @@ async function renderPoList() {
                             <td style="padding:8px;font-weight:600;">${dash(po.poNumber || po.id)}</td>
                             <td style="padding:8px;font-family:ui-monospace,monospace;font-size:12px;">${dash(po.zohoPoId)}</td>
                             <td style="padding:8px;">${statusChip(po.status)}</td>
-                            <td style="padding:8px;">${dash(po.poDate)}</td>
-                            <td style="padding:8px;">${dash(po.dueDate)}</td>
+                            <td style="padding:8px;">${formatIstDate(po.poDate)}</td>
+                            <td style="padding:8px;">${formatIstDate(po.dueDate)}</td>
                             <td style="padding:8px;">${escapeHtml(receivingProgress(po))}</td>
                             <td style="padding:8px;">${syncChip(po.reconciliationRequired ? 'RECONCILIATION_REQUIRED' : po.syncStatus)}</td>
                             <td style="padding:8px;">${po.source === 'LOCAL' ? '<span class="lc-chip lc-chip-legacy">LEGACY</span>' : 'Zoho'}</td>
@@ -239,13 +245,16 @@ async function renderPoDetail(id) {
                 <div><div class="po-label">PO Number</div><div>${dash(po.poNumber)}</div></div>
                 <div><div class="po-label">Zoho PO ID</div><div class="po-mono">${dash(po.zohoPoId)}</div></div>
                 <div><div class="po-label">Status</div><div>${statusChip(po.status)}</div></div>
-                <div><div class="po-label">Order Date</div><div>${dash(po.poDate)}</div></div>
-                <div><div class="po-label">Expected Date</div><div>${dash(po.dueDate)}</div></div>
+                <div><div class="po-label">Order Date</div><div>${formatIstDate(po.poDate)}</div></div>
+                <div><div class="po-label">Expected Date</div><div>${formatIstDate(po.dueDate)}</div></div>
                 <div><div class="po-label">Sync</div><div>${syncChip(po.syncStatus)}</div></div>
+                <div><div class="po-label">Last synced</div><div>${formatIstDateTime(po.lastSyncedAt)}</div></div>
+                <div><div class="po-label">Imported</div><div>${formatIstDateTime(po.createdAt)}</div></div>
             </div>
         </div>
         <div class="view-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
             ${logistics ? '<button type="button" class="action-button blue" id="btnPoRefresh">Refresh from Zoho</button>' : ''}
+            ${logistics ? '<button type="button" class="action-button green" id="btnPoCreateBook">Create Purchase Book</button>' : ''}
             <button type="button" class="action-button grey" id="btnPoViewReceipts">View Receipts</button>
             <button type="button" class="action-button grey" id="btnPoHistory">History</button>
         </div>
@@ -294,6 +303,13 @@ async function renderPoDetail(id) {
             toastOperatorError(err);
         }
     });
+    el('btnPoCreateBook')?.addEventListener('click', () => {
+        if (typeof window.lifecycleGo === 'function') {
+            window.lifecycleGo('purchase-books-view', { createFromPo: po.id });
+        } else if (typeof window.initPurchaseBooksView === 'function') {
+            window.initPurchaseBooksView();
+        }
+    });
     el('btnPoViewReceipts')?.addEventListener('click', () => {
         if (typeof window.lifecycleGo === 'function') {
             window.lifecycleGo('receipts-view', { poId: po.id });
@@ -311,7 +327,7 @@ async function renderPoDetail(id) {
                 <div style="font-weight:700;margin:16px 0 8px;">SYNC HISTORY</div>
                 ${(hist.events || []).map((ev) => `
                     <div style="font-size:12px;padding:8px 0;border-bottom:1px solid #f3f4f6;">
-                        <span class="po-mono">${escapeHtml(ev.createdAt || '')}</span>
+                        <span class="po-mono">${formatIstDateTime(ev.createdAt)}</span>
                         · ${escapeHtml(ev.operation)} · ${escapeHtml(ev.status)}
                         ${ev.errorMessage ? ` · ${escapeHtml(ev.errorMessage)}` : ''}
                     </div>
@@ -415,7 +431,10 @@ async function previewZohoPo() {
                     <tbody>
                         ${(po.lines || []).map((line) => `
                             <tr style="border-bottom:1px solid #f3f4f6;">
-                                <td style="padding:8px;">${line.mappingRequired ? '<span style="color:#991b1b;font-weight:700;">PRODUCT MAPPING REQUIRED</span>' : dash(line.productId)}</td>
+                                <td style="padding:8px;">
+                                    ${line.mappingRequired ? '<span style="color:#991b1b;font-weight:700;">PRODUCT MAPPING REQUIRED</span>' : dash(line.productId)}
+                                    ${line.productName || line.zohoProductName ? `<div class="po-product-name">${escapeHtml(line.productName || line.zohoProductName)}</div>` : ''}
+                                </td>
                                 <td style="padding:8px;">${dash(line.description)}</td>
                                 <td style="padding:8px;">${escapeHtml(line.orderedQty)}</td>
                             </tr>

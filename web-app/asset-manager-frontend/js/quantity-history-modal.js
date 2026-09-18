@@ -49,7 +49,7 @@
         .qty-modal {
             display: none;
             position: fixed;
-            z-index: 2000; /* Higher than other modals */
+            z-index: 10000; /* Sit on top of top-bar */
             left: 0;
             top: 0;
             width: 100%;

@@ -33,7 +33,7 @@ const ZOHO_OAUTH_SCOPES = [
 ].join(',');
 
 /** CRM v8 getRecords requires `fields`. */
-const PRODUCT_GET_FIELDS = 'Product_Name,Unit_Price,Description,Product_Code,Make,Model,HSN_Code';
+const PRODUCT_GET_FIELDS = 'Product_Name,Unit_Price,Description,Product_Code,Make,Model,HSN_Code,Usage_Unit,Created_By';
 const DEAL_GET_FIELDS = 'Deal_Name,Type,Project_ID';
 /** DC Account lookup — fields that exist on live Zoho Accounts metadata. No GSTIN on Accounts. */
 const ACCOUNT_GET_FIELDS = [
@@ -771,6 +771,41 @@ class ZohoService {
                 const n = Number(value);
                 return Number.isFinite(n) ? n : 0;
             };
+            const zohoDisplayName = (value) => {
+                if (value == null || value === '') return null;
+                if (typeof value === 'string' || typeof value === 'number') {
+                    const s = String(value).trim();
+                    return s || null;
+                }
+                try {
+                    if (typeof value.getName === 'function') {
+                        const name = value.getName();
+                        if (name != null && String(name).trim()) return String(name).trim();
+                    }
+                } catch (_err) { /* ignore */ }
+                if (value.name != null && String(value.name).trim()) return String(value.name).trim();
+                if (value.Name != null && String(value.Name).trim()) return String(value.Name).trim();
+                if (value.email != null && String(value.email).trim()) return String(value.email).trim();
+                return null;
+            };
+            const zohoPicklistValue = (value) => {
+                if (value == null || value === '') return null;
+                if (typeof value === 'string' || typeof value === 'number') {
+                    const s = String(value).trim();
+                    return s || null;
+                }
+                try {
+                    if (typeof value.getValue === 'function') {
+                        const v = value.getValue();
+                        if (v != null && String(v).trim()) return String(v).trim();
+                    }
+                } catch (_err) { /* ignore */ }
+                if (value.value != null && String(value.value).trim()) return String(value.value).trim();
+                if (value.display_value != null && String(value.display_value).trim()) {
+                    return String(value.display_value).trim();
+                }
+                return null;
+            };
 
             let page = 1;
             let pageToken = null;
@@ -836,6 +871,8 @@ class ZohoService {
                         const make = product.getKeyValue('Make');
                         const model = product.getKeyValue('Model');
                         const hsn = product.getKeyValue('HSN_Code');
+                        const usageUnit = zohoPicklistValue(product.getKeyValue('Usage_Unit'));
+                        const createdBy = zohoDisplayName(product.getKeyValue('Created_By'));
 
                         const catalogData = {
                             product_name: toNullString(productName) || 'Unnamed Product',
@@ -845,6 +882,8 @@ class ZohoService {
                             make: toNullString(make),
                             model: toNullString(model),
                             hsn_code: toNullString(hsn),
+                            usage_unit: usageUnit,
+                            created_by: createdBy,
                             last_synced_at: new Date().toISOString()
                         };
 
@@ -1202,54 +1241,104 @@ class ZohoService {
      * Does not write Zoho. Does not add OAuth scopes.
      * Cached in Redis/memory; filtered in-process by q.
      */
+    async _fetchAllAccountsPages() {
+        const accounts = [];
+        let page = 1;
+        let moreRecords = true;
+        const MAX_PAGES = 5;
+        const PER_PAGE = 200;
+        while (moreRecords && page <= MAX_PAGES) {
+            const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Accounts');
+            const paramInstance = new ZOHOCRMSDK.ParameterMap();
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, ACCOUNT_GET_FIELDS);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE, page);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, PER_PAGE);
+            const response = await recordOperations.getRecords(paramInstance);
+            if (response == null) {
+                const err = new Error('Zoho Accounts getRecords returned no response');
+                err.code = 'ZOHO_EMPTY_RESPONSE';
+                throw err;
+            }
+            const responseObject = response.getObject();
+            if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                const err = new Error(zohoApiExceptionMessage(responseObject));
+                err.code = 'ZOHO_API_EXCEPTION';
+                throw err;
+            }
+            if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+                const err = new Error('Zoho Accounts getRecords returned an unexpected response');
+                err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+                throw err;
+            }
+            const rows = responseObject.getData() || [];
+            for (const record of rows) {
+                const mapped = this._mapAccountRecord(record);
+                if (mapped && mapped.accountName) accounts.push(mapped);
+            }
+            const info = typeof responseObject.getInfo === 'function' ? responseObject.getInfo() : null;
+            moreRecords = !!(info && typeof info.getMoreRecords === 'function' && info.getMoreRecords());
+            page += 1;
+        }
+        return accounts;
+    }
+
+    /**
+     * Live Zoho word search for Account typeahead when cache filter misses.
+     * Does not write Zoho. Uses existing Account READ authorization.
+     */
+    async _searchAccountsByWord(q) {
+        const term = String(q || '').trim();
+        if (term.length < 2) return [];
+        const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Accounts');
+        const paramInstance = new ZOHOCRMSDK.ParameterMap();
+        await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.WORD, term);
+        await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.FIELDS, ACCOUNT_GET_FIELDS);
+        await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.PAGE, 1);
+        await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.PER_PAGE, 50);
+        const response = await recordOperations.searchRecords(paramInstance);
+        if (response == null) return [];
+        const responseObject = response.getObject();
+        if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+            const err = new Error(zohoApiExceptionMessage(responseObject));
+            err.code = 'ZOHO_API_EXCEPTION';
+            throw err;
+        }
+        if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) return [];
+        const rows = responseObject.getData() || [];
+        const out = [];
+        for (const record of rows) {
+            const mapped = this._mapAccountRecord(record);
+            if (mapped && mapped.accountName) out.push(mapped);
+        }
+        return out;
+    }
+
     async listAccounts({ q, force = false } = {}) {
         const query = String(q || '').trim().toLowerCase();
         try {
             await this.init();
             let accounts = (!force && await cache.get(ACCOUNT_CACHE_KEY)) || null;
             if (!Array.isArray(accounts)) {
-                accounts = [];
-                let page = 1;
-                let moreRecords = true;
-                const MAX_PAGES = 5;
-                const PER_PAGE = 200;
-                while (moreRecords && page <= MAX_PAGES) {
-                    const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Accounts');
-                    const paramInstance = new ZOHOCRMSDK.ParameterMap();
-                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, ACCOUNT_GET_FIELDS);
-                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE, page);
-                    await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, PER_PAGE);
-                    const response = await recordOperations.getRecords(paramInstance);
-                    if (response == null) {
-                        const err = new Error('Zoho Accounts getRecords returned no response');
-                        err.code = 'ZOHO_EMPTY_RESPONSE';
-                        throw err;
-                    }
-                    const responseObject = response.getObject();
-                    if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
-                        const err = new Error(zohoApiExceptionMessage(responseObject));
-                        err.code = 'ZOHO_API_EXCEPTION';
-                        throw err;
-                    }
-                    if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
-                        const err = new Error('Zoho Accounts getRecords returned an unexpected response');
-                        err.code = 'ZOHO_UNEXPECTED_RESPONSE';
-                        throw err;
-                    }
-                    const rows = responseObject.getData() || [];
-                    for (const record of rows) {
-                        const mapped = this._mapAccountRecord(record);
-                        if (mapped && mapped.accountName) accounts.push(mapped);
-                    }
-                    const info = typeof responseObject.getInfo === 'function' ? responseObject.getInfo() : null;
-                    moreRecords = !!(info && typeof info.getMoreRecords === 'function' && info.getMoreRecords());
-                    page += 1;
-                }
+                accounts = await this._fetchAllAccountsPages();
                 await cache.set(ACCOUNT_CACHE_KEY, accounts, ACCOUNT_CACHE_TTL_SEC);
             }
-            const visible = query
-                ? accounts.filter((row) => String(row.accountName || '').toLowerCase().includes(query))
+            let visible = query
+                ? accounts.filter((row) => {
+                    const name = String(row.accountName || '').toLowerCase();
+                    const phone = String(row.phone || '').toLowerCase();
+                    return name.includes(query) || phone.includes(query);
+                })
                 : accounts;
+
+            // Cache may be stale or truncated (max pages). Fall back to live Zoho word search.
+            if (query && visible.length === 0) {
+                try {
+                    visible = await this._searchAccountsByWord(q);
+                } catch (searchErr) {
+                    console.warn('[ZohoService] Accounts word search fallback failed:', searchErr.message || searchErr);
+                }
+            }
+
             return { accounts: visible.slice(0, 50), totalCached: accounts.length };
         } catch (error) {
             this._throwAccountReadError(error);

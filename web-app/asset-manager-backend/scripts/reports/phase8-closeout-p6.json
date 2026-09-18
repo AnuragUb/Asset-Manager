@@ -1,0 +1,301 @@
+{
+  "assets": [
+    {
+      "id": "APP-MUM-0526-MMKBX9-W",
+      "parentid": "HAR-MUM-0726-55QOFA-R",
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "0.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": ""
+    },
+    {
+      "id": "APP-MUM-0526-PZ2J6E-8",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": null,
+      "quantity_available": null,
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": "26/0001"
+    },
+    {
+      "id": "HAR-MUM-0726-55QOFA-R",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": "PRD-0826-W3TB7U-Z",
+      "quantity_total": "1.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "",
+      "sentagainstdc": ""
+    },
+    {
+      "id": "HAR-MUM-0826-IEIZP5-U",
+      "parentid": null,
+      "is_set": 1,
+      "product_id": null,
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000",
+      "assignedto": "Anurag Satish Ubhalkar",
+      "sentagainstdc": ""
+    }
+  ],
+  "inventory": [
+    {
+      "id": "MIS-MUM-0826-H4XVLL-W",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "3.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000"
+    },
+    {
+      "id": "MIS-MUM-0826-ZN5BF4-G",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": "PRD-0826-2FB5I8-2",
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000"
+    }
+  ],
+  "sets": [
+    {
+      "id": "SET-0826-03009T-0",
+      "set_code": "SET-0826-03009T-0",
+      "name": "Phase6 Archive Smoke",
+      "status": "DISBANDED",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-0826-JV3NUB-Q",
+      "set_code": "SET-0826-JV3NUB-Q",
+      "name": "Test Camera Kit",
+      "status": "ARCHIVED",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-0582C6",
+      "set_code": "TEST-MANAGED-SET-001",
+      "name": "Managed Set Integration Test",
+      "status": "ACTIVE",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-21D1C2",
+      "set_code": "SET-20260825-21D1C2",
+      "name": "Testg",
+      "status": "ACTIVE",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-2877F5",
+      "set_code": "SET-20260825-2877F5",
+      "name": "TEST-SET-UIUX-004",
+      "status": "ARCHIVED",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-4AC944",
+      "set_code": "TEST-MANAGED-SET-UI-003",
+      "name": "UI Verification Set",
+      "status": "ACTIVE",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-6DFCCF",
+      "set_code": "SET-20260825-6DFCCF",
+      "name": "Transponders",
+      "status": "ACTIVE",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-D2168F",
+      "set_code": "TEST-MANAGED-SET-002",
+      "name": "Managed Set Conflict Test",
+      "status": "ARCHIVED",
+      "zoho_product_id": null,
+      "product_id": null
+    },
+    {
+      "id": "SET-20260825-FB075C",
+      "set_code": "4536",
+      "name": "Sample test",
+      "status": "ACTIVE",
+      "zoho_product_id": null,
+      "product_id": null
+    }
+  ],
+  "components": [
+    {
+      "id": "CMP-20260825-00D6CC",
+      "set_id": "SET-20260825-FB075C",
+      "component_type": "ASSET",
+      "asset_id": "HAR-MUM-0726-55QOFA-R",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-0956E4",
+      "set_id": "SET-20260825-4AC944",
+      "component_type": "ASSET",
+      "asset_id": "HAR-MUM-0726-55QOFA-R",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-50A952",
+      "set_id": "SET-20260825-2877F5",
+      "component_type": "ASSET",
+      "asset_id": "HAR-MUM-0726-55QOFA-R",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-573DEE",
+      "set_id": "SET-20260825-21D1C2",
+      "component_type": "INVENTORY",
+      "asset_id": null,
+      "inventory_item_id": "MIS-MUM-0826-H4XVLL-W",
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-6A1632",
+      "set_id": "SET-20260825-FB075C",
+      "component_type": "ASSET",
+      "asset_id": "APP-MUM-0526-MMKBX9-W",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-8645E8",
+      "set_id": "SET-20260825-4AC944",
+      "component_type": "INVENTORY",
+      "asset_id": null,
+      "inventory_item_id": "MIS-MUM-0826-H4XVLL-W",
+      "quantity": "2.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-88A6D4",
+      "set_id": "SET-20260825-FB075C",
+      "component_type": "ASSET",
+      "asset_id": "APP-MUM-0526-PZ2J6E-8",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-8BA1B8",
+      "set_id": "SET-20260825-0582C6",
+      "component_type": "INVENTORY",
+      "asset_id": null,
+      "inventory_item_id": "MIS-MUM-0826-H4XVLL-W",
+      "quantity": "1.000000",
+      "is_active": true,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-9BB399",
+      "set_id": "SET-20260825-21D1C2",
+      "component_type": "ASSET",
+      "asset_id": "HAR-MUM-0826-IEIZP5-U",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-AD00D0",
+      "set_id": "SET-20260825-21D1C2",
+      "component_type": "ASSET",
+      "asset_id": "APP-MUM-0526-MMKBX9-W",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-BFB994",
+      "set_id": "SET-20260825-FB075C",
+      "component_type": "INVENTORY",
+      "asset_id": null,
+      "inventory_item_id": "MIS-MUM-0826-H4XVLL-W",
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    },
+    {
+      "id": "CMP-20260825-DE93C4",
+      "set_id": "SET-20260825-0582C6",
+      "component_type": "ASSET",
+      "asset_id": "HAR-MUM-0726-55QOFA-R",
+      "inventory_item_id": null,
+      "quantity": "1.000000",
+      "is_active": false,
+      "requirement_id": null,
+      "reservation_id": null
+    }
+  ],
+  "products": {
+    "n": 201
+  },
+  "catalog": {
+    "n": 203,
+    "checksum": "bd8fb7f6f366a877bbbf959e699eec85"
+  },
+  "projects": {
+    "n": 2
+  },
+  "dcs": {
+    "n": 1
+  },
+  "reservations": {
+    "n": 0
+  },
+  "setOwned": {
+    "n": 0
+  },
+  "requirements": {
+    "n": 2
+  },
+  "events": {
+    "n": 6
+  }
+}

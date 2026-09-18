@@ -5,7 +5,7 @@
 import { fetchWithAuth } from './auth.js?v=7.29';
 import { showToast, canOpenAppView } from './utils.js?v=7.39';
 
-export const LIFECYCLE_CACHE = '7.31';
+export const LIFECYCLE_CACHE = '7.52';
 
 const OPERATOR_ERRORS = {
     OVER_RECEIPT: 'That quantity exceeds the remaining PO quantity.',
@@ -21,6 +21,7 @@ const OPERATOR_ERRORS = {
     INTAKE_QUANTITY_INVALID: 'Enter a quantity greater than zero.',
     INTAKE_PERMISSION_DENIED: 'Sales cannot create Physical Intakes.',
     PO_STATUS_REQUIRED: 'Choose Purchase Order Status before registering this intake.',
+    NOT_REQUIRED_AT_REGISTER: 'Mark No PO Required after the holding is registered, from Awaiting Adoption.',
     PO_LINE_REQUIRED: 'Select a Purchase Order and PO line before registering.',
     PRODUCT_MISMATCH: 'The intake Product does not match the Purchase Order line Product.',
     ALREADY_LINKED: 'This holding is already linked to a Purchase Order.',
@@ -52,6 +53,7 @@ const VIEW_NAV = {
     'inventory-view': 'nav-inventory',
     'products-view': 'nav-products',
     'purchase-orders-view': 'nav-purchase-orders',
+    'purchase-books-view': 'nav-purchase-books',
     'receipts-view': 'nav-receipts',
     'reservations-view': 'nav-reservations',
     'sets-view': 'nav-sets',
@@ -97,10 +99,55 @@ export function formatQty(value) {
     return String(n);
 }
 
+const IST_TZ = 'Asia/Kolkata';
+
+function parseWhen(value) {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    const text = String(value).trim();
+    if (!text) return null;
+    const parsed = Date.parse(text);
+    if (Number.isNaN(parsed)) return null;
+    return new Date(parsed);
+}
+
+/** Calendar date in IST (e.g. 05 Sep 2026). */
+export function formatIstDate(value) {
+    const dt = parseWhen(value);
+    if (!dt) {
+        if (value == null || String(value).trim() === '') return '—';
+        return escapeHtml(value);
+    }
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+        timeZone: IST_TZ,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    }).format(dt);
+    return escapeHtml(formatted);
+}
+
+/** Date + time in IST with explicit zone label (e.g. 05 Sep 2026, 05:30 IST). */
+export function formatIstDateTime(value) {
+    const dt = parseWhen(value);
+    if (!dt) {
+        if (value == null || String(value).trim() === '') return '—';
+        return escapeHtml(value);
+    }
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+        timeZone: IST_TZ,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).format(dt);
+    return escapeHtml(`${formatted} IST`);
+}
+
 export function formatWhen(value) {
-    if (!value) return '—';
-    const text = String(value);
-    return escapeHtml(text.slice(0, 19).replace('T', ' '));
+    return formatIstDateTime(value);
 }
 
 export function operatorMessage(errOrCode, fallback) {
@@ -206,10 +253,17 @@ export function go(view, opts = {}) {
     if (opts.poId) params.set('poId', opts.poId);
     if (opts.q) params.set('q', opts.q);
     if (opts.waitlist) params.set('waitlist', '1');
+    if (opts.awaiting) params.set('awaiting', '1');
+    if (opts.zohoCatalog) params.set('zohoCatalog', '1');
+    if (opts.status) params.set('status', String(opts.status));
+    if (opts.createFromPo) params.set('createFromPo', opts.createFromPo);
     const qs = params.toString();
     const hash = qs ? `#${view}?${qs}` : `#${view}`;
     if (window.location.hash !== hash) {
         window.history.pushState({ subView: view }, '', hash);
+    }
+    if (typeof window.switchDashboardSubView === 'function') {
+        window.switchDashboardSubView(view);
     }
     const navId = VIEW_NAV[view];
     const nav = navId ? document.getElementById(navId) : null;
@@ -234,8 +288,24 @@ export function consumeOpen(view) {
     const params = new URLSearchParams(query || '');
     const id = params.get('id') || params.get('open');
     const waitlist = params.get('waitlist');
-    if (!id && !params.get('poId') && !params.get('q') && !waitlist) return null;
-    return { view, open: id, extra: { poId: params.get('poId'), q: params.get('q'), waitlist } };
+    const status = params.get('status');
+    const awaiting = params.get('awaiting');
+    const zohoCatalog = params.get('zohoCatalog');
+    const period = params.get('period');
+    const createFromPo = params.get('createFromPo');
+    if (!id && !params.get('poId') && !params.get('q') && !waitlist && !status && !awaiting && !zohoCatalog && !period && !createFromPo) return null;
+    return { view, open: id, createFromPo, extra: { poId: params.get('poId'), q: params.get('q'), waitlist, status, awaiting, zohoCatalog, period, createFromPo } };
+}
+
+function lifecycleOptsFromEl(el) {
+    return {
+        open: el.getAttribute('data-lc-open') || '',
+        waitlist: el.getAttribute('data-lc-waitlist') || undefined,
+        status: el.getAttribute('data-lc-status') || undefined,
+        awaiting: el.getAttribute('data-lc-awaiting') || undefined,
+        zohoCatalog: el.getAttribute('data-lc-zoho-catalog') || undefined,
+        period: el.getAttribute('data-lc-period') || undefined
+    };
 }
 
 export function bindLifecycleClicks(root) {
@@ -246,9 +316,7 @@ export function bindLifecycleClicks(root) {
         el.addEventListener('click', (e) => {
             e.preventDefault();
             const view = el.getAttribute('data-lc-go');
-            const open = el.getAttribute('data-lc-open') || '';
-            const waitlist = el.getAttribute('data-lc-waitlist') || '';
-            if (view) go(view, { open, waitlist: waitlist || undefined });
+            if (view) go(view, lifecycleOptsFromEl(el));
         });
     });
 }
@@ -266,10 +334,7 @@ function onDocumentClick(e) {
     const view = el.getAttribute('data-lc-go');
     if (!view) return;
     e.preventDefault();
-    go(view, {
-        open: el.getAttribute('data-lc-open') || '',
-        waitlist: el.getAttribute('data-lc-waitlist') || undefined
-    });
+    go(view, lifecycleOptsFromEl(el));
 }
 
 if (!window.__lifecycleClickBound) {

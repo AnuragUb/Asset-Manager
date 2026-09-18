@@ -1,0 +1,264 @@
+<!--
+  AssetEngine Delivery Challan — editable HTML template
+  Design language: docs/DC_DOCUMENT_DESIGN.md
+  Data: filled by js/dcDocumentView.js from DC payload snapshot (no live Zoho).
+
+  Placeholders:
+    {{path.to.value}}     escaped text
+    {{{path.to.html}}}    trusted HTML fragment already escaped by binder where needed
+    {{#if path}}...{{/if}}
+    {{#each path}}...{{/each}}  (use {{this.field}} or {{field}} inside)
+-->
+<article class="dc-qt-sheet" aria-label="Delivery Challan">
+    <div class="dc-qt-main">
+        <header class="dc-qt-top">
+            <div class="dc-qt-logo">
+                {{#if company.logoUrl}}
+                <img src="{{{company.logoUrl}}}" alt="">
+                {{/if}}
+                {{#if company.showFallback}}
+                <div class="dc-qt-logo-fallback">{{company.name}}</div>
+                {{/if}}
+            </div>
+            <div class="dc-qt-top-right">
+                <div class="dc-qt-accent" aria-hidden="true"></div>
+                <h1 class="dc-qt-doc-title">{{document.title}}</h1>
+            </div>
+        </header>
+
+        <section class="dc-qt-meta" aria-label="Document identity">
+            <div>
+                <div class="dc-qt-label">DC No.</div>
+                <div class="dc-qt-value dc-qt-value-red">{{document.legalNumber}}</div>
+                <div style="margin-top:10px;">
+                    <div class="dc-qt-label">Document</div>
+                    <div class="dc-qt-value">{{document.copyLabel}}</div>
+                </div>
+            </div>
+            <div>
+                <div class="dc-qt-label">Date</div>
+                <div class="dc-qt-value">{{document.date}}</div>
+                {{#if document.orderDate}}
+                <div style="margin-top:10px;">
+                    <div class="dc-qt-label">Order Date</div>
+                    <div class="dc-qt-value">{{document.orderDate}}</div>
+                </div>
+                {{/if}}
+            </div>
+            <div>
+                <div class="dc-qt-label">Status</div>
+                <div class="dc-qt-value">{{document.status}}</div>
+                {{#if document.createdBy}}
+                <div style="margin-top:10px;">
+                    <div class="dc-qt-label">Created By</div>
+                    <div class="dc-qt-value">{{document.createdBy}}</div>
+                </div>
+                {{/if}}
+            </div>
+            <div>
+                <div class="dc-qt-label">Reference / Project</div>
+                <div class="dc-qt-value">{{document.referenceNo}}</div>
+                {{#if document.buyerOrderNo}}
+                <div style="margin-top:10px;">
+                    <div class="dc-qt-label">Buyer's Order No.</div>
+                    <div class="dc-qt-value">{{document.buyerOrderNo}}</div>
+                </div>
+                {{/if}}
+            </div>
+        </section>
+
+        <section class="dc-qt-parties" aria-label="Parties">
+            <div class="dc-qt-party-block">
+                <div class="dc-qt-label">Customer / Receiver</div>
+                <div class="dc-qt-value">{{customer.name}}</div>
+                {{#if customer.zohoAccountId}}
+                <div class="dc-qt-kind"><span>Account ref:</span> {{customer.zohoAccountId}}</div>
+                {{/if}}
+
+                <div class="dc-qt-label" style="margin-top:14px;">Consignee</div>
+                <div class="dc-qt-value">{{consignee.name}}</div>
+                {{#if consignee.address}}
+                <div class="dc-qt-value-pre">{{consignee.address}}</div>
+                {{/if}}
+                {{#if consignee.kindAttn}}
+                <div class="dc-qt-kind"><span>Kind Attn:</span> {{consignee.kindAttn}}</div>
+                {{/if}}
+                {{#if consignee.gstin}}
+                <div class="dc-qt-kind"><span>GSTIN:</span> {{consignee.gstin}}</div>
+                {{/if}}
+                {{#if consignee.stateLine}}
+                <div class="dc-qt-kind"><span>State:</span> {{consignee.stateLine}}</div>
+                {{/if}}
+            </div>
+            <div class="dc-qt-party-block">
+                <div class="dc-qt-label">Dispatched By</div>
+                <div class="dc-qt-value">{{company.name}}</div>
+                {{#if company.address}}
+                <div class="dc-qt-value-pre">{{company.address}}</div>
+                {{/if}}
+
+                {{#if buyer.name}}
+                <div class="dc-qt-label" style="margin-top:14px;">Buyer</div>
+                <div class="dc-qt-value">{{buyer.name}}</div>
+                {{#if buyer.address}}
+                <div class="dc-qt-value-pre">{{buyer.address}}</div>
+                {{/if}}
+                {{#if buyer.gstin}}
+                <div class="dc-qt-kind"><span>GSTIN:</span> {{buyer.gstin}}</div>
+                {{/if}}
+                {{#if buyer.stateLine}}
+                <div class="dc-qt-kind"><span>State:</span> {{buyer.stateLine}}</div>
+                {{/if}}
+                {{/if}}
+            </div>
+        </section>
+
+        {{#if logistics.hasAny}}
+        <div class="dc-qt-section-title">Logistics</div>
+        <section class="dc-qt-logistics" aria-label="Logistics">
+            {{#if logistics.pickup}}
+            <div>
+                <div class="dc-qt-label">Pick-Up</div>
+                <div class="dc-qt-value dc-qt-value-pre">{{logistics.pickup}}</div>
+            </div>
+            {{/if}}
+            {{#if logistics.destination}}
+            <div>
+                <div class="dc-qt-label">Destination</div>
+                <div class="dc-qt-value dc-qt-value-pre">{{logistics.destination}}</div>
+            </div>
+            {{/if}}
+            {{#if logistics.placeOfSupply}}
+            <div>
+                <div class="dc-qt-label">Place of Supply</div>
+                <div class="dc-qt-value">{{logistics.placeOfSupply}}</div>
+            </div>
+            {{/if}}
+            {{#if logistics.dispatchedThrough}}
+            <div>
+                <div class="dc-qt-label">Dispatched Through</div>
+                <div class="dc-qt-value">{{logistics.dispatchedThrough}}</div>
+            </div>
+            {{/if}}
+        </section>
+        {{/if}}
+
+        <div class="dc-qt-section-title">Items / Goods</div>
+        <table class="dc-qt-table" aria-label="Items">
+            <thead>
+                <tr>
+                    <th class="ctr" style="width:28px;">#</th>
+                    <th>Description / Product</th>
+                    <th>Make</th>
+                    <th>Model</th>
+                    <th>Asset ID</th>
+                    <th class="ctr">Serial No</th>
+                    <th class="ctr">HSN/SAC</th>
+                    <th class="num">Qty</th>
+                    <th class="ctr">Unit</th>
+                    {{#if showRateAmount}}
+                    <th class="num">Rate</th>
+                    <th class="num">Amount</th>
+                    {{/if}}
+                </tr>
+            </thead>
+            <tbody>
+                {{#each items}}
+                <tr>
+                    <td class="ctr">{{n}}</td>
+                    <td class="desc">{{description}}</td>
+                    <td>{{make}}</td>
+                    <td>{{model}}</td>
+                    <td class="mono">{{assetId}}</td>
+                    <td class="ctr">{{serialNo}}</td>
+                    <td class="ctr">{{hsn}}</td>
+                    <td class="num">{{qty}}</td>
+                    <td class="ctr">{{unit}}</td>
+                    {{#if showRateAmount}}
+                    <td class="num">{{rate}}</td>
+                    <td class="num">{{amount}}</td>
+                    {{/if}}
+                </tr>
+                {{/each}}
+                {{#if itemsEmpty}}
+                <tr><td class="dc-qt-empty" colspan="{{colCount}}">No items</td></tr>
+                {{/if}}
+            </tbody>
+        </table>
+
+        {{#if commercial.showTotalPrice}}
+        <section class="dc-qt-summary" aria-label="Commercial summary">
+            <div class="dc-qt-words">
+                <div class="dc-qt-label">Amount in Words</div>
+                <div class="dc-qt-value">{{commercial.amountWords}}</div>
+            </div>
+            <div class="dc-qt-totals">
+                <div class="dc-qt-totals-row"><span>Subtotal</span><span>{{commercial.subtotal}}</span></div>
+                <div class="dc-qt-grand"><span>Grand Total</span><span>{{commercial.grandTotal}}</span></div>
+            </div>
+        </section>
+        {{/if}}
+
+        {{#if references.hasAny}}
+        <div class="dc-qt-section-title">References</div>
+        <section class="dc-qt-references" aria-label="References">
+            {{#if references.referenceNo}}
+            <div>
+                <div class="dc-qt-label">Reference No.</div>
+                <div class="dc-qt-value">{{references.referenceNo}}</div>
+            </div>
+            {{/if}}
+            {{#if references.buyerOrderNo}}
+            <div>
+                <div class="dc-qt-label">Buyer's Order No.</div>
+                <div class="dc-qt-value">{{references.buyerOrderNo}}</div>
+            </div>
+            {{/if}}
+            {{#if references.dispatchDocNo}}
+            <div>
+                <div class="dc-qt-label">Dispatch Doc No.</div>
+                <div class="dc-qt-value">{{references.dispatchDocNo}}</div>
+            </div>
+            {{/if}}
+            {{#if references.otherReferences}}
+            <div>
+                <div class="dc-qt-label">Other References</div>
+                <div class="dc-qt-value">{{references.otherReferences}}</div>
+            </div>
+            {{/if}}
+            {{#if references.termsOfDelivery}}
+            <div class="dc-qt-ref-wide">
+                <div class="dc-qt-label">Terms of Delivery</div>
+                <div class="dc-qt-value dc-qt-value-pre">{{references.termsOfDelivery}}</div>
+            </div>
+            {{/if}}
+        </section>
+        {{/if}}
+
+        {{#if notes.hasAny}}
+        <section class="dc-qt-notes" aria-label="Remarks">
+            <div class="dc-qt-section-title">Remarks</div>
+            <ol>
+                {{#each notes.lines}}
+                <li>{{text}}</li>
+                {{/each}}
+            </ol>
+        </section>
+        {{/if}}
+
+        <p class="dc-qt-disclaimer">{{document.disclaimer}}</p>
+    </div>
+
+    <div class="dc-qt-bottom">
+        {{#if company.contactLine}}
+        <div class="dc-qt-contact">{{company.contactLine}}</div>
+        {{/if}}
+        <footer class="dc-qt-footer">
+            <div class="dc-qt-footer-addr">{{company.footerAddress}}</div>
+            <div class="dc-qt-footer-web">
+                <span class="dc-qt-footer-chevron" aria-hidden="true"></span>
+                <span class="dc-qt-footer-web-text">{{company.footerWeb}}</span>
+            </div>
+        </footer>
+    </div>
+</article>

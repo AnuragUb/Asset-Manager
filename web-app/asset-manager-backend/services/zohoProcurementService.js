@@ -86,21 +86,39 @@ function lookupId(value) {
 function lookupName(value) {
   if (value == null || value === '') return null;
   if (typeof value === 'object') {
-    const read = (fn) => {
-      try {
-        if (typeof value[fn] === 'function') {
-          const got = value[fn]();
-          if (got && typeof got.getValue === 'function') return String(got.getValue());
-          if (got != null && got !== '') return String(got);
-        }
-      } catch {
-        return null;
+    try {
+      if (typeof value.getName === 'function') {
+        const name = value.getName();
+        if (name != null && String(name).trim()) return String(name).trim();
       }
-      return null;
-    };
-    return read('getKeyValue') || value.name || value.Name || null;
+    } catch {
+      // ignore SDK getter failures
+    }
+    try {
+      if (typeof value.getKeyValue === 'function') {
+        for (const key of ['name', 'Name', 'Product_Name']) {
+          const got = value.getKeyValue(key);
+          if (got == null || got === '') continue;
+          if (typeof got === 'object' && typeof got.getValue === 'function') {
+            const inner = got.getValue();
+            if (inner != null && String(inner).trim()) return String(inner).trim();
+          } else if (String(got).trim()) {
+            return String(got).trim();
+          }
+        }
+      }
+    } catch {
+      // ignore SDK getter failures
+    }
+    if (value.name != null && String(value.name).trim()) return String(value.name).trim();
+    if (value.Name != null && String(value.Name).trim()) return String(value.Name).trim();
+    if (value.Product_Name != null && String(value.Product_Name).trim()) {
+      return String(value.Product_Name).trim();
+    }
+    return null;
   }
-  return String(value);
+  const text = String(value).trim();
+  return text || null;
 }
 
 function readKey(record, apiName) {
@@ -210,6 +228,49 @@ function decimalOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Calendar date (YYYY-MM-DD) from Zoho Date / ISO / JS Date.toString dumps. */
+function normalizeZohoDate(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object' && typeof value.getValue === 'function') {
+    return normalizeZohoDate(value.getValue());
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  const isoDay = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoDay) return isoDay[1];
+  const parsed = Date.parse(text);
+  if (!Number.isNaN(parsed)) {
+    const dt = new Date(parsed);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dt.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return text;
+}
+
+/** ISO timestamp string from Zoho Modified_Time / Date objects. */
+function normalizeZohoDateTime(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object' && typeof value.getValue === 'function') {
+    return normalizeZohoDateTime(value.getValue());
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  const parsed = Date.parse(text);
+  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+  return text;
+}
+
 function normalizeLine(record, index) {
   const rawId = typeof record.getId === 'function' ? record.getId() : readKey(record, 'id');
   if (rawId == null || rawId === '') {
@@ -252,13 +313,13 @@ function normalizePurchaseOrder(record) {
     status: picklistStatus(readKey(record, 'Status')),
     vendorZohoId: lookupId(vendor),
     vendorName: lookupName(vendor),
-    poDate: readKey(record, 'PO_Date') != null ? String(readKey(record, 'PO_Date')) : null,
-    dueDate: readKey(record, 'Due_Date') != null ? String(readKey(record, 'Due_Date')) : null,
+    poDate: normalizeZohoDate(readKey(record, 'PO_Date')),
+    dueDate: normalizeZohoDate(readKey(record, 'Due_Date')),
     subTotal: decimalOrNull(readKey(record, 'Sub_Total')),
     discount: decimalOrNull(readKey(record, 'Discount')),
     tax: decimalOrNull(readKey(record, 'Tax')),
     grandTotal: decimalOrNull(readKey(record, 'Grand_Total')),
-    modifiedTime: readKey(record, 'Modified_Time') != null ? String(readKey(record, 'Modified_Time')) : null,
+    modifiedTime: normalizeZohoDateTime(readKey(record, 'Modified_Time')),
     lines
   };
 }

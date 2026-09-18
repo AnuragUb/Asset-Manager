@@ -53,6 +53,7 @@ const {
 } = require('../utils');
 const physicalIntakeService = require('../services/physicalIntakeService');
 const commercialProvenanceService = require('../services/commercialProvenanceService');
+const operationsDashboardService = require('../services/operationsDashboardService');
 const procurementService = require('../services/procurementService');
 const IdGenerator = require('../IdGenerator');
 
@@ -168,16 +169,28 @@ function sourceChecks() {
   const indexSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/index.html'), 'utf8');
   const mainSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/main.js'), 'utf8');
   const opsSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/operations.js'), 'utf8');
+  const histSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/lifecycle-history.js'), 'utf8');
+  const holdingsChartsSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/holdingsChartsService.js'), 'utf8');
+  const chartsSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/charts.js'), 'utf8');
+  const chartVendorVer = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/vendor/CHARTJS_VERSION.txt'), 'utf8').trim();
+  const receiptsSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/receipts.js'), 'utf8');
   const prodSrc = fs.readFileSync(path.join(__dirname, '../../asset-manager-frontend/js/products.js'), 'utf8');
   const zohoSrc = fs.readFileSync(path.join(__dirname, '../services/zohoService.js'), 'utf8');
   const p0Src = fs.readFileSync(path.join(__dirname, '../scripts/p0-lifecycle-containment-verify.js'), 'utf8');
+  const opsDashSrc = fs.readFileSync(path.join(__dirname, '../services/operationsDashboardService.js'), 'utf8');
 
   assert(serverSrc.includes('PHYSICAL_CREATION_VIA_RECEIPT_REQUIRED'), 'direct Asset/Inventory POST still contained');
   assert(/app\.post\('\/api\/physical-intakes', authenticateJWT, authorizeRoles\('superuser', 'admin', 'manager'\)/.test(serverSrc), 'POST /api/physical-intakes JWT+roles');
   assert(/app\.post\('\/api\/physical-intakes\/link-po', authenticateJWT, authorizeRoles\('superuser', 'admin', 'manager'\)/.test(serverSrc), 'POST /api/physical-intakes/link-po JWT+roles');
+  assert(/app\.post\('\/api\/physical-intakes\/mark-not-required', authenticateJWT, authorizeRoles\('superuser', 'admin', 'manager'\)/.test(serverSrc), 'POST /api/physical-intakes/mark-not-required JWT+roles');
+  assert(/app\.get\('\/api\/operations\/dashboard', authenticateJWT, requirePermission\('view.dashboard'\)/.test(serverSrc), 'GET /api/operations/dashboard JWT+permission');
   assert(piSrc.includes('Purchase Order Status'), 'UI Purchase Order Status control');
   assert(piSrc.includes('PO Expected Later') && piSrc.includes('No PO Required') && piSrc.includes('Purchase Order Already Available'), 'UI PO status labels');
   assert(piSrc.includes('defaultPoStatusForType'), 'UI intake-type defaults');
+  assert(piSrc.includes("return 'EXPECTED'"), 'wizard always defaults PO Expected Later');
+  assert(!piSrc.includes("poRadio('NOT_REQUIRED'"), 'No PO Required is not a registration radio');
+  assert(piSrc.includes('pi-mark-not-required'), 'No PO Required is a post-register action');
+  assert(piSrc.includes('data-lc-awaiting') || piSrc.includes('renderAwaitingAdoptionList'), 'Awaiting Adoption list');
   assert(!piSrc.includes('Expecting POs'), 'no Dashboard Expecting POs card in intake UI');
   assert(!opsSrc.includes("stageCard('Expecting POs'"), 'no Dashboard Expecting POs card');
   assert(/app\.post\('\/api\/assets', authenticateJWT, authorizeRoles\('superuser', 'admin', 'manager'\)/.test(serverSrc), 'POST /api/assets still JWT+roles contained');
@@ -189,9 +202,22 @@ function sourceChecks() {
   assert(invSrc.includes('physical-intakes-view') || invSrc.includes('nav-physical-intakes'), 'inventory opens Physical Intake');
   assert(indexSrc.includes('+ Physical Intake') && indexSrc.includes('btnAddAssetItem'), 'Add Asset control replaced with Physical Intake');
   assert(!indexSrc.includes('>Add Asset<'), 'Add Asset submit label removed');
-  assert(indexSrc.includes('main.js?v=7.49'), 'index.html cache 7.49');
-  assert(mainSrc.includes('physical-intakes.js?v=7.48'), 'main.js imports physical-intakes');
-  assert(mainSrc.includes("operations.js?v=7.41"), 'main.js imports operations 7.41');
+  assert(indexSrc.includes('main.js?v=7.68'), 'index.html cache 7.68');
+  assert(indexSrc.includes('style.css?v=7.68') || indexSrc.includes('style.css?v=7.67'), 'index.html stylesheet cache current');
+  assert(mainSrc.includes('physical-intakes.js?v=7.52'), 'main.js imports physical-intakes');
+  assert(mainSrc.includes("operations.js?v=7.68"), 'main.js imports operations 7.68');
+  assert(chartsSrc.includes('visible <= 1'), 'single-slice pie/doughnut closes the circle');
+  assert(indexSrc.includes('/js/vendor/chart.umd.js'), 'Chart.js served from local vendor UMD');
+  assert(!indexSrc.includes('cdn.jsdelivr.net/npm/chart.js'), 'Chart.js is not loaded from CDN');
+  assert(fs.existsSync(path.join(__dirname, '../../asset-manager-frontend/js/vendor/chart.umd.js')), 'Chart.js UMD file is vendored');
+  assert(chartVendorVer === '4.4.9', 'vendored Chart.js is pinned 4.4.9');
+  assert(chartsSrc.includes("'bar'") && chartsSrc.includes("'line'") && chartsSrc.includes("'scatter'") && chartsSrc.includes("'bubble'") && chartsSrc.includes("'pie'") && chartsSrc.includes("'doughnut'") && chartsSrc.includes("'polarArea'") && chartsSrc.includes("'radar'"), 'charts.js exposes 8 native Chart.js types');
+  assert(holdingsChartsSrc.includes('createNativeChart(') && holdingsChartsSrc.includes("donut ? 'doughnut' : 'pie'"), 'Holdings charts service uses Chart.js pie and doughnut');
+  assert(holdingsChartsSrc.includes('refresh(') && holdingsChartsSrc.includes('startAutoRefresh'), 'Holdings charts service refreshes live composition');
+  assert(opsSrc.includes('holdingsChartsService.js'), 'Dashboard imports holdingsChartsService');
+  assert(opsDashSrc.includes("OR LOWER(COALESCE(status, '')) = 'demo'"), 'Asset pie classifies Demo from purpose or status');
+  assert(opsDashSrc.includes('quantity_available') || opsDashSrc.includes('countExprForTable'), 'Inventory composition is quantity-aware');
+  assert(chartsSrc.includes('nativeArcDataset') && chartsSrc.includes('borderRadius'), 'pie/doughnut use Chart.js rounded-arc style');
   assert(mainSrc.includes('products.js?v=7.46'), 'main.js imports products 7.46');
   assert(indexSrc.includes('id="zohoCatalogSearch"'), 'Products has Zoho catalog search');
   assert(indexSrc.includes('Search Zoho Product Catalog'), 'Zoho catalog search label');
@@ -199,6 +225,11 @@ function sourceChecks() {
   assert(/id="zohoCatalogSection"[^>]*class="[^"]*\bhidden\b/.test(indexSrc), 'Zoho catalog section starts hidden');
   assert(zohoSrc.includes('GetRecordsParam.PER_PAGE') && zohoSrc.includes('getMoreRecords'), 'catalog pull paginates Zoho Products');
   assert(prodSrc.includes("api('/api/zoho/catalog')"), 'Products catalog reuses GET /api/zoho/catalog');
+  assert(prodSrc.includes('prd-card') && prodSrc.includes("viewMode === 'list'"), 'Products browser has cards and list');
+  assert(prodSrc.includes('Recently Added') || prodSrc.includes('productsRecentlyAdded'), 'Products Recently Added section');
+  assert(!prodSrc.includes('window.prompt('), 'Products creation does not use window.prompt');
+  assert(prodSrc.includes('source=') || prodSrc.includes("params.set('source'"), 'Products source filter param');
+  assert(prodSrc.includes('unlinked_catalog_refs') || prodSrc.includes('unlinkedCatalogRefs') || prodSrc.includes('lastUnlinkedRefs'), 'Products surfaces local unlinked Zoho refs from search');
   assert(prodSrc.includes('No matching Zoho Reference Catalog records found.') || prodSrc.includes('No matching Zoho Products.'), 'Zoho catalog empty search copy');
   assert(prodSrc.includes('focusZohoCatalogInProducts') && prodSrc.includes('setCatalogPanelOpen(true)'), 'sidebar catalog opens the Products catalog panel');
   assert(dashSrc.includes('focusZohoCatalogInProducts'), 'sidebar catalog points at Products workspace');
@@ -209,14 +240,43 @@ function sourceChecks() {
   assert(!opsSrc.includes('(window.assets || []).length'), 'Dashboard Holdings does not use window.assets');
   assert(opsSrc.includes("stageCard('Holdings', stockCount"), 'Dashboard metric label is Holdings');
   assert(!opsSrc.includes("stageCard('Stock', stockCount"), 'Dashboard metric label is not Stock');
-  assert(opsSrc.includes('productsCardHtml('), 'Dashboard Products card is the four-stat catalogue card');
+  assert(opsSrc.includes('productsCardHtml('), 'Dashboard Products card is the catalogue card');
   assert(opsSrc.includes("stageCard('PO Waitlist'"), 'Dashboard PO card is waitlist, not total PO count');
   assert(!opsSrc.includes("stageCard('Product', productRows.length"), 'Dashboard no longer uses Product count card');
   assert(!opsSrc.includes("stageCard('PO', poRows.length"), 'Dashboard no longer uses total PO count card');
-  assert(opsSrc.includes("stageCard('Receiving', openRn.length"), 'Receiving card unchanged');
-  assert(opsSrc.includes("stageCard('Reservation', resRows.length"), 'Reservation card unchanged');
-  assert(opsSrc.includes("stageCard('Set', setRows.length"), 'Set card unchanged');
-  assert(opsSrc.includes('gatherLifecycleFeed({ limit: 5 })'), 'Dashboard activity uses existing history feed');
+  assert(opsSrc.includes('receivingStageCard(receiving.openCount'), 'Receiving card uses windowed Open Notes');
+  assert(!opsSrc.includes("stageCard('Receiving', openRn.length"), 'Receiving is not a capped list count');
+  assert(!opsSrc.includes('receivingStageCard(openRn.length'), 'Receiving is not assembled from limit=100 lists');
+  assert(opsSrc.includes('data-lc-status="OPEN"') && opsSrc.includes('data-lc-status="ALL"'), 'Receiving halves open filtered vs all Receipt Notes');
+  assert(opsSrc.includes('data-lc-period='), 'Receiving halves carry the calendar window');
+  assert(opsSrc.includes("stageCard('Awaiting Adoption'"), 'Dashboard Awaiting Adoption card');
+  assert(opsSrc.includes('data-lc-awaiting="1"'), 'Awaiting Adoption opens the intake wait list');
+  assert(opsSrc.includes("stageCard('Holdings'"), 'Holdings remains a lifecycle stage');
+  assert(!opsSrc.includes('ops-holdings-stack'), 'Awaiting Adoption is not stacked on Holdings');
+  assert(!opsSrc.includes("stageCard('Reservation'"), 'Reservation card removed from Dashboard flow');
+  assert(opsSrc.includes('ops-lift-yellow'), 'Holdings and Awaiting Adoption use yellow highlight');
+  assert(opsSrc.includes('ops-holdings-composition'), 'Asset pie and Inventory donut share one Holdings card');
+  assert(opsSrc.includes('ops-layout'), 'Dashboard uses ops-layout grid');
+  assert(opsSrc.includes('ops-layout-left') || opsSrc.includes('ops-layout-pair'), 'PO Waitlist and Products/Activity share the left column');
+  assert(opsSrc.includes('ops-page'), 'Dashboard page is a single viewport layout');
+  assert(opsSrc.includes('ops-waitlist-slim'), 'PO Waitlist is the slim summary card');
+  assert(indexSrc.includes('ops-dash-refresh') && indexSrc.includes('btnReloadOperations'), 'Dashboard refresh is an icon beside the title');
+  assert(holdingsChartsSrc.includes('ops-chart-total') || opsSrc.includes('ops-chart-total') || holdingsChartsSrc.includes('chart-total'), 'charts render a total number');
+  assert(piSrc.includes('function wizardHost()'), 'Physical Intake wizard host is defined');
+  assert(opsSrc.includes('ops-receiving-filters'), 'Receiving calendar chips sit on Receiving only');
+  assert(opsSrc.includes("title: 'Assets'") && opsSrc.includes("title: 'Inventory'"), 'Asset pie and Inventory donut');
+  assert(holdingsChartsSrc.includes('current holdings') || opsSrc.includes('current holdings'), 'charts are current holdings, not a calendar window');
+  assert(receiptsSrc.includes('rn-holding-panel'), 'Receipt accept collects holding details');
+  assert(receiptsSrc.includes("params.set('period'"), 'Receipt Notes list accepts the calendar window');
+  assert(!opsSrc.includes("stageCard('Set', setRows.length"), 'Set card removed from Dashboard flow');
+  assert(opsSrc.includes("'Products Awaiting Sync'"), 'Products Awaiting Sync card on Dashboard');
+  assert(opsSrc.includes('data-lc-zoho-catalog="1"'), 'Zoho gap card opens Products Zoho catalog');
+  assert(opsSrc.includes('zohoUnlinkedProducts') || opsSrc.includes('zohoUnlinkedCount'), 'Dashboard uses unlinked Zoho product count');
+  assert(prodSrc.includes('data-prd-unsynced') || prodSrc.includes('ZOHO_UNSYNCED'), 'Products has Not Yet Synced filter');
+  assert(prodSrc.includes('setZohoUnsyncedFilter') || prodSrc.includes('isZohoUnsyncedFilter'), 'Products applies unsynced catalog filter');
+  assert(opsSrc.includes('gatherLifecycleFeed({ limit: 8 })'), 'Dashboard activity uses existing history feed');
+  assert(histSrc.includes('/api/procurement/sync-events'), 'History feed includes PO sync events');
+  assert(histSrc.includes('lastSyncedAt'), 'History feed prefers PO sync timestamps');
   assert(opsSrc.includes('canOpenAppView('), 'Dashboard hides unauthorized modules instead of showing zero');
   assert(indexSrc.includes('id="nav-operations">Dashboard</a>'), 'Dashboard nav label');
   assert(!/id="nav-operations">Today</.test(indexSrc), 'Today is not the Dashboard nav label');
@@ -295,18 +355,21 @@ async function runProvenanceTests({ productId, before, assetOut }) {
   assert(extDefault.commercialProvenance && extDefault.commercialProvenance.state === 'AWAITING_PO', '1. External Acquisition default AWAITING_PO');
   assert((extDefault.events || []).some((e) => e.type === 'PO_EXPECTED'), '11. PO_EXPECTED event');
 
-  const extOverride = await physicalIntakeService.createPhysicalIntake({
-    holdingType: 'ASSET',
-    intakeType: 'EXTERNAL_ACQUISITION',
-    productId,
-    quantity: 1,
-    unit: 'Nos',
-    actor: ACTOR,
-    host: HOST,
-    commercialPoChoice: 'NOT_REQUIRED',
-    source: { sourceDocument: 'EXT-OVERRIDE' }
-  });
-  assert(extOverride.commercialProvenance && extOverride.commercialProvenance.state === 'NOT_REQUIRED', '2. External Acquisition override NOT_REQUIRED');
+  await expectError(
+    () => physicalIntakeService.createPhysicalIntake({
+      holdingType: 'ASSET',
+      intakeType: 'EXTERNAL_ACQUISITION',
+      productId,
+      quantity: 1,
+      unit: 'Nos',
+      actor: ACTOR,
+      host: HOST,
+      commercialPoChoice: 'NOT_REQUIRED',
+      source: { sourceDocument: 'EXT-OVERRIDE' }
+    }),
+    'NOT_REQUIRED_AT_REGISTER',
+    '2. External Acquisition cannot mark No PO Required at register'
+  );
 
   const donationDefault = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'INVENTORY',
@@ -318,7 +381,7 @@ async function runProvenanceTests({ productId, before, assetOut }) {
     host: HOST,
     source: { donor: 'Donor A' }
   });
-  assert(donationDefault.commercialProvenance && donationDefault.commercialProvenance.state === 'NOT_REQUIRED', '3. Donation default NOT_REQUIRED');
+  assert(donationDefault.commercialProvenance && donationDefault.commercialProvenance.state === 'AWAITING_PO', '3. Donation default AWAITING_PO');
 
   const donationOverride = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'INVENTORY',
@@ -337,20 +400,17 @@ async function runProvenanceTests({ productId, before, assetOut }) {
   assert(donationOverride.commercialProvenance.expectedPoNumber === 'PO-NOTE-ONLY', 'expected PO number is metadata');
   assert(!donationOverride.commercialProvenance.procurementPoId, 'expected PO number is not a PO relationship');
 
-  await expectError(
-    () => physicalIntakeService.createPhysicalIntake({
-      holdingType: 'ASSET',
-      intakeType: 'OTHER_APPROVED',
-      productId,
-      quantity: 1,
-      unit: 'Nos',
-      actor: ACTOR,
-      host: HOST,
-      reason: 'Approved exception without PO status'
-    }),
-    'PO_STATUS_REQUIRED',
-    '5. Other Approved blocked until PO status chosen'
-  );
+  const otherApproved = await physicalIntakeService.createPhysicalIntake({
+    holdingType: 'ASSET',
+    intakeType: 'OTHER_APPROVED',
+    productId,
+    quantity: 1,
+    unit: 'Nos',
+    actor: ACTOR,
+    host: HOST,
+    reason: 'Approved exception without PO status'
+  });
+  assert(otherApproved.commercialProvenance && otherApproved.commercialProvenance.state === 'AWAITING_PO', '5. Other Approved defaults AWAITING_PO');
 
   const internal = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'ASSET',
@@ -362,7 +422,7 @@ async function runProvenanceTests({ productId, before, assetOut }) {
     host: HOST,
     source: { sourceLocation: 'Warehouse A' }
   });
-  assert(internal.commercialProvenance && internal.commercialProvenance.state === 'NOT_REQUIRED', '6. Internal Transfer default NOT_REQUIRED');
+  assert(internal.commercialProvenance && internal.commercialProvenance.state === 'AWAITING_PO', '6. Internal Transfer default AWAITING_PO');
 
   const mapped = await insertTestPo({ productId, mapped: true, ordered: 25 });
   const rnBeforeLink = await countOrZero('SELECT COUNT(*)::int AS n FROM receipt_note');
@@ -519,6 +579,22 @@ async function runProvenanceTests({ productId, before, assetOut }) {
   assert(rsvAfterLink === rsvBeforeLink, '14. linkage did not alter reservation');
   assert(dcAfterLink === dcBeforeLink, '14. linkage did not alter DC');
 
+  await expectError(
+    () => physicalIntakeService.createPhysicalIntake({
+      holdingType: 'ASSET',
+      intakeType: 'OPENING_BALANCE',
+      productId,
+      quantity: 1,
+      unit: 'Nos',
+      actor: ACTOR,
+      host: HOST,
+      commercialPoChoice: 'NOT_REQUIRED',
+      reason: 'explicit no po'
+    }),
+    'NOT_REQUIRED_AT_REGISTER',
+    '9. No PO Required is refused at register'
+  );
+
   const noPo = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'ASSET',
     intakeType: 'OPENING_BALANCE',
@@ -527,10 +603,25 @@ async function runProvenanceTests({ productId, before, assetOut }) {
     unit: 'Nos',
     actor: ACTOR,
     host: HOST,
-    commercialPoChoice: 'NOT_REQUIRED',
-    reason: 'explicit no po'
+    reason: 'close after register'
   });
-  assert(noPo.commercialProvenance && noPo.commercialProvenance.state === 'NOT_REQUIRED', '9. No PO Required → NOT_REQUIRED');
+  assert(noPo.commercialProvenance && noPo.commercialProvenance.state === 'AWAITING_PO', '9. Opening Balance starts AWAITING_PO');
+  const noPoOut = (noPo.outputs || [])[0] || noPo.created;
+  const awaitingBeforeClose = await commercialProvenanceService.countAwaitingAdoption();
+  const marked = await commercialProvenanceService.markNotRequired({
+    resourceType: 'ASSET',
+    resourceId: noPoOut.resourceId,
+    actor: ACTOR
+  });
+  assert(marked && marked.state === 'NOT_REQUIRED', '9. markNotRequired → NOT_REQUIRED');
+  const awaitingAfterClose = await commercialProvenanceService.countAwaitingAdoption();
+  assert(awaitingAfterClose === awaitingBeforeClose - 1, '9. closed holding leaves Awaiting Adoption');
+  const replayMarked = await commercialProvenanceService.markNotRequired({
+    resourceType: 'ASSET',
+    resourceId: noPoOut.resourceId,
+    actor: ACTOR
+  });
+  assert(replayMarked.state === 'NOT_REQUIRED' && replayMarked.replayed, '9. markNotRequired replay is idempotent');
 
   const awaitingMismatch = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'ASSET',
@@ -566,6 +657,18 @@ async function runProvenanceTests({ productId, before, assetOut }) {
   );
 
   assert(assetOut && assetOut.resourceId, 'protected original asset output still present');
+
+  const dash = await operationsDashboardService.dashboardSnapshot({ period: 'month', metric: 'count' });
+  assert(dash && dash.timezone === 'Asia/Kolkata', 'dashboard snapshot uses Asia/Kolkata');
+  assert(dash.awaitingAdoption && Number.isFinite(dash.awaitingAdoption.count), 'dashboard awaiting adoption count');
+  assert(dash.receiving && Number.isFinite(dash.receiving.openCount) && Number.isFinite(dash.receiving.totalCount), 'dashboard receiving window counts');
+  assert(dash.composition && dash.composition.assets.slices.length === 3, 'dashboard asset pie slices');
+  assert(dash.composition && dash.composition.inventory.slices.length === 4, 'dashboard inventory donut slices');
+  assert(
+    dash.composition.inventory.slices.every((s) => ['Rented', 'Demo', 'Sold', 'In Stock'].includes(s.slice)),
+    'dashboard inventory slice names'
+  );
+
   void before;
 }
 
@@ -607,7 +710,7 @@ async function runMutationTests(before) {
   assert(Number(assetRow.is_set) === 0, '20. no is_set');
   assert(assetRow.physical_intake_id === assetIntake.id, '12. Asset physical_intake_id');
   assert(!assetRow.receipt_line_id, '18. Asset has no receipt_line_id');
-  assert(assetIntake.commercialProvenance && assetIntake.commercialProvenance.state === 'NOT_REQUIRED', 'Opening Balance default No PO Required');
+  assert(assetIntake.commercialProvenance && assetIntake.commercialProvenance.state === 'AWAITING_PO', 'Opening Balance default Awaiting PO');
 
   const replayAsset = await physicalIntakeService.createPhysicalIntake({
     holdingType: 'ASSET',
@@ -758,6 +861,10 @@ async function httpChecks(base) {
 
   const unauthLink = await request(`${base}/api/physical-intakes/link-po`, { method: 'POST', headers: json, body: JSON.stringify({ resourceType: 'ASSET', resourceId: 'x' }) });
   assert(unauthLink.status === 401, '7. link-po unauthenticated 401', unauthLink.status);
+  const unauthMark = await request(`${base}/api/physical-intakes/mark-not-required`, { method: 'POST', headers: json, body: JSON.stringify({ resourceType: 'ASSET', resourceId: 'x' }) });
+  assert(unauthMark.status === 401, '7. mark-not-required unauthenticated 401', unauthMark.status);
+  const unauthDash = await request(`${base}/api/operations/dashboard`);
+  assert(unauthDash.status === 401, '7. operations dashboard unauthenticated 401', unauthDash.status);
   const unauth = await request(`${base}/api/physical-intakes`, { method: 'POST', headers: json, body });
   assert(unauth.status === 401, '7. unauthenticated 401', unauth.status);
   const salesLink = await request(`${base}/api/physical-intakes/link-po`, { method: 'POST', headers: { ...json, Authorization: `Bearer ${salesToken}` }, body: JSON.stringify({ resourceType: 'ASSET', resourceId: 'x' }) });

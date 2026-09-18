@@ -17,7 +17,7 @@ Order of impact (from lead-engineer assessment):
 9. Repository hygiene  
 10. Living docs (this folder — keep updated)
 
-**Do not start with:** framework rewrites, microservices, or mega cleanups.
+**Do not start with:** framework rewrites, microservices, or mega cleanups. React as frontend logic is deferred until the product is stable — see [`FRONTEND_REACT_ADR.md`](./FRONTEND_REACT_ADR.md).
 
 ---
 
@@ -182,3 +182,30 @@ The next phase is successful when:
 5. Inventory: print “which DB / which tables exist” diagnostic for 8080 vs 9090  
 
 When uncertain: **ask instead of assuming.**
+
+---
+
+## Deferred — Receipt Product vs Zoho PO line Product (Sep 2026)
+
+**Context:** Purchase Orders are imported from Zoho, not authored in AssetEngine. On Receipt Note lines, operators can search and pick any catalogue **Product** — not only the Product already mapped on the mirrored PO line.
+
+**Current stance (OK for now):** That flexibility is intentional. Receiving may need a different AE Product than Zoho’s line text/mapping while mappings are incomplete or wrong.
+
+**Backend today:** For Zoho POs, create/update/post still rejects a Receipt line Product that **conflicts** with an already-mapped `procurement_po_line.product_id` (`WRONG_PRODUCT`). Unmapped PO lines can receive any Product.
+
+**Revisit when PO versioning is live:** We likely need a first-class way to **correct or set the Product on a PO line** (mapping/reconciliation), so Receipt, outstanding qty, and Zoho stay aligned — instead of relying only on per-Receipt Product override. Design together with PO revision/history, not as a one-off Receipt hack.
+
+**No change requested now** — note only.
+
+---
+
+## Accepted (not built) — Purchase Book + dual-mode DC (Sep 2026)
+
+Owner-locked in [`docs/Architecture_and_ADRs/01_adrs/PURCHASE_BOOK_AND_DC_ADR.md`](./Architecture_and_ADRs/01_adrs/PURCHASE_BOOK_AND_DC_ADR.md):
+
+- One PO → many Purchase Books (partial invoices / return-related books)
+- Book qty ≤ PO ordered (per line, summed); presentation name/desc editable; identity = Product + PO line
+- Sync-ready for Zoho Books later; v1 AE-only; Logistics owns lifecycle
+- DC: PO-linked (seed from PO) **or** no PO (search Asset/Inventory)
+
+**Gate:** implementation plan required before migrations/UI.

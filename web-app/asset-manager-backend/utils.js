@@ -627,8 +627,36 @@ function verifyPhysicalIntakeId(id) {
     return IdGenerator.verifyPhysicalIntakeId(id);
 }
 
-function verifyProcurementSyncEventId(id) {
-    return IdGenerator.verifyProcurementSyncEventId(id);
+function generatePurchaseBookId(now) {
+    return IdGenerator.generatePurchaseBookId(now);
+}
+
+function verifyPurchaseBookId(id) {
+    return IdGenerator.verifyPurchaseBookId(id);
+}
+
+function generatePurchaseBookLineId(now) {
+    return IdGenerator.generatePurchaseBookLineId(now);
+}
+
+function verifyPurchaseBookLineId(id) {
+    return IdGenerator.verifyPurchaseBookLineId(id);
+}
+
+function generatePurchaseBookDcConsumptionId(now) {
+    return IdGenerator.generatePurchaseBookDcConsumptionId(now);
+}
+
+function verifyPurchaseBookDcConsumptionId(id) {
+    return IdGenerator.verifyPurchaseBookDcConsumptionId(id);
+}
+
+function generateSerialIdentityId(now) {
+    return IdGenerator.generateSerialIdentityId(now);
+}
+
+function verifySerialIdentityId(id) {
+    return IdGenerator.verifySerialIdentityId(id);
 }
 
 function computeProductChecksum(payload) {
@@ -724,6 +752,14 @@ module.exports = {
     verifyProcurementSyncEventId,
     generatePhysicalIntakeId,
     verifyPhysicalIntakeId,
+    generatePurchaseBookId,
+    verifyPurchaseBookId,
+    generatePurchaseBookLineId,
+    verifyPurchaseBookLineId,
+    generatePurchaseBookDcConsumptionId,
+    verifyPurchaseBookDcConsumptionId,
+    generateSerialIdentityId,
+    verifySerialIdentityId,
     computeProductChecksum,
     makeIdForAsset,
     assetsFile,

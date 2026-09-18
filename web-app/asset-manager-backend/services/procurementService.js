@@ -47,6 +47,30 @@ function roundQty(value, precision = 6) {
   return Math.round((n + Number.EPSILON) * f) / f;
 }
 
+/** Normalize stored PO calendar dates (including legacy Date.toString dumps). */
+function normalizeStoredPoDate(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  const isoDay = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoDay) return isoDay[1];
+  const parsed = Date.parse(text);
+  if (!Number.isNaN(parsed)) {
+    const dt = new Date(parsed);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dt.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return text;
+}
+
 function asZohoIdString(value, fieldName = 'external_id') {
   if (value == null || value === '') {
     throw httpError(`${fieldName} is required`, 400, 'INVALID_ZOHO_ID');
@@ -167,14 +191,33 @@ async function resolveProductId(runner, zohoProductId) {
   return ref ? ref.product_id : null;
 }
 
+async function resolveZohoProductName(runner, remoteLine) {
+  const fromRemote = remoteLine && remoteLine.zohoProductName
+    ? String(remoteLine.zohoProductName).trim()
+    : '';
+  if (fromRemote) return fromRemote;
+  const zohoProductId = remoteLine && remoteLine.zohoProductId
+    ? String(remoteLine.zohoProductId).trim()
+    : '';
+  if (!zohoProductId) return null;
+  if (!(await runner.schema.hasTable('zoho_catalog'))) return null;
+  const cat = await runner('zoho_catalog').where({ zoho_product_id: zohoProductId }).first();
+  return cat && cat.product_name ? String(cat.product_name).trim() : null;
+}
+
 async function mapRemoteLine(runner, remoteLine) {
   const productId = await resolveProductId(runner, remoteLine.zohoProductId);
+  const zohoProductName = await resolveZohoProductName(runner, remoteLine);
+  const description = remoteLine.description != null && String(remoteLine.description).trim() !== ''
+    ? String(remoteLine.description).trim()
+    : null;
   return {
     zohoLineId: remoteLine.zohoLineId,
     zohoProductId: remoteLine.zohoProductId || null,
+    zohoProductName,
     productId,
     sequenceNumber: remoteLine.sequenceNumber == null ? null : Number(remoteLine.sequenceNumber),
-    description: remoteLine.description || remoteLine.zohoProductName || null,
+    description,
     orderedQty: roundQty(remoteLine.quantity),
     unit: remoteLine.unit || 'Nos',
     listPrice: remoteLine.listPrice,
@@ -228,6 +271,8 @@ async function publicPo(runner, po, { includeLines = true } = {}) {
       zohoProductId: line.zoho_product_id != null ? String(line.zoho_product_id) : null,
       productId: line.product_id,
       sequenceNumber: line.sequence_number,
+      productName: line.zoho_product_name || null,
+      zohoProductName: line.zoho_product_name || null,
       description: line.description,
       unit: line.unit,
       listPrice: line.list_price,
@@ -251,8 +296,8 @@ async function publicPo(runner, po, { includeLines = true } = {}) {
     status: po.status,
     vendorZohoId: po.vendor_zoho_id != null ? String(po.vendor_zoho_id) : null,
     vendorName: po.vendor_name_snapshot,
-    poDate: po.po_date,
-    dueDate: po.due_date,
+    poDate: normalizeStoredPoDate(po.po_date),
+    dueDate: normalizeStoredPoDate(po.due_date),
     currency: po.currency,
     subTotal: po.sub_total,
     discount: po.discount,
@@ -262,6 +307,10 @@ async function publicPo(runner, po, { includeLines = true } = {}) {
     lastSyncedAt: po.last_synced_at,
     lastError: po.last_error,
     zohoModifiedAt: po.zoho_modified_at,
+    createdAt: po.created_at,
+    updatedAt: po.updated_at,
+    createdBy: po.created_by,
+    updatedBy: po.updated_by,
     syncStatus: anyRecon ? 'RECONCILIATION_REQUIRED' : deriveSyncStatus(po, publicLines),
     mappingRequired: anyMapping,
     reconciliationRequired: anyRecon,
@@ -316,6 +365,7 @@ async function upsertLines(trx, poId, remoteLines, actor) {
       }
       await trx('procurement_po_line').where({ id: current.id }).update({
         zoho_product_id: mapped.zohoProductId,
+        zoho_product_name: mapped.zohoProductName,
         product_id: mapped.productId,
         sequence_number: mapped.sequenceNumber,
         description: mapped.description,
@@ -342,6 +392,7 @@ async function upsertLines(trx, poId, remoteLines, actor) {
         procurement_po_id: poId,
         zoho_line_id: mapped.zohoLineId,
         zoho_product_id: mapped.zohoProductId,
+        zoho_product_name: mapped.zohoProductName,
         product_id: mapped.productId,
         sequence_number: mapped.sequenceNumber,
         description: mapped.description,
@@ -534,6 +585,8 @@ async function previewPurchaseOrder(zohoPoId) {
         zohoLineId: line.zohoLineId != null ? String(line.zohoLineId) : null,
         zohoProductId: line.zohoProductId != null ? String(line.zohoProductId) : null,
         productId: line.productId,
+        productName: line.zohoProductName || null,
+        zohoProductName: line.zohoProductName || null,
         description: line.description,
         orderedQty: line.orderedQty,
         unit: line.unit,
@@ -638,13 +691,14 @@ async function listPurchaseOrders({ q, status, limit } = {}) {
   const cap = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
   let query = db('procurement_po').orderBy('updated_at', 'desc').limit(cap);
   if (status) query = query.andWhere('status', String(status).toUpperCase());
-  if (q) {
+    if (q) {
     const term = `%${String(q).trim()}%`;
     query = query.andWhere(function search() {
       this.where('id', 'ilike', term)
         .orWhere('po_number', 'ilike', term)
         .orWhere('zoho_po_id', 'ilike', term)
-        .orWhere('subject', 'ilike', term);
+        .orWhere('subject', 'ilike', term)
+        .orWhere('vendor_name_snapshot', 'ilike', term);
     });
   }
   const rows = await query;
@@ -684,7 +738,7 @@ async function listUnified({ q, status, limit } = {}) {
   const legacy = await listLegacyLocalPos();
   const filteredLegacy = q
     ? legacy.filter((row) => {
-      const hay = `${row.id} ${row.poNumber || ''}`.toLowerCase();
+      const hay = `${row.id} ${row.poNumber || ''} ${row.vendorName || ''}`.toLowerCase();
       return hay.includes(String(q).toLowerCase());
     })
     : legacy;
@@ -708,6 +762,8 @@ function mapMirrorLine(line) {
     qtyordered: line.ordered_qty,
     uom: line.unit,
     itemdescription: line.description,
+    itemname: line.zoho_product_name || null,
+    product_name: line.zoho_product_name || null,
     product_id: line.product_id,
     zoho_line_id: line.zoho_line_id,
     zoho_product_id: line.zoho_product_id,
@@ -774,7 +830,9 @@ async function assertReceivableLine(runner, po, line, thisAccepted = 0, exceptNo
   if (String(line.line_status || line.lineStatus || 'OPEN').toUpperCase() === 'WITHDRAWN') {
     throw httpError('This PO line was withdrawn in Zoho. New receiving is blocked.', 409, 'PO_LINE_WITHDRAWN');
   }
-  if (!line.product_id && !line.productId) {
+  // Product mapping is required only when accepting stock. OPEN drafts may include
+  // unmapped lines at qty 0 so operators can link Products on the receipt editor.
+  if (!line.product_id && !line.productId && thisAccepted > 1e-9) {
     throw httpError(
       'PRODUCT MAPPING REQUIRED. Link the Zoho Product to an AssetEngine Product before receiving.',
       409,
@@ -874,6 +932,45 @@ async function listHistory(id) {
   };
 }
 
+/** Recent PO sync events for lifecycle / Dashboard activity feeds. */
+async function listRecentSyncEvents({ limit } = {}) {
+  await requireTables();
+  if (!(await db.schema.hasTable('procurement_sync_event'))) {
+    return { events: [] };
+  }
+  const cap = Math.min(Math.max(parseInt(limit, 10) || 40, 1), 100);
+  const rows = await db('procurement_sync_event as e')
+    .leftJoin('procurement_po as p', 'p.id', 'e.procurement_po_id')
+    .select(
+      'e.id',
+      'e.procurement_po_id',
+      'e.zoho_po_id',
+      'e.operation',
+      'e.status',
+      'e.actor',
+      'e.error_message',
+      'e.changed_fields',
+      'e.created_at',
+      'p.po_number'
+    )
+    .orderBy('e.created_at', 'desc')
+    .limit(cap);
+  return {
+    events: rows.map((row) => ({
+      id: row.id,
+      procurementPoId: row.procurement_po_id,
+      zohoPoId: row.zoho_po_id != null ? String(row.zoho_po_id) : null,
+      poNumber: row.po_number || null,
+      operation: row.operation,
+      status: row.status,
+      actor: row.actor,
+      errorMessage: row.error_message,
+      changedFields: row.changed_fields,
+      createdAt: row.created_at
+    }))
+  };
+}
+
 async function probeZohoScope() {
   try {
     await zohoProc().listPurchaseOrders({ page: 1, perPage: 1 });
@@ -898,6 +995,7 @@ module.exports = {
   listUnified,
   listLegacyLocalPos,
   listHistory,
+  listRecentSyncEvents,
   getSetProcurementNeed,
   onOrderForProduct,
   loadMirrorForReceipt,

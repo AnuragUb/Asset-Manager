@@ -252,6 +252,38 @@ class IdGenerator {
         return IdGenerator.verifyChecksumPrefixedId('PSE', id);
     }
 
+    static generatePurchaseBookId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PBK', now);
+    }
+
+    static verifyPurchaseBookId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PBK', id);
+    }
+
+    static generatePurchaseBookLineId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PBL', now);
+    }
+
+    static verifyPurchaseBookLineId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PBL', id);
+    }
+
+    static generatePurchaseBookDcConsumptionId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PBC', now);
+    }
+
+    static verifyPurchaseBookDcConsumptionId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PBC', id);
+    }
+
+    static generateSerialIdentityId(now) {
+        return IdGenerator.generateChecksumPrefixedId('SER', now);
+    }
+
+    static verifySerialIdentityId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('SER', id);
+    }
+
     /**
      * Physical Intake operation ID: INTAKE-MMYY-XXXXXX-C
      * Audit / provenance reference only. Not a physical holding identifier.

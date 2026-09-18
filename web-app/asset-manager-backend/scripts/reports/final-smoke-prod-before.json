@@ -1,0 +1,100 @@
+{
+  "database": "asset_manager",
+  "capturedAt": "2026-08-29T12:17:11.810Z",
+  "counts": {
+    "products": 203,
+    "productMappings": 203,
+    "zohoCatalog": 204,
+    "assets": 4,
+    "inventory": 2,
+    "reservations": 0,
+    "conversions": 0,
+    "sets": 10,
+    "setRequirements": 3,
+    "setAllocations": 12,
+    "receipts": 1,
+    "receiptLines": 1,
+    "localPos": 2,
+    "localPoLines": 2,
+    "procurementPos": 0,
+    "procurementLines": 0,
+    "procurementMappings": 0,
+    "procurementEvents": 0,
+    "assetHistory": 25,
+    "quantityEvents": 1,
+    "inventoryQuantityEvents": 3,
+    "reservationEvents": 0,
+    "conversionEvents": 0,
+    "setEvents": 10,
+    "receiptEvents": 4
+  },
+  "checksums": {
+    "assets": "245b9430496408a10231e7fa59c55a04",
+    "inventory": "ea9d6b67aa7429859236b335102bb461",
+    "productMappings": "f6c5bb6ae985d7f983d14d2072ad22a3",
+    "reservations": null,
+    "conversions": null,
+    "sets": "f379ddd0d9a11bbd8d3316aaaa3b4c6e",
+    "receipts": "6da54a44c3154b5027b1970cf736b901",
+    "localPos": "85e05dbbb99008f37127fd2323477909"
+  },
+  "protectedHoldings": {
+    "APP-MUM-0526-MMKBX9-W": {
+      "table": "assets",
+      "parentid": "HAR-MUM-0726-55QOFA-R",
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "0.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "receipt_line_id": null
+    },
+    "HAR-MUM-0726-55QOFA-R": {
+      "table": "assets",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": "PRD-0826-W3TB7U-Z",
+      "quantity_total": "1.000000",
+      "quantity_available": "0.000000",
+      "quantity_reserved": "0.000000",
+      "receipt_line_id": null
+    },
+    "HAR-MUM-0826-IEIZP5-U": {
+      "table": "assets",
+      "parentid": null,
+      "is_set": 1,
+      "product_id": null,
+      "quantity_total": "1.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000",
+      "receipt_line_id": null
+    },
+    "MIS-MUM-0826-H4XVLL-W": {
+      "table": "inventory_items",
+      "parentid": null,
+      "is_set": 0,
+      "product_id": null,
+      "quantity_total": "3.000000",
+      "quantity_available": "1.000000",
+      "quantity_reserved": "0.000000",
+      "receipt_line_id": null
+    }
+  },
+  "localPos": [
+    {
+      "id": "PO-1779691453564-194",
+      "ponumber": "ARM-PO-01-26-27",
+      "status": "Active",
+      "vendorname": null,
+      "is_deleted": 0
+    },
+    {
+      "id": "PO-1779796181621-757",
+      "ponumber": "PO980",
+      "status": "Active",
+      "vendorname": null,
+      "is_deleted": 0
+    }
+  ],
+  "oauthHasPurchaseOrders": false
+}

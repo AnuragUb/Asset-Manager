@@ -133,6 +133,54 @@ function parseJson(value) {
   }
 }
 
+function normalizeMarkings(raw) {
+  const value = raw && (raw.physicalMarkings != null ? raw.physicalMarkings : raw.physical_markings);
+  if (value == null) return null;
+  if (Array.isArray(value)) return { serials: value, holding: {} };
+  if (typeof value === 'object') {
+    const holding = value.holding && typeof value.holding === 'object'
+      ? value.holding
+      : ((value.itemName || value.itemname || value.make || value.model) ? value : {});
+    return {
+      holding,
+      serials: Array.isArray(value.serials) ? value.serials : []
+    };
+  }
+  return null;
+}
+
+function markingPayload(line) {
+  const raw = parseJson(line && line.physical_markings);
+  if (Array.isArray(raw)) return { serials: raw, holding: {} };
+  if (raw && typeof raw === 'object') {
+    return {
+      serials: Array.isArray(raw.serials) ? raw.serials : [],
+      holding: raw.holding && typeof raw.holding === 'object' ? raw.holding : {}
+    };
+  }
+  return { serials: [], holding: {} };
+}
+
+function holdingFields(line, product, location) {
+  const { holding } = markingPayload(line);
+  const brandCategory = trimText(holding.brandCategory || holding.brand_category || holding.makeCategory);
+  const assetKind = trimText(holding.assetKind || holding.asset_kind || holding.kindName);
+  const hierarchyType = brandCategory || assetKind || trimText(holding.type);
+  const hierarchyCategory = brandCategory || assetKind || trimText(holding.category);
+  return {
+    itemname: trimText(holding.itemName || holding.itemname) || product.name,
+    itemdescription: trimText(holding.description || holding.itemdescription) || line.item_description_snapshot || product.description || '',
+    make: trimText(holding.make) || product.make || '',
+    model: trimText(holding.model) || product.model || '',
+    srno: trimText(holding.serialNo || holding.srno) || '',
+    purpose: trimText(holding.purpose) || 'Owned',
+    type: hierarchyType || product.make || 'GEN',
+    category: hierarchyCategory || product.model || '',
+    parentFolder: trimText(holding.parentFolder || holding.parent_folder || holding.folderName),
+    location: trimText(holding.location) || location || ''
+  };
+}
+
 function publicLine(row, extra = {}) {
   if (!row) return null;
   const received = qtyNum(row.qty_received);
@@ -356,6 +404,8 @@ async function lockPoLine(trx, poLineId, poSource = 'LOCAL') {
       qtyordered: row.ordered_qty,
       uom: row.unit,
       itemdescription: row.description,
+      itemname: row.zoho_product_name || null,
+      product_name: row.zoho_product_name || null,
       product_id: row.product_id,
       zoho_line_id: row.zoho_line_id,
       line_status: row.line_status
@@ -427,9 +477,7 @@ function normalizeLineInput(raw, index) {
     notes: trimText(raw.notes),
     folderId: trimText(raw.folderId || raw.folder_id),
     kindId: trimText(raw.kindId || raw.kind_id),
-    physicalMarkings: Array.isArray(raw.physicalMarkings || raw.physical_markings)
-      ? (raw.physicalMarkings || raw.physical_markings)
-      : null,
+    physicalMarkings: normalizeMarkings(raw),
     sortOrder: Number.isFinite(Number(raw.sortOrder ?? raw.sort_order)) ? Number(raw.sortOrder ?? raw.sort_order) : index
   };
 }
@@ -437,7 +485,11 @@ function normalizeLineInput(raw, index) {
 function snapshotFromPoLine(header, poLine, productId) {
   const ordered = roundQty(poLine.qtyordered ?? poLine.QtyOrdered ?? 0);
   const unit = trimText(poLine.uom) || null;
-  const description = trimText(poLine.itemdescription) || null;
+  const description = trimText(poLine.itemdescription)
+    || trimText(poLine.itemname)
+    || trimText(poLine.product_name)
+    || trimText(poLine.zoho_product_name)
+    || null;
   return {
     orderedQty: ordered,
     unit,
@@ -523,6 +575,11 @@ async function hydrate(runner, row) {
     runner('receipt_event').where({ receipt_note_id: row.id }).orderBy('id'),
     receiptProjectionService.getOutbox(runner, row.id)
   ]);
+  const productIds = [...new Set(lines.map((line) => line.product_id).filter(Boolean))];
+  const productRows = productIds.length && (await runner.schema.hasTable('product'))
+    ? await runner('product').whereIn('id', productIds).select('id', 'name')
+    : [];
+  const productNameById = new Map(productRows.map((p) => [String(p.id), trimText(p.name)]));
   const balances = [];
   const grouped = new Map();
   for (const line of lines) {
@@ -540,6 +597,7 @@ async function hydrate(runner, row) {
       canReverse
     }),
     lines: lines.map((line) => publicLine(line, {
+      productName: line.product_id ? (productNameById.get(String(line.product_id)) || null) : null,
       acceptedToDate: grouped.get(line.po_line_id),
       outstanding: roundQty(
         qtyNum(line.ordered_qty_current != null ? line.ordered_qty_current : line.ordered_qty_snapshot)
@@ -563,9 +621,18 @@ async function getReceiptNote(id) {
 
 async function listReceiptNotes(filters = {}) {
   await requireTables();
+  const dashboard = require('./operationsDashboardService');
+  const period = filters.period ? dashboard.normalizePeriod(filters.period) : null;
   let q = db('receipt_note').orderBy('created_at', 'desc');
   if (filters.status) q = q.andWhere('status', String(filters.status).toUpperCase());
   if (filters.poId || filters.po_id) q = q.andWhere('po_id', String(filters.poId || filters.po_id));
+  if (period) {
+    const eventTs = dashboard.receiptEventTsSql();
+    q = q.whereRaw(
+      `date_trunc('${period}', timezone(?, ${eventTs})) = date_trunc('${period}', timezone(?, CURRENT_TIMESTAMP))`,
+      [dashboard.TZ, dashboard.TZ]
+    );
+  }
   if (filters.q) {
     const term = `%${String(filters.q).trim()}%`;
     q = q.andWhere(function filterQ() {
@@ -611,6 +678,7 @@ async function getPoBalance(poId) {
         lines: (po.lines || []).map((line) => ({
           poLineId: line.id,
           srno: line.sequenceNumber,
+          productName: line.productName || line.zohoProductName || null,
           description: line.description || null,
           unit: line.unit || null,
           ordered: line.ordered,
@@ -622,7 +690,8 @@ async function getPoBalance(poId) {
           reconciliationStatus: line.reconciliationStatus,
           productId: line.productId,
           mappingRequired: line.mappingRequired,
-          zohoLineId: line.zohoLineId
+          zohoLineId: line.zohoLineId,
+          zohoProductId: line.zohoProductId || null
         }))
       };
     }
@@ -861,25 +930,169 @@ async function resolveInventoryFolder(trx, line) {
   return { folderid: kind.folderid, kindid: kind.id, type: kind.name, category: kind.name };
 }
 
+function declaredPrecision(row) {
+  const raw = row && row.quantity_precision;
+  const n = raw == null || raw === '' ? 0 : parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(6, n);
+}
+
+async function applyNumericDelta(trx, table, id, deltaTotal, deltaAvailable, precision) {
+  const p = declaredPrecision({ quantity_precision: precision });
+  const result = await trx.raw(
+    `
+      UPDATE ${table}
+      SET quantity_total = ROUND((COALESCE(quantity_total, 0)::numeric + ?::numeric), ?),
+          quantity_available = ROUND((COALESCE(quantity_available, 0)::numeric + ?::numeric), ?),
+          quantity_updated_at = CURRENT_TIMESTAMP
+      WHERE LOWER(id) = LOWER(?)
+      RETURNING id, quantity_total, quantity_available
+    `,
+    [deltaTotal, p, deltaAvailable, p, id]
+  );
+  const row = result.rows && result.rows[0];
+  if (!row) throw httpError(`Failed to update quantity on ${id}`, 500);
+  if (qtyNum(row.quantity_available) < -1e-9 || qtyNum(row.quantity_total) < -1e-9) {
+    throw httpError('Quantity would become negative', 400, 'INVALID_QUANTITY');
+  }
+  if (qtyNum(row.quantity_available) - qtyNum(row.quantity_total) > 1e-9) {
+    throw httpError('Available quantity cannot exceed total', 400, 'INVALID_QUANTITY');
+  }
+  return row;
+}
+
+function addTargetFromLine(line, mode) {
+  const { holding } = markingPayload(line);
+  const action = String(holding.holdingAction || holding.action || '').toUpperCase();
+  if (action !== 'ADD_EXISTING') return null;
+  const resourceType = String(holding.targetResourceType || '').toUpperCase();
+  const resourceId = trimText(holding.targetResourceId || holding.targetId);
+  if (!resourceId) {
+    throw httpError('targetResourceId is required when adding to an existing holding', 400, 'TARGET_REQUIRED');
+  }
+  if (mode === 'ASSET_INDIVIDUAL') {
+    throw httpError('Individual Asset receipts cannot add to an existing holding', 400, 'TARGET_NOT_ALLOWED');
+  }
+  return {
+    resourceType: resourceType || (mode === 'INVENTORY' ? 'INVENTORY' : 'ASSET'),
+    resourceId
+  };
+}
+
+async function resolveHoldingTable(trx, resourceId, preferredType) {
+  const id = String(resourceId || '').trim();
+  if (!id) return null;
+  const load = async (table, resourceType) => {
+    const holding = await trx(table).whereRaw('LOWER(id) = LOWER(?)', [id]).forUpdate().first();
+    return holding ? { table, resourceType, holding } : null;
+  };
+  if (preferredType === 'INVENTORY') {
+    const inv = await load('inventory_items', 'INVENTORY');
+    if (inv) return inv;
+  }
+  if (preferredType === 'ASSET') {
+    const asset = await load('assets', 'ASSET');
+    if (asset) return asset;
+  }
+  return (await load('inventory_items', 'INVENTORY')) || (await load('assets', 'ASSET'));
+}
+
+async function addToExistingHolding(trx, { target, product, qty, unit, line, actor, noteId }) {
+  const resolved = await resolveHoldingTable(trx, target.resourceId, target.resourceType);
+  if (!resolved) {
+    throw httpError(`Holding ${target.resourceId} not found`, 404, 'TARGET_NOT_FOUND');
+  }
+  const { table, resourceType, holding } = resolved;
+  const linkedProduct = String(holding.product_id || '').trim();
+  if (linkedProduct && linkedProduct !== String(product.id)) {
+    throw httpError(
+      `Holding ${holding.id} is linked to a different Product (${linkedProduct})`,
+      409,
+      'TARGET_PRODUCT_MISMATCH'
+    );
+  }
+  if (!linkedProduct) {
+    await trx(table).where({ id: holding.id }).update({ product_id: product.id });
+    holding.product_id = product.id;
+  }
+  const tracked = holding.is_quantity_tracked === 1 || holding.is_quantity_tracked === true;
+  if (!tracked) {
+    await trx(table).where({ id: holding.id }).update({ is_quantity_tracked: 1 });
+  }
+  const lineage = String(holding.lineage_status || 'ACTIVE').toUpperCase();
+  if (lineage && lineage !== 'ACTIVE') {
+    throw httpError(`Holding ${holding.id} is not active`, 409, 'TARGET_INACTIVE');
+  }
+  const precision = declaredPrecision(holding);
+  const now = new Date().toISOString();
+  await applyNumericDelta(trx, table, holding.id, qty, qty, precision);
+  await trx('receipt_physical_output').insert({
+    receipt_line_id: line.id,
+    receipt_note_id: noteId,
+    resource_type: resourceType,
+    resource_id: holding.id,
+    quantity: qty,
+    created_at: now
+  });
+  await writeQuantityEvent(trx, {
+    table,
+    rootId: holding.quantity_root_id || holding.id,
+    type: EVENT_TYPES.RECEIVE,
+    actor,
+    note: `Receipt ${noteId} line ${line.id} (add to existing)`,
+    metadata: {
+      receipt_note_id: noteId,
+      receipt_line_id: line.id,
+      po_line_id: line.po_line_id,
+      addToExisting: true
+    },
+    lines: [{
+      id: holding.id,
+      unit: unit || holding.quantity_unit || product.unit || 'Nos',
+      deltaAvailable: qty,
+      deltaTotal: qty
+    }]
+  });
+  if (resourceType === 'ASSET') {
+    await writeAssetHistory(
+      trx,
+      holding.id,
+      'RECEIPT_POST',
+      noteId,
+      holding.id,
+      actor,
+      `Added qty ${qty} from Receipt line ${line.id} (PO line ${line.po_line_id})`
+    );
+  }
+  return {
+    resourceType,
+    resourceId: holding.id,
+    quantity: qty,
+    qr: false,
+    addToExisting: true
+  };
+}
+
 async function createInventoryRow(trx, { product, qty, unit, location, line, host, actor, noteId }) {
   const folder = await resolveInventoryFolder(trx, line);
-  const holdingId = await uniqueHoldingId(trx, 'inventory_items', location, folder.type || product.name || 'Inventory');
+  const holding = holdingFields(line, product, location);
+  const holdingId = await uniqueHoldingId(trx, 'inventory_items', holding.location, folder.type || product.name || 'Inventory');
   const now = new Date().toISOString();
   const qr = await buildQrDataUrl(host, 'inventory', holdingId);
   await trx('inventory_items').insert({
     id: holdingId,
-    itemname: product.name,
-    itemdescription: line.item_description_snapshot || product.description || '',
+    itemname: holding.itemname,
+    itemdescription: holding.itemdescription,
     status: 'In Store',
-    make: product.make || '',
-    model: product.model || '',
-    type: folder.type || 'Inventory',
-    category: folder.category || folder.type || 'Inventory',
+    make: holding.make,
+    model: holding.model,
+    type: folder.type || holding.type || 'Inventory',
+    category: folder.category || holding.category || folder.type || 'Inventory',
     folderid: folder.folderid,
     kindid: folder.kindid,
-    currentlocation: location || '',
+    currentlocation: holding.location || '',
     lastupdated: now,
-    purpose: 'Owned',
+    purpose: holding.purpose,
     is_quantity_tracked: 1,
     is_set: 0,
     is_batch: 0,
@@ -922,24 +1135,25 @@ async function createInventoryRow(trx, { product, qty, unit, location, line, hos
 }
 
 async function createAssetRow(trx, { product, qty, unit, location, line, host, actor, noteId, marking }) {
-  const holdingId = await uniqueHoldingId(trx, 'assets', location, product.make || 'GEN');
+  const holding = holdingFields(line, product, location);
+  const holdingId = await uniqueHoldingId(trx, 'assets', holding.location, holding.type || product.make || 'GEN');
   const now = new Date().toISOString();
   const qr = await buildQrDataUrl(host, 'asset', holdingId);
-  await trx('assets').insert({
+  const row = {
     id: holdingId,
-    itemname: product.name,
-    itemdescription: line.item_description_snapshot || product.description || '',
+    itemname: holding.itemname,
+    itemdescription: holding.itemdescription,
     status: 'In Store',
-    make: product.make || '',
-    model: product.model || '',
-    srno: '',
-    type: product.make || 'GEN',
-    category: product.model || '',
+    make: holding.make,
+    model: holding.model,
+    srno: holding.srno || '',
+    type: holding.type || product.make || 'GEN',
+    category: holding.category || product.model || '',
     isplaceholder: 0,
     parentid: null,
-    currentlocation: location || '',
+    currentlocation: holding.location || '',
     lastupdated: now,
-    purpose: 'Owned',
+    purpose: holding.purpose,
     qrcode: qr,
     assignedto: '',
     client_label: clientLabelFromId(holdingId),
@@ -960,7 +1174,11 @@ async function createAssetRow(trx, { product, qty, unit, location, line, host, a
     product_id: product.id,
     receipt_line_id: line.id,
     quantity_updated_at: now
-  });
+  };
+  if (await trx.schema.hasColumn('assets', 'parent_folder')) {
+    row.parent_folder = holding.parentFolder || '';
+  }
+  await trx('assets').insert(row);
   await trx('receipt_physical_output').insert({
     receipt_line_id: line.id,
     receipt_note_id: noteId,
@@ -1008,18 +1226,41 @@ async function createPhysicalForLine(trx, { line, product, host, actor, noteId, 
   if (!(accepted > 0)) return [];
   const mode = String(line.creation_mode || '').toUpperCase();
   const unit = line.unit || product.unit || 'Nos';
+  const target = addTargetFromLine(line, mode);
+  if (target) {
+    return [await addToExistingHolding(trx, {
+      target,
+      product,
+      qty: accepted,
+      unit,
+      line,
+      actor,
+      noteId
+    })];
+  }
   if (mode === 'INVENTORY') {
     return [await createInventoryRow(trx, { product, qty: accepted, unit, location, line, host, actor, noteId })];
   }
   if (mode === 'ASSET_GROUPED') {
-    return [await createAssetRow(trx, { product, qty: accepted, unit, location, line, host, actor, noteId })];
+    const serial = holdingFields(line, product, location).srno;
+    return [await createAssetRow(trx, {
+      product,
+      qty: accepted,
+      unit,
+      location,
+      line,
+      host,
+      actor,
+      noteId,
+      marking: serial ? { kind: 'MANUFACTURER_SERIAL', value: serial } : null
+    })];
   }
   if (mode === 'ASSET_INDIVIDUAL') {
     if (!qtyEq(accepted, Math.round(accepted), 0)) {
       throw httpError('Individual Assets require a whole accepted quantity', 400, 'INVALID_QUANTITY');
     }
     const count = Math.round(accepted);
-    const markings = parseJson(line.physical_markings) || [];
+    const markings = markingPayload(line).serials || [];
     if (markings.length && markings.length !== count) {
       throw httpError('physicalMarkings length must match individual Asset count', 400, 'INVALID_MARKING');
     }
@@ -1308,6 +1549,15 @@ async function reverseBlockers(runner, noteId) {
     if (Math.abs(available - total) > 1e-9) {
       blockers.push({ resourceId: holding.id, reason: 'QUANTITY_COMMITTED', available, total });
     }
+    const reverseQty = qtyNum(output.quantity);
+    if (reverseQty - available > 1e-9) {
+      blockers.push({
+        resourceId: holding.id,
+        reason: 'INSUFFICIENT_AVAILABLE',
+        available,
+        reverseQty
+      });
+    }
     if (output.resource_type === 'ASSET') {
       if (nonempty(holding.assignedto)) blockers.push({ resourceId: holding.id, reason: 'ASSIGNED' });
       if (nonempty(holding.sentagainstdc)) blockers.push({ resourceId: holding.id, reason: 'DISPATCHED' });
@@ -1390,8 +1640,21 @@ async function reverseReceipt(id, args = {}) {
     for (const output of outputs) {
       const table = output.resource_type === 'ASSET' ? 'assets' : 'inventory_items';
       const holding = await trx(table).whereRaw('LOWER(id) = LOWER(?)', [output.resource_id]).forUpdate().first();
-      const qty = qtyNum(holding.quantity_total);
-      await applyHoldingZero(trx, table, holding.id);
+      const receiptQty = roundQty(output.quantity);
+      const total = qtyNum(holding.quantity_total);
+      const precision = declaredPrecision(holding);
+      if (qtyEq(total, receiptQty, precision)) {
+        await applyHoldingZero(trx, table, holding.id, precision);
+      } else {
+        await applyNumericDelta(trx, table, holding.id, -receiptQty, -receiptQty, precision);
+        const updated = await trx(table).whereRaw('LOWER(id) = LOWER(?)', [holding.id]).first();
+        if (updated && qtyNum(updated.quantity_total) <= 1e-9) {
+          await trx(table).whereRaw('LOWER(id) = LOWER(?)', [holding.id]).update({
+            lineage_status: 'INACTIVE',
+            quantity_updated_at: new Date().toISOString()
+          });
+        }
+      }
       await writeQuantityEvent(trx, {
         table,
         rootId: holding.quantity_root_id || holding.id,
@@ -1402,8 +1665,8 @@ async function reverseReceipt(id, args = {}) {
         lines: [{
           id: holding.id,
           unit: holding.quantity_unit || 'Nos',
-          deltaAvailable: -qty,
-          deltaTotal: -qty
+          deltaAvailable: -receiptQty,
+          deltaTotal: -receiptQty
         }]
       });
       if (output.resource_type === 'ASSET') {

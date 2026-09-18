@@ -29,7 +29,8 @@ Single entry point for AssetEngine / CineEAM documentation.
 
 | Hub | Purpose |
 |-----|---------|
-| [Architecture navigation](./architecture/README.md) | How to read architecture docs + maps |
+| [Architecture & ADRs](./Architecture_and_ADRs/README.md) | **Collected** architecture docs, ADRs, audits, and research |
+| [Architecture navigation (pointer)](./architecture/README.md) | Redirects to Architecture & ADRs |
 | [Runbooks](./runbooks/README.md) | Setup, redundancy, testing, workflow |
 | [Archive](./archive/README.md) | Historical docs (not source of truth) |
 | [Repository modernization plan](./Repository_Modernization_Plan.md) | Phased repo cleanup plan |
@@ -38,8 +39,12 @@ Single entry point for AssetEngine / CineEAM documentation.
 
 | Doc | Purpose |
 |-----|---------|
-| [Managed Sets / Kits](./MANAGED_SETS_ARCHITECTURE.md) | First-class Set model (Phase 0). **Do not** apply `20260824120000_create_managed_sets_tables.js` until this design is approved and the migration is revised. |
+| [DC document design](./DC_DOCUMENT_DESIGN.md) | Delivery Challan HTML/CSS design language + field mapping |
+| [Managed Sets / Kits](./Architecture_and_ADRs/02_domain_architecture/MANAGED_SETS_ARCHITECTURE.md) | First-class Set model (Phase 0). **Do not** apply `20260824120000_create_managed_sets_tables.js` until this design is approved and the migration is revised. |
 | [Auth infrastructure](./AUTH_INFRASTRUCTURE_IMPLEMENTATION.md) | Signup, login, Remember Me, logout, password reset, cookie/session policy |
+| [Sourced vs Adopted lifecycle (ADR)](./Architecture_and_ADRs/01_adrs/LIFECYCLE_SOURCED_ADOPTED_ADR.md) | Sourced (PO → RN → stock) vs Adopted (Physical Intake then PO + RN). Awaiting Adoption, Receipt Note calendar windows, Asset pie / Inventory donut. **Not implemented.** |
+| [Frontend stack — React deferred (ADR)](./Architecture_and_ADRs/01_adrs/FRONTEND_REACT_ADR.md) | Vanilla SPA now; React later for UI logic after the product is stable. Express stays the server. **Does not authorize a rewrite.** |
+| [Zoho Books integration research](./Architecture_and_ADRs/03_audits_and_research/ZOHO_BOOKS_INTEGRATION_ARCHITECTURE_RESEARCH.md) | Books companion architecture (research only; not implemented) |
 
 ---
 
@@ -60,7 +65,7 @@ Single entry point for AssetEngine / CineEAM documentation.
 1. [`../README.md`](../README.md)  
 2. [`01_PROJECT_OVERVIEW.md`](./01_PROJECT_OVERVIEW.md)  
 3. [`../PROCESS_LOGIC.md`](../PROCESS_LOGIC.md)  
-4. [`architecture/README.md`](./architecture/README.md) → `02`, `03`, `05`, `06`  
+4. [`Architecture_and_ADRs/README.md`](./Architecture_and_ADRs/README.md) → `02`, `03`, `05`, `06`  
 5. [`09_CURRENT_STATE.md`](./09_CURRENT_STATE.md) + [`07_SECURITY.md`](./07_SECURITY.md)  
 6. [`../AGENTS.md`](../AGENTS.md) before making structural changes  
 

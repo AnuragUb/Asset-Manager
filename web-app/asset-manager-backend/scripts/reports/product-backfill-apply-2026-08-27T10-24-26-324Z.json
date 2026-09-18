@@ -1,0 +1,1047 @@
+{
+  "mode": "APPLY",
+  "database": "asset_manager_phase1_scratch",
+  "generated_at": "2026-08-27T10:24:26.022Z",
+  "counts": {
+    "candidates": 203,
+    "class_a": 200,
+    "class_b": 1,
+    "class_c": 1,
+    "class_d": 1,
+    "create": 0,
+    "already_linked": 201,
+    "quarantine": 1,
+    "escalate": 1,
+    "created": 0,
+    "asset_links": 0
+  },
+  "created": [],
+  "already_linked": [
+    {
+      "external_id": "1205624000001280003",
+      "product_id": "PRD-0826-7YQ2SH-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001236013",
+      "product_id": "PRD-0826-JDNBYO-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001172038",
+      "product_id": "PRD-0826-GYPJ0S-3",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001172036",
+      "product_id": "PRD-0826-3YDC75-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001172034",
+      "product_id": "PRD-0826-TS751D-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001172031",
+      "product_id": "PRD-0826-04B8N7-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001137003",
+      "product_id": "PRD-0826-VCPBKF-3",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001137001",
+      "product_id": "PRD-0826-II8308-Q",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001129004",
+      "product_id": "PRD-0826-CF26CK-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001129002",
+      "product_id": "PRD-0826-BJCF6B-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113011",
+      "product_id": "PRD-0826-X7TP0Y-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113009",
+      "product_id": "PRD-0826-NPFVNG-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113007",
+      "product_id": "PRD-0826-9IWJLU-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113005",
+      "product_id": "PRD-0826-DUNQVA-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113003",
+      "product_id": "PRD-0826-XOWLQY-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113001",
+      "product_id": "PRD-0826-SNI5RH-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087033",
+      "product_id": "PRD-0826-YSSDSV-H",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087031",
+      "product_id": "PRD-0826-3RT8OA-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087028",
+      "product_id": "PRD-0826-1P9CCP-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087017",
+      "product_id": "PRD-0826-Y9OVNO-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087015",
+      "product_id": "PRD-0826-LCQIOF-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087013",
+      "product_id": "PRD-0826-H7RWVR-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001087011",
+      "product_id": "PRD-0826-6XK9M6-5",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074061",
+      "product_id": "PRD-0826-7U8XO2-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074060",
+      "product_id": "PRD-0826-K5EN6Z-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074059",
+      "product_id": "PRD-0826-C2PL5O-A",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074058",
+      "product_id": "PRD-0826-KCGGCZ-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074057",
+      "product_id": "PRD-0826-J68E1B-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074056",
+      "product_id": "PRD-0826-DSIPFU-O",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074055",
+      "product_id": "PRD-0826-OJ5RG7-1",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074054",
+      "product_id": "PRD-0826-CRVHTS-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074053",
+      "product_id": "PRD-0826-QCB1BH-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074052",
+      "product_id": "PRD-0826-I1RAO7-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074051",
+      "product_id": "PRD-0826-O0UJQY-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074050",
+      "product_id": "PRD-0826-4ZPPN1-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074049",
+      "product_id": "PRD-0826-9U9H1G-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074047",
+      "product_id": "PRD-0826-D4W0RA-D",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074046",
+      "product_id": "PRD-0826-7SQSFH-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074045",
+      "product_id": "PRD-0826-06SXSP-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074044",
+      "product_id": "PRD-0826-47XRLZ-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074043",
+      "product_id": "PRD-0826-QIFA1B-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074042",
+      "product_id": "PRD-0826-PC1XDI-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074041",
+      "product_id": "PRD-0826-27I55Q-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074040",
+      "product_id": "PRD-0826-B10DDA-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074037",
+      "product_id": "PRD-0826-25VC95-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074036",
+      "product_id": "PRD-0826-CBI0EZ-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074035",
+      "product_id": "PRD-0826-WB08I7-5",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074034",
+      "product_id": "PRD-0826-GI00JL-9",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044102",
+      "product_id": "PRD-0826-URDAN1-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074033",
+      "product_id": "PRD-0826-20EKI9-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074032",
+      "product_id": "PRD-0826-8MMDK9-H",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074031",
+      "product_id": "PRD-0826-RI3KCX-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074030",
+      "product_id": "PRD-0826-K78HDO-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074029",
+      "product_id": "PRD-0826-BOAIZE-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074028",
+      "product_id": "PRD-0826-QJR0FK-6",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074027",
+      "product_id": "PRD-0826-CZLVK0-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074026",
+      "product_id": "PRD-0826-D6KEO5-L",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074025",
+      "product_id": "PRD-0826-NO9MXK-O",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074024",
+      "product_id": "PRD-0826-O876UT-5",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074023",
+      "product_id": "PRD-0826-1QKJXO-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074022",
+      "product_id": "PRD-0826-IIY0BZ-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074021",
+      "product_id": "PRD-0826-46ENSU-C",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054024",
+      "product_id": "PRD-0826-B4NHTV-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054022",
+      "product_id": "PRD-0826-FOS191-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054020",
+      "product_id": "PRD-0826-XDHKOI-C",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054018",
+      "product_id": "PRD-0826-42116T-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054016",
+      "product_id": "PRD-0826-K2UYZ2-6",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001054014",
+      "product_id": "PRD-0826-FSN5LK-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044131",
+      "product_id": "PRD-0826-H9YJCB-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044130",
+      "product_id": "PRD-0826-TEMVT6-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044129",
+      "product_id": "PRD-0826-VW4L5M-A",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044128",
+      "product_id": "PRD-0826-NH3TUY-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044127",
+      "product_id": "PRD-0826-6AL7TX-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044126",
+      "product_id": "PRD-0826-YXKVO6-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044125",
+      "product_id": "PRD-0826-VU0ASO-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044124",
+      "product_id": "PRD-0826-CCN8YA-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044123",
+      "product_id": "PRD-0826-O6N2WB-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044122",
+      "product_id": "PRD-0826-5MYFHP-H",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044121",
+      "product_id": "PRD-0826-5XT2QG-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044120",
+      "product_id": "PRD-0826-P9S4NC-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044119",
+      "product_id": "PRD-0826-AN6NVA-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044118",
+      "product_id": "PRD-0826-HV48QK-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044117",
+      "product_id": "PRD-0826-QXC2NE-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044116",
+      "product_id": "PRD-0826-G58DB4-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044115",
+      "product_id": "PRD-0826-RZC87V-9",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044114",
+      "product_id": "PRD-0826-O81WVK-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044113",
+      "product_id": "PRD-0826-72PER5-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044112",
+      "product_id": "PRD-0826-Q6X683-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044028",
+      "product_id": "PRD-0826-S546JM-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044109",
+      "product_id": "PRD-0826-WFH18V-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044108",
+      "product_id": "PRD-0826-Y81EEE-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044107",
+      "product_id": "PRD-0826-IC1NYN-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044106",
+      "product_id": "PRD-0826-S57Y78-S",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044105",
+      "product_id": "PRD-0826-YSFWLR-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044103",
+      "product_id": "PRD-0826-A0QJOG-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044101",
+      "product_id": "PRD-0826-YIIGNW-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044100",
+      "product_id": "PRD-0826-LMNYC0-5",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044099",
+      "product_id": "PRD-0826-2UIA50-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044098",
+      "product_id": "PRD-0826-5RWNWV-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044097",
+      "product_id": "PRD-0826-A37REC-S",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044096",
+      "product_id": "PRD-0826-T5NBUE-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044095",
+      "product_id": "PRD-0826-Z40A8D-D",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044094",
+      "product_id": "PRD-0826-NMBRCO-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044093",
+      "product_id": "PRD-0826-Y1FAFZ-5",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044092",
+      "product_id": "PRD-0826-1IDGOX-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044091",
+      "product_id": "PRD-0826-BJENFJ-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044090",
+      "product_id": "PRD-0826-N506GP-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044089",
+      "product_id": "PRD-0826-6TTU4W-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044088",
+      "product_id": "PRD-0826-3TKYTN-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044087",
+      "product_id": "PRD-0826-CFTJTL-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044086",
+      "product_id": "PRD-0826-W0WW8S-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044085",
+      "product_id": "PRD-0826-890822-Q",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044084",
+      "product_id": "PRD-0826-JKVM9W-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044083",
+      "product_id": "PRD-0826-09QEWS-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044082",
+      "product_id": "PRD-0826-3K4AFL-S",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044081",
+      "product_id": "PRD-0826-6JI26F-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044080",
+      "product_id": "PRD-0826-2TY1XL-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044079",
+      "product_id": "PRD-0826-9HYOAF-Q",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044078",
+      "product_id": "PRD-0826-Q34FGK-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044077",
+      "product_id": "PRD-0826-VN4AZ5-9",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044076",
+      "product_id": "PRD-0826-BUHKKX-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044075",
+      "product_id": "PRD-0826-DW3PNB-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044074",
+      "product_id": "PRD-0826-1SB4CM-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044073",
+      "product_id": "PRD-0826-F10XWX-7",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044072",
+      "product_id": "PRD-0826-OM754J-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044071",
+      "product_id": "PRD-0826-Q8M76F-N",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044070",
+      "product_id": "PRD-0826-V6VBNV-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044069",
+      "product_id": "PRD-0826-GGHQFX-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044027",
+      "product_id": "PRD-0826-UEL5DE-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044026",
+      "product_id": "PRD-0826-0XX8TH-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044067",
+      "product_id": "PRD-0826-6H2MOA-A",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044066",
+      "product_id": "PRD-0826-UPA945-C",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044065",
+      "product_id": "PRD-0826-KTH37F-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044064",
+      "product_id": "PRD-0826-QF9Q01-O",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044063",
+      "product_id": "PRD-0826-3DLS6W-6",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044062",
+      "product_id": "PRD-0826-EFPSUC-3",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044061",
+      "product_id": "PRD-0826-3LAV8W-E",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044060",
+      "product_id": "PRD-0826-H16SHP-7",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044059",
+      "product_id": "PRD-0826-RJRNMK-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044058",
+      "product_id": "PRD-0826-6ITDJ7-1",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044057",
+      "product_id": "PRD-0826-KQSG94-I",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044056",
+      "product_id": "PRD-0826-QD441Y-7",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044055",
+      "product_id": "PRD-0826-CA5ZJ7-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044054",
+      "product_id": "PRD-0826-QOXKD3-S",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044053",
+      "product_id": "PRD-0826-N6TPW8-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044052",
+      "product_id": "PRD-0826-QO4XCP-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044051",
+      "product_id": "PRD-0826-UAXLXK-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044050",
+      "product_id": "PRD-0826-07TBXS-J",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044049",
+      "product_id": "PRD-0826-O49OXZ-2",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044048",
+      "product_id": "PRD-0826-RH86NB-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044047",
+      "product_id": "PRD-0826-K1K927-G",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044046",
+      "product_id": "PRD-0826-2RJC1D-H",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044045",
+      "product_id": "PRD-0826-M01B3J-9",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044044",
+      "product_id": "PRD-0826-BWWBVQ-U",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044043",
+      "product_id": "PRD-0826-FT9OV8-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044042",
+      "product_id": "PRD-0826-64NAKA-Y",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044041",
+      "product_id": "PRD-0826-5VDBBD-7",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044040",
+      "product_id": "PRD-0826-ZGUGE7-P",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044039",
+      "product_id": "PRD-0826-QLA8FZ-O",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044038",
+      "product_id": "PRD-0826-YVIBM8-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044037",
+      "product_id": "PRD-0826-3CKPRP-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044036",
+      "product_id": "PRD-0826-N31WZU-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044035",
+      "product_id": "PRD-0826-NBDUQM-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044034",
+      "product_id": "PRD-0826-6LLU3W-G",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044032",
+      "product_id": "PRD-0826-AK7CDK-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044031",
+      "product_id": "PRD-0826-7XYJ3A-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044029",
+      "product_id": "PRD-0826-CCRXKB-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978028",
+      "product_id": "PRD-0826-ZIZVA6-4",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001284002",
+      "product_id": "PRD-0826-YFJW25-2",
+      "class": "B"
+    },
+    {
+      "external_id": "1205624000001280017",
+      "product_id": "PRD-0826-BDQJ4Z-P",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001113013",
+      "product_id": "PRD-0826-84PKTG-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074048",
+      "product_id": "PRD-0826-EHL9BH-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074039",
+      "product_id": "PRD-0826-GV1Y8C-X",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001074038",
+      "product_id": "PRD-0826-EOB1JA-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044111",
+      "product_id": "PRD-0826-0KZBOP-K",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044110",
+      "product_id": "PRD-0826-ZWQQIF-B",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044068",
+      "product_id": "PRD-0826-0YG6W8-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044033",
+      "product_id": "PRD-0826-S18FNP-H",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044025",
+      "product_id": "PRD-0826-GKE48S-D",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044024",
+      "product_id": "PRD-0826-G2GA7P-3",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044023",
+      "product_id": "PRD-0826-HH7RF0-M",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044022",
+      "product_id": "PRD-0826-Y1IZ9X-7",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001044021",
+      "product_id": "PRD-0826-57STPX-S",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001035009",
+      "product_id": "PRD-0826-57NUCC-W",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001035007",
+      "product_id": "PRD-0826-63X9NF-0",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001035005",
+      "product_id": "PRD-0826-2ZQU87-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001035003",
+      "product_id": "PRD-0826-3T4KYP-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001035001",
+      "product_id": "PRD-0826-LIOOYB-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000001007002",
+      "product_id": "PRD-0826-8JOHY4-F",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000989001",
+      "product_id": "PRD-0826-QG620M-V",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000980010",
+      "product_id": "PRD-0826-VGY1NL-L",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000979042",
+      "product_id": "PRD-0826-4L3BY6-Q",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000979040",
+      "product_id": "PRD-0826-RKID89-U",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000979031",
+      "product_id": "PRD-0826-P52Y63-8",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000979017",
+      "product_id": "PRD-0826-ES3AAH-3",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978034",
+      "product_id": "PRD-0826-GSX3SQ-R",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978033",
+      "product_id": "PRD-0826-5XK8G6-T",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978032",
+      "product_id": "PRD-0826-NX3GLS-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978031",
+      "product_id": "PRD-0826-XIRF6Q-A",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978030",
+      "product_id": "PRD-0826-WUKKFB-Z",
+      "class": "A"
+    },
+    {
+      "external_id": "1205624000000978029",
+      "product_id": "PRD-0826-VIBSIA-1",
+      "class": "A"
+    }
+  ],
+  "quarantined": [
+    {
+      "external_id": "ZP-SAMPLE-0001",
+      "catalog_name": "Sample Catalog Product (Hardcoded)",
+      "reason": "Non-numeric or seeded sample Zoho ID; not a real Zoho Product"
+    }
+  ],
+  "escalated": [
+    {
+      "external_id": "1205624000001313001",
+      "asset_ids": [
+        "HAR-MUM-0826-IEIZP5-U"
+      ],
+      "is_set": [
+        1
+      ],
+      "in_catalog": false,
+      "reason": "Legacy Set/Asset anomaly HAR-MUM-0826-IEIZP5-U; deferred to Set phase"
+    }
+  ],
+  "asset_links": []
+}

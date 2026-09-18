@@ -5,11 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "vendor:chartjs": "node scripts/vendor-chartjs.mjs",
     "build:minify-main": "terser dist/js/main.js -o dist/js/main.min.js",
     "build:copy-js": "copyfiles -u 1 \"js/**/*.js\" dist/js",
     "build:copy-static": "copyfiles -u 0 \"static/**/*\" dist/",
     "build:copy-html": "copyfiles index.html dist/",
-    "build": "npm run build:copy-js && npm run build:copy-static && npm run build:copy-html && npm run build:minify-main"
+    "build": "npm run vendor:chartjs && npm run build:copy-js && npm run build:copy-static && npm run build:copy-html && npm run build:minify-main"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +24,7 @@
     "terser": "^5.44.1"
   },
   "dependencies": {
+    "chart.js": "4.4.9",
     "npm-run-all": "^4.1.5"
   }
 }

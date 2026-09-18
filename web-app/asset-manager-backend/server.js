@@ -102,12 +102,18 @@ const setService = require('./services/setService');
 const productService = require('./services/productService');
 const breakService = require('./services/breakService');
 const reservationService = require('./services/reservationService');
+const holdingsUsageService = require('./services/holdingsUsageService');
 const conversionService = require('./services/conversionService');
 const receiptService = require('./services/receiptService');
 const receiptProjectionService = require('./services/receiptProjectionService');
 const procurementService = require('./services/procurementService');
+const purchaseBookService = require('./services/purchaseBookService');
+const purchaseBookPhysicalService = require('./services/purchaseBookPhysicalService');
+const deliveryChallanEventService = require('./services/deliveryChallanEventService');
+const serialIdentityService = require('./services/serialIdentityService');
 const physicalIntakeService = require('./services/physicalIntakeService');
 const commercialProvenanceService = require('./services/commercialProvenanceService');
+const operationsDashboardService = require('./services/operationsDashboardService');
 const legacyBreakContainment = require('./services/legacyBreakContainment');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
@@ -2656,6 +2662,7 @@ const useDist = false; // Force source assets to prevent 404s during rapid devel
 
 // Shared modules (inventory event system SSOT) — browsable by frontend ESM
 app.use('/shared', express.static(path.join(__dirname, '../shared')));
+app.use('/templates', express.static(path.join(__dirname, '../asset-manager-frontend/templates')));
 
 // Setup Icons Directory (Serve from Source or DIST based on environment)
 const sourceIconsDir = path.join(__dirname, '../asset-manager-frontend/static/icons');
@@ -3328,6 +3335,8 @@ app.get('/api/products', authenticateJWT, requirePermission('view.products'), as
             q: req.query.q,
             status: req.query.status,
             origin: req.query.origin,
+            source: req.query.source,
+            linked: req.query.linked,
             limit: req.query.limit,
             offset: req.query.offset
         });
@@ -3435,6 +3444,15 @@ app.get('/api/products/:id', authenticateJWT, requirePermission('view.products')
     try {
         const product = await productService.getProduct(req.params.id);
         res.json({ success: true, product });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.get('/api/products/:id/holdings', authenticateJWT, requirePermission('view.products'), async (req, res) => {
+    try {
+        const data = await productService.listProductHoldings(req.params.id, { mode: req.query.mode });
+        res.json({ success: true, ...data });
     } catch (err) {
         sendProductError(res, err);
     }
@@ -3620,6 +3638,20 @@ app.get('/api/reservations', authenticateJWT, requirePermission('view.reservatio
     }
 });
 
+/** Current-usage snapshot for Assets/Inventory list "where used" expand (reporting foundation). */
+app.get('/api/holdings/:resourceType/:resourceId/usage', authenticateJWT, requireAnyPermission('view.assets', 'view.inventory'), async (req, res) => {
+    try {
+        const snapshot = await holdingsUsageService.getUsageSnapshot(req.params.resourceType, req.params.resourceId);
+        res.json({ success: true, ...snapshot });
+    } catch (err) {
+        const code = err.statusCode || 500;
+        if (code >= 500) console.error('[holdings-usage]', err.message);
+        const body = { success: false, error: err.message };
+        if (err.reasonCode) body.reasonCode = err.reasonCode;
+        return res.status(code).json(body);
+    }
+});
+
 function sendConversionError(res, err) {
     const code = err.statusCode || 500;
     console.error('[conversions]', err.message);
@@ -3753,6 +3785,15 @@ app.get('/api/procurement/pos', authenticateJWT, requirePermission('view.purchas
 app.get('/api/procurement/pos/:id/history', authenticateJWT, requireAnyPermission('view.purchase_orders', 'view.history'), async (req, res) => {
     try {
         const result = await procurementService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendProcurementError(res, err);
+    }
+});
+
+app.get('/api/procurement/sync-events', authenticateJWT, requireAnyPermission('view.purchase_orders', 'view.history'), async (req, res) => {
+    try {
+        const result = await procurementService.listRecentSyncEvents({ limit: req.query.limit });
         res.json({ success: true, ...result });
     } catch (err) {
         sendProcurementError(res, err);
@@ -3915,6 +3956,245 @@ app.get('/api/receipt-notes/:id', authenticateJWT, requirePermission('view.recei
     }
 });
 
+function sendPurchaseBookError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[purchase-books]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+function purchaseBookActor(req) {
+    return req.user?.username || req.user?.user_id || null;
+}
+
+app.get('/api/purchase-books', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.listBooks({
+            poId: req.query.poId || req.query.procurementPoId,
+            status: req.query.status,
+            q: req.query.q,
+            limit: req.query.limit,
+            offset: req.query.offset
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/po-capacity/:poId', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.getPoBookCapacity(req.params.poId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/po-dc-books/:poId', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders', 'view.dc'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.getPoBooksForDc(req.params.poId);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/holdings-for-product/:productId', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.assets', 'view.inventory'), async (req, res) => {
+    try {
+        const result = await purchaseBookPhysicalService.searchHoldingsForProduct(req.params.productId, {
+            q: req.query.q,
+            limit: req.query.limit
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/recent-events', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders', 'view.history'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.listRecentEvents({ limit: req.query.limit });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.post('/api/purchase-books/physical', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await purchaseBookPhysicalService.allocate({
+            ...(req.body || {}),
+            actor: purchaseBookActor(req)
+        });
+        res.status(201).json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.post('/api/purchase-books/physical/:physId/release', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await purchaseBookPhysicalService.release(req.params.physId, {
+            actor: purchaseBookActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/:id/physical', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders'), async (req, res) => {
+    try {
+        const result = await purchaseBookPhysicalService.listForBook(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/:id/history', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders', 'view.history'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.listHistory(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.get('/api/purchase-books/:id', authenticateJWT, requireAnyPermission('view.purchase_books', 'view.purchase_orders'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.getBook(req.params.id);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.post('/api/purchase-books', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const poId = body.procurementPoId || body.poId;
+        const result = await purchaseBookService.createFromPo(poId, {
+            ...body,
+            actor: purchaseBookActor(req)
+        });
+        res.status(201).json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.put('/api/purchase-books/:id', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.updateDraft(req.params.id, {
+            ...(req.body || {}),
+            actor: purchaseBookActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.post('/api/purchase-books/:id/post', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.postBook(req.params.id, {
+            ...(req.body || {}),
+            actor: purchaseBookActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+app.post('/api/purchase-books/:id/void', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const result = await purchaseBookService.voidBook(req.params.id, {
+            ...(req.body || {}),
+            actor: purchaseBookActor(req)
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendPurchaseBookError(res, err);
+    }
+});
+
+function sendSerialIdentityError(res, err) {
+    const code = err.statusCode || 500;
+    console.error('[serials]', err.message);
+    const body = { success: false, error: err.message };
+    if (err.reasonCode) body.reasonCode = err.reasonCode;
+    if (err.details) body.details = err.details;
+    return res.status(code).json(body);
+}
+
+/** Keep serial_identity in sync when legacy srno text is written. No-ops if table missing. */
+async function syncSerialIdentityFromPlaintext(resourceType, resourceId, plainSrno, actor, source = 'MANUAL') {
+    try {
+        if (!(await db.schema.hasTable('serial_identity'))) return null;
+        return await serialIdentityService.replaceSerialsFromText(resourceType, resourceId, plainSrno || '', {
+            actor: actor || 'web',
+            source
+        });
+    } catch (err) {
+        console.error('[serials] sync mirror failed:', err.message);
+        return null;
+    }
+}
+
+app.get('/api/serials', authenticateJWT, requireAnyPermission('view.assets', 'view.inventory'), async (req, res) => {
+    try {
+        const result = await serialIdentityService.listForHolding(req.query.resourceType, req.query.resourceId, {
+            includeInactive: String(req.query.includeInactive || '') === '1'
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSerialIdentityError(res, err);
+    }
+});
+
+app.get('/api/serials/search', authenticateJWT, requireAnyPermission('view.assets', 'view.inventory'), async (req, res) => {
+    try {
+        const result = await serialIdentityService.findBySerialValue(req.query.q, { limit: req.query.limit });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSerialIdentityError(res, err);
+    }
+});
+
+app.post('/api/serials', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'it_manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await serialIdentityService.addSerial({
+            ...body,
+            actor: req.user?.username || 'web'
+        });
+        res.status(201).json({ success: true, ...result });
+    } catch (err) {
+        sendSerialIdentityError(res, err);
+    }
+});
+
+app.post('/api/serials/retire', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager', 'it_manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const result = await serialIdentityService.retireSerial({
+            resourceType: body.resourceType,
+            resourceId: body.resourceId,
+            sortOrder: body.sortOrder,
+            status: body.status,
+            actor: req.user?.username || 'web'
+        });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        sendSerialIdentityError(res, err);
+    }
+});
+
 function sendPhysicalIntakeError(res, err) {
     const code = err.statusCode || 500;
     console.error('[physical-intakes]', err.message);
@@ -3990,6 +4270,34 @@ app.post('/api/physical-intakes/link-po', authenticateJWT, authorizeRoles('super
         res.json({ success: true, commercialProvenance });
     } catch (err) {
         sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.post('/api/physical-intakes/mark-not-required', authenticateJWT, authorizeRoles('superuser', 'admin', 'manager'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const commercialProvenance = await commercialProvenanceService.markNotRequired({
+            ...body,
+            actor: physicalIntakeActor(req)
+        });
+        await invalidateAssetsCache();
+        res.json({ success: true, commercialProvenance });
+    } catch (err) {
+        sendPhysicalIntakeError(res, err);
+    }
+});
+
+app.get('/api/operations/dashboard', authenticateJWT, requirePermission('view.dashboard'), async (req, res) => {
+    try {
+        const snapshot = await operationsDashboardService.dashboardSnapshot({
+            period: req.query.period,
+            metric: req.query.metric
+        });
+        res.json({ success: true, ...snapshot });
+    } catch (err) {
+        const code = err.statusCode || 500;
+        console.error('[operations-dashboard]', err.message);
+        res.status(code).json({ success: false, error: err.message, reasonCode: err.reasonCode || null });
     }
 });
 
@@ -4871,6 +5179,104 @@ app.get('/api/hsn', async (req, res) => {
 });
 
 // Delivery Challan Endpoints
+app.get('/api/dc/holdings-search', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ success: true, holdings: [] });
+    const like = `%${q}%`;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+
+    // Mode B exclusions (ADR): awaiting PO / PO-linked provenance, RN-born holdings
+    const excludedAsset = new Set();
+    const excludedInv = new Set();
+    if (await db.schema.hasTable('commercial_provenance')) {
+      const prov = await db('commercial_provenance')
+        .whereIn('state', ['AWAITING_PO', 'PO_LINKED'])
+        .select('resource_type', 'resource_id');
+      for (const row of prov) {
+        const id = String(row.resource_id || '').trim();
+        if (!id) continue;
+        if (String(row.resource_type).toUpperCase() === 'INVENTORY') excludedInv.add(id);
+        else excludedAsset.add(id);
+      }
+    }
+    if (await db.schema.hasTable('receipt_physical_output')) {
+      const outs = await db('receipt_physical_output').select('resource_type', 'resource_id');
+      for (const row of outs) {
+        const id = String(row.resource_id || '').trim();
+        if (!id) continue;
+        if (String(row.resource_type).toUpperCase() === 'INVENTORY') excludedInv.add(id);
+        else excludedAsset.add(id);
+      }
+    }
+
+    let assets = await db('assets')
+      .where(function () {
+        this.where('is_deleted', 0).orWhereNull('is_deleted');
+      })
+      .andWhere(function () {
+        this.whereILike('id', like)
+          .orWhereILike('itemname', like)
+          .orWhereILike('srno', like)
+          .orWhereILike('model', like);
+      })
+      .select('id', 'itemname', 'srno', 'status', 'currentlocation', 'product_id', 'quantity_available', 'quantity_unit', 'boughtagainstpo')
+      .orderBy('itemname')
+      .limit(limit * 3);
+    assets = assets.filter((a) => {
+      if (excludedAsset.has(a.id)) return false;
+      const po = a.boughtagainstpo != null ? String(a.boughtagainstpo).trim() : '';
+      if (po) return false;
+      return true;
+    }).slice(0, limit);
+
+    let inventory = [];
+    if (await db.schema.hasTable('inventory_items')) {
+      inventory = await db('inventory_items')
+        .where(function () {
+          this.where('is_deleted', 0).orWhereNull('is_deleted');
+        })
+        .andWhere(function () {
+          this.whereILike('id', like)
+            .orWhereILike('itemname', like)
+            .orWhereILike('model', like);
+        })
+        .select('id', 'itemname', 'status', 'currentlocation', 'product_id', 'quantity_available', 'quantity_unit')
+        .orderBy('itemname')
+        .limit(limit * 3);
+      inventory = inventory.filter((a) => !excludedInv.has(a.id)).slice(0, limit);
+    }
+    const holdings = [
+      ...assets.map((a) => ({
+        resourceType: 'ASSET',
+        resourceId: a.id,
+        name: a.itemname || a.id,
+        status: a.status,
+        location: a.currentlocation,
+        productId: a.product_id || null,
+        quantityAvailable: a.quantity_available,
+        unit: a.quantity_unit || 'Nos',
+        srNo: a.srno || ''
+      })),
+      ...inventory.map((a) => ({
+        resourceType: 'INVENTORY',
+        resourceId: a.id,
+        name: a.itemname || a.id,
+        status: a.status,
+        location: a.currentlocation,
+        productId: a.product_id || null,
+        quantityAvailable: a.quantity_available,
+        unit: a.quantity_unit || 'Nos',
+        srNo: ''
+      }))
+    ].slice(0, limit);
+    res.json({ success: true, holdings });
+  } catch (err) {
+    console.error('[dc holdings-search]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
     const dcs = await db('delivery_challans').orderBy('timestamp', 'desc');
@@ -4917,6 +5323,24 @@ app.get('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, re
   }
 });
 
+app.get('/api/dc/recent-events', authenticateJWT, requireAnyPermission('view.dc', 'view.history'), async (req, res) => {
+  try {
+    const result = await deliveryChallanEventService.listRecentEvents({ limit: req.query.limit });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/dc/:id/history', authenticateJWT, requireAnyPermission('view.dc', 'view.history'), async (req, res) => {
+  try {
+    const result = await deliveryChallanEventService.listHistory(req.params.id);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/dc/:id', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
     const id = req.params.id;
@@ -4957,10 +5381,11 @@ app.get('/api/dc/:id', authenticateJWT, requirePermission('view.dc'), async (req
 
 app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
   try {
-    const { CustomerName, DeliveryDate, AssetIds, CreatedBy, POReference, payload } = req.body || {};
+    const { CustomerName, DeliveryDate, AssetIds, CreatedBy, POReference, payload, PurchaseBookConsumptions } = req.body || {};
     
     // 1. Prepare Data
     const normalizedAssetIds = Array.isArray(AssetIds) ? AssetIds : [];
+    const bookConsumptions = Array.isArray(PurchaseBookConsumptions) ? PurchaseBookConsumptions : [];
     const assetsForDc = await Promise.all(normalizedAssetIds.map(async (assetId) => {
       const row = await db('assets')
         .select('id', 'itemname', 'srno', 'weight', 'is_set', 'quantity_root_id', 'quantity_parent_id', 'quantity_unit', 'quantity_total', 'quantity_available', 'quantity_precision')
@@ -4989,6 +5414,7 @@ app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, r
         try {
             const lastDc = await trx('delivery_challans')
                 .whereRaw('challanno LIKE ?', [`${shortYear}/%`])
+                .whereNull('voided_at')
                 .orderBy('timestamp', 'desc')
                 .first();
             
@@ -5101,6 +5527,12 @@ app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, r
             };
         }
 
+        if (!finalPayload.meta) finalPayload.meta = {};
+        finalPayload.meta.deliveryNoteNo = challanNo;
+        if (bookConsumptions.length) {
+          finalPayload.meta.purchaseBookConsumptions = bookConsumptions;
+        }
+
         const insertData = {
           id: id,
           challanno: challanNo,
@@ -5115,6 +5547,12 @@ app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, r
         };
 
         await trx('delivery_challans').insert(insertData);
+
+        if (bookConsumptions.length) {
+          await purchaseBookService.recordDcBookConsumption(trx, id, bookConsumptions, {
+            actor: CreatedBy || req.user?.username || 'web'
+          });
+        }
 
         return { id, challanNo, payload: finalPayload };
     };
@@ -5185,12 +5623,162 @@ app.post('/api/dc', authenticateJWT, requirePermission('view.dc'), async (req, r
         }
     }
 
-    await logAudit(CreatedBy || 'System', 'DC_CREATED', `Created Delivery Challan ${challanNo} for ${CustomerName}`, id);
+    // 6. History: record DC creation against each holding (assets + inventory if present)
+    const actor = CreatedBy || req.user?.username || req.user?.user_id || 'System';
+    const assetHoldings = [];
+    const inventoryHoldings = [];
+    for (const holdingId of normalizedAssetIds) {
+      const asAsset = await db('assets').whereRaw('LOWER(id) = LOWER(?)', [holdingId]).select('id', 'itemname').first();
+      if (asAsset) {
+        assetHoldings.push({ id: asAsset.id, name: asAsset.itemname || asAsset.id });
+        continue;
+      }
+      if (await db.schema.hasTable('inventory_items')) {
+        const asInv = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [holdingId]).select('id', 'itemname').first();
+        if (asInv) {
+          inventoryHoldings.push({ id: asInv.id, name: asInv.itemname || asInv.id });
+        }
+      }
+    }
+    const formatHoldingList = (rows) => (rows.length
+      ? rows.map((r) => `${r.id}${r.name && r.name !== r.id ? ` (${r.name})` : ''}`).join(', ')
+      : 'none');
+    const holdingsSummary = `Assets: ${formatHoldingList(assetHoldings)}; Inventory: ${formatHoldingList(inventoryHoldings)}`;
+    const poBit = POReference?.PONumber ? `; PO ${POReference.PONumber}` : '';
+    const historyDetails = `Delivery Challan ${challanNo} for ${CustomerName || '—'}${poBit}. ${holdingsSummary}`;
+
+    for (const holding of assetHoldings) {
+      await logAssetHistory(
+        holding.id,
+        'DC_CREATED',
+        null,
+        challanNo,
+        actor,
+        historyDetails
+      );
+    }
+
+    if (inventoryHoldings.length > 0 && (await db.schema.hasTable('inventory_quantity_events'))) {
+      const nowIso = new Date().toISOString();
+      for (const holding of inventoryHoldings) {
+        const inserted = await db('inventory_quantity_events')
+          .insert({
+            root_id: holding.id,
+            type: 'STATUS_CHANGE',
+            actor,
+            timestamp: nowIso,
+            note: historyDetails,
+            metadata_json: JSON.stringify({
+              delivery_challan_id: id,
+              challan_no: challanNo,
+              customer: CustomerName || null,
+              po_number: POReference?.PONumber || null,
+              action: 'DC_CREATED',
+              assets: assetHoldings.map((h) => h.id),
+              inventory: inventoryHoldings.map((h) => h.id)
+            })
+          })
+          .returning('id');
+        const eventId = Array.isArray(inserted) ? (inserted[0]?.id ?? inserted[0]) : inserted?.id;
+        if (eventId && (await db.schema.hasTable('inventory_quantity_event_lines'))) {
+          await db('inventory_quantity_event_lines').insert({
+            event_id: eventId,
+            item_id: holding.id,
+            unit: null,
+            delta_available: 0,
+            delta_total: 0
+          }).catch(() => {});
+        }
+      }
+    }
+
+    await logAudit(
+      actor,
+      'DC_CREATED',
+      `Created Delivery Challan ${challanNo} for ${CustomerName || '—'}. ${holdingsSummary}`,
+      id
+    );
+    await deliveryChallanEventService.writeDcEvent(db, {
+      deliveryChallanId: id,
+      type: 'CREATED',
+      actor,
+      note: `Created ${challanNo} for ${CustomerName || '—'}`,
+      metadata: {
+        challanNo,
+        customerName: CustomerName || null,
+        purchaseBookConsumptions: bookConsumptions,
+        assetCount: Array.isArray(normalizedAssetIds) ? normalizedAssetIds.length : 0
+      }
+    }).catch((err) => console.error('[dc-event]', err.message));
 
     res.json({ success: true, id, challanNo, qrCode, payload: dcPayload });
   } catch (error) {
     console.error('DC Creation Error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({
+      success: false,
+      error: error.message,
+      reasonCode: error.reasonCode || undefined,
+      details: error.details || undefined
+    });
+  }
+});
+
+app.post('/api/dc/:id/void', authenticateJWT, requirePermission('view.dc'), async (req, res) => {
+  try {
+    const dcKey = String(req.params.id || '').trim();
+    const actor = req.user?.username || req.body?.actor || 'web';
+    const reason = req.body?.reason ? String(req.body.reason).trim() : null;
+
+    const result = await db.transaction(async (trx) => {
+      let row = await trx('delivery_challans').where({ id: dcKey }).forUpdate().first();
+      if (!row) {
+        row = await trx('delivery_challans').where({ challanno: dcKey }).forUpdate().first();
+      }
+      if (!row) {
+        const err = new Error('Delivery Challan not found');
+        err.statusCode = 404;
+        throw err;
+      }
+      if (row.voided_at) {
+        return { id: row.id, challanNo: row.challanno, alreadyVoided: true };
+      }
+      const now = new Date().toISOString();
+      await trx('delivery_challans').where({ id: row.id }).update({
+        status: 'VOID',
+        voided_at: now,
+        voided_by: actor
+      });
+      await purchaseBookService.releaseDcBookConsumption(trx, row.id, { actor });
+      if (reason) {
+        try {
+          const payload = row.payloadjson
+            ? (typeof row.payloadjson === 'string' ? JSON.parse(row.payloadjson) : row.payloadjson)
+            : {};
+          if (!payload.meta) payload.meta = {};
+          payload.meta.voidReason = reason;
+          payload.meta.voidedAt = now;
+          payload.meta.voidedBy = actor;
+          await trx('delivery_challans').where({ id: row.id }).update({
+            payloadjson: JSON.stringify(payload)
+          });
+        } catch (_) { /* keep void even if payload patch fails */ }
+      }
+      return { id: row.id, challanNo: row.challanno, alreadyVoided: false };
+    });
+
+    await logAudit(actor, 'DC_VOIDED', `Voided Delivery Challan ${result.challanNo}${reason ? `: ${reason}` : ''}`, result.id);
+    await deliveryChallanEventService.writeDcEvent(db, {
+      deliveryChallanId: result.id,
+      type: 'VOIDED',
+      actor,
+      note: reason ? `Voided: ${reason}` : 'Voided',
+      metadata: { challanNo: result.challanNo, alreadyVoided: !!result.alreadyVoided }
+    }).catch((err) => console.error('[dc-event]', err.message));
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[dc void]', err.message);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
   }
 });
 
@@ -6209,6 +6797,14 @@ app.post('/api/inventory/items', authenticateJWT, authorizeRoles('superuser', 'a
       quantity_updated_at: new Date().toISOString()
     });
 
+    await syncSerialIdentityFromPlaintext(
+      'INVENTORY',
+      newId,
+      item.SrNo || item.srno || '',
+      req.user?.username || req.headers['x-user'] || 'web',
+      'MANUAL'
+    );
+
     if (Array.isArray(item.components) && item.components.length > 0) {
       for (const comp of item.components) {
         const compId = generateModernAssetId(location, comp.Type || comp.type || 'Component');
@@ -6402,6 +6998,16 @@ app.put('/api/inventory/items/:id', authenticateJWT, authorizeRoles('superuser',
         quantity_root_id: shouldInitRoot ? originalId : existing.quantity_root_id,
         quantity_updated_at: new Date().toISOString()
       });
+
+    if (item.SrNo !== undefined || item.srno !== undefined) {
+      await syncSerialIdentityFromPlaintext(
+        'INVENTORY',
+        originalId,
+        item.SrNo || item.srno || '',
+        req.user?.username || req.headers['x-user'] || 'web',
+        'MANUAL'
+      );
+    }
 
     if (Array.isArray(item.components)) {
       const current = await db('inventory_components')
@@ -7627,6 +8233,14 @@ app.post('/api/assets', authenticateJWT, authorizeRoles('superuser', 'admin', 'm
       is_set: asset.is_set || 0,
       set_price_mode: asset.set_price_mode || 'SUM_OF_CHILDREN'
     }));
+
+    await syncSerialIdentityFromPlaintext(
+      'ASSET',
+      newId,
+      asset.SrNo || asset.srno || '',
+      req.headers['x-user'] || req.user?.username || 'web',
+      'MANUAL'
+    );
 
     appendAudit({
       Action: 'CREATE',
@@ -10118,6 +10732,10 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
         ItemName: asset.ItemName || existing.itemname || '',
         ItemDescription: asset.ItemDescription !== undefined ? asset.ItemDescription : (existing.itemdescription || ''),
         Status: asset.Status || existing.status || 'In Store',
+        // Purpose drives Holdings Demo/Rented slices and kanban purpose filters; form already sends it.
+        Purpose: asset.Purpose !== undefined
+          ? (String(asset.Purpose || '').trim() || 'Owned')
+          : (existing.purpose || existing.Purpose || 'Owned'),
         Make: asset.Make || existing.make || '',
         Model: asset.Model || existing.model || '',
         SrNo: encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.srno || '')),
@@ -10196,6 +10814,16 @@ app.put('/api/assets/:id', authenticateJWT, async (req, res) => {
     await db('assets')
         .whereRaw('LOWER(id) = LOWER(?)', [id])
         .update(normalizeDBData(updateObj));
+
+    if (asset.SrNo !== undefined || asset.srno !== undefined) {
+      await syncSerialIdentityFromPlaintext(
+        'ASSET',
+        id,
+        asset.SrNo !== undefined ? asset.SrNo : (asset.srno || ''),
+        req.headers['x-user'] || req.user?.username || 'web',
+        'MANUAL'
+      );
+    }
 
     appendAudit({
       Action: 'UPDATE',

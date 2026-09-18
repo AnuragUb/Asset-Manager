@@ -9,14 +9,15 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/static/logo.png?v=6.44">
     <link rel="apple-touch-icon" href="/static/logo.png?v=6.44">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=7.49">
-    <link rel="stylesheet" href="/static/modal.css?v=6.44">
+    <link rel="stylesheet" href="/static/style.css?v=7.114">
+    <link rel="stylesheet" href="/templates/documents/dc/delivery-challan.css?v=1.3">
+    <link rel="stylesheet" href="/static/modal.css?v=6.46">
     <link rel="stylesheet" href="/static/sidebar-raul.css?v=6.44">
     <link rel="stylesheet" href="/static/mobile.css?v=6.44">
     <link href="https://unpkg.com/tabulator-tables@5.5.0/dist/css/tabulator.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.0/dist/js/tabulator.min.js"></script>
     <script type="text/javascript" src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/vendor/chart.umd.js?v=7.60"></script>
     <script type="text/javascript" src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script type="text/javascript" src="/js/sidebar-raul.js?v=6.45" defer></script>
     <style>
@@ -439,6 +440,7 @@
                                 <li><a href="#history-view" class="nav-link" id="nav-history">History</a></li>
                                 <li><a href="#reservations-view" class="nav-link" id="nav-reservations">Reservations</a></li>
                                 <li><a href="#purchase-orders-view" class="nav-link" id="nav-purchase-orders">Purchase Orders</a></li>
+                                <li><a href="#purchase-books-view" class="nav-link" id="nav-purchase-books">Purchase Books</a></li>
                                 <li><a href="#receipts-view" class="nav-link" id="nav-receipts">Receipt Notes</a></li>
                                 <li><a href="#dc-view" class="nav-link" id="nav-dc">Create DC</a></li>
                             </ul>
@@ -467,8 +469,8 @@
         <div class="main-layout">
             <aside id="app-sidebar" class="hidden">
             <div class="sidebar-search">
-                <input type="text" placeholder="Search..." aria-label="Search">
-                <button class="icon-button" type="button" aria-label="Search">🔍</button>
+                <input type="text" id="globalSidebarSearch" placeholder="Search assets…" aria-label="Search">
+                <button class="icon-button" type="button" id="globalSidebarSearchBtn" aria-label="Search">🔍</button>
             </div>
 
             <ul class="sidebar-menu" id="sidebar-tree">
@@ -566,14 +568,14 @@
             <div id="dashboardView" class="view hidden" style="flex: 1 1 0; min-height: 0; box-sizing: border-box; display: flex; flex-direction: column; padding: 0; margin: 0; background: transparent; box-shadow: none; overflow: hidden;">
                 <!-- Main Dashboard Container -->
                 <div id="dashboard-container" style="display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: hidden;">
-                    <div id="operations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column;">
-                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
+                    <div id="operations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 6px; flex-shrink: 0;">
+                            <div class="ops-dash-title-row">
                                 <h2 class="view-title" style="margin: 0;">Dashboard</h2>
-                                <span style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">Lifecycle</span>
-                            </div>
-                            <div class="view-actions">
-                                <button type="button" class="action-button grey" id="btnReloadOperations">Refresh</button>
+                                <button type="button" class="ops-dash-refresh" id="btnReloadOperations" aria-label="Refresh Dashboard" title="Refresh">
+                                    <span class="material-icons" aria-hidden="true">refresh</span>
+                                </button>
+                                <span class="ops-lifecycle-badge">Lifecycle</span>
                             </div>
                         </div>
                         <p class="lc-muted">Follow the lifecycle: Product → Purchase Order → Receipt → Stock → Reservation → Set. Assets are physical holdings, not the catalogue.</p>
@@ -875,6 +877,31 @@
                                             <input type="text" id="dcCompanyState" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="State Name">
                                             <input type="text" id="dcCompanyStateCode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="State Code">
                                         </div>
+                                        <input type="text" id="dcCompanyWebsite" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px;" placeholder="Website (footer, e.g. www.company.com)" autocomplete="off">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 15px; background: #f6fffb; padding: 15px; border-radius: 8px; border: 1px solid #b7ebd8;">
+                                        <div style="font-weight: 700; margin-bottom: 8px; color: #0f766e; display: flex; align-items: center; gap: 6px;">
+                                            <span>📄</span> Fetch Purchase Order
+                                        </div>
+                                        <p style="margin: 0 0 8px; font-size: 12px; color: #667085;">Search an imported Purchase Order to link this DC, fill Buyer’s Order No, and add its line items. Optional — you can still create a DC without a PO.</p>
+                                        <div style="position: relative; margin-bottom: 8px;">
+                                            <input type="text" id="dcPoSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #99f6e4; border-radius: 4px; background: white;" placeholder="Search PO number, Zoho PO ID, vendor, subject..." autocomplete="off">
+                                            <div id="dcPoSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                        </div>
+                                        <div id="dcPoLinked" style="display:none; font-size: 12px; color: #0f766e; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 8px 10px;">
+                                            Linked PO: <strong id="dcPoLinkedLabel"></strong>
+                                            <button type="button" id="dcPoClear" class="action-button grey" style="margin-left: 8px; padding: 2px 8px; font-size: 11px;">Clear</button>
+                                        </div>
+                                        <div id="dcPurchaseBookPanel" style="display:none; margin-top: 10px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                                            <div style="font-weight: 700; font-size: 13px; color: #92400e; margin-bottom: 6px;">Purchase Books (optional)</div>
+                                            <p style="margin: 0 0 8px; font-size: 12px; color: #78716c;">Select one or more posted books to seed this DC. Only remaining DC-able qty is available. Or use PO lines only (no book).</p>
+                                            <div id="dcPurchaseBookList" style="max-height: 180px; overflow-y: auto; margin-bottom: 8px;"></div>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                                <button type="button" id="btnDcAddSelectedBooks" class="action-button green" style="padding: 6px 12px; font-size: 12px;">Add selected books</button>
+                                                <button type="button" id="btnDcAddPoLinesOnly" class="action-button grey" style="padding: 6px 12px; font-size: 12px;">Add PO lines only</button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 15px;">
@@ -971,7 +998,18 @@
                             <!-- Right: Selected Assets -->
                             <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
                                 <h3 style="margin-top: 0;">Selected Assets</h3>
-                                <!-- Toggle buttons removed in favor of clickable headers -->
+                                <div id="dcLinkModePanel" style="margin-bottom: 12px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                                    <div style="font-weight: 700; font-size: 13px; color: #92400e; margin-bottom: 8px;">Line source</div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-weight: 600;">
+                                        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                                            <input type="radio" name="dcLinkMode" class="dc-link-mode" value="PO_LINKED" checked> Link to PO (seed from PO / books)
+                                        </label>
+                                        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                                            <input type="radio" name="dcLinkMode" class="dc-link-mode" value="HOLDINGS"> No PO — search free holdings
+                                        </label>
+                                    </div>
+                                    <p id="dcLinkModeHint" class="lc-muted" style="margin:8px 0 0;font-size:12px;">PO-linked: fetch a PO, optionally pick Purchase Books. No-PO search excludes PO-sourced and awaiting-adoption stock.</p>
+                                </div>
                                 <div style="margin-bottom: 15px; position: relative;">
                                     <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search & Add Assets by Name or ID...">
                                     <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
@@ -1199,7 +1237,10 @@
                     <div id="receipts-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
                         <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
                             <div style="display: flex; align-items: center; gap: 15px;">
-                                <h2 class="view-title" style="margin: 0;">Receipt Notes</h2>
+                                <h2 class="view-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+                                    Receipt Notes
+                                    <button type="button" class="rn-info-tip" aria-label="About Receipt Notes" data-tip="Receive goods: this stock came through procurement. PO → Receipt → Count → Accepted / Damaged / Rejected → Post → physical stock. To register existing or non-procurement stock, use Physical Intake. A Purchase Order itself does not create stock."><span aria-hidden="true">i</span></button>
+                                </h2>
                                 <span id="receiptCountBadge" style="background: #ecfdf5; color: #047857; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Receipts</span>
                             </div>
                             <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
@@ -1211,11 +1252,16 @@
                                     <option value="CANCELLED">Cancelled</option>
                                     <option value="REVERSED">Reversed</option>
                                 </select>
+                                <select id="receiptPeriodFilter" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">All time</option>
+                                    <option value="month">This month</option>
+                                    <option value="quarter">This quarter</option>
+                                    <option value="year">This year</option>
+                                </select>
                                 <button class="action-button grey" id="btnReloadReceipts">Refresh</button>
                                 <button class="action-button green" id="btnCreateReceipt">+ Receive against PO</button>
                             </div>
                         </div>
-                        <p class="lc-muted">Receive goods: this stock came through procurement. PO → Receipt → Count → Accepted / Damaged / Rejected → Post → physical stock. To register existing or non-procurement stock, use Physical Intake. A Purchase Order itself does not create stock.</p>
                         <div id="receiptsContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
                     </div>
 
@@ -1235,47 +1281,71 @@
                         <div id="purchaseOrdersContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
                     </div>
 
+                    <div id="purchase-books-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 12px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 0; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h2 class="view-title" style="margin: 0;">Purchase Books</h2>
+                                <span id="pbCountBadge" style="background: #eff6ff; color: #1d4ed8; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;">0</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="pbSearch" placeholder="Search invoice / PO…" style="padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; width: 200px;">
+                                <button class="action-button grey" id="btnReloadPurchaseBooks">Refresh</button>
+                                <button class="action-button green" id="btnCreatePurchaseBook">+ From PO</button>
+                            </div>
+                        </div>
+                        <div id="purchaseBooksContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
+                    </div>
+
                     <div id="products-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
-                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
+                        <div class="view-toolbar prd-toolbar" style="margin-bottom: 12px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                                 <h2 class="view-title" style="margin: 0;">Products</h2>
                                 <span id="productCountBadge" style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 AssetEngine Products</span>
                             </div>
-                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                                <label for="productSearch" class="lc-k" style="margin:0;">Search AssetEngine Products</label>
-                                <input type="search" id="productSearch" placeholder="Search AssetEngine Products..." aria-label="Search AssetEngine Products" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
-                                <select id="productStatusFilter" aria-label="AssetEngine Product status" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
-                                    <option value="">All statuses</option>
-                                    <option value="ACTIVE">Active</option>
-                                    <option value="ARCHIVED">Archived</option>
+                            <div class="view-actions prd-toolbar-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                <label for="productSearch" class="lc-k" style="margin:0;">Search</label>
+                                <input type="search" id="productSearch" placeholder="Search Product ID, Zoho Product ID, name, model, SKU..." aria-label="Search Product ID, Zoho Product ID, name, model, SKU" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: min(360px, 100%);">
+                                <div class="prd-filter-chips" role="group" aria-label="Product status and mapping filters">
+                                    <button type="button" class="prd-chip is-on" data-prd-status="" aria-pressed="true">All</button>
+                                    <button type="button" class="prd-chip" data-prd-status="ACTIVE" aria-pressed="false">Active</button>
+                                    <button type="button" class="prd-chip" data-prd-status="ARCHIVED" aria-pressed="false">Archived</button>
+                                    <button type="button" class="prd-chip" data-prd-linked="1" aria-pressed="false">Zoho Linked</button>
+                                    <button type="button" class="prd-chip" data-prd-unsynced="1" aria-pressed="false" title="Zoho Product Catalog items with no AssetEngine Product yet">Not Yet Synced</button>
+                                </div>
+                                <select id="productSourceFilter" aria-label="Product source" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">All sources</option>
+                                    <option value="ZOHO_DERIVED">Zoho-derived</option>
+                                    <option value="STANDALONE">Standalone AE</option>
+                                    <option value="ZOHO_UNSYNCED">Not Yet Synced (Zoho catalog)</option>
                                 </select>
-                                <select id="productOriginFilter" aria-label="AssetEngine Product origin" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
-                                    <option value="">All origins</option>
-                                    <option value="ZOHO">ZOHO</option>
-                                    <option value="ASSETENGINE">ASSETENGINE</option>
-                                    <option value="ASSET">ASSET</option>
-                                    <option value="INVENTORY">INVENTORY</option>
-                                    <option value="SET">SET</option>
-                                </select>
+                                <div class="prd-view-toggle" role="group" aria-label="Product view mode">
+                                    <button type="button" class="prd-view-btn is-on" id="btnProductViewCards" aria-pressed="true" title="Cards view">▦ Cards</button>
+                                    <button type="button" class="prd-view-btn" id="btnProductViewList" aria-pressed="false" title="List view">☷ List</button>
+                                </div>
                                 <button class="action-button grey" id="btnReloadProducts">Refresh</button>
-                                <button class="action-button grey" id="btnOpenZohoCatalog" aria-expanded="false" aria-controls="zohoCatalogSection">Zoho Reference Catalog</button>
-                                <button class="action-button blue" id="btnCreateFromCatalog" aria-label="Create Against Zoho Products">Create Against Zoho Products</button>
+                                <button class="action-button grey" id="btnOpenZohoCatalog" aria-expanded="false" aria-controls="zohoCatalogSection">Zoho Product Reference</button>
+                                <button class="action-button blue" id="btnCreateFromCatalog" aria-label="Create AssetEngine Product from Zoho">Create Against Zoho Products</button>
                                 <button class="action-button grey prd-standalone-btn" id="btnCreateProduct" aria-label="Standalone AE Product"><img src="/static/logo.png?v=6.44" alt="" class="prd-standalone-logo" aria-hidden="true">Standalone AE Product</button>
                             </div>
                         </div>
-                        <p class="lc-muted">PRODUCT is catalogue identity. ZOHO PRODUCT is the commercial mapping. PHYSICAL STOCK is Assets and Inventory — never the Product itself.</p>
-                        <div style="flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 24px;">
+                        <p class="lc-muted" style="margin: 0 0 8px;">AssetEngine Product Master — authoritative product identity. PRODUCT is catalogue identity. ZOHO PRODUCT is the commercial mapping. PHYSICAL STOCK is Assets and Inventory — never the Product itself.</p>
+                        <input type="hidden" id="productStatusFilter" value="">
+                        <input type="hidden" id="productOriginFilter" value="">
+                        <div style="flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 20px;">
                             <section class="prd-ae-section" aria-labelledby="localProductsHeading">
                                 <div class="lc-section-label" id="localProductsHeading" title="Authoritative Product record in AssetEngine.">AssetEngine Products</div>
-                                <p class="lc-muted" style="margin: 4px 0 10px;">Authoritative AssetEngine Product Master</p>
+                                <div id="productsRecentlyAdded" class="prd-recent-wrap" hidden></div>
+                                <div class="prd-browser-head">
+                                    <div class="lc-section-label" style="margin:0;">All Products</div>
+                                </div>
                                 <div id="productsContent"></div>
                             </section>
                             <section id="zohoCatalogSection" class="prd-zoho-section hidden" aria-labelledby="zohoCatalogHeading" hidden>
                                 <div class="prd-zoho-head">
                                     <span class="prd-prov-pill prd-prov-zoho" title="Read-only reference from Zoho. Not an AssetEngine Product." aria-label="Zoho Reference. Read-only reference from Zoho. Not an AssetEngine Product.">ZOHO</span>
-                                    <div class="lc-section-label" id="zohoCatalogHeading" style="margin: 0;" title="Read-only reference from Zoho. Not an AssetEngine Product.">Zoho Reference Catalog</div>
+                                    <div class="lc-section-label" id="zohoCatalogHeading" style="margin: 0;" title="Read-only reference from Zoho. Not an AssetEngine Product.">Zoho Product Reference</div>
                                     <span id="zohoCatalogCountBadge" style="background: #e2e8f0; color: #334155; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Zoho References</span>
-                                    <button type="button" class="action-button grey" id="btnCloseZohoCatalog" style="margin-left: auto;" aria-label="Close Zoho Reference Catalog">Close catalog</button>
+                                    <button type="button" class="action-button grey" id="btnCloseZohoCatalog" style="margin-left: auto;" aria-label="Close Zoho Product Reference">Close catalog</button>
                                 </div>
                                 <p class="lc-muted" style="margin: 6px 0 10px;">Read-only catalogue from Zoho · Not an AssetEngine Product</p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
@@ -1284,6 +1354,16 @@
                                 </div>
                                 <div id="zohoCatalogContent" role="status" aria-live="polite"></div>
                             </section>
+                        </div>
+                    </div>
+
+                    <div id="productCreateModal" class="modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="productCreateModalTitle">
+                        <div class="modal-content" style="max-width:560px;width:94%;">
+                            <span class="close-modal" id="closeProductCreateModal" aria-label="Close">&times;</span>
+                            <div class="modal-header">
+                                <h2 id="productCreateModalTitle">Create AssetEngine Product</h2>
+                            </div>
+                            <div class="modal-body" id="productCreateModalBody"></div>
                         </div>
                     </div>
 
@@ -1935,6 +2015,18 @@
                                         <button type="button" id="btnToggleBatchMode" style="font-size: 10px; color: #0078d4; background: #e7f3ff; border: 1px solid #b3d7ff; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Enable Batch S/N</button>
                                         <button type="button" id="btnSplitBatch" style="display: none; font-size: 10px; color: #166534; background: #f0fdf4; border: 1px solid #dcfce7; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Split Selected S/N</button>
                                         <button type="button" id="btnUnsplitBatch" style="display: none; font-size: 10px; color: #2563eb; background: #eff6ff; border: 1px solid #dbeafe; padding: 2px 6px; border-radius: 4px; cursor: pointer;">Unsplit: Merge to Parent</button>
+                                    </div>
+                                    <div id="serialIdentityPanel" style="display:none; margin-top: 10px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc;">
+                                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                                            <strong style="font-size:12px;color:#0f172a;">Serial identity</strong>
+                                            <span id="serialIdentityMeta" style="font-size:11px;color:#64748b;"></span>
+                                        </div>
+                                        <div id="serialIdentityList" style="max-height:140px;overflow:auto;margin-bottom:8px;"></div>
+                                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                            <input type="text" id="serialIdentityAddInput" class="form-input" placeholder="Add serial…" style="flex:1;min-width:140px;padding:6px 8px;font-size:12px;">
+                                            <button type="button" id="btnSerialIdentityAdd" class="action-button green" style="padding:6px 10px;font-size:12px;">Add</button>
+                                        </div>
+                                        <p style="margin:6px 0 0;font-size:11px;color:#94a3b8;">Notations under this holding (resource id + sort order). Bulk paste still works via Batch S/N + Save.</p>
                                     </div>
                                 </div>
                             </div>
@@ -2781,7 +2873,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=7.49"></script>
+<script type="module" src="/js/main.js?v=7.114"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {

@@ -1,0 +1,24 @@
+{
+  "probe": {
+    "zohoId": "1205624000001349001",
+    "zohoIdType": "string",
+    "name": "AE Phase8 Close-out Probe",
+    "description": "AssetEngine Phase 8 close-out description",
+    "make": "AETest",
+    "model": "P8",
+    "hsnCode": "8525",
+    "productCode": "AE-P8-CLOSEOUT",
+    "unitPrice": null
+  },
+  "set": {
+    "zohoId": "1205624000001350001",
+    "zohoIdType": "string",
+    "name": "AE Phase8 Close-out Canonical Set",
+    "description": "AE PHASE8 CLOSE-OUT CANONICAL SET\n1.8M USB KVM Cable × 1.000000 Nos — Aten / 2L-5003U",
+    "make": null,
+    "model": null,
+    "hsnCode": null,
+    "productCode": null,
+    "unitPrice": null
+  }
+}

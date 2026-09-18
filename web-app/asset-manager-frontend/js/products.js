@@ -14,7 +14,7 @@ import {
     toastOperatorError,
     lifecycleApi,
     go
-} from './lifecycle.js?v=7.31';
+} from './lifecycle.js?v=7.76';
 
 function el(id) {
     return document.getElementById(id);
@@ -99,7 +99,7 @@ async function existingProductForZoho(zohoProductId) {
     return mapping.get(String(zohoProductId || '')) || null;
 }
 
-async function createAgainstZohoProduct(zohoProductId) {
+async function createAgainstZohoProduct(zohoProductId, { confirmed = false } = {}) {
     if (createAgainstInFlight) return;
     createAgainstInFlight = true;
     try {
@@ -114,7 +114,10 @@ async function createAgainstZohoProduct(zohoProductId) {
             await openProductDetail(existing.id);
             return;
         }
-        if (!confirmAction(`Create Against Zoho Products: ${zohoProductId}?\n\nThis creates an AssetEngine Product from the Zoho Reference. No Inventory or Assets will be created.`)) return;
+        if (!confirmed) {
+            await openCreateFromZohoModal(zohoProductId);
+            return;
+        }
         try {
             const created = await api('/api/products/from-catalog', {
                 method: 'POST',
@@ -153,10 +156,137 @@ async function createAgainstZohoProduct(zohoProductId) {
 
 let viewListenersBound = false;
 let selectedId = null;
+let selectedCatalogZohoId = null;
 let catalogCache = null;
 let catalogMappingByZohoId = null;
-let selectedCatalogZohoId = null;
 let catalogSearchTimer = null;
+let productSearchTimer = null;
+let viewMode = sessionStorage.getItem('ae.products.view') === 'list' ? 'list' : 'cards';
+let statusFilter = '';
+let linkedFilter = '';
+let unsyncedFilter = '';
+let lastProducts = [];
+let lastUnlinkedRefs = [];
+let lastQuery = '';
+let lastTotal = 0;
+let productPage = 0;
+const PRODUCT_CARD_PAGE_SIZE = 16; // 4 columns × 4 rows
+const PRODUCT_LIST_PAGE_SIZE = 8; // 8 list rows per page
+const RECENT_CARD_COUNT = 4;
+
+function productPageSize() {
+    return viewMode === 'list' ? PRODUCT_LIST_PAGE_SIZE : PRODUCT_CARD_PAGE_SIZE;
+}
+
+function productSourceLabel(product) {
+    const origin = String(product.origin || '').toUpperCase();
+    if (origin === 'ZOHO') return 'ZOHO-DERIVED';
+    if (origin === 'ASSETENGINE') return 'STANDALONE AE';
+    return origin || 'STANDALONE AE';
+}
+
+function isZohoUnsyncedFilter() {
+    return String(el('productSourceFilter')?.value || '') === 'ZOHO_UNSYNCED' || unsyncedFilter === '1';
+}
+
+function setZohoUnsyncedFilter(on) {
+    unsyncedFilter = on ? '1' : '';
+    if (on) {
+        statusFilter = '';
+        linkedFilter = '';
+        if (el('productSourceFilter')) el('productSourceFilter').value = 'ZOHO_UNSYNCED';
+    } else if (el('productSourceFilter')?.value === 'ZOHO_UNSYNCED') {
+        el('productSourceFilter').value = '';
+    }
+}
+
+function relativeCreatedLabel(iso) {
+    if (!iso) return '';
+    const ts = Date.parse(iso);
+    if (!Number.isFinite(ts)) return '';
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    const startThat = new Date(ts);
+    startThat.setHours(0, 0, 0, 0);
+    const days = Math.round((startToday - startThat) / 86400000);
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 14) return `${days} days ago`;
+    return formatWhen(iso);
+}
+
+function zohoMapLabel(product) {
+    const status = String(product.sync_status || (product.zoho_external_id ? 'LINKED' : 'UNLINKED')).toUpperCase();
+    if (status === 'UNLINKED') return 'Not Linked';
+    if (status === 'FAILED' || status === 'CONFLICT') return 'Sync Issue';
+    return 'Linked';
+}
+
+function syncHealthLabel(product) {
+    const status = String(product.sync_status || '').toUpperCase();
+    if (!status || status === 'UNLINKED') return 'Not synchronized';
+    if (status === 'SYNCED') return 'Synced';
+    if (status === 'LINKED') return 'Sync pending';
+    if (status === 'FAILED' || status === 'CONFLICT') return 'Sync issue';
+    return status;
+}
+
+function filtersActive() {
+    return Boolean(
+        String(el('productSearch')?.value || '').trim()
+        || statusFilter
+        || linkedFilter
+        || unsyncedFilter
+        || String(el('productSourceFilter')?.value || '').trim()
+    );
+}
+
+function setViewMode(mode) {
+    viewMode = mode === 'list' ? 'list' : 'cards';
+    sessionStorage.setItem('ae.products.view', viewMode);
+    el('btnProductViewCards')?.classList.toggle('is-on', viewMode === 'cards');
+    el('btnProductViewList')?.classList.toggle('is-on', viewMode === 'list');
+    el('btnProductViewCards')?.setAttribute('aria-pressed', viewMode === 'cards' ? 'true' : 'false');
+    el('btnProductViewList')?.setAttribute('aria-pressed', viewMode === 'list' ? 'true' : 'false');
+}
+
+function syncFilterChips() {
+    const unsyncedOn = isZohoUnsyncedFilter();
+    document.querySelectorAll('#products-view [data-prd-status]').forEach((btn) => {
+        const on = !unsyncedOn && String(btn.getAttribute('data-prd-status') || '') === String(statusFilter || '');
+        btn.classList.toggle('is-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('#products-view [data-prd-linked]').forEach((btn) => {
+        const on = !unsyncedOn && linkedFilter === '1';
+        btn.classList.toggle('is-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('#products-view [data-prd-unsynced]').forEach((btn) => {
+        btn.classList.toggle('is-on', unsyncedOn);
+        btn.setAttribute('aria-pressed', unsyncedOn ? 'true' : 'false');
+    });
+    if (unsyncedOn && el('productSourceFilter') && el('productSourceFilter').value !== 'ZOHO_UNSYNCED') {
+        el('productSourceFilter').value = 'ZOHO_UNSYNCED';
+    }
+}
+
+function closeProductCreateModal() {
+    const modal = el('productCreateModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function openProductCreateModal(title, bodyHtml) {
+    const modal = el('productCreateModal');
+    const titleEl = el('productCreateModalTitle');
+    const body = el('productCreateModalBody');
+    if (!modal || !body) return;
+    if (titleEl) titleEl.textContent = title;
+    body.innerHTML = bodyHtml;
+    modal.style.display = 'flex';
+    const focusable = body.querySelector('input, select, textarea, button');
+    focusable?.focus();
+}
 
 function catalogSearchNeedle(row) {
     return [
@@ -164,6 +294,9 @@ function catalogSearchNeedle(row) {
         row.sku,
         row.make,
         row.model,
+        row.hsn_code,
+        row.usage_unit,
+        row.created_by,
         row.zoho_product_id
     ].map((value) => String(value || '').toLowerCase()).join('\n');
 }
@@ -244,6 +377,9 @@ async function renderZohoCatalogPanel({ force = false } = {}) {
                                 <th style="padding:8px;">Product Code</th>
                                 <th style="padding:8px;">Make</th>
                                 <th style="padding:8px;">Model</th>
+                                <th style="padding:8px;">Created By</th>
+                                <th style="padding:8px;">Usage</th>
+                                <th style="padding:8px;">HSN</th>
                                 <th style="padding:8px;">Mapping</th>
                             </tr>
                         </thead>
@@ -256,6 +392,9 @@ async function renderZohoCatalogPanel({ force = false } = {}) {
                                     <td style="padding:8px;" class="lc-mono">${dash(row.sku)}</td>
                                     <td style="padding:8px;">${dash(row.make)}</td>
                                     <td style="padding:8px;">${dash(row.model)}</td>
+                                    <td style="padding:8px;">${dash(row.created_by)}</td>
+                                    <td style="padding:8px;">${dash(row.usage_unit)}</td>
+                                    <td style="padding:8px;">${dash(row.hsn_code)}</td>
                                     <td style="padding:8px;">${catalogStatusHtml(link, row.zoho_product_id, { allowCreate: logistics && !link.linked })}</td>
                                 </tr>`;
                             }).join('')}
@@ -295,7 +434,7 @@ async function renderZohoCatalogPanel({ force = false } = {}) {
             btn.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                createAgainstZohoProduct(btn.getAttribute('data-create-against')).catch((err) => toastOperatorError(err));
+                openCreateFromZohoModal(btn.getAttribute('data-create-against')).catch((err) => toastOperatorError(err));
             });
         });
         if (selectedCatalogZohoId) {
@@ -323,9 +462,9 @@ function renderCatalogDetail(row, mapping) {
             <p class="lc-muted" style="margin-top:0;" title="${escapeHtml(ZOHO_PROV_TITLE)}">Read-only reference from Zoho. Not an AssetEngine Product.</p>
             <h3 style="margin:6px 0 4px;">${dash(row.product_name)}</h3>
             ${fieldRow('Product Code', dash(row.sku))}
-            ${fieldRow('Make', dash(row.make))}
-            ${fieldRow('Model', dash(row.model))}
+            ${catalogDetailFieldsHtml(row)}
             ${fieldRow('Zoho Product ID', `<span class="lc-mono">${escapeHtml(row.zoho_product_id)}</span>`)}
+            ${fieldRow('Description', dash(row.description))}
             ${link.linked
                 ? ''
                 : fieldRow('AssetEngine Product', 'None — reference only')}
@@ -338,7 +477,7 @@ function renderCatalogDetail(row, mapping) {
         if (link.productId) openProductDetail(link.productId).catch((err) => toastOperatorError(err));
     });
     el('btnCreateFromCatalogRow')?.addEventListener('click', () => {
-        createAgainstZohoProduct(row.zoho_product_id).catch((err) => toastOperatorError(err));
+        openCreateFromZohoModal(row.zoho_product_id).catch((err) => toastOperatorError(err));
     });
 }
 
@@ -381,23 +520,382 @@ export function focusZohoCatalogInProducts() {
 
 window.focusZohoCatalogInProducts = focusZohoCatalogInProducts;
 
-async function renderProductList() {
+function catalogFactsRows(row) {
+    return [
+        ['Make', row.make],
+        ['Model', row.model],
+        ['Created By', row.created_by],
+        ['Usage', row.usage_unit],
+        ['HSN Code', row.hsn_code]
+    ];
+}
+
+function catalogCardFactsHtml(row) {
+    return `<dl class="prd-card-facts">${catalogFactsRows(row).map(([label, value]) => `
+        <div class="prd-card-fact">
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${dash(value)}</dd>
+        </div>`).join('')}</dl>`;
+}
+
+function catalogDetailFieldsHtml(row) {
+    return catalogFactsRows(row).map(([label, value]) => fieldRow(label, dash(value))).join('');
+}
+
+function productCardHtml(product, { recent = false } = {}) {
+    const selected = selectedId === product.id;
+    const linked = Boolean(product.zoho_external_id);
+    const desc = String(product.description || '').trim();
+    const match = product.matched_on ? `<div class="prd-match-hint">Matched: ${escapeHtml(product.matched_on)}</div>` : '';
+    const when = recent ? relativeCreatedLabel(product.created_at || product.createdAt) : '';
+    return `<button type="button" class="prd-card ops-glossy-surface ops-lift${selected ? ' is-selected' : ''}" data-product-open="${escapeHtml(product.id)}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="AssetEngine Product ${escapeHtml(product.id)}. ${escapeHtml(product.name || '')}">
+        <div class="prd-card-top">
+            ${product.origin === 'ZOHO' ? zohoProvPill() : aeProvPill()}
+            ${when ? `<span class="prd-card-when">${escapeHtml(when)}</span>` : ''}
+        </div>
+        <div class="prd-card-name">${dash(product.name)}</div>
+        ${catalogCardFactsHtml({
+            make: product.make,
+            model: product.model,
+            created_by: product.created_by,
+            usage_unit: product.unit,
+            hsn_code: product.hsn_code
+        })}
+        <div class="prd-card-id lc-mono">${escapeHtml(product.id)}</div>
+        ${desc ? `<div class="prd-card-desc">${escapeHtml(desc.length > 120 ? `${desc.slice(0, 117)}…` : desc)}</div>` : ''}
+        <div class="prd-card-zoho">${linked
+            ? `<span class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(product.zoho_external_id)}</span></span>`
+            : mapChip('Not Linked', 'none')}</div>
+        <div class="prd-card-foot">${statusChip(product.status)} ${mapChip(zohoMapLabel(product), linked ? 'linked' : 'none')}</div>
+        ${match}
+    </button>`;
+}
+
+function catalogRefCardHtml(row) {
+    const logistics = canLogistics();
+    const selected = String(selectedCatalogZohoId || '') === String(row.zoho_product_id || '');
+    return `<button type="button" class="prd-card prd-card-ref ops-glossy-surface${selected ? ' is-selected' : ''}" data-catalog-ref-open="${escapeHtml(row.zoho_product_id)}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="Zoho Reference ${escapeHtml(row.product_name || row.zoho_product_id || '')}">
+        <div class="prd-card-top">${zohoProvPill()} <span class="prd-match-hint">Zoho Reference</span></div>
+        <div class="prd-card-name">${dash(row.product_name)}</div>
+        ${catalogCardFactsHtml(row)}
+        <div class="prd-card-id lc-mono">Zoho Product ID: ${escapeHtml(row.zoho_product_id)}</div>
+        <div class="prd-card-foot">${mapChip('Reference Only', 'ref')}
+            ${logistics ? `<span class="action-button blue" data-create-against="${escapeHtml(row.zoho_product_id)}" role="button">Create AssetEngine Product</span>` : ''}
+        </div>
+        ${row.matched_on ? `<div class="prd-match-hint">Matched: ${escapeHtml(row.matched_on)}</div>` : ''}
+    </button>`;
+}
+
+function openCatalogRefDetail(row) {
+    selectedId = null;
+    selectedCatalogZohoId = row ? String(row.zoho_product_id || '') : null;
+    document.querySelectorAll('#products-view [data-product-open]').forEach((node) => {
+        node.classList.remove('is-selected');
+        node.setAttribute('aria-pressed', 'false');
+        if (node.tagName === 'TR') node.style.background = '';
+    });
+    document.querySelectorAll('#products-view [data-catalog-ref-open]').forEach((node) => {
+        const on = String(node.getAttribute('data-catalog-ref-open')) === String(selectedCatalogZohoId || '');
+        node.classList.toggle('is-selected', on);
+        node.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const panel = el('productDetailPanel');
+    if (!panel) return;
+    if (!row) {
+        panel.innerHTML = '<p class="lc-muted prd-detail-placeholder">Select a Zoho Reference to inspect.</p>';
+        return;
+    }
+    const logistics = canLogistics();
+    panel.innerHTML = `
+        ${section('Zoho Product Catalog', `
+            <div class="prd-id-cell" style="margin-bottom:6px;">${zohoProvPill()} ${mapChip('Reference Only', 'ref')}</div>
+            <p class="lc-muted" style="margin-top:0;" title="${escapeHtml(ZOHO_PROV_TITLE)}">Read-only reference from Zoho. Not an AssetEngine Product.</p>
+            <h3 style="margin:6px 0 4px;">${dash(row.product_name)}</h3>
+            ${fieldRow('Product Code', dash(row.sku))}
+            ${catalogDetailFieldsHtml(row)}
+            ${fieldRow('Zoho Product ID', `<span class="lc-mono">${escapeHtml(row.zoho_product_id)}</span>`)}
+            ${fieldRow('Description', dash(row.description))}
+            ${fieldRow('AssetEngine Product', 'None — awaiting sync')}
+            ${logistics
+                ? '<button type="button" class="action-button blue" id="btnCreateFromCatalogDetail" aria-label="Create Against Zoho Products" style="margin-top:12px;">Create Against Zoho Products</button>'
+                : ''}
+        `)}
+    `;
+    el('btnCreateFromCatalogDetail')?.addEventListener('click', () => {
+        openCreateFromZohoModal(row.zoho_product_id).catch((err) => toastOperatorError(err));
+    });
+}
+
+function bindProductOpeners(root) {
+    root.querySelectorAll('[data-product-open]').forEach((node) => {
+        const id = node.getAttribute('data-product-open');
+        const open = () => {
+            selectedCatalogZohoId = null;
+            openProductDetail(id).catch((err) => toastOperatorError(err));
+        };
+        node.addEventListener('click', open);
+        if (node.tagName === 'TR' || node.getAttribute('role') === 'button') {
+            node.setAttribute('tabindex', '0');
+            node.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    open();
+                }
+            });
+        }
+    });
+    root.querySelectorAll('[data-catalog-ref-open]').forEach((node) => {
+        const zohoId = node.getAttribute('data-catalog-ref-open');
+        const open = () => {
+            const row = (lastUnlinkedRefs || []).find((item) => String(item.zoho_product_id) === String(zohoId));
+            if (row) openCatalogRefDetail(row);
+        };
+        node.addEventListener('click', (event) => {
+            if (event.target.closest('[data-create-against]')) return;
+            open();
+        });
+        node.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                if (event.target.closest('[data-create-against]')) return;
+                event.preventDefault();
+                open();
+            }
+        });
+    });
+    root.querySelectorAll('[data-create-against]').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openCreateFromZohoModal(btn.getAttribute('data-create-against')).catch((err) => toastOperatorError(err));
+        });
+    });
+}
+
+function renderPager(total) {
+    const pageSize = productPageSize();
+    const pages = Math.max(1, Math.ceil(Number(total || 0) / pageSize));
+    if (productPage > pages - 1) productPage = pages - 1;
+    if (productPage < 0) productPage = 0;
+    const from = total ? productPage * pageSize + 1 : 0;
+    const to = Math.min(total, (productPage + 1) * pageSize);
+    return `<div class="prd-pager" role="navigation" aria-label="Product pages">
+        <span class="prd-pager-meta">${total ? `${from}–${to} of ${total}` : (isZohoUnsyncedFilter() ? '0 Zoho references' : '0 products')}</span>
+        <div class="prd-pager-actions">
+            <button type="button" class="action-button grey prd-pager-btn" id="btnProductPagePrev" ${productPage <= 0 ? 'disabled' : ''}>Previous</button>
+            <span class="prd-pager-page">Page ${productPage + 1} of ${pages}</span>
+            <button type="button" class="action-button grey prd-pager-btn" id="btnProductPageNext" ${productPage >= pages - 1 ? 'disabled' : ''}>Next</button>
+        </div>
+    </div>`;
+}
+
+function bindPager(host, total) {
+    const pageSize = productPageSize();
+    const pages = Math.max(1, Math.ceil(Number(total || 0) / pageSize));
+    el('btnProductPagePrev')?.addEventListener('click', () => {
+        if (productPage <= 0) return;
+        productPage -= 1;
+        renderProductList().catch((err) => toastOperatorError(err));
+    });
+    el('btnProductPageNext')?.addEventListener('click', () => {
+        if (productPage >= pages - 1) return;
+        productPage += 1;
+        renderProductList().catch((err) => toastOperatorError(err));
+    });
+}
+
+function renderBrowserBody(products, unlinkedRefs) {
+    const catalogOnly = isZohoUnsyncedFilter();
+    let pageProducts = products;
+    let pageRefs = unlinkedRefs;
+    if (catalogOnly) {
+        const size = productPageSize();
+        const start = productPage * size;
+        pageProducts = [];
+        pageRefs = unlinkedRefs.slice(start, start + size);
+    } else {
+        pageRefs = productPage === 0 ? unlinkedRefs : [];
+    }
+    if (viewMode === 'list') {
+        return `<div class="prd-browser-pane">
+            <div class="prd-browser-scroll">
+            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                    <tr style="text-align:left;border-bottom:1px solid #e5e7eb;color:#667085;">
+                        <th style="padding:8px;">Product</th>
+                        <th style="padding:8px;">Make</th>
+                        <th style="padding:8px;">Model</th>
+                        <th style="padding:8px;">Created By</th>
+                        <th style="padding:8px;">Usage</th>
+                        <th style="padding:8px;">HSN</th>
+                        <th style="padding:8px;">Source</th>
+                        <th style="padding:8px;">Status</th>
+                        <th style="padding:8px;">Zoho</th>
+                        ${lastQuery ? '<th style="padding:8px;">Matched</th>' : ''}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pageProducts.map((p) => `
+                        <tr data-product-open="${escapeHtml(p.id)}" role="button" style="cursor:pointer;border-bottom:1px solid #f3f4f6;${selectedId === p.id ? 'background:#eff6ff;' : ''}">
+                            <td class="prd-name-td">
+                                <div class="prd-id-cell"><span class="lc-mono">${escapeHtml(p.id)}</span> ${p.origin === 'ZOHO' ? zohoProvPill() : aeProvPill()}</div>
+                                ${aeProductNameCellHtml(p)}
+                            </td>
+                            <td style="padding:8px;">${dash(p.make)}</td>
+                            <td style="padding:8px;">${dash(p.model)}</td>
+                            <td style="padding:8px;">${dash(p.created_by)}</td>
+                            <td style="padding:8px;">${dash(p.unit)}</td>
+                            <td style="padding:8px;">${dash(p.hsn_code)}</td>
+                            <td style="padding:8px;">${escapeHtml(productSourceLabel(p))}</td>
+                            <td style="padding:8px;">${statusChip(p.status)}</td>
+                            <td style="padding:8px;">${mapChip(zohoMapLabel(p), p.zoho_external_id ? 'linked' : 'none')}${p.zoho_external_id ? `<div class="lc-mono" style="font-size:11px;margin-top:2px;">${escapeHtml(p.zoho_external_id)}</div>` : ''}</td>
+                            ${lastQuery ? `<td style="padding:8px;"><span class="prd-match-hint">${escapeHtml(p.matched_on || '—')}</span></td>` : ''}
+                        </tr>`).join('')}
+                    ${pageRefs.map((row) => `
+                        <tr data-catalog-ref-open="${escapeHtml(row.zoho_product_id)}" role="button" style="cursor:pointer;border-bottom:1px solid #f3f4f6;background:${String(selectedCatalogZohoId || '') === String(row.zoho_product_id) ? '#eef2f6' : '#f8fafc'};">
+                            <td class="prd-name-td">
+                                <div class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(row.zoho_product_id)}</span></div>
+                                <div class="prd-name">${dash(row.product_name)}</div>
+                                <div class="prd-desc">Zoho Reference · Not an AssetEngine Product</div>
+                            </td>
+                            <td style="padding:8px;">${dash(row.make)}</td>
+                            <td style="padding:8px;">${dash(row.model)}</td>
+                            <td style="padding:8px;">${dash(row.created_by)}</td>
+                            <td style="padding:8px;">${dash(row.usage_unit)}</td>
+                            <td style="padding:8px;">${dash(row.hsn_code)}</td>
+                            <td style="padding:8px;">ZOHO REFERENCE</td>
+                            <td style="padding:8px;">—</td>
+                            <td style="padding:8px;">${mapChip('Reference Only', 'ref')}
+                                ${canLogistics() ? `<button type="button" class="action-button blue" data-create-against="${escapeHtml(row.zoho_product_id)}" style="margin-top:6px;">Create AssetEngine Product</button>` : ''}
+                            </td>
+                            ${lastQuery ? `<td style="padding:8px;"><span class="prd-match-hint">${escapeHtml(row.matched_on || '—')}</span></td>` : ''}
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+            </div>
+            ${renderPager(lastTotal)}
+        </div>`;
+    }
+    return `<div class="prd-browser-pane">
+        <div class="prd-browser-scroll">
+            <div class="prd-card-grid">
+                ${pageProducts.map((p) => productCardHtml(p)).join('')}
+                ${pageRefs.map((row) => catalogRefCardHtml(row)).join('')}
+            </div>
+        </div>
+        ${renderPager(lastTotal)}
+    </div>`;
+}
+
+async function renderRecentlyAdded() {
+    const host = el('productsRecentlyAdded');
+    if (!host) return;
+    if (filtersActive()) {
+        host.hidden = true;
+        host.innerHTML = '';
+        return;
+    }
+    try {
+        const data = await api(`/api/products?limit=${RECENT_CARD_COUNT}&status=ACTIVE`);
+        const rows = data.products || [];
+        if (!rows.length) {
+            host.hidden = true;
+            host.innerHTML = '';
+            return;
+        }
+        host.hidden = false;
+        host.innerHTML = `
+            <div class="prd-browser-head"><div class="lc-section-label" style="margin:0;">Recently Added</div></div>
+            <div class="prd-recent-strip">${rows.map((p) => productCardHtml(p, { recent: true })).join('')}</div>`;
+        bindProductOpeners(host);
+    } catch (_err) {
+        host.hidden = true;
+    }
+}
+
+async function renderProductList({ resetPage = false } = {}) {
     const host = el('productsContent');
     if (!host) return;
+    if (resetPage) productPage = 0;
     const q = el('productSearch')?.value || '';
-    const status = el('productStatusFilter')?.value || '';
-    const origin = el('productOriginFilter')?.value || '';
+    lastQuery = String(q || '').trim();
+    const catalogOnly = isZohoUnsyncedFilter();
+    if (catalogOnly) {
+        unsyncedFilter = '1';
+        if (el('productSourceFilter')) el('productSourceFilter').value = 'ZOHO_UNSYNCED';
+        const data = await api('/api/zoho/catalog?unlinked=1');
+        let rows = data.catalog || [];
+        if (lastQuery) rows = filterCatalogRows(rows, lastQuery);
+        lastProducts = [];
+        lastUnlinkedRefs = rows;
+        lastTotal = rows.length;
+        const pages = Math.max(1, Math.ceil(lastTotal / productPageSize()) || 1);
+        if (productPage > pages - 1 && lastTotal > 0) {
+            productPage = pages - 1;
+            return renderProductList();
+        }
+        if (el('productCountBadge')) {
+            el('productCountBadge').textContent = `${lastTotal} Not Yet Synced`;
+        }
+        const browserHead = document.querySelector('#products-view .prd-ae-section .prd-browser-head .lc-section-label');
+        if (browserHead) browserHead.textContent = 'Zoho Product Catalog · Not Yet Synced';
+        await renderRecentlyAdded();
+        if (!rows.length) {
+            host.innerHTML = emptyState({
+                title: 'No Zoho products waiting to sync.',
+                body: 'Every Zoho Product Catalog item already has an AssetEngine Product, or the catalog has not been pulled yet.',
+                actionLabel: canLogistics() ? 'Create Against Zoho Products' : '',
+                actionView: canLogistics() ? 'products-view' : '',
+                actionAttr: 'id="btnEmptyCreateCatalog"'
+            });
+            host.querySelector('#btnEmptyCreateCatalog')?.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                renderCatalogCreate().catch((err) => toastOperatorError(err));
+            });
+            return;
+        }
+        host.innerHTML = `
+            <div class="prd-split">
+                ${renderBrowserBody([], rows)}
+                <aside id="productDetailPanel" class="prd-detail-pane" aria-label="Product detail inspector">
+                    <p class="lc-muted prd-detail-placeholder">Select a Zoho Product Catalog card to inspect Make, Model, Created By, Usage, and HSN.</p>
+                </aside>
+            </div>`;
+        bindProductOpeners(host);
+        bindPager(host, lastTotal);
+        if (selectedCatalogZohoId) {
+            const selected = rows.find((row) => String(row.zoho_product_id) === String(selectedCatalogZohoId));
+            if (selected) openCatalogRefDetail(selected);
+        }
+        return;
+    }
+
+    const source = el('productSourceFilter')?.value || '';
     const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (status) params.set('status', status);
-    if (origin) params.set('origin', origin);
-    params.set('limit', '200');
+    if (lastQuery) params.set('q', lastQuery);
+    if (statusFilter) params.set('status', statusFilter);
+    if (source) params.set('source', source);
+    if (linkedFilter) params.set('linked', linkedFilter);
+    params.set('limit', String(productPageSize()));
+    params.set('offset', String(productPage * productPageSize()));
     const data = await api(`/api/products?${params.toString()}`);
     const products = data.products || [];
-    if (el('productCountBadge')) {
-        el('productCountBadge').textContent = `${data.total ?? products.length} AssetEngine Products`;
+    const unlinkedRefs = lastQuery ? (data.unlinked_catalog_refs || []) : [];
+    lastProducts = products;
+    lastUnlinkedRefs = unlinkedRefs;
+    lastTotal = Number(data.total ?? products.length) || 0;
+    const pages = Math.max(1, Math.ceil(lastTotal / productPageSize()));
+    if (productPage > pages - 1 && lastTotal > 0) {
+        productPage = pages - 1;
+        return renderProductList();
     }
-    if (!products.length) {
+    if (el('productCountBadge')) {
+        el('productCountBadge').textContent = `${lastTotal} AssetEngine Products`;
+    }
+    const browserHead = document.querySelector('#products-view .prd-ae-section .prd-browser-head .lc-section-label');
+    if (browserHead) browserHead.textContent = 'All Products';
+    await renderRecentlyAdded();
+    if (!products.length && !unlinkedRefs.length) {
         host.innerHTML = emptyState({
             title: 'No AssetEngine Products found.',
             body: 'AssetEngine Products define what we buy and track. Create Against Zoho Products, or add a Standalone AE Product and link it later.',
@@ -413,55 +911,14 @@ async function renderProductList() {
         return;
     }
     host.innerHTML = `
-        <div style="display:flex;gap:16px;align-items:flex-start;min-height:0;">
-            <div style="flex:1;min-width:0;overflow:auto;">
-                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
-                    <thead>
-                        <tr style="text-align:left;border-bottom:1px solid #e5e7eb;color:#667085;">
-                            <th style="padding:8px;">Product ID</th>
-                            <th style="padding:8px;">Name</th>
-                            <th style="padding:8px;">Make</th>
-                            <th style="padding:8px;">Model</th>
-                            <th style="padding:8px;">Status</th>
-                            <th style="padding:8px;">Zoho mapping</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${products.map((p) => `
-                            <tr data-product-open="${escapeHtml(p.id)}" style="cursor:pointer;border-bottom:1px solid #f3f4f6;${selectedId === p.id ? 'background:#eff6ff;' : ''}">
-                                <td class="prd-id-td"><div class="prd-id-cell"><span class="lc-mono">${escapeHtml(p.id)}</span> ${aeProvPill()}</div></td>
-                                <td class="prd-name-td">${aeProductNameCellHtml(p)}</td>
-                                <td style="padding:8px;">${dash(p.make)}</td>
-                                <td style="padding:8px;">${dash(p.model)}</td>
-                                <td style="padding:8px;">${statusChip(p.status)}</td>
-                                <td style="padding:8px;">${aeMappingHtml(p)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-            <div id="productDetailPanel" style="width:min(520px,42%);flex-shrink:0;max-height:calc(100vh - 220px);overflow:auto;"></div>
-        </div>
-    `;
-    host.querySelectorAll('[data-product-open]').forEach((row) => {
-        const id = row.getAttribute('data-product-open');
-        const product = products.find((item) => String(item.id) === String(id));
-        const name = product && product.name ? String(product.name).trim() : '';
-        const description = product && product.description ? String(product.description).trim() : '';
-        row.setAttribute('tabindex', '0');
-        row.setAttribute('role', 'button');
-        row.setAttribute(
-            'aria-label',
-            `AssetEngine Product ${id}${name ? `. ${name}` : ''}${description ? `. ${description}` : ''}`
-        );
-        row.addEventListener('click', () => openProductDetail(id));
-        row.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                row.click();
-            }
-        });
-    });
+        <div class="prd-split">
+            ${renderBrowserBody(products, unlinkedRefs)}
+            <aside id="productDetailPanel" class="prd-detail-pane" aria-label="Product detail inspector">
+                <p class="lc-muted prd-detail-placeholder">Select a Product to inspect.</p>
+            </aside>
+        </div>`;
+    bindProductOpeners(host);
+    bindPager(host, lastTotal);
     if (selectedId) {
         openProductDetail(selectedId).catch((err) => toastOperatorError(err));
     }
@@ -477,6 +934,12 @@ function inputField(id, label, value, { note, type = 'text' } = {}) {
 
 async function openProductDetail(id) {
     selectedId = id;
+    document.querySelectorAll('#products-view [data-product-open]').forEach((node) => {
+        const on = String(node.getAttribute('data-product-open')) === String(id);
+        node.classList.toggle('is-selected', on);
+        if (node.tagName === 'TR') node.style.background = on ? '#eff6ff' : '';
+        node.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     const panel = el('productDetailPanel');
     if (!panel) return;
     const [productRes, refsRes, conflictsRes, posRes, setsRes, invRes] = await Promise.all([
@@ -523,14 +986,15 @@ async function openProductDetail(id) {
             { label: 'Purchase Orders', view: 'purchase-orders-view' },
             { label: 'Stock', view: 'home-view' }
         ])}
-        ${section('AssetEngine Product', `
+        ${section('Product Overview', `
             <div class="prd-id-cell" style="margin-bottom:6px;">${aeProvPill()} ${aeMappingHtml(p)}</div>
+            <p class="lc-muted" style="margin:0 0 8px;" title="${escapeHtml(AE_PROV_TITLE)}">AssetEngine Product = authoritative Product identity. Description is descriptive metadata, not identity.</p>
             <h3 style="margin:6px 0 4px;">${dash(p.name)}</h3>
-            <div class="lc-mono" title="${escapeHtml(AE_PROV_TITLE)}">${escapeHtml(p.id)}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;">${statusChip(p.status)}</div>
+            <div class="lc-mono">${escapeHtml(p.id)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;">${statusChip(p.status)} <span class="lc-chip">${escapeHtml(productSourceLabel(p))}</span></div>
             ${editable ? `
                 ${inputField('prdEditName', 'Name', p.name, { note: 'Co-managed with Zoho. Conflicts use the existing resolve workflow.' })}
-                ${inputField('prdEditDescription', 'Description', p.description, { note: 'AssetEngine is authoritative.', type: 'textarea' })}
+                ${inputField('prdEditDescription', 'Description', p.description, { note: 'Descriptive metadata · AssetEngine is authoritative.', type: 'textarea' })}
             ` : `
                 ${fieldRow('Name', dash(p.name))}
                 ${fieldRow('Description', dash(p.description))}
@@ -541,17 +1005,18 @@ async function openProductDetail(id) {
                     ${inputField('prdEditMake', 'Make', p.make, { note: 'Logistics-owned' })}
                     ${inputField('prdEditModel', 'Model', p.model, { note: 'Logistics-owned' })}
                     ${inputField('prdEditManufacturer', 'Manufacturer', p.manufacturer, { note: 'Logistics-owned' })}
-                    ${inputField('prdEditHsn', 'HSN', p.hsn_code, { note: 'Logistics-owned' })}
-                    ${inputField('prdEditUnit', 'Unit', p.unit, { note: 'Logistics-owned' })}
-                    ${inputField('prdEditCode', 'SKU / Product code', p.product_code, { note: 'Optional' })}
+                    ${inputField('prdEditCode', 'OEM SKU / Product code', p.product_code, { note: 'Optional identity attribute' })}
+                    ${inputField('prdEditHsn', 'HSN Code', p.hsn_code, { note: 'Logistics-owned' })}
+                    ${inputField('prdEditUnit', 'Usage', p.unit, { note: 'Logistics-owned (Usage Unit)' })}
+                    ${fieldRow('Created By', dash(p.created_by))}
                 ` : `
                     ${fieldRow('Make', dash(p.make))}
                     ${fieldRow('Model', dash(p.model))}
                     ${fieldRow('Manufacturer', dash(p.manufacturer))}
-                    ${fieldRow('HSN', dash(p.hsn_code))}
-                    ${fieldRow('Unit', dash(p.unit))}
-                    ${fieldRow('SKU', dash(p.product_code))}
-                    ${fieldRow('Category / origin', dash(p.origin))}
+                    ${fieldRow('OEM SKU', dash(p.product_code))}
+                    ${fieldRow('HSN Code', dash(p.hsn_code))}
+                    ${fieldRow('Usage', dash(p.unit))}
+                    ${fieldRow('Created By', dash(p.created_by))}
                 `}
             </div>
             <div class="lc-field-group">
@@ -567,8 +1032,11 @@ async function openProductDetail(id) {
             ${!logistics ? '<p class="lc-muted">Sales can view commercial fields. Logistics owns mapping, identity, and publish.</p>' : ''}
         `)}
         ${section('Commercial / Zoho', `
-            ${fieldRow('Zoho Reference', zohoRef ? `<span class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(zohoRef.external_id)}</span></span>` : 'Not Linked')}
+            <p class="lc-muted">Zoho Product is commercial/reference identity — not the AssetEngine Product ID.</p>
+            ${fieldRow('Zoho Product', zohoRef ? `<span class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(zohoRef.external_id)}</span></span>` : 'Not Linked')}
+            ${fieldRow('Zoho Product ID', zohoRef ? `<span class="lc-mono">${escapeHtml(zohoRef.external_id)}</span>` : '—')}
             ${fieldRow('Mapping', aeMappingHtml(p))}
+            ${fieldRow('Sync', escapeHtml(syncHealthLabel(p)))}
             ${fieldRow('Last sync', formatWhen(lastSync))}
             ${openConflict ? `
                 <div style="margin:12px 0;padding:12px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;">
@@ -594,15 +1062,9 @@ async function openProductDetail(id) {
             <div class="lc-muted">Outstanding on imported POs: <strong>${formatQty(outstanding)}</strong></div>
             <ul class="lc-event-list">${relatedPos.map((po) => `
                 <li><button type="button" class="lc-crumb-link" data-lc-go="purchase-orders-view" data-lc-open="${escapeHtml(po.id)}">${escapeHtml(po.poNumber || po.id)}</button>
-                · ${statusChip(po.status)} · receiving ${escapeHtml(String((po.lines || []).filter((l) => l.productId === p.id).map((l) => l.outstanding).join(', ') || '—'))}</li>
+                · ${statusChip(po.status)} · outstanding ${escapeHtml(String((po.lines || []).filter((l) => l.productId === p.id).map((l) => l.outstanding).join(', ') || '—'))}</li>
             `).join('')}</ul>
         ` : '<p class="lc-muted">No imported Purchase Orders for this Product.</p>')}
-        ${section('Sets', `
-            ${originatingSet ? `<p>Originating Set: <button type="button" class="lc-crumb-link" data-lc-go="sets-view" data-lc-open="${escapeHtml(originatingSet)}">${escapeHtml(originatingSet)}</button></p>` : ''}
-            ${usedInSets.length ? `<ul class="lc-event-list">${usedInSets.map((s) => `
-                <li>Requirement in <button type="button" class="lc-crumb-link" data-lc-go="sets-view" data-lc-open="${escapeHtml(s.id)}">${escapeHtml(s.name || s.id)}</button></li>
-            `).join('')}</ul>` : '<p class="lc-muted">Not used as a Set requirement.</p>'}
-        `)}
         ${section('Physical', `
             <p class="lc-muted">Physical stock is not the Product. Assets are identified holdings. Inventory is quantity-tracked.</p>
             <div class="lc-kv">
@@ -613,6 +1075,12 @@ async function openProductDetail(id) {
                     ? inventory.slice(0, 8).map((item) => `<div><button type="button" class="lc-crumb-link" data-lc-go="inventory-view" data-lc-open="${escapeHtml(item.id || item.ID)}">${escapeHtml(item.id || item.ID)}</button></div>`).join('')
                     : '—'}</div></div>
             </div>
+        `)}
+        ${section('Sets', `
+            ${originatingSet ? `<p>Originating Set: <button type="button" class="lc-crumb-link" data-lc-go="sets-view" data-lc-open="${escapeHtml(originatingSet)}">${escapeHtml(originatingSet)}</button></p>` : ''}
+            ${usedInSets.length ? `<ul class="lc-event-list">${usedInSets.map((s) => `
+                <li>Requirement in <button type="button" class="lc-crumb-link" data-lc-go="sets-view" data-lc-open="${escapeHtml(s.id)}">${escapeHtml(s.name || s.id)}</button></li>
+            `).join('')}</ul>` : '<p class="lc-muted">Not used as a Set requirement.</p>'}
         `)}
         ${section('History', `<button type="button" class="action-button grey" data-lc-go="history-view" data-lc-open="${escapeHtml(p.id)}">Open lifecycle history</button>
             <p class="lc-muted" style="margin-top:8px;">Updated ${formatWhen(p.updated_at)} · ${dash(p.updated_by)}</p>`)}
@@ -756,118 +1224,160 @@ async function openLinkWizard(productId) {
     }
 }
 
-async function renderCatalogCreate() {
-    const host = el('productsContent');
-    if (!host) return;
+async function openCreateFromZohoModal(preselectZohoId = null) {
     if (!canLogistics()) {
         showToast('Logistics role required to create AssetEngine Products.', 'error');
         return;
     }
-    host.innerHTML = '<p class="lc-muted">Loading unlinked Zoho References…</p>';
+    openProductCreateModal('Create AssetEngine Product from Zoho', '<p class="lc-muted">Loading unlinked Zoho References…</p>');
     const [data, mapping] = await Promise.all([
         api('/api/zoho/catalog?unlinked=1'),
         loadCatalogMapping(true)
     ]);
     const rows = (data.catalog || []).filter((row) => !mapping.get(String(row.zoho_product_id || '')));
     if (!rows.length) {
-        host.innerHTML = `
-            <button type="button" class="action-button grey" id="btnCatalogBack">← AssetEngine Products</button>
-            ${emptyState({
-                title: 'No unlinked Zoho Reference Catalog records found.',
-                body: 'Every listed Zoho Reference already has an AssetEngine Product, or the catalog has not been pulled. Use Standalone AE Product to create one without a Zoho Reference.',
-                actionLabel: '',
-                actionView: 'products-view',
-                actionAttr: 'id="btnEmptyLocalProduct"'
-            })}
-            ${standaloneProductButton('btnEmptyLocalProduct')}`;
-        el('btnCatalogBack')?.addEventListener('click', () => renderProductList().catch((e) => toastOperatorError(e)));
-        el('btnEmptyLocalProduct')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        openProductCreateModal('Create AssetEngine Product from Zoho', `
+            <p class="lc-muted">No unlinked Zoho Reference Catalog records. Pull the catalog first, or use Standalone AE Product.</p>
+            <button type="button" class="action-button grey" id="btnCreateModalClose">Close</button>
+            <button type="button" class="action-button blue" id="btnCreateModalStandalone">Standalone AE Product</button>
+        `);
+        el('btnCreateModalClose')?.addEventListener('click', closeProductCreateModal);
+        el('btnCreateModalStandalone')?.addEventListener('click', () => {
+            closeProductCreateModal();
             createLocalProduct().catch((err) => toastOperatorError(err));
         });
         return;
     }
-    host.innerHTML = `
-        <div class="lc-detail-head" style="margin-bottom:12px;">
-            <button type="button" class="action-button grey" id="btnCatalogBack">← AssetEngine Products</button>
-        </div>
-        <h3 style="margin:0 0 8px;">Create Against Zoho Products</h3>
-        <p class="lc-muted">Only Zoho References without an AssetEngine Product are listed. Review a row, then create. This does not create Inventory or Assets.</p>
-        <div id="catalogStepList">
-            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
-                <thead>
-                    <tr style="text-align:left;border-bottom:1px solid #e5e7eb;color:#667085;">
-                        <th style="padding:8px;">Zoho Reference</th>
-                        <th style="padding:8px;">Name</th>
-                        <th style="padding:8px;">Make</th>
-                        <th style="padding:8px;">Model</th>
-                        <th style="padding:8px;">SKU</th>
-                        <th style="padding:8px;"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map((r) => `
-                        <tr style="border-bottom:1px solid #f3f4f6;">
-                            <td style="padding:8px;"><div class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(r.zoho_product_id)}</span></div></td>
-                            <td style="padding:8px;">${dash(r.product_name)}</td>
-                            <td style="padding:8px;">${dash(r.make)}</td>
-                            <td style="padding:8px;">${dash(r.model)}</td>
-                            <td style="padding:8px;">${dash(r.sku)}</td>
-                            <td style="padding:8px;"><button type="button" class="action-button blue" data-catalog-review="${escapeHtml(r.zoho_product_id)}">Review</button></td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-        <div id="catalogReviewHost"></div>
-    `;
-    el('btnCatalogBack')?.addEventListener('click', () => renderProductList().catch((e) => toastOperatorError(e)));
-    host.querySelectorAll('[data-catalog-review]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const zohoId = btn.getAttribute('data-catalog-review');
-            const row = rows.find((r) => String(r.zoho_product_id) === String(zohoId));
-            const review = el('catalogReviewHost');
-            if (!row || !review) return;
-            review.innerHTML = section('Review mapping', `
-                <p>This Zoho Reference will become an AssetEngine Product. Physical stock is not created.</p>
-                <div class="lc-kv">
-                    <div><div class="lc-k">Zoho Reference</div><div class="lc-mono">${escapeHtml(row.zoho_product_id)}</div></div>
-                    <div><div class="lc-k">Name</div><div>${dash(row.product_name)}</div></div>
-                    <div><div class="lc-k">Make</div><div>${dash(row.make)}</div></div>
-                    <div><div class="lc-k">Model</div><div>${dash(row.model)}</div></div>
-                    <div><div class="lc-k">HSN</div><div>${dash(row.hsn_code)}</div></div>
-                    <div><div class="lc-k">SKU</div><div>${dash(row.sku)}</div></div>
+    const selected = preselectZohoId
+        ? rows.find((r) => String(r.zoho_product_id) === String(preselectZohoId))
+        : null;
+    const paint = (row) => {
+        if (!row) {
+            openProductCreateModal('Create AssetEngine Product from Zoho', `
+                <p class="lc-muted">This creates an AssetEngine Product. It does not create physical stock.</p>
+                <label class="lc-own-note" for="prdCreateZohoPick">Select Zoho Reference</label>
+                <select id="prdCreateZohoPick" style="width:100%;padding:8px;margin:6px 0 12px;">
+                    <option value="">Choose…</option>
+                    ${rows.map((r) => `<option value="${escapeHtml(r.zoho_product_id)}">${escapeHtml(r.product_name)} (${escapeHtml(r.zoho_product_id)})</option>`).join('')}
+                </select>
+                <div id="prdCreateZohoReview"></div>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button type="button" class="action-button grey" id="btnCreateModalClose">Cancel</button>
                 </div>
-                <button type="button" class="action-button blue" id="btnConfirmCreateFromCatalog" aria-label="Create Against Zoho Products" style="margin-top:12px;">Create Against Zoho Products</button>
             `);
-            el('btnConfirmCreateFromCatalog')?.addEventListener('click', () => {
-                createAgainstZohoProduct(row.zoho_product_id).catch((err) => toastOperatorError(err));
+            el('btnCreateModalClose')?.addEventListener('click', closeProductCreateModal);
+            el('prdCreateZohoPick')?.addEventListener('change', (e) => {
+                const next = rows.find((r) => String(r.zoho_product_id) === String(e.target.value));
+                if (next) paint(next);
             });
+            return;
+        }
+        openProductCreateModal('Create AssetEngine Product from Zoho', `
+            <p class="lc-muted">This creates an AssetEngine Product from the Zoho Reference. It does not create physical stock.</p>
+            <div class="lc-kv">
+                <div><div class="lc-k">Zoho Product ID</div><div class="lc-mono">${escapeHtml(row.zoho_product_id)}</div></div>
+                <div><div class="lc-k">Product Name</div><div>${dash(row.product_name)}</div></div>
+                <div><div class="lc-k">Make</div><div>${dash(row.make)}</div></div>
+                <div><div class="lc-k">Model</div><div>${dash(row.model)}</div></div>
+                <div><div class="lc-k">Created By</div><div>${dash(row.created_by)}</div></div>
+                <div><div class="lc-k">Usage</div><div>${dash(row.usage_unit)}</div></div>
+                <div><div class="lc-k">HSN Code</div><div>${dash(row.hsn_code)}</div></div>
+                <div><div class="lc-k">SKU</div><div>${dash(row.sku)}</div></div>
+                <div><div class="lc-k">Description</div><div>${dash(row.description)}</div></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+                <button type="button" class="action-button grey" id="btnCreateModalBack">Back</button>
+                <button type="button" class="action-button grey" id="btnCreateModalClose">Cancel</button>
+                <button type="button" class="action-button blue" id="btnConfirmCreateFromCatalog">Create AssetEngine Product</button>
+            </div>
+        `);
+        el('btnCreateModalClose')?.addEventListener('click', closeProductCreateModal);
+        el('btnCreateModalBack')?.addEventListener('click', () => paint(null));
+        el('btnConfirmCreateFromCatalog')?.addEventListener('click', async () => {
+            closeProductCreateModal();
+            await createAgainstZohoProduct(row.zoho_product_id, { confirmed: true });
         });
-    });
+    };
+    paint(selected || null);
+}
+
+async function renderCatalogCreate() {
+    return openCreateFromZohoModal(null);
 }
 
 async function createLocalProduct() {
-    const name = window.prompt('Standalone AE Product name');
-    if (!name || !String(name).trim()) return;
-    const product = await api('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: String(name).trim() })
+    if (!canLogistics()) {
+        showToast('Logistics role required to create AssetEngine Products.', 'error');
+        return;
+    }
+    openProductCreateModal('Create Standalone AssetEngine Product', `
+        <p class="lc-muted">Created directly in AssetEngine. Zoho mapping can be established later. This does not create physical stock.</p>
+        ${inputField('prdNewName', 'Name', '', { note: 'Required' })}
+        ${inputField('prdNewDescription', 'Description', '', { type: 'textarea' })}
+        ${inputField('prdNewMake', 'Make', '')}
+        ${inputField('prdNewModel', 'Model', '')}
+        ${inputField('prdNewManufacturer', 'Manufacturer', '')}
+        ${inputField('prdNewCode', 'OEM SKU / Product code', '')}
+        ${inputField('prdNewHsn', 'HSN', '')}
+        ${inputField('prdNewUnit', 'Unit', '')}
+        ${inputField('prdNewPrice', 'Price', '')}
+        <div style="display:flex;gap:8px;margin-top:14px;">
+            <button type="button" class="action-button grey" id="btnCreateModalClose">Cancel</button>
+            <button type="button" class="action-button blue" id="btnConfirmStandaloneProduct">Create Product</button>
+        </div>
+    `);
+    el('btnCreateModalClose')?.addEventListener('click', closeProductCreateModal);
+    el('btnConfirmStandaloneProduct')?.addEventListener('click', async () => {
+        const name = String(el('prdNewName')?.value || '').trim();
+        if (!name) {
+            showToast('Name is required', 'error');
+            return;
+        }
+        try {
+            const priceRaw = el('prdNewPrice')?.value;
+            const product = await api('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    description: el('prdNewDescription')?.value || null,
+                    make: el('prdNewMake')?.value || null,
+                    model: el('prdNewModel')?.value || null,
+                    manufacturer: el('prdNewManufacturer')?.value || null,
+                    product_code: el('prdNewCode')?.value || null,
+                    hsn_code: el('prdNewHsn')?.value || null,
+                    unit: el('prdNewUnit')?.value || null,
+                    price: priceRaw === '' ? null : priceRaw
+                })
+            });
+            showToast(`Created ${product.product.id}`, 'success');
+            selectedId = product.product.id;
+            closeProductCreateModal();
+            await renderProductList();
+        } catch (err) {
+            toastOperatorError(err);
+        }
     });
-    showToast(`Created ${product.product.id}`, 'success');
-    selectedId = product.product.id;
-    await renderProductList();
 }
 
 export function initProductsView() {
     const logistics = canLogistics();
     if (el('btnCreateProduct')) el('btnCreateProduct').style.display = logistics ? '' : 'none';
     if (el('btnCreateFromCatalog')) el('btnCreateFromCatalog').style.display = logistics ? '' : 'none';
+    setViewMode(viewMode);
+    syncFilterChips();
     const bootProducts = () => {
         const pending = consumeOpen('products-view');
-        const jobs = [renderProductList().then(() => {
+        const openUnsynced = Boolean(
+            (pending && pending.extra && pending.extra.zohoCatalog)
+            || String(window.location.hash || '').includes('zohoCatalog=1')
+        );
+        if (openUnsynced) {
+            setZohoUnsyncedFilter(true);
+            setCatalogPanelOpen(false);
+        }
+        syncFilterChips();
+        const jobs = [renderProductList({ resetPage: openUnsynced }).then(() => {
             if (pending && pending.open) return openProductDetail(pending.open);
         })];
         if (catalogPanelIsOpen()) jobs.push(renderZohoCatalogPanel());
@@ -892,20 +1402,69 @@ export function initProductsView() {
         setCatalogPanelOpen(false);
     });
     el('btnCreateProduct')?.addEventListener('click', () => {
-        if (!canLogistics()) {
-            showToast('Logistics role required', 'error');
-            return;
-        }
         createLocalProduct().catch((err) => toastOperatorError(err));
     });
     el('btnCreateFromCatalog')?.addEventListener('click', () => {
         renderCatalogCreate().catch((err) => toastOperatorError(err));
     });
-    el('productSearch')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') renderProductList().catch((err) => toastOperatorError(err));
+    el('closeProductCreateModal')?.addEventListener('click', closeProductCreateModal);
+    el('productCreateModal')?.addEventListener('click', (e) => {
+        if (e.target === el('productCreateModal')) closeProductCreateModal();
     });
-    el('productStatusFilter')?.addEventListener('change', () => renderProductList().catch((err) => toastOperatorError(err)));
-    el('productOriginFilter')?.addEventListener('change', () => renderProductList().catch((err) => toastOperatorError(err)));
+    el('btnProductViewCards')?.addEventListener('click', () => {
+        setViewMode('cards');
+        renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+    });
+    el('btnProductViewList')?.addEventListener('click', () => {
+        setViewMode('list');
+        renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+    });
+    document.querySelectorAll('#products-view [data-prd-status]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            setZohoUnsyncedFilter(false);
+            statusFilter = String(btn.getAttribute('data-prd-status') || '');
+            syncFilterChips();
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        });
+    });
+    document.querySelectorAll('#products-view [data-prd-linked]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            setZohoUnsyncedFilter(false);
+            linkedFilter = linkedFilter === '1' ? '' : '1';
+            syncFilterChips();
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        });
+    });
+    document.querySelectorAll('#products-view [data-prd-unsynced]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            setZohoUnsyncedFilter(!isZohoUnsyncedFilter());
+            syncFilterChips();
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        });
+    });
+    el('productSourceFilter')?.addEventListener('change', () => {
+        const value = String(el('productSourceFilter')?.value || '');
+        if (value === 'ZOHO_UNSYNCED') {
+            setZohoUnsyncedFilter(true);
+        } else {
+            unsyncedFilter = '';
+        }
+        syncFilterChips();
+        renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+    });
+    el('productSearch')?.addEventListener('input', () => {
+        if (productSearchTimer) clearTimeout(productSearchTimer);
+        productSearchTimer = setTimeout(() => {
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        }, 300);
+    });
+    el('productSearch')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (productSearchTimer) clearTimeout(productSearchTimer);
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        }
+    });
     el('zohoCatalogSearch')?.addEventListener('input', () => {
         if (!catalogPanelIsOpen()) return;
         scheduleCatalogSearch();
@@ -925,3 +1484,4 @@ export function initProductsView() {
 window.initProductsView = initProductsView;
 window.openProductDetail = openProductDetail;
 window.openProductCatalogCreate = () => renderCatalogCreate().catch((err) => toastOperatorError(err));
+window.focusZohoCatalogInProducts = focusZohoCatalogInProducts;

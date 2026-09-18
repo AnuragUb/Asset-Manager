@@ -1,6 +1,6 @@
 import { fetchWithAuth } from './auth.js?v=7.29';
 import { showToast } from './utils.js?v=6.60';
-import { consumeOpen, emptyState, crumb, toastOperatorError, canLogistics } from './lifecycle.js?v=7.28';
+import { consumeOpen, emptyState, crumb, toastOperatorError, canLogistics } from './lifecycle.js?v=7.52';
 
 function el(id) {
     return document.getElementById(id);
@@ -329,6 +329,9 @@ async function openSetDetail(id) {
             <button type="button" class="ms-btn ms-btn-xs ms-btn-danger" id="btnSetDisband">Disband Set</button>
         </div>` : ''}
     `;
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
     modal.style.display = 'flex';
 
     loadHistory(id);

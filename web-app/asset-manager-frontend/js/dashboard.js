@@ -888,13 +888,29 @@ function clearDcAccountSelection({ keepName = false } = {}) {
 
 function initDcAccountLookup() {
     const input = document.getElementById('dcCustomerName');
-    const list = document.getElementById('dcAccountList');
+    let list = document.getElementById('dcAccountList');
     if (!input || !list || input.dataset.accountLookup === '1') return;
     input.dataset.accountLookup = '1';
+
+    // Portal dropdown to body so overflow:auto parents on the DC form cannot clip results.
+    if (list.parentElement !== document.body) {
+        document.body.appendChild(list);
+        list.classList.add('dc-account-list-portal');
+    }
 
     let timer = null;
     let items = [];
     let activeIndex = -1;
+    let searchSeq = 0;
+
+    const positionList = () => {
+        const rect = input.getBoundingClientRect();
+        list.style.position = 'fixed';
+        list.style.left = `${Math.round(rect.left)}px`;
+        list.style.top = `${Math.round(rect.bottom)}px`;
+        list.style.width = `${Math.round(rect.width)}px`;
+        list.style.zIndex = '25000';
+    };
 
     const hideList = () => {
         list.hidden = true;
@@ -926,6 +942,7 @@ function initDcAccountLookup() {
     const renderList = (accounts, emptyMessage) => {
         items = accounts || [];
         activeIndex = items.length ? 0 : -1;
+        positionList();
         if (!items.length) {
             list.innerHTML = `<div class="dc-account-empty">${escapeHtml(emptyMessage || 'No matching Zoho Account')}</div>`;
             list.hidden = false;
@@ -955,9 +972,11 @@ function initDcAccountLookup() {
             hideList();
             return;
         }
+        const seq = ++searchSeq;
         try {
             const response = await fetchWithAuth(`/api/zoho/accounts?q=${encodeURIComponent(q)}`);
             const data = await response.json().catch(() => ({}));
+            if (seq !== searchSeq) return;
             if (!response.ok) {
                 const reason = data.reasonCode || '';
                 const message = reason === 'ACCOUNT_OAUTH_SCOPE_REQUIRED'
@@ -968,6 +987,7 @@ function initDcAccountLookup() {
             }
             renderList(data.accounts || [], 'No matching Zoho Account. Type a Customer / Receiver name to continue without creating an Account.');
         } catch (err) {
+            if (seq !== searchSeq) return;
             renderList([], err.message || 'Could not search Zoho Accounts');
         }
     };
@@ -1004,6 +1024,13 @@ function initDcAccountLookup() {
     input.addEventListener('blur', () => {
         setTimeout(hideList, 150);
     });
+
+    window.addEventListener('resize', () => {
+        if (!list.hidden) positionList();
+    });
+    window.addEventListener('scroll', () => {
+        if (!list.hidden) positionList();
+    }, true);
 }
 
 function initDCView() {
@@ -1029,6 +1056,20 @@ function initDCView() {
     const dateInput = document.getElementById('dcDate');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    const websiteEl = document.getElementById('dcCompanyWebsite');
+    if (websiteEl && !websiteEl.value) {
+        const savedSite = String(localStorage.getItem('dcCompanyWebsite') || '').trim();
+        if (savedSite) websiteEl.value = savedSite;
+    }
+    if (websiteEl && websiteEl.dataset.persistBound !== '1') {
+        websiteEl.dataset.persistBound = '1';
+        websiteEl.addEventListener('change', () => {
+            const v = String(websiteEl.value || '').trim();
+            if (v) localStorage.setItem('dcCompanyWebsite', v);
+            else localStorage.removeItem('dcCompanyWebsite');
+        });
     }
 
     if (btnToggleRateAmount) {
@@ -1177,10 +1218,77 @@ function initDCView() {
 
     // Search assets for DC
     if (dcAssetSearch) {
+        const applyDcLinkMode = () => {
+            const mode = document.querySelector('input.dc-link-mode:checked')?.value || 'PO_LINKED';
+            window.__dcLinkMode = mode;
+            const hint = document.getElementById('dcLinkModeHint');
+            const projectBox = document.getElementById('dcProjectSearch')?.closest('.form-group');
+            if (mode === 'HOLDINGS') {
+                dcAssetSearch.placeholder = 'Search free Asset / Inventory (excludes PO / awaiting)…';
+                if (hint) hint.textContent = 'No PO — only holdings not on a procurement path (excludes awaiting adoption and PO-sourced).';
+                if (projectBox) projectBox.style.opacity = '0.55';
+                window.currentDC_POReference = null;
+            } else {
+                dcAssetSearch.placeholder = 'Search & Add Assets by Name or ID...';
+                if (hint) hint.textContent = 'PO-linked: fetch a PO, optionally select Purchase Books (partial qty lock), or add PO lines only.';
+                if (projectBox) projectBox.style.opacity = '1';
+            }
+        };
+        document.querySelectorAll('input.dc-link-mode').forEach((input) => {
+            input.addEventListener('change', applyDcLinkMode);
+        });
+        applyDcLinkMode();
+
         dcAssetSearch.oninput = (e) => {
             const query = e.target.value.toLowerCase().trim();
             if (query.length < 2) {
                 dcSearchResults.style.display = 'none';
+                return;
+            }
+
+            const mode = document.querySelector('input.dc-link-mode:checked')?.value || 'PO_LINKED';
+            if (mode === 'HOLDINGS') {
+                clearTimeout(dcAssetSearch._pbTimer);
+                dcAssetSearch._pbTimer = setTimeout(async () => {
+                    try {
+                        const data = await fetchWithAuth(`/api/dc/holdings-search?q=${encodeURIComponent(query)}&limit=20`).then((r) => r.json());
+                        const holdings = data.holdings || [];
+                        if (!holdings.length) {
+                            dcSearchResults.innerHTML = '<div style="padding: 10px; color: #999;">No matching holdings</div>';
+                            dcSearchResults.style.display = 'block';
+                            return;
+                        }
+                        dcSearchResults.innerHTML = holdings.map((h) => `
+                            <div class="search-result-item" data-id="${h.resourceId}" data-type="${h.resourceType}" style="padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;">
+                                <div style="font-weight: 600;">[${h.resourceType}] ${h.name}</div>
+                                <div style="font-size: 11px; color: #666; font-family: monospace;">${h.resourceId}${h.productId ? ` · ${h.productId}` : ''}</div>
+                            </div>
+                        `).join('');
+                        dcSearchResults.style.display = 'block';
+                        dcSearchResults.querySelectorAll('.search-result-item').forEach((item) => {
+                            item.onclick = () => {
+                                const id = item.getAttribute('data-id');
+                                const type = item.getAttribute('data-type');
+                                const hit = holdings.find((h) => h.resourceId === id);
+                                if (!hit) return;
+                                addAssetToDC({
+                                    ID: hit.resourceId,
+                                    ItemName: hit.name,
+                                    Status: hit.status,
+                                    CurrentLocation: hit.location,
+                                    productId: hit.productId,
+                                    resourceType: type,
+                                    SrNo: hit.srNo || ''
+                                });
+                                dcAssetSearch.value = '';
+                                dcSearchResults.style.display = 'none';
+                            };
+                        });
+                    } catch (err) {
+                        dcSearchResults.innerHTML = `<div style="padding: 10px; color: #b91c1c;">${err.message || 'Search failed'}</div>`;
+                        dcSearchResults.style.display = 'block';
+                    }
+                }, 200);
                 return;
             }
 
@@ -1250,10 +1358,33 @@ function initDCView() {
         btnGenerateDC.onclick = async () => {
             const customerName = (document.getElementById('dcCustomerName')?.value || '').trim();
             const deliveryDate = document.getElementById('dcDate')?.value || '';
-            const assetIds = selectedDCAssets.map(a => a.ID);
+            const assetIds = selectedDCAssets
+                .filter((a) => !a.isPoLine && !a.isPurchaseBookLine && String(a.resourceType || 'ASSET').toUpperCase() !== 'INVENTORY')
+                .map((a) => a.ID);
+            const linkMode = document.querySelector('input.dc-link-mode:checked')?.value || window.__dcLinkMode || 'PO_LINKED';
+            const poRef = linkMode === 'HOLDINGS' ? null : (window.currentDC_POReference || null);
+            const hasPoLines = selectedDCAssets.some((a) => a.isPoLine || a.isPurchaseBookLine);
 
             if (!customerName) return showToast('Please enter customer name', 'warning');
-            if (assetIds.length === 0) return showToast('Please select at least one asset', 'warning');
+            if (selectedDCAssets.length === 0) return showToast('Please select at least one asset or fetch a Purchase Order with lines', 'warning');
+            if (!hasPoLines && assetIds.length === 0) return showToast('Please select at least one asset', 'warning');
+
+            const purchaseBookConsumptions = [];
+            for (const a of selectedDCAssets) {
+                if (!a.isPurchaseBookLine || !a.purchaseBookLineId) continue;
+                const row = dcItemsByAssetId[a.rowId] || {};
+                const qty = Number(row.qty ?? 0);
+                if (qty > 0) {
+                    purchaseBookConsumptions.push({
+                        purchaseBookLineId: a.purchaseBookLineId,
+                        purchaseBookId: a.purchaseBookId || null,
+                        qty
+                    });
+                }
+            }
+            const selectedLogoUrl = (typeof window.getSelectedDcLogoUrl === 'function')
+                ? window.getSelectedDcLogoUrl()
+                : (document.getElementById('dcLogoSelect')?.value || '');
 
             const payload = {
                 company: {
@@ -1262,7 +1393,14 @@ function initDCView() {
                     gstin: document.getElementById('dcCompanyGST')?.value || '',
                     cin: document.getElementById('dcCompanyCIN')?.value || '',
                     stateName: document.getElementById('dcCompanyState')?.value || '',
-                    stateCode: document.getElementById('dcCompanyStateCode')?.value || ''
+                    stateCode: document.getElementById('dcCompanyStateCode')?.value || '',
+                    website: (() => {
+                        const site = document.getElementById('dcCompanyWebsite')?.value || '';
+                        const trimmed = String(site || '').trim();
+                        if (trimmed) localStorage.setItem('dcCompanyWebsite', trimmed);
+                        return site;
+                    })(),
+                    logoUrl: selectedLogoUrl
                 },
                 account: {
                     zohoAccountId: (document.getElementById('dcZohoAccountId')?.value || '').trim() || null,
@@ -1298,14 +1436,24 @@ function initDCView() {
                     showRateAmount, // Pass toggle state
                     showTotalPrice, // Pass toggle state
                     orderDate: window.tempDCOrderDate || '', // Pass order date
-                    logoUrl: document.getElementById('dcLogoSelect')?.value || '' // Pass selected logo
+                    logoUrl: selectedLogoUrl,
+                    linkMode: document.querySelector('input.dc-link-mode:checked')?.value || window.__dcLinkMode || 'PO_LINKED',
+                    procurementPoId: window.currentDC_POReference?.ProcurementPoId || window.currentDC_POReference?.procurementPoId || null
                 },
                 items: selectedDCAssets.map((a, index) => {
                     const row = dcItemsByAssetId[a.rowId] || {};
                     return {
                         sr: index + 1,
                         assetId: a.ID,
+                        resourceType: a.resourceType || row.resourceType || (a.isPoLine || a.isPurchaseBookLine ? null : 'ASSET'),
+                        productId: a.productId || row.productId || null,
+                        poLineId: a.poLineId || row.poLineId || null,
+                        purchaseBookId: a.purchaseBookId || row.purchaseBookId || null,
+                        purchaseBookLineId: a.purchaseBookLineId || row.purchaseBookLineId || null,
                         description: row.description || a.ItemName || a.ID,
+                        displayName: row.description || a.ItemName || a.ID,
+                        make: row.make || a.Make || a.make || '',
+                        model: row.model || a.Model || a.model || '',
                         srNo: row.srNo || '',
                         hsn: row.hsn || '',
                         qty: row.qty ?? 1,
@@ -1320,7 +1468,7 @@ function initDCView() {
                 btnGenerateDC.textContent = 'Generating...';
                 btnGenerateDC.disabled = true;
 
-                const response = await fetch('/api/dc', {
+                const response = await fetchWithAuth('/api/dc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1328,7 +1476,8 @@ function initDCView() {
                         DeliveryDate: deliveryDate,
                         AssetIds: assetIds,
                         CreatedBy: localStorage.getItem('username') || 'System',
-                        POReference: window.currentDC_POReference || null,
+                        POReference: poRef,
+                        PurchaseBookConsumptions: purchaseBookConsumptions,
                         payload
                     })
                 });
@@ -1336,10 +1485,12 @@ function initDCView() {
                 const result = await response.json();
                 if (result.success) {
                     showDCPreview(result);
-                    // Clear PO reference after successful generation
                     window.currentDC_POReference = null;
+                    window.__dcPurchaseBooksCache = null;
+                    const pbPanel = document.getElementById('dcPurchaseBookPanel');
+                    if (pbPanel) pbPanel.style.display = 'none';
                 } else {
-                    showToast('Error creating DC: ' + result.error, 'error');
+                    showToast('Error creating DC: ' + (result.error || 'Unknown'), 'error');
                 }
             } catch (err) {
                 console.error('DC Creation Error:', err);
@@ -1395,6 +1546,8 @@ function addAssetToDC(asset) {
             rowId: rowId,
             assetId: asset.ID,
             description: `${asset.ItemName || asset.ID}${asset.Model ? ' - ' + asset.Model : ''}`,
+            make: asset.Make || asset.make || '',
+            model: asset.Model || asset.model || '',
             srNo: asset.SrNo || '',
             hsn: '',
             qty,
@@ -1408,6 +1561,201 @@ function addAssetToDC(asset) {
     
     renderSelectedAssets();
 }
+
+/**
+ * Add Purchase Order lines onto the DC selected-items table.
+ * Lines without a linked Asset use a PO-LINE id (document rows only).
+ */
+function addPoLinesToDC(lines, opts = {}) {
+    const list = Array.isArray(lines) ? lines : [];
+    let added = 0;
+    for (const line of list) {
+        const status = String(line.lineStatus || line.Status || '').toUpperCase();
+        if (status === 'WITHDRAWN') continue;
+
+        const poLineId = line.id || line.ID || line.zohoLineId || null;
+        const syntheticId = poLineId
+            ? `PO-LINE-${poLineId}`
+            : `PO-LINE-${Date.now()}-${added}`;
+
+        if (selectedDCAssets.some((a) => a.ID === syntheticId || (poLineId && a.poLineId === poLineId && !a.isPurchaseBookLine))) {
+            continue;
+        }
+
+        const description = line.productName || line.zohoProductName || line.description || line.ItemDescription
+            || line.productId || 'PO Line';
+        const qtyRaw = line.ordered ?? line.outstanding ?? line.Quantity ?? line.quantity ?? 1;
+        const qty = Math.max(0.000001, Number(qtyRaw) || 1);
+        const rateCandidate = toNumber(line.listPrice ?? line.rate ?? line.Rate);
+        const unit = line.unit || line.Unit || 'NO';
+        const rowId = `row_${Date.now()}_${Math.floor(Math.random() * 1000)}_${added}`;
+        const amount = rateCandidate === null ? '' : round2(rateCandidate * qty);
+
+        dcItemsByAssetId[rowId] = {
+            rowId,
+            assetId: syntheticId,
+            description: String(description),
+            make: '',
+            model: '',
+            srNo: '',
+            hsn: '',
+            qty,
+            per: unit,
+            rate: rateCandidate === null ? '' : rateCandidate,
+            amount: amount === '' ? '' : amount,
+            fromPo: true,
+            poLineId: poLineId || null,
+            poNumber: opts.poNumber || null
+        };
+
+        selectedDCAssets.push({
+            ID: syntheticId,
+            ItemName: String(description),
+            rowId,
+            isPoLine: true,
+            poLineId: poLineId || null,
+            poNumber: opts.poNumber || null
+        });
+        added += 1;
+    }
+    if (added > 0) renderSelectedAssets();
+    return added;
+}
+
+/**
+ * Add Purchase Book lines onto the DC table (Mode A2).
+ * Prefer book-linked physical holdings/serials (ASSET or INVENTORY);
+ * fall back to synthetic commercial line only when no physical is allocated.
+ */
+function addPurchaseBookLinesToDC(lines) {
+    const list = Array.isArray(lines) ? lines : [];
+    let added = 0;
+    for (const line of list) {
+        const bookLineId = line.id || line.purchaseBookLineId;
+        if (!bookLineId) continue;
+        const remaining = Number(line.remainingDcQty ?? line.qtyBooked ?? 0);
+        if (!(remaining > 0)) continue;
+
+        const physicals = Array.isArray(line.physicals) ? line.physicals : [];
+        if (physicals.length) {
+            let addedFromPhys = 0;
+            for (const phys of physicals) {
+                const resourceType = String(phys.resourceType || 'ASSET').toUpperCase();
+                if (resourceType !== 'ASSET' && resourceType !== 'INVENTORY') continue;
+                const realId = phys.resourceId;
+                if (!realId) continue;
+                const already = selectedDCAssets.some((a) =>
+                    a.ID === realId
+                    && a.purchaseBookLineId === bookLineId
+                    && String(a.serialSortOrder ?? '') === String(phys.serialSortOrder ?? '')
+                );
+                if (already) continue;
+
+                const description = line.displayName || line.displayDescription || phys.label || line.productId || 'Book line';
+                const qty = Math.max(0.000001, Math.min(Number(phys.qtyAllocated) || 1, remaining));
+                const rateCandidate = toNumber(line.unitPrice ?? line.rate);
+                const unit = line.unit || 'NO';
+                const rowId = `row_${Date.now()}_${Math.floor(Math.random() * 1000)}_pbphys_${added}`;
+                const amount = rateCandidate === null ? '' : round2(rateCandidate * qty);
+                const srNo = phys.serialValue || '';
+
+                dcItemsByAssetId[rowId] = {
+                    rowId,
+                    assetId: realId,
+                    description: String(description),
+                    make: '',
+                    model: '',
+                    srNo: String(srNo),
+                    hsn: '',
+                    qty,
+                    per: unit,
+                    rate: rateCandidate === null ? '' : rateCandidate,
+                    amount: amount === '' ? '' : amount,
+                    fromPurchaseBook: true,
+                    purchaseBookId: line.purchaseBookId || phys.purchaseBookId || null,
+                    purchaseBookLineId: bookLineId,
+                    purchaseBookPhysicalId: phys.id || null,
+                    serialSortOrder: phys.serialSortOrder == null ? null : phys.serialSortOrder,
+                    poLineId: line.procurementPoLineId || line.poLineId || null,
+                    productId: line.productId || null,
+                    maxDcQty: remaining,
+                    resourceType,
+                    resourceId: realId
+                };
+
+                selectedDCAssets.push({
+                    ID: realId,
+                    ItemName: String(description),
+                    rowId,
+                    isPurchaseBookLine: true,
+                    purchaseBookId: line.purchaseBookId || phys.purchaseBookId || null,
+                    purchaseBookLineId: bookLineId,
+                    purchaseBookPhysicalId: phys.id || null,
+                    serialSortOrder: phys.serialSortOrder == null ? null : phys.serialSortOrder,
+                    poLineId: line.procurementPoLineId || line.poLineId || null,
+                    productId: line.productId || null,
+                    resourceType
+                });
+                added += 1;
+                addedFromPhys += 1;
+            }
+            // Physical links exist — do not fall back to synthetic PB-LINE even if none added (e.g. duplicates)
+            if (addedFromPhys === 0 && physicals.length) {
+                // still skip synthetic; duplicates already on the table
+            }
+            continue;
+        }
+
+        const syntheticId = `PB-LINE-${bookLineId}`;
+        if (selectedDCAssets.some((a) => a.purchaseBookLineId === bookLineId || a.ID === syntheticId)) {
+            continue;
+        }
+
+        const description = line.displayName || line.displayDescription || line.productId || 'Book line';
+        const qty = Math.max(0.000001, remaining);
+        const rateCandidate = toNumber(line.unitPrice ?? line.rate);
+        const unit = line.unit || 'NO';
+        const rowId = `row_${Date.now()}_${Math.floor(Math.random() * 1000)}_pb_${added}`;
+        const amount = rateCandidate === null ? '' : round2(rateCandidate * qty);
+
+        dcItemsByAssetId[rowId] = {
+            rowId,
+            assetId: syntheticId,
+            description: String(description),
+            make: '',
+            model: '',
+            srNo: '',
+            hsn: '',
+            qty,
+            per: unit,
+            rate: rateCandidate === null ? '' : rateCandidate,
+            amount: amount === '' ? '' : amount,
+            fromPurchaseBook: true,
+            purchaseBookId: line.purchaseBookId || null,
+            purchaseBookLineId: bookLineId,
+            poLineId: line.procurementPoLineId || line.poLineId || null,
+            productId: line.productId || null,
+            maxDcQty: remaining
+        };
+
+        selectedDCAssets.push({
+            ID: syntheticId,
+            ItemName: String(description),
+            rowId,
+            isPurchaseBookLine: true,
+            purchaseBookId: line.purchaseBookId || null,
+            purchaseBookLineId: bookLineId,
+            poLineId: line.procurementPoLineId || line.poLineId || null,
+            productId: line.productId || null
+        });
+        added += 1;
+    }
+    if (added > 0) renderSelectedAssets();
+    return added;
+}
+
+window.addPoLinesToDC = addPoLinesToDC;
+window.addPurchaseBookLinesToDC = addPurchaseBookLinesToDC;
 
 function removeAssetFromDC(rowId) {
     selectedDCAssets = selectedDCAssets.filter(a => a.rowId !== rowId);
@@ -1432,7 +1780,7 @@ function renderSelectedAssets() {
         const displayStyle = showRateAmount ? '' : 'display: none;';
         return `
             <tr style="border-bottom: 1px solid #eee;">
-                <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.ID}</td>
+                <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.isPurchaseBookLine && String(a.ID || '').startsWith('PB-LINE-') ? `<span title="${a.ID}" style="color:#b45309;">Book</span>` : (a.isPurchaseBookLine ? `<span title="Book ${a.purchaseBookLineId || ''}" style="color:#b45309;">${a.ID}${String(a.resourceType || '').toUpperCase() === 'INVENTORY' ? ' · INV' : ''}</span>` : (a.isPoLine ? `<span title="${a.ID}" style="color:#0f766e;">PO Line</span>` : a.ID))}</td>
                 <td style="padding: 10px;">
                     <input data-dc-field="description" data-row-id="${rowId}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
                 </td>
@@ -1494,205 +1842,27 @@ window.initSheetView = initSheetView;
 
 function showDCPreview(result) {
     console.log('[DC Preview] Rendering result:', result);
-    const modal = document.getElementById('dcPreviewModal');
-    const printable = document.getElementById('printableDC');
-    
-    if (!modal || !printable) {
-        console.error('[DC Preview] Modal or printable container not found');
-        return;
-    }
-
-    // Handle both flattened and nested backend responses
-    const dcData = result.dc || result; 
-    const payload = (result.payload && typeof result.payload === 'object') ? result.payload : (dcData.PayloadJSON ? JSON.parse(dcData.PayloadJSON) : {});
-    
-    console.log('[DC Preview] Extracted DC Data:', dcData);
-    console.log('[DC Preview] Extracted Payload:', payload);
-
-    const company = payload.company || {};
-    const consignee = payload.consignee || {};
-    const buyer = payload.buyer || {};
-    const meta = payload.meta || {};
-    const items = Array.isArray(payload.items) ? payload.items : [];
-
-    // Extract visibility toggles from meta
-    const finalShowRateAmount = meta.showRateAmount ?? showRateAmount;
-    const finalShowTotalPrice = meta.showTotalPrice ?? showTotalPrice;
-
-    if (printable) {
-        const rateAmountStyle = finalShowRateAmount ? '' : 'display: none;';
-        const totalFooterStyle = finalShowTotalPrice ? '' : 'display: none;';
-        const colCount = 7 + (finalShowRateAmount ? 2 : 0);
-
-        const itemsHtml = items.map((it, idx) => {
-            const qty = it.qty ?? '';
-            const rate = it.rate ?? '';
-            const amount = it.amount ?? '';
-            const srNo = it.srNo || it.serialNo || it.SrNo || '';
-            return `
-                <tr>
-                    <td class="ctr">${idx + 1}</td>
-                    <td class="desc">${escapeHtml(it.description || '')}</td>
-                    <td class="mono">${escapeHtml(it.assetId || '')}</td>
-                    <td class="ctr">${escapeHtml(srNo)}</td>
-                    <td class="ctr">${escapeHtml(it.hsn || '')}</td>
-                    <td class="num">${escapeHtml(qty)}</td>
-                    <td class="ctr">${escapeHtml(it.per || 'NO')}</td>
-                    <td class="num" style="${rateAmountStyle}">${escapeHtml(rate)}</td>
-                    <td class="num" style="${rateAmountStyle}">${escapeHtml(amount)}</td>
-                </tr>
-            `;
-        }).join('');
-
-        const totalAmount = items.reduce((acc, it) => {
-            const n = toNumber(it.amount);
-            return acc + (n === null ? 0 : n);
-        }, 0);
-        const totalWords = formatAmountWords(round2(totalAmount));
-        const totalDisplay = round2(totalAmount);
-
-        const challanNo = dcData.challanNo || dcData.ChallanNo || '';
-        const dated = meta.deliveryDate || meta.dated || dcData.deliveryDate || dcData.DeliveryDate || '';
-        const orderDate = meta.orderDate || '';
-        const qrCode = dcData.qrCode || dcData.QRCode || '';
-        const consigneeName = consignee.name || meta.customerName || '';
-        const buyerName = buyer.name || '';
-        const termsSource = [meta.termsOfDelivery, meta.remarks].filter((v) => String(v || '').trim()).join('\n');
-        const termLines = String(termsSource || '')
-            .split(/\n+/)
-            .map((line) => line.replace(/^\s*\d+\.\s*/, '').trim())
-            .filter(Boolean);
-        const kindAttn = meta.customerName && consigneeName && String(meta.customerName).trim() !== String(consigneeName).trim()
-            ? meta.customerName
-            : (buyerName && buyerName !== consigneeName ? buyerName : '');
-
-        const metaCell = (label, value, extraClass = '') => `
-            <div>
-                <div class="dc-qt-label">${escapeHtml(label)}</div>
-                <div class="dc-qt-value ${extraClass}">${escapeHtml(value || '—')}</div>
-            </div>
-        `;
-
-        printable.innerHTML = `
-            <article class="dc-qt-sheet">
-                <div class="dc-qt-top">
-                    <div class="dc-qt-logo">
-                        ${meta.logoUrl
-                            ? `<img src="${escapeHtml(meta.logoUrl)}" alt="">`
-                            : `<div class="dc-qt-logo-fallback">${escapeHtml(company.name || 'DELIVERY CHALLAN')}</div>`}
-                    </div>
-                    <div class="dc-qt-top-right">
-                        <div class="dc-qt-accent"></div>
-                        ${qrCode ? `<img class="dc-qt-qr" src="${qrCode}" alt="Validate">` : ''}
-                    </div>
-                </div>
-
-                <div class="dc-qt-meta">
-                    <div>
-                        ${metaCell('DC No.', challanNo, 'dc-qt-value-red')}
-                        <div style="margin-top:10px;">
-                            <div class="dc-qt-label">Document</div>
-                            <div class="dc-qt-value">Original for Consignee</div>
-                        </div>
-                    </div>
-                    <div>
-                        ${metaCell('Date', dated)}
-                        ${orderDate ? `<div style="margin-top:10px;">${metaCell('Order Date', orderDate)}</div>` : ''}
-                    </div>
-                    <div>
-                        ${metaCell('Reference No.', meta.referenceNo || '')}
-                        ${meta.buyerOrderNo ? `<div style="margin-top:10px;">${metaCell("Buyer's Order No.", meta.buyerOrderNo)}</div>` : ''}
-                    </div>
-                </div>
-
-                <div class="dc-qt-parties">
-                    <div>
-                        <div class="dc-qt-label">Deliver To</div>
-                        <div class="dc-qt-value">${escapeHtml(consigneeName)}</div>
-                        ${consignee.address ? `<div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(consignee.address)}</div>` : ''}
-                        ${kindAttn ? `<div class="dc-qt-kind"><span>Kind Attn:</span> ${escapeHtml(kindAttn)}</div>` : ''}
-                        ${(consignee.gstin || '').trim() ? `<div class="dc-qt-kind"><span>GSTIN:</span> ${escapeHtml(consignee.gstin)}</div>` : ''}
-                    </div>
-                    <div class="dc-qt-party-right">
-                        <div class="dc-qt-label">Dispatched By</div>
-                        <div class="dc-qt-value">${escapeHtml(company.name || '')}</div>
-                        ${buyerName ? `
-                            <div class="dc-qt-label" style="margin-top:12px;">Bill To</div>
-                            <div class="dc-qt-value">${escapeHtml(buyerName)}</div>
-                            ${buyer.address ? `<div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(buyer.address)}</div>` : ''}
-                        ` : ''}
-                    </div>
-                </div>
-
-                ${[meta.dispatchDocNo, meta.pickup, meta.destination, meta.placeOfSupply, meta.dispatchedThrough, meta.otherReferences].some((v) => String(v || '').trim()) ? `
-                <div class="dc-qt-dispatch">
-                    ${meta.dispatchDocNo ? metaCell('Dispatch Doc No.', meta.dispatchDocNo) : ''}
-                    ${meta.pickup ? metaCell('Pick-Up', meta.pickup) : ''}
-                    ${meta.destination ? metaCell('Destination', meta.destination) : ''}
-                    ${meta.placeOfSupply ? metaCell('Place of Supply', meta.placeOfSupply) : ''}
-                    ${meta.dispatchedThrough ? metaCell('Dispatched Through', meta.dispatchedThrough) : ''}
-                    ${meta.otherReferences ? metaCell('Other References', meta.otherReferences) : ''}
-                </div>` : ''}
-
-                <table class="dc-qt-table">
-                    <thead>
-                        <tr>
-                            <th class="ctr" style="width:28px;">#</th>
-                            <th>Description</th>
-                            <th>Asset ID</th>
-                            <th class="ctr">Serial No</th>
-                            <th class="ctr">HSN/SAC</th>
-                            <th class="num">Qty</th>
-                            <th class="ctr">Per</th>
-                            <th class="num" style="${rateAmountStyle}">Rate</th>
-                            <th class="num" style="${rateAmountStyle}">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${itemsHtml || `<tr><td class="dc-qt-empty" colspan="${colCount}">No items</td></tr>`}
-                    </tbody>
-                </table>
-
-                <div class="dc-qt-summary" style="${totalFooterStyle}">
-                    <div class="dc-qt-words">
-                        <div class="dc-qt-label">Amount in Words</div>
-                        <div class="dc-qt-value">${escapeHtml(totalWords)}</div>
-                    </div>
-                    <div class="dc-qt-totals">
-                        <div class="dc-qt-totals-row"><span>Subtotal</span><span>${escapeHtml(totalDisplay)}</span></div>
-                        <div class="dc-qt-grand"><span>Grand Total</span><span>${escapeHtml(totalDisplay)}</span></div>
-                    </div>
-                </div>
-
-                ${termLines.length ? `
-                <div class="dc-qt-terms">
-                    <div class="dc-qt-terms-title">Terms &amp; Conditions</div>
-                    <ol>
-                        ${termLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
-                    </ol>
-                </div>` : ''}
-
-                <div class="dc-qt-disclaimer">This is a computer-generated document and does not require physical signature.</div>
-
-                <div class="dc-qt-signs">
-                    <div><div class="dc-qt-sign-line">Receiver's Signature</div></div>
-                    <div><div class="dc-qt-sign-line dc-qt-sign-right">Authorized Signatory</div></div>
-                </div>
-
-                <div class="dc-qt-contact">
-                    ${(company.gstin || '').trim() ? `<span>GSTIN ${escapeHtml(company.gstin)}</span>` : ''}
-                    ${(company.cin || '').trim() ? `<span>CIN ${escapeHtml(company.cin)}</span>` : ''}
-                    ${(company.stateName || company.stateCode) ? `<span>${escapeHtml([company.stateName, company.stateCode].filter(Boolean).join(' / '))}</span>` : ''}
-                </div>
-                <div class="dc-qt-footer">
-                    <div class="dc-qt-footer-addr">${escapeHtml(company.address || company.name || '')}</div>
-                    <div class="dc-qt-footer-web">${escapeHtml(company.name || '')}</div>
-                </div>
-            </article>
-        `;
-    }
-
-    modal.style.display = 'flex';
+    const run = () => {
+        if (typeof window.showDcDocumentPreview === 'function') {
+            return window.showDcDocumentPreview(result, {
+                showRateAmount: typeof showRateAmount === 'boolean' ? showRateAmount : undefined,
+                showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined
+            });
+        }
+        return import('./dcDocumentView.js?v=1.3').then((mod) => mod.showDcDocumentPreview(result, {
+            showRateAmount: typeof showRateAmount === 'boolean' ? showRateAmount : undefined,
+            showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined
+        }));
+    };
+    Promise.resolve(run()).catch((err) => {
+        console.error('[DC Preview] failed', err);
+        const printable = document.getElementById('printableDC');
+        const modal = document.getElementById('dcPreviewModal');
+        if (printable) {
+            printable.innerHTML = `<div style="padding:24px;color:#991b1b;">Delivery Challan preview failed. ${String(err && err.message || err)}</div>`;
+        }
+        if (modal) modal.style.display = 'flex';
+    });
 }
 
 async function openDeliveryChallan(dcId) {
@@ -1930,6 +2100,9 @@ async function initSheetView() {
         columns: columns,
         cellEdited: function(cell) {
             const data = cell.getRow().getData();
+            // Ensure ID is present for PUT (Tabulator rows may only carry lowercase id).
+            const id = String(data.ID || data.Id || data.id || '').trim();
+            if (id) data.ID = id;
             console.log('Cell edited, saving asset:', data);
             window.saveAsset(data);
         },
@@ -2392,27 +2565,71 @@ export function setupDashboard() {
         };
     });
 
-    // Setup Search Logic
-    const searchInput = document.querySelector('.sidebar-search input');
+function getActiveModuleView() {
+    const hash = String(window.location.hash || '').replace(/^#/, '').split('?')[0];
+    if (hash === 'inventory-view') return 'inventory';
+    if (hash === 'home-view' || hash === 'dashboardView') return 'assets';
+    const inv = document.getElementById('inventory-view');
+    if (inv && !inv.classList.contains('hidden') && inv.classList.contains('active')) return 'inventory';
+    const home = document.getElementById('home-view');
+    if (home && !home.classList.contains('hidden')) return 'assets';
+    return 'assets';
+}
+
+function syncGlobalSearchPlaceholder() {
+    const searchInput = document.getElementById('globalSidebarSearch')
+        || document.querySelector('.sidebar-search input');
+    if (!searchInput) return;
+    const mod = getActiveModuleView();
+    searchInput.placeholder = mod === 'inventory' ? 'Search inventory…' : 'Search assets…';
+}
+
+// Setup Search Logic — assets when Assets module open, inventory when Inventory module open
+    const searchInput = document.getElementById('globalSidebarSearch')
+        || document.querySelector('.sidebar-search input');
     if (searchInput) {
+        syncGlobalSearchPlaceholder();
         searchInput.oninput = (e) => {
             const query = e.target.value.toLowerCase().trim();
+            const module = getActiveModuleView();
+            console.log('Searching for:', query, 'module:', module);
+
+            if (module === 'inventory') {
+                window.currentInventorySearchQuery = query;
+                window.currentSearchQuery = ''; // don't bleed into assets
+                if (typeof window.applyInventorySearch === 'function') {
+                    window.applyInventorySearch(query);
+                } else if (typeof window.renderInventoryItems === 'function') {
+                    window.renderInventoryItems();
+                }
+                return;
+            }
+
+            window.currentInventorySearchQuery = '';
             window.currentSearchQuery = query; // Store globally for card clicks
-            console.log('Searching for:', query);
-            
             if (!query) {
                 renderDashboard(window.allAssets, () => {
                     const category = localStorage.getItem('selectedAssetCategory');
-                    return window.allAssets.filter(a => a.Category === category);
+                    return (window.allAssets || []).filter(a => !category || a.Category === category);
                 });
                 return;
             }
 
             const filtered = () => (window.allAssets || []).filter(a => matchesQuery(a, query));
-            // Re-render dashboard with filtered assets
             renderDashboard(window.allAssets, filtered);
         };
     }
+    window.getActiveModuleView = getActiveModuleView;
+    window.syncGlobalSearchPlaceholder = syncGlobalSearchPlaceholder;
+    window.addEventListener('hashchange', () => {
+        syncGlobalSearchPlaceholder();
+        // Re-apply current query against the newly active module
+        const searchInputEl = document.getElementById('globalSidebarSearch')
+            || document.querySelector('.sidebar-search input');
+        if (searchInputEl && searchInputEl.oninput) {
+            searchInputEl.dispatchEvent(new Event('input'));
+        }
+    });
 
     // Handle Delegation for all dashboard interactions
     if (!window.dashboardEventsAttached) {
@@ -2421,7 +2638,13 @@ export function setupDashboard() {
             // 1. Handle Modal Close
             if (e.target.classList.contains('close-modal')) {
                 const modal = e.target.closest('.modal');
-                if (modal) modal.style.display = 'none';
+                if (modal) {
+                    if (modal.id === 'addAssetItemModal' && window.__receiptHoldingContext) {
+                        window.__receiptHoldingContext = null;
+                        window.__inventoryModalActive = false;
+                    }
+                    modal.style.display = 'none';
+                }
                 return;
             }
             /* 
@@ -5346,7 +5569,10 @@ export function renderDashboard(assets, filteredAssets) {
                 : (asset.warranty_months != null ? `${Number(asset.warranty_months)}m` : '-');
             const isRetired = asset.IsRetired == 1 || asset.is_retired == 1 || asset.Status === 'Sold' || asset.Status === 'Scraped';
             const assigned = _dashEscapeHtml(asset.AssignedTo || asset.assignedto || asset.assigned_to || '');
-            const srno = _dashEscapeHtml(asset.SrNo || asset.srno || asset.Serial || asset.SerialNo || asset.serialno || '-');
+            const srnoRaw = asset.SrNo || asset.srno || asset.Serial || asset.SerialNo || asset.serialno || '';
+            const srnoCell = (typeof window.serialsTableCellHtml === 'function')
+                ? window.serialsTableCellHtml('ASSET', id, srnoRaw)
+                : `<span style="font-family: monospace; font-size: 11px;">${_dashEscapeHtml(srnoRaw || '-')}</span>`;
             const location = _dashEscapeHtml(asset.CurrentLocation || asset.currentlocation || '-');
             const make = _dashEscapeHtml(asset.Make || asset.make || '-');
             const model = _dashEscapeHtml(asset.Model || asset.model || '-');
@@ -5365,17 +5591,19 @@ export function renderDashboard(assets, filteredAssets) {
                     <td><span class="status-badge ${statusClass}" style="${statusColor ? `background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40;` : ''}">${status}</span></td>
                     <td>${make}</td>
                     <td>${model}</td>
-                    <td style="font-family: monospace; font-size: 11px;">${srno}</td>
+                    <td>${srnoCell}</td>
                     <td>${location}</td>
                     <td>${assigned || '-'}</td>
                     <td style="white-space: nowrap;">${purchase}</td>
                     <td>${warranty}</td>
-                    <td>
+                    <td style="text-align: right;">
                         <div style="font-size: 11px;">
-                            ${qtyTracked ? `
-                                <strong style="color: #0078d4;">Total Quantity: ${Number(qtyTotal)}</strong> ${_dashEscapeHtml(qtyUnit || '')}
-                                ${qtyAvail !== null ? `<br><span style="color: #666;">Available Quantity: ${Number(qtyAvail)}</span>` : ''}
-                            ` : '-'}
+                            <button type="button" class="dash-row-qty-usage" data-id="${idAttr}" title="Where currently used"
+                                style="display:inline-flex;align-items:center;gap:4px;color:#0078d4;background:#eff6ff;padding:4px 8px;border-radius:6px;border:1px solid #bfdbfe;font-size:11px;font-weight:700;cursor:pointer;">
+                                <strong>${qtyTracked ? Number(qtyTotal) : 1}</strong>${qtyTracked && qtyUnit ? ` ${_dashEscapeHtml(qtyUnit)}` : ''}
+                                <span style="font-size:10px;opacity:0.85;">▾ use</span>
+                            </button>
+                            ${qtyTracked && qtyAvail !== null ? `<div style="color: #666; margin-top: 4px;">Available: ${Number(qtyAvail)}</div>` : ''}
                         </div>
                     </td>
                     <td style="font-family: monospace; font-size: 11px;">${parentId}</td>
@@ -5476,6 +5704,23 @@ export function renderDashboard(assets, filteredAssets) {
                 }
             });
         });
+        container.querySelectorAll('.dash-row-qty-usage').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                if (!id) return;
+                const asset = (Array.isArray(rows) ? rows : []).find(r => String(r.ID || r.Id || '') === String(id));
+                const open = () => window.showQuantityUsageModal('ASSET', id, asset);
+                if (typeof window.showQuantityUsageModal === 'function') open();
+                else {
+                    import('./quantity-usage-modal.js?v=7.112').then(() => open())
+                        .catch(err => console.error('[DASH-QTY-USAGE] import err', err));
+                }
+            });
+        });
+        if (typeof window.bindSerialsBrowseButtons === 'function') {
+            window.bindSerialsBrowseButtons(container);
+        }
     }
     function renderDashboardCardsGrid(grid, rows) {
         if (!grid) return;
@@ -6304,6 +6549,7 @@ export function openAddItemModal(kind, prefillData = null) {
         const srNoInput = document.getElementById('itemSrNo');
         const srNoBatch = document.getElementById('itemSrNoBatch');
         const batchList = document.getElementById('batchSnListContainer');
+        if (typeof window.hideSerialIdentityPanel === 'function') window.hideSerialIdentityPanel();
         const btnToggleBatch = document.getElementById('btnToggleBatchMode');
         const btnSplit = document.getElementById('btnSplitBatch');
         
@@ -6740,6 +6986,11 @@ export async function editAsset(asset) {
     document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
     document.getElementById('itemWeight').value = asset.Weight || asset.weight || '';
     document.getElementById('itemDescription').value = asset.ItemDescription || '';
+
+    if (typeof window.bindSerialIdentityPanel === 'function') window.bindSerialIdentityPanel();
+    if (typeof window.loadSerialIdentityPanel === 'function' && asset.ID) {
+        window.loadSerialIdentityPanel('ASSET', asset.ID);
+    }
 
     // Populate Assignment Fields
     const assignedToVal = asset.AssignedTo || '';
@@ -7578,11 +7829,13 @@ function showAssetList(nodeOrKindName) {
                 <td>${r.warranty_months ? `${Number(r.warranty_months)}m` : '-'}</td>
                 <td>
                     <div style="font-size: 11px;">
-                        ${qtyTracked ? `
-                            <strong style="color: #0078d4;">Total Quantity: ${Number(qtyTotal)}</strong> ${escapeHtml(qtyUnit || '')}
-                            ${qtyAvail !== null ? `<br><span style="color: #666;">Available Quantity: ${Number(qtyAvail)}</span>` : ''}
-                        ` : '-'}
-                        <br><button class="qty-history-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; cursor: pointer;" title="View Quantity History">📅 History</button>
+                        <button type="button" class="qty-usage-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" title="Where currently used"
+                            style="display:inline-flex;align-items:center;gap:4px;color:#0078d4;background:#eff6ff;padding:4px 8px;border-radius:6px;border:1px solid #bfdbfe;font-size:11px;font-weight:700;cursor:pointer;">
+                            <strong>${qtyTracked ? Number(qtyTotal) : 1}</strong>${qtyTracked && qtyUnit ? ` ${escapeHtml(qtyUnit)}` : ''}
+                            <span style="font-size:10px;opacity:0.85;">▾ use</span>
+                        </button>
+                        ${qtyTracked && qtyAvail !== null ? `<br><span style="color: #666;">Available Quantity: ${Number(qtyAvail)}</span>` : ''}
+                        ${qtyTracked ? `<br><button class="qty-history-btn" data-id="${escapeAttr(id)}" data-entity="${entity}" style="color: #0056b3; font-weight: 700; text-decoration: none; background: #e7f3ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #b3d7ff; font-size: 9px; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px; cursor: pointer;" title="View Quantity History">📅 History</button>` : ''}
                     </div>
                 </td>
                 <td>${escapeHtml(r.ParentId || r.ParentId || '-')}</td>
@@ -7634,6 +7887,24 @@ function showAssetList(nodeOrKindName) {
             };
         });
 
+        // Where currently used (Total Quantity expand)
+        body.querySelectorAll('.qty-usage-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                const entity = btn.getAttribute('data-entity');
+                if (!id) return;
+                const type = entity === 'inventory' ? 'INVENTORY' : 'ASSET';
+                const row = rows.find(r => String(r.ID || r.Id || '') === String(id));
+                const open = () => window.showQuantityUsageModal(type, id, row);
+                if (typeof window.showQuantityUsageModal === 'function') open();
+                else {
+                    import('./quantity-usage-modal.js?v=7.96').then(() => open())
+                        .catch(err => console.error('[QTY-USAGE] load err', err));
+                }
+            };
+        });
+
         // Edit Details (asset OR inventory -> correct function)
         body.querySelectorAll('.edit-entity-btn').forEach(btn => {
             btn.onclick = (e) => {
@@ -7654,7 +7925,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=7.26').then(() => {
+                    import('./inventory.js?v=7.114').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
@@ -8113,6 +8384,17 @@ export function setupDashboardFormHandlers() {
         form.onsubmit = async (e) => {
             e.preventDefault();
             console.log('addAssetItemForm onsubmit triggered');
+
+            // Receipt Note: stage holding on the open line (do not create stock here).
+            if (window.__receiptHoldingContext?.card && typeof window.applyReceiptHoldingFromModal === 'function') {
+                try {
+                    window.applyReceiptHoldingFromModal(form);
+                } catch (err) {
+                    console.error('[Receipt holding modal]', err);
+                    alert(err.message || 'Failed to apply holding details');
+                }
+                return;
+            }
             
             const btnSubmit = form.querySelector('button[type="submit"]');
             const originalText = btnSubmit ? btnSubmit.textContent : 'Save Asset';
@@ -8426,7 +8708,13 @@ export function setupDashboardFormHandlers() {
                     
                     // PO Linking
                     linked_po_item_id: form.dataset.linkedPoItemId || null,
-                    BoughtAgainstPO: form.dataset.boughtAgainstPo || formData.get('itemPurchase')?.includes('PO:') ? formData.get('itemPurchase').split('PO:')[1].trim().split(' ')[0] : null,
+                    BoughtAgainstPO: (() => {
+                        if (form.dataset.boughtAgainstPo) return form.dataset.boughtAgainstPo;
+                        const purchase = String(formData.get('itemPurchase') || '');
+                        if (!purchase.includes('PO:')) return null;
+                        const after = purchase.split('PO:')[1];
+                        return after ? after.trim().split(/\s+/)[0] : null;
+                    })(),
                     
                     // Warranty
                     warranty_months: formData.get('itemWarranty') || 0,
@@ -9314,12 +9602,15 @@ window.uploadDCLogo = async function() {
             }
             
             // Auto-select the new logo
-            const select = document.getElementById('dcLogoSelect');
-            if (select) {
-                select.value = data.url;
-                // Manually trigger change to update preview
-                const event = new Event('change');
-                select.dispatchEvent(event);
+            if (typeof window.applyDcLogoSelection === 'function') {
+                window.applyDcLogoSelection(data.url);
+            } else {
+                const select = document.getElementById('dcLogoSelect');
+                if (select) {
+                    select.value = data.url;
+                    const event = new Event('change');
+                    select.dispatchEvent(event);
+                }
             }
             
             if (typeof showToast === 'function') {
@@ -9340,20 +9631,64 @@ window.uploadDCLogo = async function() {
     }
 };
 
+window.getSelectedDcLogoUrl = function() {
+    const select = document.getElementById('dcLogoSelect');
+    const selected = String(select?.value || '').trim();
+    if (selected) return selected;
+    const preferred = String(localStorage.getItem('selectedCompanyLogo') || '').trim();
+    if (preferred) return preferred;
+    try {
+        const logos = JSON.parse(localStorage.getItem('companyLogos') || '[]');
+        if (Array.isArray(logos) && logos.length) return String(logos[logos.length - 1] || '').trim();
+    } catch (_err) { /* ignore */ }
+    return '';
+};
+
+window.applyDcLogoSelection = function(url) {
+    const select = document.getElementById('dcLogoSelect');
+    const preview = document.getElementById('dcLogoPreviewImg');
+    const value = String(url || '').trim();
+    if (select && value) {
+        const exists = Array.from(select.options).some((opt) => opt.value === value);
+        if (exists) select.value = value;
+    }
+    if (preview) preview.src = value || '';
+    if (value) localStorage.setItem('selectedCompanyLogo', value);
+    else localStorage.removeItem('selectedCompanyLogo');
+};
+
 window.loadLogoDropdown = function() {
     const select = document.getElementById('dcLogoSelect');
     if (!select) return;
 
     const logos = JSON.parse(localStorage.getItem('companyLogos') || '[]');
+    const previous = String(select.value || localStorage.getItem('selectedCompanyLogo') || '').trim();
     // Keep default option
     select.innerHTML = '<option value="">-- Select Logo --</option>';
-    
+
     logos.forEach((url, idx) => {
         const opt = document.createElement('option');
         opt.value = url;
         opt.textContent = `Logo ${idx + 1}`;
         select.appendChild(opt);
     });
+
+    const restore = previous && logos.includes(previous)
+        ? previous
+        : (logos.length ? logos[logos.length - 1] : '');
+    if (restore) {
+        select.value = restore;
+        window.applyDcLogoSelection(restore);
+    } else {
+        window.applyDcLogoSelection('');
+    }
+
+    if (select.dataset.logoChangeBound !== '1') {
+        select.dataset.logoChangeBound = '1';
+        select.addEventListener('change', () => {
+            window.applyDcLogoSelection(select.value || '');
+        });
+    }
 };
 
 window.confirmDCProjectSelection = function(index) {

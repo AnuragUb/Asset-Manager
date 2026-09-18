@@ -1,0 +1,372 @@
+{
+  "ok": true,
+  "inspectedAt": "2026-08-29T06:37:34.562Z",
+  "module": "Products",
+  "count": 34,
+  "capability": {
+    "Product_Name": {
+      "label": "Product Name",
+      "apiName": "Product_Name",
+      "dataType": "text",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": true
+    },
+    "Description": {
+      "label": "Description",
+      "apiName": "Description",
+      "dataType": "textarea",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Product_Code": {
+      "label": "Product Code",
+      "apiName": "Product_Code",
+      "dataType": "text",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Unit_Price": {
+      "label": "Unit Price",
+      "apiName": "Unit_Price",
+      "dataType": "currency",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Make": {
+      "label": "Make",
+      "apiName": "Make",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Model": {
+      "label": "Model",
+      "apiName": "Model",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "HSN_Code": {
+      "label": "HSN Code",
+      "apiName": "HSN_Code",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Qty_in_Stock": {
+      "label": "Quantity in Stock",
+      "apiName": "Qty_in_Stock",
+      "dataType": "double",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Unit": null,
+    "Usage_Unit": {
+      "label": "Usage Unit",
+      "apiName": "Usage_Unit",
+      "dataType": "picklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Product_Category": {
+      "label": "Product Category",
+      "apiName": "Product_Category",
+      "dataType": "picklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    "Category": null,
+    "Product_Active": {
+      "label": "Product Active",
+      "apiName": "Product_Active",
+      "dataType": "boolean",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    }
+  },
+  "fields": [
+    {
+      "label": "Product Owner",
+      "apiName": "Owner",
+      "dataType": "ownerlookup",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Product Name",
+      "apiName": "Product_Name",
+      "dataType": "text",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": true
+    },
+    {
+      "label": "Product Code",
+      "apiName": "Product_Code",
+      "dataType": "text",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Vendor Name",
+      "apiName": "Vendor_Name",
+      "dataType": "lookup",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Product Active",
+      "apiName": "Product_Active",
+      "dataType": "boolean",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Manufacturer",
+      "apiName": "Manufacturer",
+      "dataType": "picklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Product Category",
+      "apiName": "Product_Category",
+      "dataType": "picklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Sales Start Date",
+      "apiName": "Sales_Start_Date",
+      "dataType": "date",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Sales End Date",
+      "apiName": "Sales_End_Date",
+      "dataType": "date",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Support Start Date",
+      "apiName": "Support_Start_Date",
+      "dataType": "date",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Support End Date",
+      "apiName": "Support_Expiry_Date",
+      "dataType": "date",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Created By",
+      "apiName": "Created_By",
+      "dataType": "ownerlookup",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Modified By",
+      "apiName": "Modified_By",
+      "dataType": "ownerlookup",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Created Time",
+      "apiName": "Created_Time",
+      "dataType": "datetime",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Modified Time",
+      "apiName": "Modified_Time",
+      "dataType": "datetime",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Tag",
+      "apiName": "Tag",
+      "dataType": "text",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Unit Price",
+      "apiName": "Unit_Price",
+      "dataType": "currency",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Commission Rate",
+      "apiName": "Commission_Rate",
+      "dataType": "currency",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Tax",
+      "apiName": "Tax",
+      "dataType": "multiselectpicklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Taxable",
+      "apiName": "Taxable",
+      "dataType": "boolean",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Usage Unit",
+      "apiName": "Usage_Unit",
+      "dataType": "picklist",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Qty Ordered",
+      "apiName": "Qty_Ordered",
+      "dataType": "double",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Quantity in Stock",
+      "apiName": "Qty_in_Stock",
+      "dataType": "double",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Reorder Level",
+      "apiName": "Reorder_Level",
+      "dataType": "double",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Handler",
+      "apiName": "Handler",
+      "dataType": "ownerlookup",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Quantity in Demand",
+      "apiName": "Qty_in_Demand",
+      "dataType": "double",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Description",
+      "apiName": "Description",
+      "dataType": "textarea",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Product Image",
+      "apiName": "Record_Image",
+      "dataType": "profileimage",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Record Id",
+      "apiName": "id",
+      "dataType": "bigint",
+      "custom": false,
+      "readOnly": true,
+      "systemMandatory": false
+    },
+    {
+      "label": "Locked",
+      "apiName": "Locked__s",
+      "dataType": "boolean",
+      "custom": false,
+      "readOnly": true,
+      "systemMandatory": false
+    },
+    {
+      "label": "Last Activity Time",
+      "apiName": "Last_Activity_Time",
+      "dataType": "datetime",
+      "custom": false,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Make",
+      "apiName": "Make",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "Model",
+      "apiName": "Model",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    },
+    {
+      "label": "HSN Code",
+      "apiName": "HSN_Code",
+      "dataType": "text",
+      "custom": true,
+      "readOnly": false,
+      "systemMandatory": false
+    }
+  ]
+}

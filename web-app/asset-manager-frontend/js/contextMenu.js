@@ -235,7 +235,7 @@ async function showZohoStatusModal() {
         modal.className = 'modal';
         modal.style.display = 'none';
         modal.style.position = 'fixed';
-        modal.style.zIndex = '1000';
+        modal.style.zIndex = '10000';
         modal.style.left = '0';
         modal.style.top = '0';
         modal.style.width = '100%';

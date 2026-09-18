@@ -1,0 +1,406 @@
+/*
+ * AssetEngine Delivery Challan — print document styles
+ * Design language: docs/DC_DOCUMENT_DESIGN.md (from QT_Test.pdf)
+ *
+ * A4 portrait. Edit this file to refine look without touching DC business logic.
+ */
+
+.dc-qt-sheet {
+    --dc-red: #c4161c;
+    --dc-ink: #222;
+    --dc-muted: #8a8a8a;
+    --dc-line: #d8d8d8;
+    --dc-bar: #3f3f3f;
+    box-sizing: border-box;
+    width: 210mm;
+    min-height: 297mm;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 12mm 12mm 0;
+    background: #fff;
+    color: var(--dc-ink);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    line-height: 1.35;
+    display: flex;
+    flex-direction: column;
+}
+
+.dc-qt-main {
+    flex: 1 1 auto;
+}
+
+.dc-qt-bottom {
+    margin-top: auto;
+    padding-top: 18px;
+}
+
+.dc-qt-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.dc-qt-logo img {
+    height: 52px;
+    max-width: 220px;
+    object-fit: contain;
+}
+
+.dc-qt-logo-fallback {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--dc-red);
+}
+
+.dc-qt-top-right {
+    flex: 1;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    padding-top: 6px;
+}
+
+.dc-qt-accent {
+    width: min(340px, 55%);
+    height: 7px;
+    background: linear-gradient(90deg, #cfcfcf 0 86%, var(--dc-red) 86% 100%);
+}
+
+.dc-qt-doc-title {
+    margin: 4px 0 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dc-ink);
+    text-align: right;
+}
+
+.dc-qt-qr {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+}
+
+.dc-qt-meta {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr 1fr 1fr;
+    gap: 14px 20px;
+    margin: 16px 0 18px;
+}
+
+.dc-qt-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dc-muted);
+    margin-bottom: 4px;
+}
+
+.dc-qt-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dc-ink);
+    word-break: break-word;
+}
+
+.dc-qt-value-red {
+    color: var(--dc-red);
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.dc-qt-value-pre {
+    white-space: pre-wrap;
+    font-weight: 500;
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.dc-qt-section-title {
+    color: var(--dc-red);
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 2px solid var(--dc-red);
+    display: inline-block;
+    padding-bottom: 2px;
+    margin: 0 0 10px;
+}
+
+.dc-qt-parties {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 28px;
+    margin-bottom: 16px;
+}
+
+.dc-qt-party-block {
+    min-width: 0;
+}
+
+.dc-qt-kind {
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+.dc-qt-kind span {
+    color: var(--dc-muted);
+}
+
+.dc-qt-logistics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 16px;
+    margin: 0 0 16px;
+    padding: 10px 0;
+    border-top: 1px solid var(--dc-line);
+    border-bottom: 1px solid var(--dc-line);
+}
+
+.dc-qt-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+}
+
+.dc-qt-table thead {
+    display: table-header-group;
+}
+
+.dc-qt-table tr {
+    page-break-inside: avoid;
+}
+
+.dc-qt-table th {
+    background: var(--dc-red);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 6px;
+    text-align: left;
+    border: none;
+}
+
+.dc-qt-table th.num,
+.dc-qt-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.dc-qt-table th.ctr,
+.dc-qt-table td.ctr {
+    text-align: center;
+}
+
+.dc-qt-table td {
+    padding: 9px 6px;
+    border-bottom: 1px solid var(--dc-line);
+    vertical-align: top;
+    color: var(--dc-ink);
+}
+
+.dc-qt-table td.desc {
+    font-weight: 700;
+}
+
+.dc-qt-table td.mono {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.dc-qt-empty {
+    text-align: center;
+    color: var(--dc-muted);
+    font-weight: 400;
+}
+
+.dc-qt-summary {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 20px;
+    align-items: end;
+    margin: 8px 0 18px;
+}
+
+.dc-qt-words .dc-qt-value {
+    font-style: italic;
+    font-weight: 600;
+    color: #555;
+}
+
+.dc-qt-totals {
+    font-size: 12px;
+}
+
+.dc-qt-totals-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.dc-qt-grand {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+    padding: 7px 10px;
+    background: var(--dc-red);
+    color: #fff;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dc-qt-grand span {
+    color: #fff;
+}
+
+.dc-qt-references {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 18px;
+    margin: 0 0 16px;
+    padding: 4px 0 12px;
+}
+
+.dc-qt-ref-wide {
+    grid-column: 1 / -1;
+}
+
+.dc-qt-notes {
+    margin-bottom: 12px;
+    font-size: 11px;
+}
+
+.dc-qt-notes ol {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.dc-qt-notes li {
+    margin-bottom: 4px;
+}
+
+.dc-qt-disclaimer {
+    font-size: 10px;
+    font-style: italic;
+    color: var(--dc-muted);
+    margin: 14px 0 8px;
+}
+
+.dc-qt-contact {
+    font-size: 10px;
+    color: #555;
+    padding: 8px 2px 10px;
+    border-top: 1px solid var(--dc-line);
+    letter-spacing: 0.02em;
+}
+
+.dc-qt-footer {
+    display: flex;
+    align-items: stretch;
+    min-height: 42px;
+    margin: 0 -12mm;
+    color: #fff;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.dc-qt-footer-addr {
+    flex: 1 1 auto;
+    background: var(--dc-red);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    white-space: pre-wrap;
+}
+
+.dc-qt-footer-web {
+    position: relative;
+    flex: 0 0 34%;
+    max-width: 42%;
+    background: var(--dc-bar);
+    padding: 10px 18px 10px 30px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+}
+
+.dc-qt-footer-chevron {
+    position: absolute;
+    left: -1px;
+    top: 0;
+    bottom: 0;
+    width: 18px;
+    background: var(--dc-red);
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.dc-qt-footer-web-text {
+    display: block;
+    text-align: right;
+    word-break: break-word;
+}
+
+.dc-qt-hidden {
+    display: none !important;
+}
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
+
+    body.print-dc #dcPreviewModal {
+        display: block !important;
+        position: static !important;
+        background: none !important;
+        overflow: visible !important;
+    }
+
+    body.print-dc #dcPreviewModal .modal-content {
+        width: 210mm !important;
+        max-width: none !important;
+        height: auto !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    body.print-dc #dcPreviewModal .modal-header,
+    body.print-dc #dcPreviewModal .no-print {
+        display: none !important;
+    }
+
+    body.print-dc #dcPreviewModal .modal-body {
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    body.print-dc .dc-qt-sheet {
+        width: 210mm;
+        min-height: 277mm;
+        padding: 0;
+    }
+
+    body.print-dc .dc-qt-footer {
+        margin: 0;
+    }
+}
