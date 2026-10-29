@@ -12,6 +12,7 @@ const {
   verifyPurchaseBookDcConsumptionId
 } = require('../utils');
 const purchaseBookPhysicalService = require('./purchaseBookPhysicalService');
+const { ensureVendorInvoice } = require('./vendorInvoiceService');
 
 const STATUSES = Object.freeze(['DRAFT', 'POSTED', 'VOID']);
 const DOCUMENT_KINDS = Object.freeze(['INVOICE', 'CREDIT']);
@@ -156,6 +157,7 @@ function publicBook(row, extra = {}) {
     documentKind: row.document_kind,
     status: row.status,
     vendorInvoiceNo: row.vendor_invoice_no,
+    vendorInvoiceId: row.vendor_invoice_id || null,
     invoiceDate: row.invoice_date,
     currency: row.currency,
     subTotal: row.sub_total == null ? null : Number(row.sub_total),
@@ -263,6 +265,7 @@ async function poLineCapacity(runner, poId) {
     .orderBy('id');
   const out = [];
   for (const line of lines) {
+    if (String(line.line_status || '').toUpperCase() === 'WITHDRAWN') continue;
     const booked = await bookedQtyForPoLine(runner, line.id);
     const remaining = roundQty(Math.max(0, qtyNum(line.ordered_qty) - booked));
     out.push({
@@ -386,13 +389,15 @@ async function createFromPo(poId, args = {}) {
 
     const bookId = await uniqueId(trx, 'purchase_book', generatePurchaseBookId, verifyPurchaseBookId, 'Purchase Book');
     const now = new Date().toISOString();
-    await trx('purchase_book').insert({
+    const vendorInvoiceNo = trimText(args.vendorInvoiceNo);
+    const invoiceDate = trimText(args.invoiceDate);
+    const bookInsert = {
       id: bookId,
       procurement_po_id: po.id,
       document_kind: documentKind,
       status: 'DRAFT',
-      vendor_invoice_no: trimText(args.vendorInvoiceNo),
-      invoice_date: trimText(args.invoiceDate),
+      vendor_invoice_no: vendorInvoiceNo,
+      invoice_date: invoiceDate,
       currency: trimText(args.currency) || po.currency || null,
       sub_total: args.subTotal == null || args.subTotal === '' ? null : Number(args.subTotal),
       tax_total: args.taxTotal == null || args.taxTotal === '' ? null : Number(args.taxTotal),
@@ -405,7 +410,15 @@ async function createFromPo(poId, args = {}) {
       updated_by: actor,
       created_at: now,
       updated_at: now
-    });
+    };
+    if (await trx.schema.hasColumn('purchase_book', 'vendor_invoice_id')) {
+      bookInsert.vendor_invoice_id = await ensureVendorInvoice(trx, {
+        vendorName: po.vendor_name_snapshot,
+        invoiceNumber: vendorInvoiceNo,
+        invoiceDate
+      });
+    }
+    await trx('purchase_book').insert(bookInsert);
 
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i];
@@ -475,6 +488,26 @@ async function updateDraft(id, args = {}) {
     }
     if (Object.prototype.hasOwnProperty.call(args, 'invoiceDate')) {
       patch.invoice_date = trimText(args.invoiceDate);
+    }
+    if (
+      await trx.schema.hasColumn('purchase_book', 'vendor_invoice_id')
+      && (
+        Object.prototype.hasOwnProperty.call(args, 'vendorInvoiceNo')
+        || Object.prototype.hasOwnProperty.call(args, 'invoiceDate')
+      )
+    ) {
+      const po = await trx('procurement_po').where({ id: book.procurement_po_id }).first();
+      const number = Object.prototype.hasOwnProperty.call(args, 'vendorInvoiceNo')
+        ? patch.vendor_invoice_no
+        : book.vendor_invoice_no;
+      const date = Object.prototype.hasOwnProperty.call(args, 'invoiceDate')
+        ? patch.invoice_date
+        : book.invoice_date;
+      patch.vendor_invoice_id = await ensureVendorInvoice(trx, {
+        vendorName: po ? po.vendor_name_snapshot : null,
+        invoiceNumber: number,
+        invoiceDate: date
+      });
     }
     if (Object.prototype.hasOwnProperty.call(args, 'currency')) {
       patch.currency = trimText(args.currency);
@@ -795,6 +828,66 @@ async function recordDcBookConsumption(trx, deliveryChallanId, consumptions, arg
   return created;
 }
 
+/**
+ * Physical Tally Authority ADR §3: a holding that carries an ACTIVE Purchase Book
+ * physical link but was added to a DC without its book records that link, capped
+ * at the book line's remaining DC-able qty. Never blocks the DC.
+ * Mutates matching items (purchaseBookId / purchaseBookLineId / autoBookLink).
+ */
+async function planAutoBookConsumptions(runner, items, explicitConsumptions = []) {
+  if (!Array.isArray(items) || !items.length) return [];
+  if (!(await runner.schema.hasTable('purchase_book_physical'))) return [];
+  if (!(await runner.schema.hasTable('purchase_book_dc_consumption'))) return [];
+
+  const planned = new Map();
+  for (const c of explicitConsumptions || []) {
+    const lineId = String(c.purchaseBookLineId || c.purchase_book_line_id || '').trim();
+    if (lineId) planned.set(lineId, roundQty((planned.get(lineId) || 0) + roundQty(c.qty ?? c.qtyConsumed)));
+  }
+
+  const auto = [];
+  for (const item of items) {
+    if (!item || item.purchaseBookLineId) continue;
+    const type = String(item.resourceType || '').toUpperCase();
+    const resourceId = String(item.assetId || '').trim();
+    if ((type !== 'ASSET' && type !== 'INVENTORY') || !resourceId) continue;
+    if (/^(PO|PB)-LINE-/i.test(resourceId)) continue;
+
+    const links = await runner('purchase_book_physical as p')
+      .join('purchase_book as b', 'b.id', 'p.purchase_book_id')
+      .where('p.status', 'ACTIVE')
+      .andWhere('p.resource_type', type)
+      .andWhereRaw('LOWER(p.resource_id) = LOWER(?)', [resourceId])
+      .andWhere('b.status', 'POSTED')
+      .andWhereRaw("UPPER(b.document_kind) <> 'CREDIT'")
+      .orderBy('p.created_at', 'asc')
+      .select('p.purchase_book_id', 'p.purchase_book_line_id', 'p.qty_allocated');
+    if (!links.length) continue;
+
+    const itemQty = Number(item.qty);
+    let wanted = roundQty(Number.isFinite(itemQty) && itemQty > 0 ? itemQty : 1);
+    for (const link of links) {
+      if (wanted <= 0) break;
+      const lineId = link.purchase_book_line_id;
+      const line = await runner('purchase_book_line').where({ id: lineId }).first();
+      if (!line) continue;
+      const consumed = await dcConsumedQtyForLine(runner, lineId);
+      const remaining = roundQty(Math.max(0, roundQty(line.qty_booked) - consumed - (planned.get(lineId) || 0)));
+      const qty = roundQty(Math.min(wanted, remaining, roundQty(link.qty_allocated) || wanted));
+      if (qty <= 0) continue;
+      planned.set(lineId, roundQty((planned.get(lineId) || 0) + qty));
+      auto.push({ purchaseBookLineId: lineId, purchaseBookId: link.purchase_book_id, qty, auto: true });
+      if (!item.purchaseBookLineId) {
+        item.purchaseBookId = link.purchase_book_id;
+        item.purchaseBookLineId = lineId;
+        item.autoBookLink = true;
+      }
+      wanted = roundQty(wanted - qty);
+    }
+  }
+  return auto;
+}
+
 async function releaseDcBookConsumption(trx, deliveryChallanId, args = {}) {
   if (!(await trx.schema.hasTable('purchase_book_dc_consumption'))) return 0;
   const dcId = String(deliveryChallanId || '').trim();
@@ -881,6 +974,7 @@ module.exports = {
   postBook,
   voidBook,
   recordDcBookConsumption,
+  planAutoBookConsumptions,
   releaseDcBookConsumption,
   dcConsumedQtyForLine,
   listHistory,

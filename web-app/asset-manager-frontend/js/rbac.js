@@ -3,7 +3,7 @@
  * Handles Role-Based Access Control management for Superusers
  */
 
-import { showView, PAGE_ACCESS_PERMISSIONS } from './utils.js?v=7.39';
+import { showView, PAGE_ACCESS_PERMISSIONS, permissionEquivalents, PERMISSION_ALIASES } from './utils.js?v=7.43';
 
 let allPermissions = [];
 let allRoles = [];
@@ -40,8 +40,8 @@ function applyRbacEditorAuthority() {
         }
     }
     banner.textContent = canEdit
-        ? 'You can view the Admin page and edit RBAC policies (superuser). Checkboxes are configured grants, not your personal bypass.'
-        : 'View Admin page does not grant RBAC edits. Saving policies requires superuser. Checkboxes show configured role grants, not admin UI bypass.';
+        ? 'You can view the Admin page and edit RBAC policies (superuser). Checkboxes are configured grants — your personal access uses the same stored ticks (superuser bypass is centralized in hasPermission).'
+        : 'View Admin page does not grant RBAC edits. Saving policies requires superuser / role.manage. Checkboxes show configured role grants; admin has no hidden UI bypass.';
     const saveBtn = document.getElementById('btnSaveRole');
     const createBtn = document.getElementById('btnCreateRole');
     if (saveBtn) {
@@ -78,7 +78,7 @@ function initRBACListeners() {
             });
 
             if (response.ok) {
-                alert('Role policy saved successfully');
+                alert('Role policy saved. Affected users must sign out and sign in again to pick up page access.');
                 await loadRoles();
                 window.selectRBACRole(name);
             } else {
@@ -228,6 +228,9 @@ function pageLabelForKey(key) {
 }
 
 function currentRoleName() {
+    if (typeof window !== 'undefined' && window.currentUser && window.currentUser.role) {
+        return window.currentUser.role;
+    }
     try {
         return JSON.parse(localStorage.getItem('currentUser') || '{}').role || '';
     } catch (_err) {
@@ -235,12 +238,27 @@ function currentRoleName() {
     }
 }
 
+function isDeprecatedPermission(p) {
+    const key = String(p && p.key || '');
+    if (p && p.category === 'deprecated') return true;
+    // Legacy view.* keys dual-resolve to resource.view — hide from Admin ticks
+    if (Object.prototype.hasOwnProperty.call(PERMISSION_ALIASES, key)) return true;
+    return false;
+}
+
+function roleHasGrant(rolePermKeys, requiredKey) {
+    const granted = Array.isArray(rolePermKeys) ? rolePermKeys : [];
+    return permissionEquivalents(requiredKey).some((k) => granted.includes(k));
+}
+
 function renderPermissionsGrid() {
     const grid = document.getElementById('rbac-permissions-grid');
     if (!grid) return;
 
+    const editable = (allPermissions || []).filter((p) => !isDeprecatedPermission(p));
+
     const groups = {};
-    allPermissions.forEach(p => {
+    editable.forEach(p => {
         const prefix = p.key.includes('.') ? p.key.split('.')[0] : 'general';
         if (!groups[prefix]) groups[prefix] = [];
         groups[prefix].push(p);
@@ -248,7 +266,7 @@ function renderPermissionsGrid() {
 
     let html = '';
     Object.keys(groups).sort().forEach(group => {
-        const heading = group === 'view' ? 'Page access (configured grants — admin UI bypass is not a grant)' : group;
+        const heading = group === 'view' ? 'Page access (configured grants)' : group;
         html += `<div style="grid-column: 1 / -1; margin-top: 15px; margin-bottom: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 700;">${heading}</div>`;
         groups[group].forEach(p => {
             const page = pageLabelForKey(p.key);
@@ -322,10 +340,10 @@ window.selectRBACRole = function(roleName) {
     document.getElementById('rbac-role-name').disabled = true; // Key cannot be changed
     document.getElementById('rbac-role-desc').value = description || '';
 
-    // Check permissions
+    // Check permissions (canonical keys; legacy view.* counts as grant via alias)
     const checkboxes = document.querySelectorAll('#rbac-permissions-grid input[type="checkbox"]');
     checkboxes.forEach(cb => {
-        cb.checked = selectedRole.permissions.includes(cb.value);
+        cb.checked = roleHasGrant(selectedRole.permissions, cb.value);
     });
 
     renderRolesList(); // Update active state in list
@@ -342,7 +360,7 @@ window.updateUserRole = async function(username, newRole) {
         });
 
         if (response.ok) {
-            alert('User role updated successfully');
+            alert('User role updated. That user must sign out and sign in again for the new role to apply.');
             loadUsers();
         } else {
             const err = await response.json();

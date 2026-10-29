@@ -238,8 +238,13 @@ function headerHash(remote) {
   return sourceHash({
     zohoPoId: remote.zohoPoId,
     poNumber: remote.poNumber,
+    outboundPoIdentifier: remote.outboundPoIdentifier,
+    outboundPoNumber: remote.outboundPoNumber,
+    poVersionNumber: remote.poVersionNumber,
     status: remote.status,
     vendorZohoId: remote.vendorZohoId,
+    accountZohoId: remote.accountZohoId,
+    customerId: remote.customerId,
     dueDate: remote.dueDate,
     lines: (remote.lines || []).map((l) => ({
       zohoLineId: l.zohoLineId,
@@ -257,12 +262,21 @@ function deriveSyncStatus(po, lines) {
   return 'IMPORTED';
 }
 
+async function accountDisplayName(runner, po) {
+  const snapshot = po.account_name_snapshot || null;
+  const zohoId = po.account_zoho_id != null ? String(po.account_zoho_id) : '';
+  if (!zohoId || !(await runner.schema.hasTable('zoho_account'))) return snapshot;
+  const account = await runner('zoho_account').where({ zoho_id: zohoId }).first('account_name');
+  return (account && account.account_name) || snapshot;
+}
+
 async function publicPo(runner, po, { includeLines = true } = {}) {
   const lines = includeLines
     ? await runner('procurement_po_line').where({ procurement_po_id: po.id }).orderBy('sequence_number', 'asc')
     : [];
   const publicLines = [];
   for (const line of lines) {
+    if (String(line.line_status || '').toUpperCase() === 'WITHDRAWN') continue;
     const ledger = await qtyLedger(runner, line.id);
     const qty = lineQuantities(line.ordered_qty, ledger);
     publicLines.push({
@@ -291,11 +305,17 @@ async function publicPo(runner, po, { includeLines = true } = {}) {
     source: 'ZOHO',
     classification: po.classification,
     zohoPoId: po.zoho_po_id != null ? String(po.zoho_po_id) : null,
-    poNumber: po.po_number,
+    poNumber: po.outbound_po_identifier || null,
+    outboundPoIdentifier: po.outbound_po_identifier || null,
+    outboundPoNumber: po.outbound_po_number || null,
+    poVersionNumber: po.po_version_number != null ? Number(po.po_version_number) : null,
     subject: po.subject,
     status: po.status,
     vendorZohoId: po.vendor_zoho_id != null ? String(po.vendor_zoho_id) : null,
     vendorName: po.vendor_name_snapshot,
+    accountZohoId: po.account_zoho_id != null ? String(po.account_zoho_id) : null,
+    accountName: await accountDisplayName(runner, po),
+    customerId: po.customer_id || null,
     poDate: normalizeStoredPoDate(po.po_date),
     dueDate: normalizeStoredPoDate(po.due_date),
     currency: po.currency,
@@ -322,13 +342,46 @@ async function findByZohoId(runner, zohoPoId) {
   return runner('procurement_po').where({ zoho_po_id: String(zohoPoId) }).first();
 }
 
-function headerPatch(remote, actor, hash) {
+function trimOrNull(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function isInternalPoId(value) {
+  return /^PPO-[0-9]{4}-[A-Z0-9]{6}-[A-Z0-9]$/.test(String(value || '').trim());
+}
+
+/**
+ * Build header columns from a Zoho remote PO.
+ * The internal PPO- row id is not a commercial number.
+ * Identifier, number, and version are stored separately and kept when Zoho
+ * later returns them blank.
+ */
+function headerPatch(remote, actor, hash, existing) {
+  const identifier = trimOrNull(remote.outboundPoIdentifier)
+    || (existing ? trimOrNull(existing.outbound_po_identifier) : null);
+  const outboundNumber = trimOrNull(remote.outboundPoNumber)
+    || (existing ? trimOrNull(existing.outbound_po_number) : null);
+  const legacyNumber = trimOrNull(remote.legacyPoNumber);
+  const existingPoNumber = existing && !isInternalPoId(existing.po_number)
+    ? trimOrNull(existing.po_number)
+    : null;
+  const version = remote.poVersionNumber != null
+    ? remote.poVersionNumber
+    : (existing ? existing.po_version_number : null);
   return {
-    po_number: remote.poNumber,
+    po_number: identifier || outboundNumber || legacyNumber || existingPoNumber || null,
+    outbound_po_identifier: identifier,
+    outbound_po_number: outboundNumber || legacyNumber || null,
+    po_version_number: version,
     subject: remote.subject,
     status: remote.status,
     vendor_zoho_id: remote.vendorZohoId,
     vendor_name_snapshot: remote.vendorName,
+    account_zoho_id: remote.accountZohoId || null,
+    account_name_snapshot: remote.accountName || null,
+    customer_id: trimOrNull(remote.customerId),
     po_date: remote.poDate,
     due_date: remote.dueDate,
     sub_total: remote.subTotal,
@@ -343,6 +396,23 @@ function headerPatch(remote, actor, hash) {
     updated_by: actor || null,
     updated_at: new Date().toISOString()
   };
+}
+
+async function headerForWrite(trx, remote, actor, hash, existing) {
+  const patch = headerPatch(remote, actor, hash, existing);
+  if (!(await trx.schema.hasColumn('procurement_po', 'outbound_po_identifier'))) {
+    delete patch.outbound_po_identifier;
+    delete patch.outbound_po_number;
+    delete patch.po_version_number;
+  }
+  if (!(await trx.schema.hasColumn('procurement_po', 'account_zoho_id'))) {
+    delete patch.account_zoho_id;
+    delete patch.account_name_snapshot;
+  }
+  if (!(await trx.schema.hasColumn('procurement_po', 'customer_id'))) {
+    delete patch.customer_id;
+  }
+  return patch;
 }
 
 async function upsertLines(trx, poId, remoteLines, actor) {
@@ -468,7 +538,30 @@ async function applyResolvedMappings(trx, poId, mappedLines) {
   return { filled, warnings };
 }
 
+async function applyDealProjectAccount(runner, remote) {
+  const projectId = trimOrNull(remote.customerId);
+  if (!projectId) return remote;
+  const ready = await runner.raw(`
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'utility'
+      AND table_name = 'zoho_deal_projects'
+      AND column_name = 'project_id'
+  `);
+  if (!ready.rows.length) return remote;
+  const deal = await runner('zoho_deal_projects')
+    .whereRaw('btrim(project_id) = ?', [projectId])
+    .whereNull('missing_at')
+    .orderByRaw('account_zoho_id nulls last')
+    .first();
+  if (!deal) return remote;
+  remote.accountZohoId = deal.account_zoho_id || null;
+  remote.accountName = deal.account_name || null;
+  return remote;
+}
+
 async function persistRemote(remote, actor, operation, { force = false } = {}) {
+  await applyDealProjectAccount(db, remote);
   const hash = headerHash(remote);
   const mappedLines = [];
   for (const line of remote.lines || []) {
@@ -480,13 +573,29 @@ async function persistRemote(remote, actor, operation, { force = false } = {}) {
     if (po && po.source_hash === hash && operation === 'REFRESH' && !force) {
       const mapping = await applyResolvedMappings(trx, po.id, mappedLines);
       warnings.push(...mapping.warnings);
-      await trx('procurement_po').where({ id: po.id }).update({
+      const identity = await headerForWrite(trx, remote, actor, hash, po);
+      const kept = {
+        po_number: identity.po_number,
+        subject: identity.subject,
         last_synced_at: new Date().toISOString(),
         last_error: null,
         last_error_at: null,
         updated_at: new Date().toISOString(),
         updated_by: actor || null
-      });
+      };
+      if (Object.prototype.hasOwnProperty.call(identity, 'outbound_po_identifier')) {
+        kept.outbound_po_identifier = identity.outbound_po_identifier;
+        kept.outbound_po_number = identity.outbound_po_number;
+        kept.po_version_number = identity.po_version_number;
+      }
+      if (Object.prototype.hasOwnProperty.call(identity, 'account_zoho_id')) {
+        kept.account_zoho_id = identity.account_zoho_id;
+        kept.account_name_snapshot = identity.account_name_snapshot;
+      }
+      if (Object.prototype.hasOwnProperty.call(identity, 'customer_id')) {
+        kept.customer_id = identity.customer_id;
+      }
+      await trx('procurement_po').where({ id: po.id }).update(kept);
       await writeSyncEvent(trx, {
         procurementPoId: po.id,
         zohoPoId: remote.zohoPoId,
@@ -520,7 +629,7 @@ async function persistRemote(remote, actor, operation, { force = false } = {}) {
         zoho_po_id: remote.zohoPoId,
         created_by: actor || null,
         created_at: new Date().toISOString(),
-        ...headerPatch(remote, actor, hash)
+        ...await headerForWrite(trx, remote, actor, hash, null)
       });
       await trx('procurement_po_external_ref').insert({
         id: `PER-PO-${id}`.slice(0, 255),
@@ -534,7 +643,7 @@ async function persistRemote(remote, actor, operation, { force = false } = {}) {
       });
       po = await trx('procurement_po').where({ id }).first();
     } else {
-      await trx('procurement_po').where({ id: po.id }).update(headerPatch(remote, actor, hash));
+      await trx('procurement_po').where({ id: po.id }).update(await headerForWrite(trx, remote, actor, hash, po));
       po = await trx('procurement_po').where({ id: po.id }).first();
     }
     const lineWarnings = await upsertLines(trx, po.id, mappedLines, actor);
@@ -550,13 +659,42 @@ async function persistRemote(remote, actor, operation, { force = false } = {}) {
     });
     const fresh = await trx('procurement_po').where({ id: po.id }).first();
     return { po: await publicPo(trx, fresh), skipped: false, warnings };
+  }).then(async (result) => {
+    try {
+      const procurementReconciliationService = require('./procurementReconciliationService');
+      if (await procurementReconciliationService.schemaReady()) {
+        const synced = await procurementReconciliationService.syncPoReconciliations(result.po.id, actor);
+        result.reconciliations = synced.reconciliations || [];
+      }
+    } catch (_) {
+      result.reconciliations = result.reconciliations || [];
+    }
+    return result;
   });
+}
+
+async function loadRemoteForPull(opoOrZohoId) {
+  const text = String(opoOrZohoId || '').trim();
+  if (!text) throw httpError('Enter an OPO ID', 400, 'OPO_ID_REQUIRED');
+  const byOpo = await zohoProc().findByOutboundPoNumber(text);
+  if (byOpo) return byOpo;
+  if (/^\d+$/.test(text)) {
+    try {
+      return await zohoProc().getPurchaseOrder(asZohoIdString(text, 'zoho_po_id'));
+    } catch (err) {
+      if (err && (err.reasonCode === 'ZOHO_PO_NOT_FOUND' || err.statusCode === 404)) {
+        throw httpError(`No Purchase Order with OPO ID ${text}`, 404, 'ZOHO_PO_NOT_FOUND');
+      }
+      throw err;
+    }
+  }
+  throw httpError(`No Purchase Order with OPO ID ${text}`, 404, 'ZOHO_PO_NOT_FOUND');
 }
 
 async function previewPurchaseOrder(zohoPoId) {
   await requireTables();
-  const externalId = asZohoIdString(zohoPoId, 'zoho_po_id');
-  const remote = await zohoProc().getPurchaseOrder(externalId);
+  const remote = await loadRemoteForPull(zohoPoId);
+  await applyDealProjectAccount(db, remote);
   const mappedLines = [];
   for (const line of remote.lines || []) {
     mappedLines.push(await mapRemoteLine(db, line));
@@ -570,11 +708,16 @@ async function previewPurchaseOrder(zohoPoId) {
     reasonCode: mappingRequired ? 'PRODUCT_MAPPING_REQUIRED' : null,
     purchaseOrder: {
       zohoPoId: remote.zohoPoId != null ? String(remote.zohoPoId) : null,
-      poNumber: remote.poNumber,
+      poNumber: remote.outboundPoIdentifier || null,
+      outboundPoIdentifier: remote.outboundPoIdentifier || null,
+      outboundPoNumber: remote.outboundPoNumber || null,
       subject: remote.subject,
       status: remote.status,
       vendorZohoId: remote.vendorZohoId != null ? String(remote.vendorZohoId) : null,
       vendorName: remote.vendorName,
+      accountZohoId: remote.accountZohoId != null ? String(remote.accountZohoId) : null,
+      accountName: remote.accountName || null,
+      customerId: remote.customerId || null,
       poDate: remote.poDate,
       dueDate: remote.dueDate,
       subTotal: remote.subTotal,
@@ -599,31 +742,25 @@ async function previewPurchaseOrder(zohoPoId) {
 
 async function importPurchaseOrder(zohoPoId, actor) {
   await requireTables();
-  const externalId = asZohoIdString(zohoPoId, 'zoho_po_id');
-  const existing = await findByZohoId(db, externalId);
   let remote;
   try {
-    remote = await zohoProc().getPurchaseOrder(externalId);
+    remote = await loadRemoteForPull(zohoPoId);
   } catch (err) {
+    const externalId = String(zohoPoId || '').trim();
     await db.transaction(async (trx) => {
       await writeSyncEvent(trx, {
-        procurementPoId: existing ? existing.id : null,
-        zohoPoId: externalId,
+        procurementPoId: null,
+        zohoPoId: /^\d+$/.test(externalId) ? externalId : null,
         operation: 'IMPORT',
         status: 'ERROR',
         actor,
         errorMessage: err.message
       });
     }).catch(() => null);
-    if (existing) {
-      await db('procurement_po').where({ id: existing.id }).update({
-        last_error: String(err.message || err).slice(0, 2000),
-        last_error_at: db.fn.now(),
-        updated_at: db.fn.now()
-      });
-    }
     throw err;
   }
+  const externalId = String(remote.zohoPoId);
+  const existing = await findByZohoId(db, externalId);
   if (existing) {
     return persistRemote(remote, actor, 'IMPORT');
   }
@@ -636,6 +773,35 @@ async function importPurchaseOrder(zohoPoId, actor) {
     }
     throw err;
   }
+}
+
+/**
+ * Zoho create / edit / custom refresh. The body only identifies the record.
+ * The Purchase Order is loaded from Zoho and saved through the same path as import and refresh.
+ */
+async function ingestZohoPurchaseOrderEvent({ event, moduleName, zohoPoId, opoId, actor } = {}) {
+  await requireTables();
+  const mod = String(moduleName || 'Purchase_Orders').trim();
+  if (mod !== 'Purchase_Orders') {
+    throw httpError('Only Purchase_Orders events are accepted', 400, 'UNSUPPORTED_MODULE');
+  }
+  const ev = String(event || '').trim().toLowerCase();
+  if (!['create', 'edit', 'refresh'].includes(ev)) {
+    throw httpError('event must be create, edit, or refresh', 400, 'INVALID_EVENT');
+  }
+  const recordId = String(zohoPoId || '').trim();
+  const opo = String(opoId || '').trim();
+  if (!recordId && !opo) throw httpError('zohoPoId or opoId is required', 400, 'MISSING_PO');
+  let remote;
+  if (/^\d+$/.test(recordId)) {
+    remote = await zohoProc().getPurchaseOrder(recordId);
+  } else if (opo) {
+    remote = await zohoProc().findByOutboundPoNumber(opo);
+    if (!remote) throw httpError(`No Purchase Order with OPO ID ${opo}`, 404, 'ZOHO_PO_NOT_FOUND');
+  } else {
+    throw httpError('zohoPoId must be the Zoho record id', 400, 'INVALID_ZOHO_ID');
+  }
+  return persistRemote(remote, actor || 'zoho-event', ev === 'create' ? 'IMPORT' : 'REFRESH');
 }
 
 async function refreshPurchaseOrder(id, actor, { force = false } = {}) {
@@ -748,7 +914,10 @@ async function listUnified({ q, status, limit } = {}) {
 function mapMirrorHeader(po) {
   return {
     id: po.id,
-    ponumber: po.po_number,
+    ponumber: po.outbound_po_identifier || po.outbound_po_number || (isInternalPoId(po.po_number) ? null : po.po_number),
+    outbound_po_identifier: po.outbound_po_identifier || null,
+    outbound_po_number: po.outbound_po_number || null,
+    po_version_number: po.po_version_number,
     vendorname: po.vendor_name_snapshot,
     status: po.status,
     zoho_po_id: po.zoho_po_id
@@ -777,6 +946,7 @@ async function loadMirrorForReceipt(runner, poId) {
   const po = await loadPoRow(runner, poId);
   const lines = await runner('procurement_po_line')
     .where({ procurement_po_id: po.id })
+    .whereNot('line_status', 'WITHDRAWN')
     .orderBy('sequence_number', 'asc');
   return {
     header: mapMirrorHeader(po),
@@ -984,12 +1154,153 @@ async function probeZohoScope() {
   }
 }
 
+function payloadMentionsPo(raw, po) {
+  let payload = raw;
+  if (typeof raw === 'string') {
+    try { payload = JSON.parse(raw); } catch (_) { return false; }
+  }
+  if (!payload || typeof payload !== 'object') return false;
+  const meta = payload.meta || {};
+  const poId = String(po.id || '');
+  const poNumber = String(po.po_number || '');
+  const ids = [
+    meta.procurementPoId,
+    meta.ProcurementPoId,
+    payload.procurementPoId,
+    payload.POReference && payload.POReference.ProcurementPoId
+  ].map((value) => String(value || ''));
+  if (poId && ids.includes(poId)) return true;
+  const numbers = [
+    meta.buyerOrderNo,
+    meta.referenceNo,
+    payload.buyer && payload.buyer.orderNo,
+    payload.POReference && payload.POReference.PONumber
+  ].map((value) => String(value || '').trim());
+  return !!(poNumber && numbers.includes(poNumber));
+}
+
+async function linkedDocuments(po) {
+  const receipts = await db('receipt_note')
+    .where({ po_id: po.id })
+    .select('id', 'status', 'po_number');
+  const books = await db('purchase_book')
+    .where({ procurement_po_id: po.id })
+    .select('id', 'status');
+  const byId = new Map();
+  if (await db.schema.hasTable('delivery_challans')) {
+    const needles = [po.id];
+    if (po.po_number && String(po.po_number).length >= 6) needles.push(po.po_number);
+    for (const needle of needles) {
+      const rows = await db('delivery_challans')
+        .whereRaw('payloadjson::text ILIKE ?', [`%${needle}%`])
+        .select('id', 'challanno', 'lifecycle_status', 'voided_at', 'payloadjson');
+      rows.forEach((row) => {
+        if (payloadMentionsPo(row.payloadjson, po)) byId.set(row.id, row);
+      });
+    }
+    if (books.length && await db.schema.hasTable('purchase_book_dc_consumption')) {
+      const consumed = await db('purchase_book_dc_consumption')
+        .whereIn('purchase_book_id', books.map((book) => book.id))
+        .distinct('delivery_challan_id');
+      const ids = consumed.map((row) => row.delivery_challan_id).filter((id) => id && !byId.has(id));
+      if (ids.length) {
+        const rows = await db('delivery_challans')
+          .whereIn('id', ids)
+          .select('id', 'challanno', 'lifecycle_status', 'voided_at', 'payloadjson');
+        rows.forEach((row) => byId.set(row.id, row));
+      }
+    }
+  }
+  return { receipts, books, dcs: [...byId.values()] };
+}
+
+/**
+ * Void Receipt Notes, Purchase Books, and Delivery Challans raised against
+ * this Purchase Order, and record that void against the PO as it stands now.
+ * Order is DC, then Purchase Book, then Receipt Note.
+ */
+async function voidDocumentsForCurrentVersion(poId, args = {}) {
+  await requireTables();
+  const po = await loadPoRow(db, poId);
+  const actor = args.actor || null;
+  const version = {
+    procurementPoId: po.id,
+    poNumber: po.po_number,
+    zohoPoId: po.zoho_po_id != null ? String(po.zoho_po_id) : null,
+    sourceHash: po.source_hash,
+    syncedAt: po.last_synced_at
+  };
+  const reason = trimOrNull(args.reason)
+    || `Voided for ${po.po_number || po.id}, current Purchase Order version`;
+  const found = await linkedDocuments(po);
+  const voided = [];
+  const blocked = [];
+  const dcDispositionService = require('./dcDispositionService');
+  const purchaseBookService = require('./purchaseBookService');
+  const receiptService = require('./receiptService');
+
+  for (const dc of found.dcs) {
+    if (dc.voided_at || String(dc.lifecycle_status || '').toUpperCase() === 'VOID') continue;
+    try {
+      const result = await dcDispositionService.voidChallan(dc.id, { actor, reason });
+      voided.push({ kind: 'DC', id: result.id, label: result.challanNo, status: 'VOID' });
+    } catch (err) {
+      blocked.push({
+        kind: 'DC',
+        id: dc.id,
+        label: dc.challanno,
+        message: err.message,
+        reasonCode: err.reasonCode || null
+      });
+    }
+  }
+  for (const book of found.books) {
+    if (String(book.status || '').toUpperCase() === 'VOID') continue;
+    try {
+      await purchaseBookService.voidBook(book.id, { actor, reason });
+      voided.push({ kind: 'PB', id: book.id, label: book.id, status: 'VOID' });
+    } catch (err) {
+      blocked.push({ kind: 'PB', id: book.id, label: book.id, message: err.message, reasonCode: err.reasonCode || null });
+    }
+  }
+  for (const note of found.receipts) {
+    const status = String(note.status || '').toUpperCase();
+    if (status === 'CANCELLED' || status === 'REVERSED') continue;
+    try {
+      if (status === 'OPEN') {
+        await receiptService.cancelReceipt(note.id, { actor, reason });
+        voided.push({ kind: 'RN', id: note.id, label: note.id, status: 'CANCELLED' });
+      } else if (status === 'POSTED') {
+        await receiptService.reverseReceipt(note.id, { actor, reason });
+        voided.push({ kind: 'RN', id: note.id, label: note.id, status: 'REVERSED' });
+      } else {
+        blocked.push({ kind: 'RN', id: note.id, label: note.id, message: `Status ${status} cannot be voided` });
+      }
+    } catch (err) {
+      blocked.push({ kind: 'RN', id: note.id, label: note.id, message: err.message, reasonCode: err.reasonCode || null });
+    }
+  }
+
+  await db.transaction(async (trx) => {
+    await writeSyncEvent(trx, {
+      procurementPoId: po.id,
+      zohoPoId: po.zoho_po_id,
+      operation: 'VOID_DOCUMENTS',
+      status: blocked.length ? 'ERROR' : 'SUCCESS',
+      actor,
+      changedFields: { version, reason, voided, blocked }
+    });
+  });
+  return { poNumber: po.po_number, version, voided, blocked };
+}
+
 module.exports = {
   RECEIVE_STATUSES,
   setZohoGateway,
   previewPurchaseOrder,
   importPurchaseOrder,
   refreshPurchaseOrder,
+  ingestZohoPurchaseOrderEvent,
   getPurchaseOrder,
   listPurchaseOrders,
   listUnified,
@@ -1007,5 +1318,6 @@ module.exports = {
   publicPo,
   tablesReady,
   probeZohoScope,
-  asZohoIdString
+  asZohoIdString,
+  voidDocumentsForCurrentVersion
 };

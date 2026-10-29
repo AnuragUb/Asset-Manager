@@ -71,34 +71,44 @@ class EmailService {
     }
 
     /**
-     * Send a password reset email
-     * @param {string} toEmail 
-     * @param {string} resetLink 
+     * Send a password reset or first-login set-password email.
+     * @param {string} toEmail
+     * @param {string} resetLink
+     * @param {{ kind?: 'reset'|'setup' }} [options]
      */
-    async sendPasswordResetEmail(toEmail, resetLink) {
-        console.log('[EmailService] Attempting to send reset email to:', toEmail);
+    async sendPasswordResetEmail(toEmail, resetLink, options) {
+        const kind = options && options.kind === 'setup' ? 'setup' : 'reset';
+        console.log('[EmailService] Attempting to send', kind, 'password email to:', toEmail);
         const config = this.getSmtpConfig();
         
         if (!config) {
-            console.warn('[EmailService] Email service disabled or not configured. Reset link would be:', resetLink);
+            console.warn('[EmailService] Email service disabled or not configured.');
             return false;
         }
 
         const transporter = this.createTransporter(config);
+        const subject = kind === 'setup'
+            ? 'Set your AssetEngine password'
+            : 'Password Reset Request - AssetEngine';
+        const heading = kind === 'setup' ? 'Set your password' : 'Password reset request';
+        const intro = kind === 'setup'
+            ? 'You signed in with a temporary password. Confirm this email and choose your own password before using AssetEngine.'
+            : 'You requested to reset your password for AssetEngine.';
+        const button = kind === 'setup' ? 'Set Password' : 'Reset Password';
 
         try {
             console.log('[EmailService] Sending mail...');
             const info = await transporter.sendMail({
-                from: `"${config.smtp_user}" <${config.smtp_user}>`, // sender address
-                to: toEmail, // list of receivers
-                subject: "Password Reset Request - Asset Manager", // Subject line
+                from: `"${config.smtp_user}" <${config.smtp_user}>`,
+                to: toEmail,
+                subject,
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-                        <h2 style="color: #333;">Password Reset Request</h2>
-                        <p>You requested to reset your password for Asset Manager.</p>
-                        <p>Click the button below to reset it:</p>
+                        <h2 style="color: #333;">${heading}</h2>
+                        <p>${intro}</p>
+                        <p>Click the button below to continue:</p>
                         <div style="text-align: center; margin: 30px 0;">
-                            <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
+                            <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">${button}</a>
                         </div>
                         <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
                         <p style="color: #007bff; font-size: 12px; word-break: break-all;">${resetLink}</p>

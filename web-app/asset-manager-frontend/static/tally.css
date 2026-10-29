@@ -1,0 +1,421 @@
+/* Stock Tally visual — grouped In / Out / Reservation / Mismatch blocks.
+   Scoped to #tally-view so the rest of the app is untouched. */
+#tally-view {
+    --st-card: #ffffff;
+    --st-tx: #202b3c;
+    --st-mu: #687589;
+    --st-bd: #e2e7ef;
+    --st-in: #147d59;
+    --st-inb: #e8f6ef;
+    --st-out: #b94c18;
+    --st-outb: #fff0e8;
+    --st-rs: #7042c4;
+    --st-rsb: #f2ecff;
+    --st-lgb: #f6f8fb;
+    --st-bad: #b42318;
+    --st-badb: #ffefee;
+    --st-ok: #147d59;
+    --st-okb: #e8f6ef;
+    --st-shadow: 0 2px 8px rgba(16, 24, 40, 0.035);
+    color: var(--st-tx);
+}
+
+#tally-view .tally-cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 13px;
+    margin-bottom: 16px;
+}
+
+#tally-view .tally-card {
+    position: relative;
+    background: var(--st-card);
+    border: 1px solid var(--st-bd);
+    border-radius: 13px;
+    padding: 14px 16px 13px;
+    box-shadow: var(--st-shadow);
+    min-width: 0;
+    overflow: hidden;
+}
+
+#tally-view .tally-card:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #315fce;
+}
+
+#tally-view .tally-card.in:before { background: var(--st-in); }
+#tally-view .tally-card.out:before { background: var(--st-out); }
+#tally-view .tally-card.rs:before { background: var(--st-rs); }
+#tally-view .tally-card.bad:before { background: var(--st-bad); }
+#tally-view .tally-card.ok:before { background: var(--st-ok); }
+
+#tally-view .tally-card span {
+    display: block;
+    color: var(--st-mu);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#tally-view .tally-card b {
+    display: block;
+    font-size: 26px;
+    line-height: 1.3;
+    letter-spacing: -0.04em;
+    margin-top: 6px;
+    font-weight: 760;
+    font-variant-numeric: tabular-nums;
+}
+
+#tally-view .tally-card em {
+    display: block;
+    font-style: normal;
+    font-size: 11px;
+    color: var(--st-mu);
+    margin-top: 4px;
+}
+
+#tally-view .tally-box {
+    background: var(--st-card);
+    border: 1px solid var(--st-bd);
+    border-radius: 13px;
+    overflow: auto;
+    box-shadow: var(--st-shadow);
+}
+
+#tally-view .tally-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 12px 0 4px;
+    color: var(--st-mu);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#tally-view .tally-pager-btns {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#tally-view .tally-page-btn {
+    background: var(--st-card);
+    border: 1px solid var(--st-bd);
+    border-radius: 9px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 650;
+    box-shadow: var(--st-shadow);
+}
+
+#tally-view .tally-page-btn:hover:not(:disabled) {
+    border-color: var(--st-mu);
+    background: var(--st-lgb);
+}
+
+#tally-view .tally-page-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#tally-view .tally-ledger-nav {
+    margin: 0 0 12px;
+}
+
+#tally-view .tally-ledger-here {
+    flex: 1;
+    min-width: 120px;
+    color: var(--st-tx);
+    font-weight: 700;
+}
+
+#tally-view .tally-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    min-width: 1180px;
+}
+
+#tally-view .tally-table th,
+#tally-view .tally-table td {
+    padding: 11px 12px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--st-bd);
+}
+
+#tally-view .tally-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--st-lgb);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.055em;
+    color: var(--st-mu);
+    font-weight: 750;
+}
+
+#tally-view .tally-table th.l,
+#tally-view .tally-table td.l {
+    text-align: left;
+}
+
+#tally-view .tally-table thead tr.g th {
+    text-align: center;
+    padding: 11px 8px;
+}
+
+#tally-view .tally-table thead tr:nth-child(2) th {
+    top: 37px;
+}
+
+#tally-view .tally-table .gi {
+    background: var(--st-inb);
+    color: var(--st-in) !important;
+}
+
+#tally-view .tally-table .go {
+    background: var(--st-outb);
+    color: var(--st-out) !important;
+}
+
+#tally-view .tally-table .gr {
+    background: var(--st-rsb);
+    color: var(--st-rs) !important;
+}
+
+#tally-view .tally-table .gm {
+    background: var(--st-badb);
+    color: var(--st-bad) !important;
+}
+
+#tally-view .tally-table tbody tr:hover {
+    background: var(--st-lgb);
+}
+
+#tally-view .tally-table tbody td {
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+#tally-view .tally-table tbody td:first-child {
+    min-width: 200px;
+}
+
+#tally-view .tally-prod {
+    font-weight: 400;
+    color: var(--st-tx);
+}
+
+#tally-view .tally-row:hover .tally-prod {
+    color: #315fce;
+}
+
+#tally-view .tally-sku {
+    color: var(--st-mu);
+    font-size: 11px;
+    margin-top: 3px;
+    font-weight: 400;
+}
+
+#tally-view .tally-table tfoot td {
+    font-weight: 750;
+    background: var(--st-lgb);
+    border-top: 1px solid var(--st-bd);
+    border-bottom: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+#tally-view .in { color: var(--st-in); }
+#tally-view .out { color: var(--st-out); }
+#tally-view .rs { color: var(--st-rs); }
+#tally-view .z { color: var(--st-mu); }
+
+#tally-view .tally-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.3;
+}
+
+#tally-view .tally-tag:before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+#tally-view .tally-tag.ok {
+    background: var(--st-okb);
+    color: var(--st-ok);
+}
+
+#tally-view .tally-tag.nil {
+    background: var(--st-badb);
+    color: var(--st-bad);
+}
+
+#tally-view .tally-leg {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    margin-top: 12px;
+    color: var(--st-mu);
+    font-size: 12px;
+}
+
+#tally-view .tally-leg span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+#tally-view .tally-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+#tally-view .tally-dot.in { background: var(--st-in); }
+#tally-view .tally-dot.out { background: var(--st-out); }
+#tally-view .tally-dot.rs { background: var(--st-rs); }
+#tally-view .tally-dot.bad { background: var(--st-bad); }
+
+#tally-view .tally-cards-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#tally-view .tally-crumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--st-mu);
+}
+
+#tally-view .tally-crumb-sep {
+    color: #cbd5e1;
+}
+
+#tally-view .tally-crumb-btn {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: #315fce;
+    cursor: pointer;
+    font: inherit;
+}
+
+#tally-view .tally-ledger {
+    min-width: 720px;
+}
+
+#tally-view .tally-ledger tbody tr.tally-open td {
+    font-weight: 700;
+    background: var(--st-lgb);
+}
+
+#tally-view .tally-ledger tbody tr.tally-info td {
+    color: var(--st-mu);
+}
+
+#tally-view .view-actions .tally-mode {
+    margin-bottom: 0;
+}
+
+#tally-view .tally-mode,
+#tally-view #tallyPeriodGrain {
+    display: inline-flex;
+    border: 1px solid var(--st-bd);
+    border-radius: 9px;
+    overflow: hidden;
+    background: var(--st-card);
+    margin-bottom: 10px;
+}
+
+#tally-view .tally-mode button,
+#tally-view #tallyPeriodGrain button {
+    border: 0;
+    border-left: 1px solid var(--st-bd);
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    background: var(--st-card);
+    color: var(--st-tx);
+}
+
+#tally-view .tally-mode button:first-child,
+#tally-view #tallyPeriodGrain button:first-child {
+    border-left: 0;
+}
+
+#tally-view .tally-mode button[aria-pressed="true"],
+#tally-view #tallyPeriodGrain button[aria-pressed="true"] {
+    background: var(--st-tx);
+    color: #fff;
+}
+
+#tally-view #tallyTypeFilter {
+    display: inline-flex;
+    border: 1px solid var(--st-bd);
+    border-radius: 9px;
+    overflow: hidden;
+    background: var(--st-card);
+}
+
+#tally-view #tallyTypeFilter [data-tally-type] {
+    border: 0;
+    border-left: 1px solid var(--st-bd);
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    background: var(--st-card);
+    color: var(--st-tx);
+}
+
+#tally-view #tallyTypeFilter [data-tally-type]:first-child {
+    border-left: 0;
+}
+
+#tally-view #tallyTypeFilter [data-tally-type][aria-pressed="true"] {
+    background: var(--st-tx);
+    color: #fff;
+}
+
+#tally-view #tallySearch {
+    background: var(--st-card);
+    border: 1px solid var(--st-bd);
+    border-radius: 9px;
+    padding: 8px 12px;
+    min-width: 220px;
+}
+
+@media (max-width: 1100px) {
+    #tally-view .tally-cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    #tally-view .tally-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

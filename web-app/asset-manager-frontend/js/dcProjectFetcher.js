@@ -180,10 +180,22 @@ export function initDCProjectFetcher() {
         }
     }
 
+    function toDateInputValue(val) {
+        if (val == null || val === '') return '';
+        const s = String(val).trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        const d = new Date(s);
+        if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+        return s;
+    }
+
     function setVal(id, val) {
         const el = document.getElementById(id);
         if (el) {
-            el.value = val || '';
+            el.value = el.type === 'date' ? toDateInputValue(val) : (val || '');
+            if (id === 'dcRefDate' && el.value) {
+                window.tempDCOrderDate = el.value;
+            }
             el.dispatchEvent(new Event('input'));
             el.dispatchEvent(new Event('change'));
         }
@@ -297,10 +309,22 @@ export function initDCPoFetcher() {
         return headers;
     }
 
+    function toDateInputValue(val) {
+        if (val == null || val === '') return '';
+        const s = String(val).trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        const d = new Date(s);
+        if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+        return s;
+    }
+
     function setVal(id, val) {
         const el = document.getElementById(id);
         if (el) {
-            el.value = val || '';
+            el.value = el.type === 'date' ? toDateInputValue(val) : (val || '');
+            if (id === 'dcRefDate' && el.value) {
+                window.tempDCOrderDate = el.value;
+            }
             el.dispatchEvent(new Event('input'));
             el.dispatchEvent(new Event('change'));
         }
@@ -499,7 +523,7 @@ export function initDCPoFetcher() {
         resultsContainer.style.display = 'block';
     }
 
-    async function selectPurchaseOrder(summary) {
+    async function selectPurchaseOrder(summary, opts = {}) {
         resultsContainer.style.display = 'none';
         searchInput.value = '';
 
@@ -520,11 +544,13 @@ export function initDCPoFetcher() {
         }
         const data = await response.json();
         const po = data.purchaseOrder || summary;
-        applyProcurementPoToDcForm(po);
+        applyProcurementPoToDcForm(po, opts);
         showLinked(po);
     }
 
-    function applyProcurementPoToDcForm(po) {
+    window.linkDcToProcurementPo = (summary, opts = {}) => selectPurchaseOrder(summary, opts);
+
+    function applyProcurementPoToDcForm(po, opts = {}) {
         const poNumber = po.poNumber || po.id;
         setVal('dcBuyerOrderNo', poNumber);
         setVal('dcRefDate', po.poDate || '');
@@ -546,8 +572,10 @@ export function initDCPoFetcher() {
 
         // Do not auto-seed lines — operator chooses books and/or PO lines.
         loadPurchaseBooksForPo(po.id).then(() => {
-            if (typeof window.showToast === 'function') {
-                window.showToast(`DC linked to PO ${poNumber} — pick Purchase Books or add PO lines`, 'success');
+            if (opts.preferBooks && typeof window.showToast === 'function') {
+                window.showToast(`DC linked to PO ${poNumber} — select Purchase Books (A2), then Add selected books`, 'success');
+            } else if (typeof window.showToast === 'function') {
+                window.showToast(`DC linked to PO ${poNumber} — pick Purchase Books or add PO lines (A1)`, 'success');
             }
         });
     }

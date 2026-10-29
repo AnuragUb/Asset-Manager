@@ -228,12 +228,13 @@
     }
 
     /* 8. Login Page - Mobile Layout */
-    .login-container {
+    .login-container,
+    #loginView .login-room {
         flex-direction: column;
-        width: 90%;
+        width: 100%;
         min-height: auto;
         height: auto;
-        margin: 20px auto; /* Center horizontally */
+        margin: 0;
     }
 
     .login-left {

@@ -228,6 +228,38 @@ class IdGenerator {
         return IdGenerator.verifyChecksumPrefixedId('RNL', id);
     }
 
+    static generateReturnLogId(now) {
+        return IdGenerator.generateChecksumPrefixedId('RET', now);
+    }
+
+    static verifyReturnLogId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('RET', id);
+    }
+
+    static generateProcurementReconciliationId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PREC', now);
+    }
+
+    static verifyProcurementReconciliationId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PREC', id);
+    }
+
+    static generateVendorReturnId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PRTN', now);
+    }
+
+    static verifyVendorReturnId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PRTN', id);
+    }
+
+    static generateVendorReturnLineId(now) {
+        return IdGenerator.generateChecksumPrefixedId('PRTL', now);
+    }
+
+    static verifyVendorReturnLineId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('PRTL', id);
+    }
+
     static generateProcurementPoId(now) {
         return IdGenerator.generateChecksumPrefixedId('PPO', now);
     }
@@ -282,6 +314,14 @@ class IdGenerator {
 
     static verifySerialIdentityId(id) {
         return IdGenerator.verifyChecksumPrefixedId('SER', id);
+    }
+
+    static generateVendorInvoiceId(now) {
+        return IdGenerator.generateChecksumPrefixedId('VIN', now);
+    }
+
+    static verifyVendorInvoiceId(id) {
+        return IdGenerator.verifyChecksumPrefixedId('VIN', id);
     }
 
     /**

@@ -11,8 +11,10 @@ function escapeHtml(value) {
 }
 
 function canMutate() {
-    const role = String(window.currentUser?.role || '').toLowerCase();
-    return role === 'superuser' || role === 'admin' || role === 'manager';
+    if (typeof window !== 'undefined' && typeof window.hasPermission === 'function') {
+        return window.hasPermission('asset.convert');
+    }
+    return false;
 }
 
 function qty(value) {

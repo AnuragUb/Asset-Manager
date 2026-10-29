@@ -1,66 +1,206 @@
 
 /**
- * Login Page Animations
- * Handles dynamic background image switching and other visual effects
+ * Login page: cube lid lift, interior light, fireflies, and form reveal.
  */
 
-const backgroundImages = [
-    '/static/img/login/pexels-33205297-7042926.jpg',
-    '/static/img/login/pexels-maksim-smirnov-27565989-32234331.jpg',
-    '/static/img/login/pexels-maksim-smirnov-27565989-32234335.jpg',
-    '/static/img/login/pexels-miroslav-glasa-2147620119-29678804.jpg'
-];
+let loginSaverRaf = 0;
+let loginSaverState = null;
+
+function looksLikeInvalidEmail(value) {
+    const text = String(value || '').trim();
+    if (!text.includes('@')) return false;
+    return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+}
+
+function loginCredentialIssue(username, password) {
+    if (!String(username || '').trim() || !String(password || '')) {
+        return 'Enter your username/email and password.';
+    }
+    if (looksLikeInvalidEmail(username)) {
+        return 'Enter a valid email address.';
+    }
+    return '';
+}
+
+export function stopLoginButtonSaver() {
+    if (loginSaverRaf) {
+        cancelAnimationFrame(loginSaverRaf);
+        loginSaverRaf = 0;
+    }
+    const btn = document.getElementById('loginSignInBtn');
+    const slot = document.querySelector('.login-sign-slot');
+    if (btn) {
+        btn.classList.remove('login-button-saver');
+        btn.style.left = '';
+        btn.style.top = '';
+        if (slot && slot.parentNode) slot.replaceWith(btn);
+        else if (slot) slot.remove();
+    } else if (slot) {
+        slot.remove();
+    }
+    loginSaverState = null;
+}
+
+export function startLoginButtonSaver() {
+    const btn = document.getElementById('loginSignInBtn');
+    if (!btn) return;
+    if (loginSaverState) return;
+
+    const rect = btn.getBoundingClientRect();
+    if (!document.querySelector('.login-sign-slot')) {
+        const slot = document.createElement('div');
+        slot.className = 'login-sign-slot';
+        slot.style.height = `${Math.max(rect.height, 44)}px`;
+        btn.insertAdjacentElement('afterend', slot);
+    }
+    const room = document.getElementById('loginRoom');
+    if (room && btn.parentElement !== room) {
+        room.appendChild(btn);
+    }
+
+    btn.classList.add('login-button-saver');
+    const width = btn.offsetWidth || 168;
+    const height = btn.offsetHeight || 44;
+    const arena = document.getElementById('loginRoom') || document.getElementById('loginView');
+    const box = () => {
+        const r = arena ? arena.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+        return {
+            minX: r.left,
+            minY: r.top,
+            maxX: Math.max(r.left, r.left + r.width - width),
+            maxY: Math.max(r.top, r.top + r.height - height)
+        };
+    };
+    const startBox = box();
+    loginSaverState = {
+        x: Math.min(Math.max(rect.left, startBox.minX), startBox.maxX),
+        y: Math.min(Math.max(rect.top, startBox.minY), startBox.maxY),
+        vx: 2.8,
+        vy: 2.2,
+        w: width,
+        h: height
+    };
+    btn.style.left = `${loginSaverState.x}px`;
+    btn.style.top = `${loginSaverState.y}px`;
+
+    const tick = () => {
+        const state = loginSaverState;
+        if (!state) return;
+        const limits = box();
+        state.x += state.vx;
+        state.y += state.vy;
+        if (state.x <= limits.minX) {
+            state.x = limits.minX;
+            state.vx = Math.abs(state.vx);
+        } else if (state.x >= limits.maxX) {
+            state.x = limits.maxX;
+            state.vx = -Math.abs(state.vx);
+        }
+        if (state.y <= limits.minY) {
+            state.y = limits.minY;
+            state.vy = Math.abs(state.vy);
+        } else if (state.y >= limits.maxY) {
+            state.y = limits.maxY;
+            state.vy = -Math.abs(state.vy);
+        }
+        btn.style.left = `${state.x}px`;
+        btn.style.top = `${state.y}px`;
+        loginSaverRaf = requestAnimationFrame(tick);
+    };
+    loginSaverRaf = requestAnimationFrame(tick);
+
+    if (!btn.dataset.saverPauseBound) {
+        btn.dataset.saverPauseBound = '1';
+        btn.addEventListener('pointerdown', () => {
+            if (loginSaverRaf) {
+                cancelAnimationFrame(loginSaverRaf);
+                loginSaverRaf = 0;
+            }
+        });
+        btn.addEventListener('pointerup', () => {
+            if (loginSaverState && !loginSaverRaf) {
+                loginSaverRaf = requestAnimationFrame(tick);
+            }
+        });
+        btn.addEventListener('pointercancel', () => {
+            if (loginSaverState && !loginSaverRaf) {
+                loginSaverRaf = requestAnimationFrame(tick);
+            }
+        });
+    }
+}
+
+function spawnLoginFireflies(container) {
+    if (!container || container.dataset.spawned) return;
+    container.dataset.spawned = '1';
+    const style = document.createElement('style');
+    const rules = [];
+    for (let i = 0; i < 18; i += 1) {
+        const size = (Math.random() * 4 + 3).toFixed(1);
+        const duration = (Math.random() * 30 + 35).toFixed(1);
+        const delay = (Math.random() * 3).toFixed(2);
+        const frames = [];
+        for (let s = 0; s < 6; s += 1) {
+            frames.push(`${Math.floor(Math.random() * 100)}vw, ${Math.floor(Math.random() * 100)}vh`);
+        }
+        frames.push(frames[0]);
+        const pct = frames.map((xy, idx) => {
+            const p = Math.round((idx / (frames.length - 1)) * 100);
+            return `${p}% { transform: translate(${xy}); }`;
+        }).join(' ');
+        rules.push(`@keyframes login-firefly-drift-${i} { ${pct} }`);
+        const el = document.createElement('span');
+        el.className = 'login-firefly';
+        el.style.width = `${size}px`;
+        el.style.height = `${size}px`;
+        el.style.animationDuration = `${duration}s, 3s`;
+        el.style.animationDelay = `${delay}s, ${delay}s`;
+        el.style.animationName = `login-firefly-drift-${i}, login-firefly-flicker`;
+        container.appendChild(el);
+    }
+    style.textContent = rules.join('\n');
+    document.head.appendChild(style);
+}
 
 export function initLoginAnimations() {
-    const overlay = document.querySelector('.login-bg-overlay');
-    if (!overlay) return;
+    const room = document.getElementById('loginRoom');
+    const cube = document.getElementById('loginCubeBtn');
+    const fireflies = document.getElementById('loginFireflies');
+    if (!room || !cube) return;
 
-    let currentIndex = 0;
+    spawnLoginFireflies(fireflies);
 
-    // Preload images to prevent flickering
-    backgroundImages.forEach(url => {
-        const img = new Image();
-        img.src = url;
+    cube.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        room.classList.toggle('on');
     });
 
-    // Set initial image
-    overlay.style.backgroundImage = `url('${backgroundImages[0]}')`;
-    overlay.style.opacity = '1'; // Ensure full visibility
-
-    // Change image every 5 seconds
-    setInterval(() => {
-        currentIndex = (currentIndex + 1) % backgroundImages.length;
-        const nextImage = backgroundImages[currentIndex];
-        
-        // Create a temporary overlay for smooth crossfade
-        const tempOverlay = document.createElement('div');
-        tempOverlay.style.position = 'absolute';
-        tempOverlay.style.top = '0';
-        tempOverlay.style.left = '0';
-        tempOverlay.style.width = '100%';
-        tempOverlay.style.height = '100%';
-        tempOverlay.style.backgroundImage = `url('${nextImage}')`;
-        tempOverlay.style.backgroundSize = 'cover';
-        tempOverlay.style.backgroundPosition = 'center';
-        tempOverlay.style.opacity = '0';
-        tempOverlay.style.transition = 'opacity 1s ease-in-out';
-        tempOverlay.style.zIndex = '-1'; // Behind the content but above the base
-        
-        overlay.appendChild(tempOverlay);
-        
-        // Trigger reflow
-        void tempOverlay.offsetWidth;
-        
-        // Fade in
-        tempOverlay.style.opacity = '0';
-        
-        // After transition, set main overlay and remove temp
-        setTimeout(() => {
-            overlay.style.backgroundImage = `url('${nextImage}')`;
-            tempOverlay.remove();
-        }, 1000);
-        
-    }, 5000);
+    const loginForm = document.getElementById('loginForm');
+    const signInBtn = document.getElementById('loginSignInBtn');
+    if (loginForm) {
+        loginForm.addEventListener('submit', (event) => {
+            const issue = loginCredentialIssue(loginForm.username && loginForm.username.value, loginForm.password && loginForm.password.value);
+            if (!issue) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const msg = document.getElementById('loginMsg');
+            if (msg) msg.textContent = issue;
+            startLoginButtonSaver();
+        }, true);
+    }
+    if (signInBtn && loginForm && !signInBtn.dataset.formOwnerBound) {
+        signInBtn.dataset.formOwnerBound = '1';
+        signInBtn.setAttribute('form', 'loginForm');
+        signInBtn.addEventListener('click', (event) => {
+            if (loginForm.contains(signInBtn)) return;
+            event.preventDefault();
+            if (typeof loginForm.requestSubmit === 'function') {
+                loginForm.requestSubmit(signInBtn);
+            } else {
+                loginForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+        });
+    }
 }
 
 /**
@@ -173,7 +313,8 @@ export function initSignupModal() {
                         email: data.email,
                         name: data.name,
                         password: data.password,
-                        confirmPassword: data.confirmPassword
+                        confirmPassword: data.confirmPassword,
+                        team: data.team
                     })
                 });
 

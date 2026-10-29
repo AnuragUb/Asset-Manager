@@ -35,12 +35,34 @@
     padding-top: 18px;
 }
 
+.dc-qt-letterhead {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.dc-qt-letterhead-header {
+    margin-bottom: 14px;
+}
+
 .dc-qt-top {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 16px;
     margin-bottom: 10px;
+}
+
+.dc-qt-top-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.dc-qt-logo {
+    flex: 0 0 auto;
 }
 
 .dc-qt-logo img {
@@ -56,18 +78,43 @@
     color: var(--dc-red);
 }
 
+.dc-qt-dispatched {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 320px;
+}
+
+.dc-qt-dispatched .dc-qt-value {
+    font-size: 12px;
+}
+
+.dc-qt-dispatched .dc-qt-value-pre,
+.dc-qt-dispatched .dc-qt-kind {
+    font-size: 11px;
+}
+
 .dc-qt-top-right {
-    flex: 1;
+    flex: 0 0 auto;
     min-width: 180px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 8px;
-    padding-top: 6px;
+    gap: 6px;
+    padding-top: 0;
+}
+
+.dc-qt-copy-header {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--dc-muted);
+    text-align: right;
+    text-transform: none;
 }
 
 .dc-qt-accent {
-    width: min(340px, 55%);
+    width: min(340px, 55vw);
+    max-width: 340px;
     height: 7px;
     background: linear-gradient(90deg, #cfcfcf 0 86%, var(--dc-red) 86% 100%);
 }
@@ -226,6 +273,13 @@
     font-weight: 400;
 }
 
+.dc-qt-set-desc {
+    white-space: pre-line;
+    margin-top: 2px;
+    font-size: 0.92em;
+    color: var(--dc-muted);
+}
+
 .dc-qt-summary {
     display: grid;
     grid-template-columns: 1fr 220px;
@@ -368,19 +422,57 @@
         margin: 10mm;
     }
 
+    /* Kill app/modal scroll chrome so it does not appear in the print preview */
+    html, body.print-dc {
+        height: auto !important;
+        max-height: none !important;
+        overflow: hidden !important;
+        background: #fff !important;
+    }
+
+    body.print-dc {
+        overflow: hidden !important;
+    }
+
+    body.print-dc,
+    body.print-dc * {
+        visibility: visible !important;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+    }
+
+    body.print-dc *::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+
+    body.print-dc > *:not(#dcPreviewModal) {
+        display: none !important;
+    }
+
     body.print-dc #dcPreviewModal {
         display: block !important;
         position: static !important;
+        inset: auto !important;
+        width: auto !important;
+        height: auto !important;
+        max-height: none !important;
         background: none !important;
         overflow: visible !important;
+        visibility: visible !important;
     }
 
     body.print-dc #dcPreviewModal .modal-content {
         width: 210mm !important;
         max-width: none !important;
         height: auto !important;
+        max-height: none !important;
         box-shadow: none !important;
         border: none !important;
+        overflow: visible !important;
+        visibility: visible !important;
+        display: block !important;
     }
 
     body.print-dc #dcPreviewModal .modal-header,
@@ -389,15 +481,38 @@
     }
 
     body.print-dc #dcPreviewModal .modal-body {
+        flex: none !important;
+        height: auto !important;
+        max-height: none !important;
         padding: 0 !important;
         overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
         background: #fff !important;
+        visibility: visible !important;
+    }
+
+    body.print-dc #printableDC,
+    body.print-dc #printableDC * {
+        overflow: visible !important;
+        max-height: none !important;
+        visibility: visible !important;
+    }
+
+    body.print-dc .dc-qt-copy-header {
+        color: var(--dc-muted);
+    }
+
+    body.print-dc .dc-qt-top-left {
+        align-items: flex-start;
     }
 
     body.print-dc .dc-qt-sheet {
         width: 210mm;
         min-height: 277mm;
+        max-width: none !important;
         padding: 0;
+        overflow: visible !important;
     }
 
     body.print-dc .dc-qt-footer {

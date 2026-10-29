@@ -14,7 +14,7 @@ import {
     toastOperatorError,
     lifecycleApi,
     go
-} from './lifecycle.js?v=7.76';
+} from './lifecycle.js?v=7.139';
 
 function el(id) {
     return document.getElementById(id);
@@ -200,21 +200,6 @@ function setZohoUnsyncedFilter(on) {
     }
 }
 
-function relativeCreatedLabel(iso) {
-    if (!iso) return '';
-    const ts = Date.parse(iso);
-    if (!Number.isFinite(ts)) return '';
-    const startToday = new Date();
-    startToday.setHours(0, 0, 0, 0);
-    const startThat = new Date(ts);
-    startThat.setHours(0, 0, 0, 0);
-    const days = Math.round((startToday - startThat) / 86400000);
-    if (days <= 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 14) return `${days} days ago`;
-    return formatWhen(iso);
-}
-
 function zohoMapLabel(product) {
     const status = String(product.sync_status || (product.zoho_external_id ? 'LINKED' : 'UNLINKED')).toUpperCase();
     if (status === 'UNLINKED') return 'Not Linked';
@@ -252,13 +237,10 @@ function setViewMode(mode) {
 
 function syncFilterChips() {
     const unsyncedOn = isZohoUnsyncedFilter();
+    const source = String(el('productSourceFilter')?.value || '');
+
     document.querySelectorAll('#products-view [data-prd-status]').forEach((btn) => {
         const on = !unsyncedOn && String(btn.getAttribute('data-prd-status') || '') === String(statusFilter || '');
-        btn.classList.toggle('is-on', on);
-        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
-    document.querySelectorAll('#products-view [data-prd-linked]').forEach((btn) => {
-        const on = !unsyncedOn && linkedFilter === '1';
         btn.classList.toggle('is-on', on);
         btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
@@ -266,9 +248,85 @@ function syncFilterChips() {
         btn.classList.toggle('is-on', unsyncedOn);
         btn.setAttribute('aria-pressed', unsyncedOn ? 'true' : 'false');
     });
+
+    document.querySelectorAll('#products-view [data-prd-type]').forEach((btn) => {
+        const type = String(btn.getAttribute('data-prd-type') || '');
+        let on = false;
+        if (unsyncedOn) {
+            on = false;
+        } else if (type === 'LINKED') {
+            on = linkedFilter === '1';
+        } else if (type === 'STANDALONE' || type === 'ZOHO_DERIVED') {
+            on = source === type && linkedFilter !== '1';
+        } else {
+            on = !source && linkedFilter !== '1';
+        }
+        btn.classList.toggle('is-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
     if (unsyncedOn && el('productSourceFilter') && el('productSourceFilter').value !== 'ZOHO_UNSYNCED') {
         el('productSourceFilter').value = 'ZOHO_UNSYNCED';
     }
+
+    const statusTrigger = el('btnPrdStatusFilter');
+    if (statusTrigger) {
+        let statusLabel = 'All';
+        if (unsyncedOn) statusLabel = 'Not Yet Synced';
+        else if (statusFilter === 'ACTIVE') statusLabel = 'Active';
+        else if (statusFilter === 'ARCHIVED') statusLabel = 'Archived';
+        statusTrigger.textContent = `${statusLabel} ▾`;
+        statusTrigger.classList.toggle('is-active', unsyncedOn || Boolean(statusFilter));
+    }
+
+    const typeTrigger = el('btnPrdTypeFilter');
+    if (typeTrigger) {
+        let typeLabel = 'All';
+        if (linkedFilter === '1') typeLabel = 'Zoho Linked';
+        else if (source === 'STANDALONE' && linkedFilter === '0') typeLabel = 'Standalone · Not in Zoho';
+        else if (source === 'STANDALONE') typeLabel = 'Standalone';
+        else if (source === 'ZOHO_DERIVED') typeLabel = 'Zoho-derived';
+        typeTrigger.textContent = `${typeLabel} ▾`;
+        typeTrigger.classList.toggle('is-active', Boolean(linkedFilter) || (Boolean(source) && source !== 'ZOHO_UNSYNCED'));
+    }
+}
+
+function closePrdFilterMenus() {
+    document.querySelectorAll('#products-view .prd-filter-menu').forEach((menu) => {
+        menu.classList.remove('is-open');
+        const panel = menu.querySelector('.prd-filter-panel');
+        const trigger = menu.querySelector('.prd-filter-trigger');
+        if (panel) panel.hidden = true;
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function togglePrdFilterMenu(menuId) {
+    const menu = document.querySelector(`#products-view .prd-filter-menu[data-prd-menu="${menuId}"]`);
+    if (!menu) return;
+    const willOpen = !menu.classList.contains('is-open');
+    closePrdFilterMenus();
+    if (!willOpen) return;
+    menu.classList.add('is-open');
+    const panel = menu.querySelector('.prd-filter-panel');
+    const trigger = menu.querySelector('.prd-filter-trigger');
+    if (panel) panel.hidden = false;
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+}
+
+function applyTypeFilter(type) {
+    setZohoUnsyncedFilter(false);
+    if (type === 'LINKED') {
+        linkedFilter = '1';
+        if (el('productSourceFilter')) el('productSourceFilter').value = '';
+    } else if (type === 'STANDALONE' || type === 'ZOHO_DERIVED') {
+        linkedFilter = '';
+        if (el('productSourceFilter')) el('productSourceFilter').value = type;
+    } else {
+        linkedFilter = '';
+        if (el('productSourceFilter')) el('productSourceFilter').value = '';
+    }
+    syncFilterChips();
 }
 
 function closeProductCreateModal() {
@@ -276,11 +334,34 @@ function closeProductCreateModal() {
     if (modal) modal.style.display = 'none';
 }
 
-function openProductCreateModal(title, bodyHtml) {
+function closeProductDetailModal() {
+    const modal = el('productDetailModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function isProductDetailModalOpen() {
+    const modal = el('productDetailModal');
+    return Boolean(modal && modal.style.display === 'flex');
+}
+
+function showProductDetailModal(title, bodyHtml) {
+    const modal = el('productDetailModal');
+    const titleEl = el('productDetailModalTitle');
+    const body = el('productDetailModalBody');
+    if (!modal || !body) return null;
+    if (titleEl) titleEl.textContent = title || 'Product';
+    body.innerHTML = bodyHtml;
+    modal.style.display = 'flex';
+    return body;
+}
+
+function openProductCreateModal(title, bodyHtml, { maxWidth = '560px' } = {}) {
     const modal = el('productCreateModal');
     const titleEl = el('productCreateModalTitle');
     const body = el('productCreateModalBody');
     if (!modal || !body) return;
+    const card = modal.querySelector('.modal-content');
+    if (card) card.style.maxWidth = maxWidth;
     if (titleEl) titleEl.textContent = title;
     body.innerHTML = bodyHtml;
     modal.style.display = 'flex';
@@ -538,36 +619,34 @@ function catalogCardFactsHtml(row) {
         </div>`).join('')}</dl>`;
 }
 
+function productCardFactsHtml(product) {
+    return `<dl class="prd-card-facts">
+        <div class="prd-card-fact"><dt>Make</dt><dd>${dash(product.make)}</dd></div>
+        <div class="prd-card-fact"><dt>Model</dt><dd>${dash(product.model)}</dd></div>
+        <div class="prd-card-fact prd-card-fact-wide"><dt>Created By</dt><dd>${dash(product.created_by)}</dd></div>
+    </dl>`;
+}
+
 function catalogDetailFieldsHtml(row) {
     return catalogFactsRows(row).map(([label, value]) => fieldRow(label, dash(value))).join('');
 }
 
 function productCardHtml(product, { recent = false } = {}) {
     const selected = selectedId === product.id;
+    if (recent) {
+        return `<button type="button" class="prd-card prd-card-recent ops-glossy-surface ops-lift${selected ? ' is-selected' : ''}" data-product-open="${escapeHtml(product.id)}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="AssetEngine Product ${escapeHtml(product.id)}. ${escapeHtml(product.name || '')}" title="${escapeHtml(product.name || product.id)}">
+            <div class="prd-card-name">${dash(product.name)}</div>
+        </button>`;
+    }
     const linked = Boolean(product.zoho_external_id);
-    const desc = String(product.description || '').trim();
-    const match = product.matched_on ? `<div class="prd-match-hint">Matched: ${escapeHtml(product.matched_on)}</div>` : '';
-    const when = recent ? relativeCreatedLabel(product.created_at || product.createdAt) : '';
-    return `<button type="button" class="prd-card ops-glossy-surface ops-lift${selected ? ' is-selected' : ''}" data-product-open="${escapeHtml(product.id)}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="AssetEngine Product ${escapeHtml(product.id)}. ${escapeHtml(product.name || '')}">
+    return `<button type="button" class="prd-card prd-card-compact ops-glossy-surface ops-lift${selected ? ' is-selected' : ''}" data-product-open="${escapeHtml(product.id)}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="AssetEngine Product ${escapeHtml(product.id)}. ${escapeHtml(product.name || '')}">
         <div class="prd-card-top">
             ${product.origin === 'ZOHO' ? zohoProvPill() : aeProvPill()}
-            ${when ? `<span class="prd-card-when">${escapeHtml(when)}</span>` : ''}
         </div>
         <div class="prd-card-name">${dash(product.name)}</div>
-        ${catalogCardFactsHtml({
-            make: product.make,
-            model: product.model,
-            created_by: product.created_by,
-            usage_unit: product.unit,
-            hsn_code: product.hsn_code
-        })}
+        ${productCardFactsHtml(product)}
         <div class="prd-card-id lc-mono">${escapeHtml(product.id)}</div>
-        ${desc ? `<div class="prd-card-desc">${escapeHtml(desc.length > 120 ? `${desc.slice(0, 117)}…` : desc)}</div>` : ''}
-        <div class="prd-card-zoho">${linked
-            ? `<span class="prd-id-cell">${zohoProvPill()} <span class="lc-mono">${escapeHtml(product.zoho_external_id)}</span></span>`
-            : mapChip('Not Linked', 'none')}</div>
         <div class="prd-card-foot">${statusChip(product.status)} ${mapChip(zohoMapLabel(product), linked ? 'linked' : 'none')}</div>
-        ${match}
     </button>`;
 }
 
@@ -599,14 +678,12 @@ function openCatalogRefDetail(row) {
         node.classList.toggle('is-selected', on);
         node.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    const panel = el('productDetailPanel');
-    if (!panel) return;
     if (!row) {
-        panel.innerHTML = '<p class="lc-muted prd-detail-placeholder">Select a Zoho Reference to inspect.</p>';
+        closeProductDetailModal();
         return;
     }
     const logistics = canLogistics();
-    panel.innerHTML = `
+    const body = showProductDetailModal(dash(row.product_name) || 'Zoho Reference', `
         ${section('Zoho Product Catalog', `
             <div class="prd-id-cell" style="margin-bottom:6px;">${zohoProvPill()} ${mapChip('Reference Only', 'ref')}</div>
             <p class="lc-muted" style="margin-top:0;" title="${escapeHtml(ZOHO_PROV_TITLE)}">Read-only reference from Zoho. Not an AssetEngine Product.</p>
@@ -620,8 +697,8 @@ function openCatalogRefDetail(row) {
                 ? '<button type="button" class="action-button blue" id="btnCreateFromCatalogDetail" aria-label="Create Against Zoho Products" style="margin-top:12px;">Create Against Zoho Products</button>'
                 : ''}
         `)}
-    `;
-    el('btnCreateFromCatalogDetail')?.addEventListener('click', () => {
+    `);
+    body?.querySelector('#btnCreateFromCatalogDetail')?.addEventListener('click', () => {
         openCreateFromZohoModal(row.zoho_product_id).catch((err) => toastOperatorError(err));
     });
 }
@@ -678,12 +755,17 @@ function renderPager(total) {
     if (productPage < 0) productPage = 0;
     const from = total ? productPage * pageSize + 1 : 0;
     const to = Math.min(total, (productPage + 1) * pageSize);
-    return `<div class="prd-pager" role="navigation" aria-label="Product pages">
+    if (pages <= 1) {
+        return `<div class="prd-pager prd-pager-bottom" role="navigation" aria-label="Product pages">
+            <span class="prd-pager-meta">${total ? `${from}–${to} of ${total}` : (isZohoUnsyncedFilter() ? '0 Zoho references' : '0 products')}</span>
+        </div>`;
+    }
+    return `<div class="prd-pager prd-pager-bottom" role="navigation" aria-label="Product pages">
         <span class="prd-pager-meta">${total ? `${from}–${to} of ${total}` : (isZohoUnsyncedFilter() ? '0 Zoho references' : '0 products')}</span>
         <div class="prd-pager-actions">
-            <button type="button" class="action-button grey prd-pager-btn" id="btnProductPagePrev" ${productPage <= 0 ? 'disabled' : ''}>Previous</button>
-            <span class="prd-pager-page">Page ${productPage + 1} of ${pages}</span>
-            <button type="button" class="action-button grey prd-pager-btn" id="btnProductPageNext" ${productPage >= pages - 1 ? 'disabled' : ''}>Next</button>
+            <button type="button" class="prd-page-nav" id="btnProductPagePrev" aria-label="Previous page" title="Previous page" ${productPage <= 0 ? 'disabled' : ''}>‹</button>
+            <span class="prd-pager-page">${productPage + 1} / ${pages}</span>
+            <button type="button" class="prd-page-nav" id="btnProductPageNext" aria-label="Next page" title="Next page" ${productPage >= pages - 1 ? 'disabled' : ''}>›</button>
         </div>
     </div>`;
 }
@@ -836,7 +918,7 @@ async function renderProductList({ resetPage = false } = {}) {
         if (el('productCountBadge')) {
             el('productCountBadge').textContent = `${lastTotal} Not Yet Synced`;
         }
-        const browserHead = document.querySelector('#products-view .prd-ae-section .prd-browser-head .lc-section-label');
+        const browserHead = el('allProductsHeading');
         if (browserHead) browserHead.textContent = 'Zoho Product Catalog · Not Yet Synced';
         await renderRecentlyAdded();
         if (!rows.length) {
@@ -854,16 +936,10 @@ async function renderProductList({ resetPage = false } = {}) {
             });
             return;
         }
-        host.innerHTML = `
-            <div class="prd-split">
-                ${renderBrowserBody([], rows)}
-                <aside id="productDetailPanel" class="prd-detail-pane" aria-label="Product detail inspector">
-                    <p class="lc-muted prd-detail-placeholder">Select a Zoho Product Catalog card to inspect Make, Model, Created By, Usage, and HSN.</p>
-                </aside>
-            </div>`;
+        host.innerHTML = renderBrowserBody([], rows);
         bindProductOpeners(host);
         bindPager(host, lastTotal);
-        if (selectedCatalogZohoId) {
+        if (selectedCatalogZohoId && isProductDetailModalOpen()) {
             const selected = rows.find((row) => String(row.zoho_product_id) === String(selectedCatalogZohoId));
             if (selected) openCatalogRefDetail(selected);
         }
@@ -892,7 +968,7 @@ async function renderProductList({ resetPage = false } = {}) {
     if (el('productCountBadge')) {
         el('productCountBadge').textContent = `${lastTotal} AssetEngine Products`;
     }
-    const browserHead = document.querySelector('#products-view .prd-ae-section .prd-browser-head .lc-section-label');
+    const browserHead = el('allProductsHeading');
     if (browserHead) browserHead.textContent = 'All Products';
     await renderRecentlyAdded();
     if (!products.length && !unlinkedRefs.length) {
@@ -910,16 +986,10 @@ async function renderProductList({ resetPage = false } = {}) {
         });
         return;
     }
-    host.innerHTML = `
-        <div class="prd-split">
-            ${renderBrowserBody(products, unlinkedRefs)}
-            <aside id="productDetailPanel" class="prd-detail-pane" aria-label="Product detail inspector">
-                <p class="lc-muted prd-detail-placeholder">Select a Product to inspect.</p>
-            </aside>
-        </div>`;
+    host.innerHTML = renderBrowserBody(products, unlinkedRefs);
     bindProductOpeners(host);
     bindPager(host, lastTotal);
-    if (selectedId) {
+    if (selectedId && isProductDetailModalOpen()) {
         openProductDetail(selectedId).catch((err) => toastOperatorError(err));
     }
 }
@@ -934,14 +1004,19 @@ function inputField(id, label, value, { note, type = 'text' } = {}) {
 
 async function openProductDetail(id) {
     selectedId = id;
+    selectedCatalogZohoId = null;
     document.querySelectorAll('#products-view [data-product-open]').forEach((node) => {
         const on = String(node.getAttribute('data-product-open')) === String(id);
         node.classList.toggle('is-selected', on);
         if (node.tagName === 'TR') node.style.background = on ? '#eff6ff' : '';
         node.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    const panel = el('productDetailPanel');
-    if (!panel) return;
+    document.querySelectorAll('#products-view [data-catalog-ref-open]').forEach((node) => {
+        node.classList.remove('is-selected');
+        node.setAttribute('aria-pressed', 'false');
+    });
+    const bodyHost = showProductDetailModal('Product', '<p class="lc-muted">Loading…</p>');
+    if (!bodyHost) return;
     const [productRes, refsRes, conflictsRes, posRes, setsRes, invRes] = await Promise.all([
         api(`/api/products/${encodeURIComponent(id)}`),
         api(`/api/products/${encodeURIComponent(id)}/external-refs`),
@@ -950,6 +1025,7 @@ async function openProductDetail(id) {
         api('/api/sets').catch(() => ({ sets: [] })),
         api('/api/inventory/items').catch(() => ({ items: [] }))
     ]);
+    if (selectedId !== id) return;
     const p = productRes.product;
     const refs = refsRes.refs || [];
     const zohoRef = refs.find((r) => r.system === 'ZOHO_CRM' && r.module === 'Products') || refs[0] || null;
@@ -957,11 +1033,11 @@ async function openProductDetail(id) {
     const editable = logistics && p.status === 'ACTIVE';
     const openConflict = (conflictsRes.conflicts || []).find((c) => c.status === 'OPEN') || p.open_conflict || null;
     const relatedPos = (posRes.purchaseOrders || []).filter((po) =>
-        (po.lines || []).some((line) => String(line.productId || '') === String(p.id))
+        (po.lines || []).some((line) => String(line.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN' && String(line.productId || '') === String(p.id))
     );
     const outstanding = relatedPos.reduce((sum, po) => {
         return sum + (po.lines || [])
-            .filter((line) => String(line.productId || '') === String(p.id))
+            .filter((line) => String(line.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN' && String(line.productId || '') === String(p.id))
             .reduce((s, line) => s + Number(line.outstanding || 0), 0);
     }, 0);
     const usedInSets = (setsRes.sets || []).filter((set) =>
@@ -980,7 +1056,10 @@ async function openProductDetail(id) {
         ? (zohoRef.last_pushed_at || zohoRef.last_pulled_at || zohoRef.updated_at || p.updated_at)
         : null;
 
-    panel.innerHTML = `
+    const titleEl = el('productDetailModalTitle');
+    if (titleEl) titleEl.textContent = p.name || p.id || 'Product';
+
+    bodyHost.innerHTML = `
         ${crumb([
             { label: 'Product' },
             { label: 'Purchase Orders', view: 'purchase-orders-view' },
@@ -1062,7 +1141,7 @@ async function openProductDetail(id) {
             <div class="lc-muted">Outstanding on imported POs: <strong>${formatQty(outstanding)}</strong></div>
             <ul class="lc-event-list">${relatedPos.map((po) => `
                 <li><button type="button" class="lc-crumb-link" data-lc-go="purchase-orders-view" data-lc-open="${escapeHtml(po.id)}">${escapeHtml(po.poNumber || po.id)}</button>
-                · ${statusChip(po.status)} · outstanding ${escapeHtml(String((po.lines || []).filter((l) => l.productId === p.id).map((l) => l.outstanding).join(', ') || '—'))}</li>
+                · ${statusChip(po.status)} · outstanding ${escapeHtml(String((po.lines || []).filter((l) => String(l.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN' && l.productId === p.id).map((l) => l.outstanding).join(', ') || '—'))}</li>
             `).join('')}</ul>
         ` : '<p class="lc-muted">No imported Purchase Orders for this Product.</p>')}
         ${section('Physical', `
@@ -1086,15 +1165,25 @@ async function openProductDetail(id) {
             <p class="lc-muted" style="margin-top:8px;">Updated ${formatWhen(p.updated_at)} · ${dash(p.updated_by)}</p>`)}
     `;
 
+    const refreshDetail = async () => {
+        await renderProductList();
+        if (isProductDetailModalOpen()) await openProductDetail(id);
+    };
+
     el('btnSaveProduct')?.addEventListener('click', async () => {
         try {
+            const description = String(el('prdEditDescription')?.value || '').trim();
+            if (!description) {
+                showToast('Product description is required. It is separate from Asset description.', 'error');
+                return;
+            }
             const priceRaw = el('prdEditPrice')?.value;
             await api(`/api/products/${encodeURIComponent(id)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: el('prdEditName')?.value,
-                    description: el('prdEditDescription')?.value,
+                    description,
                     make: el('prdEditMake')?.value,
                     model: el('prdEditModel')?.value,
                     manufacturer: el('prdEditManufacturer')?.value,
@@ -1105,7 +1194,7 @@ async function openProductDetail(id) {
                 })
             });
             showToast('Product updated', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
@@ -1114,7 +1203,7 @@ async function openProductDetail(id) {
         try {
             await api(`/api/products/${encodeURIComponent(id)}/archive`, { method: 'POST' });
             showToast('Product archived', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
@@ -1123,26 +1212,33 @@ async function openProductDetail(id) {
         try {
             await api(`/api/products/${encodeURIComponent(id)}/restore`, { method: 'POST' });
             showToast('Product restored', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
     });
-    el('btnPublishZoho')?.addEventListener('click', async () => {
+    el('btnPublishZoho')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        if (btn.disabled) return;
         if (!confirmAction('Publish this AssetEngine Product to Zoho? Price is not sent.')) return;
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Publishing…';
         try {
             const result = await api(`/api/products/${encodeURIComponent(id)}/publish`, { method: 'POST' });
-            showToast(result.skipped ? 'Publish skipped (unchanged)' : `Published (${result.mode}) ${result.zohoId}`, 'success');
-            await renderProductList();
+            showToast(result.skipped ? 'Already up to date in Zoho' : `Published (${result.mode}) ${result.zohoId}`, 'success');
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
+            btn.disabled = false;
+            btn.textContent = label;
         }
     });
     el('btnRefreshZoho')?.addEventListener('click', async () => {
         try {
             await api(`/api/products/${encodeURIComponent(id)}/refresh-zoho`, { method: 'POST' });
             showToast('Refreshed from Zoho', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
@@ -1157,7 +1253,7 @@ async function openProductDetail(id) {
                 body: JSON.stringify({ resolution: 'AE_WINS' })
             });
             showToast('Conflict resolved: AssetEngine name', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
@@ -1171,10 +1267,14 @@ async function openProductDetail(id) {
                 body: JSON.stringify({ resolution: 'ZOHO_WINS' })
             });
             showToast('Conflict resolved: Zoho name', 'success');
-            await renderProductList();
+            await refreshDetail();
         } catch (err) {
             toastOperatorError(err);
         }
+    });
+
+    bodyHost.querySelectorAll('[data-lc-go]').forEach((btn) => {
+        btn.addEventListener('click', () => closeProductDetailModal());
     });
 }
 
@@ -1215,6 +1315,7 @@ async function openLinkWizard(productId) {
                 });
                 showToast('Linked to Zoho Reference', 'success');
                 await renderProductList();
+                if (isProductDetailModalOpen()) await openProductDetail(productId);
             } catch (err) {
                 toastOperatorError(err);
             }
@@ -1329,8 +1430,13 @@ async function createLocalProduct() {
     el('btnCreateModalClose')?.addEventListener('click', closeProductCreateModal);
     el('btnConfirmStandaloneProduct')?.addEventListener('click', async () => {
         const name = String(el('prdNewName')?.value || '').trim();
+        const description = String(el('prdNewDescription')?.value || '').trim();
         if (!name) {
             showToast('Name is required', 'error');
+            return;
+        }
+        if (!description) {
+            showToast('Product description is required. It is separate from Asset description.', 'error');
             return;
         }
         try {
@@ -1340,7 +1446,7 @@ async function createLocalProduct() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
-                    description: el('prdNewDescription')?.value || null,
+                    description,
                     make: el('prdNewMake')?.value || null,
                     model: el('prdNewModel')?.value || null,
                     manufacturer: el('prdNewManufacturer')?.value || null,
@@ -1360,24 +1466,347 @@ async function createLocalProduct() {
     });
 }
 
+const PRODUCT_IMPORT_COLUMNS = [
+    { key: 'name', label: 'Name', aliases: ['name', 'product name', 'product', 'item name', 'itemname', 'item'] },
+    { key: 'description', label: 'Description', aliases: ['description', 'desc', 'item description'] },
+    { key: 'make', label: 'Make', aliases: ['make', 'brand'] },
+    { key: 'model', label: 'Model', aliases: ['model', 'model no', 'model number'] },
+    { key: 'manufacturer', label: 'Manufacturer', aliases: ['manufacturer', 'mfr', 'oem'] },
+    { key: 'product_code', label: 'Product Code', aliases: ['product code', 'productcode', 'sku', 'oem sku', 'part number', 'part no', 'code'] },
+    { key: 'hsn_code', label: 'HSN', aliases: ['hsn', 'hsn code', 'hsn sac', 'hsnsac', 'sac'] },
+    { key: 'unit', label: 'Unit', aliases: ['unit', 'uom', 'units'] },
+    { key: 'price', label: 'Price', aliases: ['price', 'rate', 'unit price'] }
+];
+const PRODUCT_IMPORT_MAX_ROWS = 500;
+
+let productImport = { rows: [], results: new Map(), include: new Set(), busy: false };
+
+function importHeaderKey(header) {
+    const norm = String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const hit = PRODUCT_IMPORT_COLUMNS.find((c) => c.aliases.includes(norm) || c.aliases.includes(norm.replace(/\s+/g, '')));
+    return hit ? hit.key : null;
+}
+
+function parseCsvText(text) {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const src = String(text || '').replace(/^\uFEFF/, '');
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (quoted) {
+            if (ch === '"' && src[i + 1] === '"') { cell += '"'; i++; }
+            else if (ch === '"') quoted = false;
+            else cell += ch;
+        } else if (ch === '"') quoted = true;
+        else if (ch === ',') { row.push(cell); cell = ''; }
+        else if (ch === '\n' || ch === '\r') {
+            if (ch === '\r' && src[i + 1] === '\n') i++;
+            row.push(cell); rows.push(row); row = []; cell = '';
+        } else cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+}
+
+async function readImportSheet(file) {
+    const isCsv = /\.csv$/i.test(file.name);
+    if (window.XLSX) {
+        const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        return window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    }
+    if (!isCsv) throw new Error('Excel reader unavailable — save the sheet as CSV and try again.');
+    return parseCsvText(await file.text());
+}
+
+function sheetToImportRows(matrix) {
+    const [header = [], ...body] = matrix || [];
+    const keys = header.map(importHeaderKey);
+    if (!keys.includes('name')) {
+        throw new Error('A "Name" column is required. Download the template to see the expected columns.');
+    }
+    const ignored = header.filter((h, i) => String(h || '').trim() && !keys[i]);
+    const rows = [];
+    body.forEach((cells, idx) => {
+        const row = { rowNumber: idx + 2 };
+        let any = false;
+        keys.forEach((key, i) => {
+            if (!key) return;
+            const value = String(cells[i] == null ? '' : cells[i]).trim();
+            if (value) any = true;
+            row[key] = value;
+        });
+        if (any) rows.push(row);
+    });
+    return { rows, ignored };
+}
+
+function downloadProductImportTemplate() {
+    const csv = `${PRODUCT_IMPORT_COLUMNS.map((c) => c.label).join(',')}\r\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'AssetEngine_Product_Import_Template.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+function importStatusChip(status) {
+    const tone = {
+        VALID: ['#dcfce7', '#166534', 'Ready'],
+        DUPLICATE: ['#fef9c3', '#854d0e', 'Possible duplicate'],
+        ERROR: ['#fee2e2', '#991b1b', 'Error']
+    }[status] || ['#e5e7eb', '#374151', status];
+    return `<span class="lc-chip" style="background:${tone[0]};color:${tone[1]};">${escapeHtml(tone[2])}</span>`;
+}
+
+function applyImportResults(resultRows) {
+    productImport.results = new Map(resultRows.map((r) => [r.row, r]));
+    productImport.include = new Set(resultRows.filter((r) => r.status === 'VALID').map((r) => r.row));
+}
+
+function renderProductImportPreview() {
+    const host = el('prdImportPreview');
+    if (!host) return;
+    const { rows, results, include } = productImport;
+    if (!rows.length) {
+        host.innerHTML = '';
+        return;
+    }
+    const counts = { VALID: 0, DUPLICATE: 0, ERROR: 0 };
+    results.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
+    const body = rows.map((row) => {
+        const r = results.get(row.rowNumber) || { status: 'ERROR', errors: ['Not checked'] };
+        const notes = [...(r.errors || []), ...(r.warnings || [])];
+        const matchLinks = (r.match?.candidates || [])
+            .map((c) => `<button type="button" class="lc-crumb-link" data-import-open="${escapeHtml(c.id)}">${escapeHtml(c.id)}</button>`)
+            .join(' ');
+        return `<tr>
+            <td style="text-align:center;"><input type="checkbox" data-import-row="${row.rowNumber}" ${include.has(row.rowNumber) ? 'checked' : ''} ${r.status === 'ERROR' ? 'disabled' : ''} aria-label="Include row ${row.rowNumber}"></td>
+            <td>${row.rowNumber}</td>
+            <td>${importStatusChip(r.status)}</td>
+            <td>${escapeHtml(row.name || '')}</td>
+            <td>${escapeHtml(row.make || '')}</td>
+            <td>${escapeHtml(row.model || '')}</td>
+            <td>${escapeHtml(row.product_code || '')}</td>
+            <td>${escapeHtml(row.unit || '')}</td>
+            <td>${escapeHtml(row.price || '')}</td>
+            <td style="font-size:12px;">${escapeHtml(notes.join(' · '))}${matchLinks ? `<div>${matchLinks}</div>` : ''}</td>
+        </tr>`;
+    }).join('');
+    host.innerHTML = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 8px;">
+            ${importStatusChip('VALID')} ${counts.VALID}
+            ${importStatusChip('DUPLICATE')} ${counts.DUPLICATE}
+            ${importStatusChip('ERROR')} ${counts.ERROR}
+        </div>
+        <p class="lc-muted" style="margin:0 0 8px;">Possible duplicates are unticked — tick them only if they really are different Products. Error rows must be fixed in the sheet and re-uploaded.</p>
+        <div style="max-height:48vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;">
+            <table class="lc-table" style="width:100%;font-size:13px;">
+                <thead><tr><th></th><th>Row</th><th>Status</th><th>Name</th><th>Make</th><th>Model</th><th>Code</th><th>Unit</th><th>Price</th><th>Notes</th></tr></thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+            <button type="button" class="action-button grey" id="btnImportCancel">Cancel</button>
+            <button type="button" class="action-button blue" id="btnImportCommit" ${include.size && !productImport.busy ? '' : 'disabled'}>Create ${include.size} Product${include.size === 1 ? '' : 's'}</button>
+        </div>`;
+    host.querySelectorAll('[data-import-row]').forEach((box) => {
+        box.addEventListener('change', () => {
+            const n = Number(box.getAttribute('data-import-row'));
+            if (box.checked) productImport.include.add(n);
+            else productImport.include.delete(n);
+            renderProductImportPreview();
+        });
+    });
+    host.querySelectorAll('[data-import-open]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            closeProductCreateModal();
+            openProductDetail(btn.getAttribute('data-import-open')).catch((err) => toastOperatorError(err));
+        });
+    });
+    el('btnImportCancel')?.addEventListener('click', closeProductCreateModal);
+    el('btnImportCommit')?.addEventListener('click', () => {
+        commitProductImport().catch((err) => toastOperatorError(err));
+    });
+}
+
+async function previewProductImport(file) {
+    const status = el('prdImportStatus');
+    productImport = { rows: [], results: new Map(), include: new Set(), busy: false };
+    renderProductImportPreview();
+    try {
+        const { rows, ignored } = sheetToImportRows(await readImportSheet(file));
+        if (!rows.length) throw new Error('No data rows found in the file.');
+        if (rows.length > PRODUCT_IMPORT_MAX_ROWS) {
+            throw new Error(`The file has ${rows.length} rows; import at most ${PRODUCT_IMPORT_MAX_ROWS} at a time.`);
+        }
+        if (status) {
+            status.textContent = `Checking ${rows.length} row(s)…${ignored.length ? ` Ignored columns: ${ignored.join(', ')}` : ''}`;
+        }
+        const result = await api('/api/products/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dryRun: true, rows })
+        });
+        productImport.rows = rows;
+        applyImportResults(result.rows || []);
+        if (status) {
+            status.textContent = `${file.name}: ${rows.length} row(s) checked.${ignored.length ? ` Ignored columns: ${ignored.join(', ')}` : ''}`;
+        }
+        renderProductImportPreview();
+    } catch (err) {
+        if (status) status.textContent = '';
+        toastOperatorError(err);
+    }
+}
+
+async function commitProductImport() {
+    if (productImport.busy || !productImport.include.size) return;
+    productImport.busy = true;
+    renderProductImportPreview();
+    const rows = productImport.rows
+        .filter((row) => productImport.include.has(row.rowNumber))
+        .map((row) => ({
+            ...row,
+            allowDuplicate: productImport.results.get(row.rowNumber)?.status === 'DUPLICATE'
+        }));
+    try {
+        const result = await api('/api/products/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows })
+        });
+        const created = result.created || [];
+        showToast(`Created ${created.length} Product${created.length === 1 ? '' : 's'}`, 'success');
+        closeProductCreateModal();
+        await renderProductList({ resetPage: true });
+    } catch (err) {
+        if (err.reasonCode === 'BULK_VALIDATION_FAILED' && err.details?.rows) {
+            const fresh = new Map(err.details.rows.map((r) => [r.row, r]));
+            fresh.forEach((r, n) => productImport.results.set(n, r));
+            productImport.include = new Set([...productImport.include].filter((n) => fresh.get(n)?.status !== 'ERROR'));
+        }
+        toastOperatorError(err);
+    } finally {
+        productImport.busy = false;
+        renderProductImportPreview();
+    }
+}
+
+function openProductImport() {
+    if (!canLogistics()) {
+        showToast('Logistics role required to create AssetEngine Products.', 'error');
+        return;
+    }
+    productImport = { rows: [], results: new Map(), include: new Set(), busy: false };
+    openProductCreateModal('Import AssetEngine Products', `
+        <p class="lc-muted">Create many standalone Products from a CSV or Excel sheet (first sheet, header row first). Only <strong>Name</strong> is required. Rows are checked against existing Products before anything is created. This does not create physical stock.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button type="button" class="action-button grey" id="btnImportTemplate">Download template</button>
+            <input type="file" id="prdImportFile" accept=".csv,.xlsx,.xls" style="display:none;">
+            <button type="button" class="action-button blue" id="btnImportPick">Choose CSV / Excel…</button>
+            <span id="prdImportStatus" class="lc-muted" role="status" aria-live="polite"></span>
+        </div>
+        <div id="prdImportPreview"></div>
+    `, { maxWidth: '1100px' });
+    el('btnImportTemplate')?.addEventListener('click', downloadProductImportTemplate);
+    el('btnImportPick')?.addEventListener('click', () => el('prdImportFile')?.click());
+    el('prdImportFile')?.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (file) previewProductImport(file);
+    });
+}
+
+function ensureGhostTip() {
+    let tip = document.getElementById('aeGhostTip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'aeGhostTip';
+        tip.className = 'ae-ghost-tip';
+        tip.setAttribute('role', 'tooltip');
+        document.body.appendChild(tip);
+    }
+    return tip;
+}
+
+function positionGhostTip(tip, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const margin = 10;
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    tip.classList.add('is-on');
+    const tipRect = tip.getBoundingClientRect();
+    let left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+    let top = rect.bottom + 8;
+    if (top + tipRect.height > window.innerHeight - margin) {
+        top = rect.top - tipRect.height - 8;
+    }
+    left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+    top = Math.max(margin, Math.min(top, window.innerHeight - tipRect.height - margin));
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+}
+
+function hideGhostTip() {
+    const tip = document.getElementById('aeGhostTip');
+    if (tip) tip.classList.remove('is-on');
+}
+
+function bindGhostInfoTips(root) {
+    (root || document).querySelectorAll('.rn-info-tip--portal[data-tip]').forEach((btn) => {
+        if (btn.dataset.ghostTipBound) return;
+        btn.dataset.ghostTipBound = '1';
+        const show = () => {
+            const tip = ensureGhostTip();
+            tip.textContent = btn.getAttribute('data-tip') || '';
+            positionGhostTip(tip, btn);
+        };
+        btn.addEventListener('mouseenter', show);
+        btn.addEventListener('focus', show);
+        btn.addEventListener('mouseleave', hideGhostTip);
+        btn.addEventListener('blur', hideGhostTip);
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+    });
+}
+
 export function initProductsView() {
     const logistics = canLogistics();
     if (el('btnCreateProduct')) el('btnCreateProduct').style.display = logistics ? '' : 'none';
     if (el('btnCreateFromCatalog')) el('btnCreateFromCatalog').style.display = logistics ? '' : 'none';
+    if (el('btnImportProducts')) el('btnImportProducts').style.display = logistics ? '' : 'none';
     setViewMode(viewMode);
     syncFilterChips();
+    bindGhostInfoTips(el('products-view'));
     const bootProducts = () => {
         const pending = consumeOpen('products-view');
         const openUnsynced = Boolean(
             (pending && pending.extra && pending.extra.zohoCatalog)
             || String(window.location.hash || '').includes('zohoCatalog=1')
         );
+        const openAeUnlinked = !openUnsynced && Boolean(
+            (pending && pending.extra && pending.extra.aeUnlinked)
+            || String(window.location.hash || '').includes('aeUnlinked=1')
+        );
         if (openUnsynced) {
             setZohoUnsyncedFilter(true);
             setCatalogPanelOpen(false);
+        } else if (openAeUnlinked) {
+            applyTypeFilter('STANDALONE');
+            statusFilter = 'ACTIVE';
+            linkedFilter = '0';
+            setCatalogPanelOpen(false);
         }
         syncFilterChips();
-        const jobs = [renderProductList({ resetPage: openUnsynced }).then(() => {
+        const jobs = [renderProductList({ resetPage: openUnsynced || openAeUnlinked }).then(() => {
             if (pending && pending.open) return openProductDetail(pending.open);
         })];
         if (catalogPanelIsOpen()) jobs.push(renderZohoCatalogPanel());
@@ -1407,9 +1836,14 @@ export function initProductsView() {
     el('btnCreateFromCatalog')?.addEventListener('click', () => {
         renderCatalogCreate().catch((err) => toastOperatorError(err));
     });
+    el('btnImportProducts')?.addEventListener('click', openProductImport);
     el('closeProductCreateModal')?.addEventListener('click', closeProductCreateModal);
     el('productCreateModal')?.addEventListener('click', (e) => {
         if (e.target === el('productCreateModal')) closeProductCreateModal();
+    });
+    el('closeProductDetailModal')?.addEventListener('click', closeProductDetailModal);
+    el('productDetailModal')?.addEventListener('click', (e) => {
+        if (e.target === el('productDetailModal')) closeProductDetailModal();
     });
     el('btnProductViewCards')?.addEventListener('click', () => {
         setViewMode('cards');
@@ -1419,19 +1853,23 @@ export function initProductsView() {
         setViewMode('list');
         renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
     });
+    el('btnPrdStatusFilter')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePrdFilterMenu('status');
+    });
+    el('btnPrdTypeFilter')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePrdFilterMenu('type');
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#products-view .prd-filter-menu')) closePrdFilterMenus();
+    });
     document.querySelectorAll('#products-view [data-prd-status]').forEach((btn) => {
         btn.addEventListener('click', () => {
             setZohoUnsyncedFilter(false);
             statusFilter = String(btn.getAttribute('data-prd-status') || '');
             syncFilterChips();
-            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
-        });
-    });
-    document.querySelectorAll('#products-view [data-prd-linked]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            setZohoUnsyncedFilter(false);
-            linkedFilter = linkedFilter === '1' ? '' : '1';
-            syncFilterChips();
+            closePrdFilterMenus();
             renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
         });
     });
@@ -1439,18 +1877,16 @@ export function initProductsView() {
         btn.addEventListener('click', () => {
             setZohoUnsyncedFilter(!isZohoUnsyncedFilter());
             syncFilterChips();
+            closePrdFilterMenus();
             renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
         });
     });
-    el('productSourceFilter')?.addEventListener('change', () => {
-        const value = String(el('productSourceFilter')?.value || '');
-        if (value === 'ZOHO_UNSYNCED') {
-            setZohoUnsyncedFilter(true);
-        } else {
-            unsyncedFilter = '';
-        }
-        syncFilterChips();
-        renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+    document.querySelectorAll('#products-view [data-prd-type]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            applyTypeFilter(String(btn.getAttribute('data-prd-type') || ''));
+            closePrdFilterMenus();
+            renderProductList({ resetPage: true }).catch((err) => toastOperatorError(err));
+        });
     });
     el('productSearch')?.addEventListener('input', () => {
         if (productSearchTimer) clearTimeout(productSearchTimer);

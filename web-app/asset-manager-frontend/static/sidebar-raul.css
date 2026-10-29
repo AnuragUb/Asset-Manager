@@ -94,9 +94,36 @@
     color: inherit !important; /* Inherit from wrapper */
     font-weight: 500;
     flex: 1;
+    min-width: 0;
     font-size: 13px;
     text-decoration: none !important;
     padding: 0 !important; /* Override style.css padding */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#app-sidebar .tree-make-tm {
+    flex-shrink: 0;
+    margin-left: 5px;
+    margin-right: 0;
+}
+
+#app-sidebar .tree-kind-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    margin-left: 5px;
+}
+
+#app-sidebar .edit-kind-btn,
+#app-sidebar .delete-kind-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 #app-sidebar .tree-toggle,

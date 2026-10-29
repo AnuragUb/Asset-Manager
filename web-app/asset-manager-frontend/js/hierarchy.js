@@ -19,7 +19,7 @@ export class HierarchyManager {
                 ...f, 
                 ID: f.ID || f.id, 
                 Name: f.Name || f.name,
-                ParentID: f.ParentID || f.parentid,
+                ParentID: f.ParentID || f.ParentId || f.parentid,
                 Module: f.Module || f.module,
                 Icon: f.Icon || f.icon,
                 DisplayImage: f.DisplayImage || f.displayimage,
@@ -29,10 +29,12 @@ export class HierarchyManager {
                 ...k, 
                 ID: k.ID || k.id || k.Name || k.name, 
                 Name: k.Name || k.name,
-                ParentID: k.ParentID || k.parentid || k.ParentName || k.parentname,
+                ParentID: k.ParentID || k.parent_id || k.parentid || k.ParentId || null,
+                ParentName: k.ParentName || k.parentname || null,
                 Module: k.Module || k.module,
                 Icon: k.Icon || k.icon,
                 DisplayImage: k.DisplayImage || k.displayimage,
+                KindRole: String(k.KindRole || k.kind_role || 'CATEGORY').toUpperCase() === 'MAKE' ? 'MAKE' : 'CATEGORY',
                 type: 'kind' 
             }))
         ];
@@ -56,12 +58,27 @@ export class HierarchyManager {
                     children: [] 
                 };
                 nodes[id] = node;
-                // Also map by name if it's different from ID to allow name-based parent lookups
-                if (item.Name && item.Name !== id) {
+                // Folders may still be referenced by name. Kinds with the same
+                // name under different parents must only be keyed by ID.
+                if (item.type !== 'kind' && item.Name && item.Name !== id && !nodes[item.Name]) {
                     nodes[item.Name] = node;
                 }
             }
         });
+
+        const uniqueParentByName = (name, childId, childName) => {
+            const wanted = String(name || '').trim();
+            if (!wanted || wanted === String(childId || '') || wanted === String(childName || '')) return '';
+            const hits = [];
+            const seen = new Set();
+            Object.values(nodes).forEach((candidate) => {
+                if (!candidate || candidate.ID === childId || seen.has(candidate.ID)) return;
+                if (String(candidate.Name || '') !== wanted && String(candidate.ID || '') !== wanted) return;
+                seen.add(candidate.ID);
+                hits.push(candidate);
+            });
+            return hits.length === 1 ? hits[0].ID : '';
+        };
 
         // Link children to parents
         const addedToHierarchy = new Set();
@@ -71,7 +88,10 @@ export class HierarchyManager {
             const node = nodes[id];
             if (!node || addedToHierarchy.has(node.ID)) return;
 
-            const parentId = item.ParentID;
+            let parentId = item.ParentID;
+            if ((!parentId || !nodes[parentId] || parentId === id) && item.type === 'kind') {
+                parentId = uniqueParentByName(item.ParentName || item.parentname, id, item.Name) || parentId;
+            }
             
             // Check if parent exists in our map (case-insensitive check could be added if needed)
             if (parentId && nodes[parentId] && parentId !== id) {
@@ -172,10 +192,12 @@ export class HierarchyManager {
             // Check if this node is active (loose equality for string/number match)
             const isActive = activeId && (node.ID == activeId);
             const activeClass = isActive ? 'active' : '';
+            const kindRole = node.type === 'kind' && String(node.KindRole || node.kind_role || '').toUpperCase() === 'MAKE' ? 'MAKE' : (node.type === 'kind' ? 'CATEGORY' : 'FOLDER');
+            const defaultGlyph = node.type === 'folder' ? '📁' : (kindRole === 'MAKE' ? '™' : '📦');
             
             return `
-                <div class="tree-node" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" style="user-select: none;">
-                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" style="padding-left: ${paddingLeft}px;">
+                <div class="tree-node" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" data-role="${kindRole}" style="user-select: none;">
+                    <div class="tree-item-wrapper ${activeClass}" data-id="${node.ID}" data-type="${node.type}" data-name="${node.Name}" data-role="${kindRole}" style="padding-left: ${paddingLeft}px;">
                         <span class="tree-toggle" style="visibility: ${hasChildren ? 'visible' : 'hidden'}">
                             ${hasChildren ? '▶' : ''}
                         </span>
@@ -184,17 +206,14 @@ export class HierarchyManager {
                                 ? `<img src="${node.DisplayImage}">`
                                 : (node.Icon && (node.Icon.startsWith('/') || node.Icon.startsWith('http'))) 
                                     ? `<img src="${node.Icon}">`
-                                    : (node.Icon && /[^\x00-\x7F]/.test(node.Icon))
+                                    : (node.Icon && node.Icon !== '™' && /[^\x00-\x7F]/.test(node.Icon) && node.Icon !== '📦')
                                         ? `<span class="emoji-icon">${node.Icon}</span>`
-                                        : (node.Icon 
+                                        : (node.Icon && node.Icon !== '™' && node.Icon !== '📦' && node.Icon !== '📁'
                                             ? `<i class="material-icons" style="font-size: 16px;">${node.Icon}</i>`
-                                            : (node.type === 'folder' ? '📁' : '📦'))}
+                                            : defaultGlyph)}
                         </span>
                         <span class="tree-link ${activeClass}" data-id="${node.ID}" data-type="${node.type}">${node.Name}</span>
-                        ${node.type === 'kind' ? `
-                            <span class="edit-kind-btn" data-id="${node.ID}" title="Edit Category">✏️</span>
-                            <span class="delete-kind-btn" data-id="${node.ID}" title="Delete Category">🗑️</span>
-                        ` : ''}
+                        ${kindRole === 'MAKE' ? '<span class="tree-make-tm" title="Make">™</span>' : ''}
                     </div>
                     ${hasChildren ? `
                         <div class="tree-children" id="children-${node.ID}" style="display: none;">

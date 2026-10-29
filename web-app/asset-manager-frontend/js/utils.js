@@ -48,6 +48,16 @@ export function showView(viewName) {
             if (header) header.classList.add('hidden');
             if (sidebar) sidebar.classList.add('hidden');
             document.body.classList.add('login-page');
+            // PO carousel is body-level — must not cover the login form
+            if (typeof window.closePoCarousel === 'function') {
+                window.closePoCarousel();
+            } else {
+                const overlay = document.getElementById('poCarouselOverlay');
+                if (overlay) {
+                    overlay.classList.remove('po-carousel-open');
+                    overlay.hidden = true;
+                }
+            }
         } else {
             if (header) header.classList.remove('hidden');
             
@@ -83,52 +93,89 @@ export function currentAuthUser() {
     }
 }
 
+/** Legacy view.* → canonical resource.view (must match backend permissionCatalog). */
+const PERMISSION_ALIASES = {
+    'view.assets': 'asset.view',
+    'view.inventory': 'inventory.view',
+    'view.products': 'product.view',
+    'view.purchase_orders': 'purchase_order.view',
+    'view.purchase_books': 'purchase_book.view',
+    'view.receipt_notes': 'receipt_note.view',
+    'view.physical_intake': 'physical_intake.view',
+    'view.reservations': 'reservation.view',
+    'view.sets': 'set.view',
+    'view.dc': 'dc.view',
+    'view.projects': 'project.view',
+    'view.warranty': 'warranty.view',
+    'view.dashboard': 'dashboard.view',
+    'view.history': 'history.view',
+    'view.settings': 'settings.view',
+    'view.recovery': 'recovery.view',
+    'view.scanner': 'scanner.view',
+    'view.admin': 'admin.view',
+    'view.releases': 'release.view'
+};
+
+function permissionEquivalents(key) {
+    const k = String(key || '');
+    const canon = PERMISSION_ALIASES[k] || k;
+    const set = new Set([k, canon]);
+    Object.entries(PERMISSION_ALIASES).forEach(([legacy, target]) => {
+        if (target === canon) set.add(legacy);
+    });
+    return [...set];
+}
+
+export { permissionEquivalents, PERMISSION_ALIASES };
+
 /**
  * Canonical page-visibility keys. view.dashboard is Dashboard only.
  * Unknown views are fail-closed in canOpenAppView().
  */
 export const APP_VIEW_PERMISSIONS = {
-    'operations-view': 'view.dashboard',
-    'home-view': 'view.assets',
-    'inventory-view': 'view.inventory',
-    'sets-view': 'view.sets',
-    'receipts-view': 'view.receipt_notes',
-    'purchase-orders-view': 'view.purchase_orders',
-    'purchase-books-view': ['view.purchase_books', 'view.purchase_orders'],
-    'products-view': 'view.products',
-    'reservations-view': 'view.reservations',
-    'history-view': 'view.history',
-    'physical-intakes-view': 'view.physical_intake',
-    'projects-view': 'view.projects',
-    'dc-view': 'view.dc',
+    'operations-view': 'dashboard.view',
+    'home-view': 'asset.view',
+    'inventory-view': 'inventory.view',
+    'sets-view': 'set.view',
+    'receipts-view': 'receipt_note.view',
+    'purchase-orders-view': 'purchase_order.view',
+    'purchase-books-view': ['purchase_book.view', 'purchase_order.view'],
+    'products-view': 'product.view',
+    'reservations-view': 'reservation.view',
+    'history-view': 'history.view',
+    'tally-view': 'dashboard.view',
+    'physical-intakes-view': 'physical_intake.view',
+    'dc-view': 'dc.view',
     'employee-view': 'user.manage',
-    'warranty-view': 'view.warranty',
-    'releases-view': 'view.releases',
-    'admin-view': 'view.admin',
-    'settings-view': 'view.settings',
-    'recovery-center-view': 'view.recovery',
-    'scanner-view': 'view.scanner'
+    'warranty-view': 'warranty.view',
+    'releases-view': 'release.view',
+    'admin-view': 'admin.view',
+    'settings-view': 'settings.view',
+    'recovery-center-view': 'recovery.view'
 };
+
+/** Retired from the product UI. Nav and hash routes stay closed for every role. */
+export const RETIRED_APP_VIEWS = new Set(['projects-view', 'scanner-view']);
 
 /** RBAC Settings tickers: page label → permission key that actually gates the page. */
 export const PAGE_ACCESS_PERMISSIONS = [
-    { page: 'Dashboard', key: 'view.dashboard' },
-    { page: 'Products', key: 'view.products' },
-    { page: 'Inventory', key: 'view.inventory' },
-    { page: 'Assets', key: 'view.assets' },
-    { page: 'History', key: 'view.history' },
-    { page: 'Reservations', key: 'view.reservations' },
-    { page: 'Purchase Orders', key: 'view.purchase_orders' },
-    { page: 'Purchase Books', key: 'view.purchase_books' },
-    { page: 'Receipt Notes', key: 'view.receipt_notes' },
-    { page: 'Sets', key: 'view.sets' },
-    { page: 'Projects', key: 'view.projects' },
-    { page: 'Create DC', key: 'view.dc' },
-    { page: 'Warranty', key: 'view.warranty' },
-    { page: 'Settings', key: 'view.settings' },
-    { page: 'Recovery', key: 'view.recovery' },
-    { page: 'Scanner', key: 'view.scanner' },
-    { page: 'Physical Intake', key: 'view.physical_intake' }
+    { page: 'Dashboard', key: 'dashboard.view' },
+    { page: 'Products', key: 'product.view' },
+    { page: 'Inventory', key: 'inventory.view' },
+    { page: 'Assets', key: 'asset.view' },
+    { page: 'History', key: 'history.view' },
+    { page: 'Reservations', key: 'reservation.view' },
+    { page: 'Purchase Orders', key: 'purchase_order.view' },
+    { page: 'Purchase Books', key: 'purchase_book.view' },
+    { page: 'Receipt Notes', key: 'receipt_note.view' },
+    { page: 'Sets', key: 'set.view' },
+    { page: 'Create DC', key: 'dc.view' },
+    { page: 'Warranty', key: 'warranty.view' },
+    { page: 'Settings', key: 'settings.view' },
+    { page: 'Recovery', key: 'recovery.view' },
+    { page: 'Physical Intake', key: 'physical_intake.view' },
+    { page: 'Admin', key: 'admin.view' },
+    { page: 'Releases', key: 'release.view' }
 ];
 
 const SERVICE_PORTAL_HIDDEN_VIEWS = new Set([
@@ -142,6 +189,7 @@ const SERVICE_PORTAL_HIDDEN_VIEWS = new Set([
     'products-view',
     'reservations-view',
     'history-view',
+    'tally-view',
     'physical-intakes-view',
     'projects-view',
     'dc-view',
@@ -150,19 +198,26 @@ const SERVICE_PORTAL_HIDDEN_VIEWS = new Set([
 ]);
 
 /**
- * RBAC Helper: Check if current user has a specific permission
- * @param {string} permissionKey 
+ * RBAC Helper: Check if current user has a specific permission.
+ * Superuser bypass is centralized here only — admin uses stored ticks.
+ * @param {string} permissionKey
  * @returns {boolean}
  */
 export function hasPermission(permissionKey) {
     const user = currentAuthUser();
     const permissions = user.permissions || [];
     const role = user.role || '';
-    
-    // Superusers and Admins bypass all checks
-    if (role === 'superuser' || role === 'admin') return true;
-    
-    return permissions.includes(permissionKey);
+
+    if (role === 'superuser') return true;
+
+    return permissionEquivalents(permissionKey).some((k) => permissions.includes(k));
+}
+
+/**
+ * Canonical frontend permission check (alias of hasPermission).
+ */
+export function can(permissionKey) {
+    return hasPermission(permissionKey);
 }
 
 /**
@@ -172,6 +227,7 @@ export function hasPermission(permissionKey) {
 export function canOpenAppView(viewId) {
     const raw = String(viewId || '').split('?')[0];
     if (!raw) return false;
+    if (RETIRED_APP_VIEWS.has(raw)) return false;
     const user = currentAuthUser();
     const category = user.category || 'IT';
     const servicePortal = category === 'SERVICE' || category === 'In-House';
@@ -185,6 +241,7 @@ export function canOpenAppView(viewId) {
 
 if (typeof window !== 'undefined') {
     window.hasPermission = hasPermission;
+    window.can = can;
     window.canOpenAppView = canOpenAppView;
 }
 
@@ -209,12 +266,10 @@ export function canEditPrice() {
 export function applyRbacUiRestrictions(user) {
     console.log('[RBAC] Applying UI restrictions for:', user.role);
     
-    const permissions = user.permissions || [];
-    const role = user.role || '';
-    const isAdmin = role === 'admin' || role === 'superuser';
-    const canViewPrice = isAdmin || permissions.includes('asset.view_price');
-    const canEditPrice = isAdmin || permissions.includes('asset.edit_price');
-    const canManageUsers = isAdmin || permissions.includes('user.manage');
+    // Use canonical hasPermission (superuser-only bypass). Admin uses stored ticks.
+    const canViewPrice = hasPermission('asset.view_price');
+    const canEditPrice = hasPermission('asset.edit_price');
+    const canManageUsers = hasPermission('user.manage');
 
     // 1. Price Visibility
     if (!canViewPrice) {
@@ -237,32 +292,34 @@ export function applyRbacUiRestrictions(user) {
         console.log('[RBAC] Disabled price editing');
     }
 
-    // 3. User Management
+    // 3. User Management / Admin nav
     const navAdmin = document.getElementById('nav-admin');
-    if (navAdmin && !canManageUsers) {
+    if (navAdmin && !hasPermission('admin.view') && !canManageUsers) {
         navAdmin.style.display = 'none';
     }
 
-    // 4. Settings / Recovery / Scanner page visibility (canonical view.* keys)
+    // 4. Settings / Recovery / Scanner page visibility
     const navSettings = document.getElementById('nav-settings');
-    if (navSettings && !hasPermission('view.settings')) {
+    if (navSettings && !hasPermission('settings.view')) {
         const wrap = navSettings.closest('li') || navSettings.closest('.menu-item-wrapper') || navSettings;
         wrap.style.display = 'none';
     }
     const navRecovery = document.getElementById('nav-recovery-center');
-    if (navRecovery && !hasPermission('view.recovery')) {
+    if (navRecovery && !hasPermission('recovery.view')) {
         const wrap = navRecovery.closest('li') || navRecovery.closest('.menu-item-wrapper') || navRecovery;
         wrap.style.display = 'none';
     }
-    const navScanner = document.getElementById('nav-scanner');
-    if (navScanner && !hasPermission('view.scanner')) {
-        const wrap = navScanner.closest('li') || navScanner.closest('.menu-item-wrapper') || navScanner;
+    ['nav-scanner', 'nav-projects'].forEach((navId) => {
+        const nav = document.getElementById(navId);
+        if (!nav) return;
+        const wrap = nav.closest('li') || nav.closest('.menu-item-wrapper') || nav;
         wrap.style.display = 'none';
-    }
+        wrap.classList.add('hidden');
+    });
 
     // 5. Category Management
     const btnAddCategory = document.getElementById('btnAddCategory');
-    if (btnAddCategory && !isAdmin && !permissions.includes('category.create')) {
+    if (btnAddCategory && !hasPermission('category.create')) {
         btnAddCategory.style.display = 'none';
     }
 }

@@ -8,7 +8,7 @@ import {
     escapeHtml,
     consumeOpen,
     toastOperatorError
-} from './lifecycle.js?v=7.76';
+} from './lifecycle.js?v=7.139';
 import { gatherLifecycleFeed } from './lifecycle-history.js?v=7.75';
 import { getDashboardEntityLink } from './dashboardEntityLink.js?v=7.40';
 import {
@@ -120,7 +120,7 @@ function isReceivableWaitlistPo(po) {
     if (String(po.source || '').toUpperCase() === 'LOCAL') return false;
     if (po.reconciliationRequired || po.mappingRequired) return false;
     if (String(po.status || '').toUpperCase() === 'CANCELLED') return false;
-    const lines = po.lines || [];
+    const lines = (po.lines || []).filter((line) => String(line.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN');
     return lines.some((line) => Number(line.outstanding || 0) > 0);
 }
 
@@ -129,7 +129,7 @@ function waitlistLineCount(poRows) {
     let pos = 0;
     (poRows || []).forEach((po) => {
         if (!isReceivableWaitlistPo(po)) return;
-        const outstanding = (po.lines || []).filter((line) => Number(line.outstanding || 0) > 0);
+        const outstanding = (po.lines || []).filter((line) => String(line.lineStatus || 'OPEN').toUpperCase() !== 'WITHDRAWN' && Number(line.outstanding || 0) > 0);
         if (!outstanding.length) return;
         pos += 1;
         lines += outstanding.length;
@@ -434,7 +434,19 @@ export async function renderOperations() {
                 'data-lc-zoho-catalog="1"'
             )
             : '';
-        const flowRest = [holdingsCard, awaitingCard, zohoGapCard].filter(Boolean).join('');
+        const aeNotInZohoCount = productRows.filter((p) => (
+            String(p.origin || '').toUpperCase() === 'ASSETENGINE' && !p.zoho_external_id
+        )).length;
+        const aeNotInZohoCard = canProducts
+            ? stageCard(
+                'Not in Zoho',
+                aeNotInZohoCount,
+                'products-view',
+                aeNotInZohoCount === 1 ? 'AssetEngine Product · no Zoho link yet' : 'AssetEngine Products · no Zoho link yet',
+                'data-lc-ae-unlinked="1"'
+            )
+            : '';
+        const flowRest = [holdingsCard, awaitingCard, zohoGapCard, aeNotInZohoCard].filter(Boolean).join('');
         const layoutMods = [
             receivingBlock ? '' : 'ops-layout-no-receiving',
             leftStack ? '' : 'ops-layout-no-left',

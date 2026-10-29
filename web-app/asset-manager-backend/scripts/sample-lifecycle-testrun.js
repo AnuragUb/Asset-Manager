@@ -146,9 +146,9 @@ async function pickHierarchy(resourceType) {
     .orderBy('lastupdated', 'desc')
     .first('type', 'category', 'parent_folder');
   const folder = asset
-    ? await db('folders').where({ name: asset.parent_folder }).first()
-    : await db('folders').where({ name: 'Cineom Assets' }).first()
-      || await db('folders').orderBy('timestamp', 'asc').first();
+    ? await db('asset_folders').where({ name: asset.parent_folder }).first()
+    : await db('asset_folders').where({ name: 'Cineom Assets' }).first()
+      || await db('asset_folders').orderBy('timestamp', 'asc').first();
   if (!folder) throw new Error('No asset folders found');
   const kindName = (asset && asset.type) || 'Hardware';
   return {

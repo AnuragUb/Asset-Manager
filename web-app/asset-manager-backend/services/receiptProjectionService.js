@@ -2,10 +2,8 @@
  * Phase 7 Receipt Note Zoho projection outbox.
  *
  * Physical POST never calls Zoho inside a database transaction.
- * Default adapter is NONE: outbox is recorded SKIPPED / ADAPTER_NOT_CONFIGURED.
- *
- * Does not modify zohoService.js. A later workstream may implement createReceipt()
- * against a verified Zoho receive object.
+ * With ZOHO_RECEIPT_MODULE set, post fetches that receipt's Outbound PO from Zoho
+ * and creates one custom-module record. Otherwise the outbox is SKIPPED.
  */
 const { db } = require('../utils');
 
@@ -21,8 +19,13 @@ function httpError(message, statusCode, reasonCode, details) {
   return err;
 }
 
-function adapterConfigured() {
+function testAdapterReady() {
   return typeof testAdapter === 'object' && testAdapter && typeof testAdapter.createReceipt === 'function';
+}
+
+function adapterConfigured() {
+  if (testAdapterReady()) return true;
+  return require('./zohoReceiptAdapter').isConfigured();
 }
 
 function setAdapterForTests(adapter) {
@@ -30,8 +33,9 @@ function setAdapterForTests(adapter) {
 }
 
 function getAdapter() {
-  if (adapterConfigured()) return testAdapter;
-  return null;
+  if (testAdapterReady()) return testAdapter;
+  const live = require('./zohoReceiptAdapter');
+  return live.isConfigured() ? live : null;
 }
 
 function classifyRemoteError(err) {
@@ -54,6 +58,7 @@ async function enqueue(trx, {
   receiptNoteId,
   poSource,
   poId,
+  zohoPoId,
   skipReason
 }) {
   const adapter = getAdapter();
@@ -64,7 +69,7 @@ async function enqueue(trx, {
     receipt_note_id: receiptNoteId,
     po_source: poSource || 'LOCAL',
     po_id: poId || null,
-    zoho_po_id: null,
+    zoho_po_id: zohoPoId || null,
     zoho_receipt_id: null,
     status,
     idempotency_key: `RN-PROJECT:${receiptNoteId}`,

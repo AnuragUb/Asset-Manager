@@ -52,24 +52,61 @@ function humanAction(type) {
         PHYSICAL_ALLOCATED: 'Physical allocated to Purchase Book',
         PHYSICAL_RELEASED: 'Physical released from Purchase Book',
         DC_CONSUMED: 'Purchase Book qty used on DC',
-        DC_RELEASED: 'Purchase Book DC consumption released'
+        DC_RELEASED: 'Purchase Book DC consumption released',
+        DC_CREATED: 'Added to Delivery Challan',
+        DC_ADDED: 'Added to Delivery Challan',
+        DC_REMOVED: 'Removed from Delivery Challan',
+        DC_DISPATCHED: 'Dispatched on Delivery Challan',
+        DC_RETURNED: 'Brought back from Delivery Challan'
     };
     return map[t] || String(type || 'Event').replace(/_/g, ' ');
 }
 
-function eventCard(ev) {
-    return `<article class="lc-event-card">
-        <div class="lc-event-when">${formatWhen(ev.when)}</div>
-        <div class="lc-event-action">${escapeHtml(ev.action)}</div>
-        <div class="lc-event-meta">
-            ${ev.actor ? `<span>By ${escapeHtml(ev.actor)}</span>` : ''}
-            ${ev.qty != null && ev.qty !== '' ? `<span>Qty ${formatQty(ev.qty)}</span>` : ''}
-            ${ev.source ? `<span>From ${escapeHtml(ev.source)}</span>` : ''}
-            ${ev.dest ? `<span>To ${escapeHtml(ev.dest)}</span>` : ''}
-            ${ev.ref ? `<button type="button" class="lc-crumb-link" data-lc-go="${escapeHtml(ev.refView || '')}" data-lc-open="${escapeHtml(ev.ref)}">${escapeHtml(ev.ref)}</button>` : ''}
-        </div>
-        ${ev.tech ? `<details class="lc-tech"><summary>Technical details</summary><pre>${escapeHtml(ev.tech)}</pre></details>` : ''}
-    </article>`;
+function histCell(value) {
+    const text = value == null ? '' : String(value).trim();
+    return text ? escapeHtml(text) : '<span class="hist-empty">—</span>';
+}
+
+function historyRow(ev) {
+    const qty = ev.qty != null && ev.qty !== '' ? escapeHtml(formatQty(ev.qty)) : '<span class="hist-empty">—</span>';
+    const ref = ev.ref
+        ? `<button type="button" class="lc-crumb-link" data-lc-go="${escapeHtml(ev.refView || '')}" data-lc-open="${escapeHtml(ev.ref)}">${escapeHtml(ev.ref)}</button>`
+        : '<span class="hist-empty">—</span>';
+    const tech = ev.tech
+        ? `<details class="hist-tech"><summary>Details</summary><pre>${escapeHtml(ev.tech)}</pre></details>`
+        : '<span class="hist-empty">—</span>';
+    return `<tr>
+        <td class="hist-when">${escapeHtml(formatWhen(ev.when))}</td>
+        <td>${escapeHtml(ev.action || '')}</td>
+        <td>${histCell(ev.actor)}</td>
+        <td class="hist-num">${qty}</td>
+        <td>${histCell(ev.source)}</td>
+        <td>${histCell(ev.dest)}</td>
+        <td>${(ev.holdings || []).length ? escapeHtml(ev.holdings.join(', ')) : '<span class="hist-empty">—</span>'}</td>
+        <td class="hist-ref">${ref}</td>
+        <td>${tech}</td>
+    </tr>`;
+}
+
+function historySheet(rows) {
+    return `<div class="hist-sheet-wrap">
+        <table class="hist-sheet">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>By</th>
+                    <th>Qty</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Asset / Inventory</th>
+                    <th>Reference</th>
+                    <th>Technical details</th>
+                </tr>
+            </thead>
+            <tbody>${rows.map(historyRow).join('')}</tbody>
+        </table>
+    </div>`;
 }
 
 function pushEvent(list, ev) {
@@ -276,9 +313,17 @@ export async function gatherLifecycleFeed({ limit = 80 } = {}) {
         pushEvent(events, {
             when: ev.timestamp || ev.createdAt,
             actor: ev.actor,
-            action: ev.type === 'VOIDED' ? 'Delivery Challan voided' : (ev.type === 'CREATED' ? 'Delivery Challan created' : humanAction(ev.type)),
+            action: ({
+                CREATED: 'Delivery Challan created',
+                READY: 'Delivery Challan reserved',
+                DISPATCHED: 'Delivery Challan posted',
+                RETURNED: 'Delivery Challan return posted',
+                UPDATED: 'Delivery Challan updated',
+                VOIDED: 'Delivery Challan voided'
+            })[ev.type] || humanAction(ev.type),
             source: meta.customerName || null,
             dest: ev.challanNo || meta.challanNo || ev.deliveryChallanId,
+            holdings: ev.holdings || [],
             ref: ev.deliveryChallanId,
             refView: 'dc-view',
             module: 'dc',
@@ -337,6 +382,11 @@ function eventsFromLookup(result) {
             qty: ev.quantity,
             source: ev.resourceId || ev.sourceId,
             dest: ev.destinationId,
+            holdings: (Array.isArray(ev.holdings) && ev.holdings.length)
+                ? ev.holdings
+                : (ev.assetid || ev.AssetID || ev.assetId
+                    ? [`ASSET ${ev.assetid || ev.AssetID || ev.assetId}`]
+                    : (result.view === 'home-view' && result.id ? [`ASSET ${result.id}`] : [])),
             ref: result.id,
             refView: result.view,
             tech: ev.id ? `Operation ${ev.id}` : ''
@@ -370,7 +420,7 @@ function eventsFromLookup(result) {
 }
 
 let historyPage = 0;
-const HISTORY_PAGE_SIZE = 8;
+const HISTORY_PAGE_SIZE = 15;
 let lastHistoryEvents = [];
 let lastHistoryQuery = '';
 
@@ -416,7 +466,7 @@ function paintHistoryPage() {
     const heading = lastHistoryQuery
         ? `<p class="lc-muted">History for <span class="lc-mono">${escapeHtml(lastHistoryQuery)}</span></p>`
         : '';
-    host.innerHTML = `${heading}${slice.map(eventCard).join('')}${renderHistoryPager(total)}`;
+    host.innerHTML = `${heading}${historySheet(slice)}${renderHistoryPager(total)}`;
     bindHistoryPager();
 }
 

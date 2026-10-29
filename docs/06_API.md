@@ -48,7 +48,7 @@ Before removing or renaming any route: **grep frontend, HTML, scripts, and exter
 
 | Method | Route | Auth | Purpose | Typical consumers |
 |--------|-------|------|---------|-------------------|
-| POST | `/api/auth/login` | None | Login + cookies | `auth.js` |
+| POST | `/api/auth/login` | None | Login + cookies. Temporary-password accounts get `mustChangePassword` and an email instead of a session. | `auth.js` |
 | POST | `/api/auth/logout` | None | Clear session | `auth.js` |
 | GET | `/api/auth/me` | Cookie/JWT | Current user / refresh | `auth.js`, `asset-view.js` |
 | POST | `/api/auth/forgot-password` | None | Start reset | `auth.js` |
@@ -209,6 +209,7 @@ Tables: `delivery_challans`, `dc_item_mappings`, `dc_remark_templates`.
 | `/api/settings/tally`… | None | settings UI |
 | POST `/api/tally/sync` | None | `dashboard` |
 | GET `/api/hsn` | None | forms |
+| GET `/api/holdings/:resourceType/:id/hsn-history` | JWT (`asset.view` / `inventory.view`) | asset/inventory edit modal |
 
 Persistence often `dynamic.json` for settings; HSN uses `hsn_codes`.
 

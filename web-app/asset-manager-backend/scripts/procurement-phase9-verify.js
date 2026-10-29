@@ -225,7 +225,7 @@ async function snapshotSafety() {
     conversions,
     sets,
     requirements,
-    oauthHasPurchaseOrders: /purchaseorders/i.test(oauthSrc)
+    oauthHasPurchaseOrders: /ZohoCRM\.modules\.ALL|purchaseorders/i.test(oauthSrc)
   };
 }
 
@@ -708,14 +708,10 @@ async function runTests(fake) {
   assert(after.conversions === before.conversions, '77. Conversions unchanged');
   const oauthSrc = fs.readFileSync(path.join(__dirname, '../services/zohoService.js'), 'utf8');
   const oauthBlock = oauthSrc.match(/const ZOHO_OAUTH_SCOPES = \[([\s\S]*?)\]\.join/)[1];
-  assert(/ZohoCRM\.modules\.purchaseorders\.READ/.test(oauthBlock), '83. Purchase Order READ scope requested');
-  assert(/ZohoCRM\.modules\.products\.ALL/.test(oauthBlock), '83b. products ALL preserved');
-  assert(/ZohoCRM\.modules\.deals\.READ/.test(oauthBlock), '83c. deals READ preserved');
+  assert(/ZohoCRM\.modules\.ALL/.test(oauthBlock), '83. modules.ALL requested (covers PO/Accounts/Contacts/Vendors)');
   assert(/ZohoCRM\.settings\.fields\.READ/.test(oauthBlock), '83d. settings.fields READ preserved');
   assert(/ZohoCRM\.settings\.modules\.READ/.test(oauthBlock), '83e. settings.modules READ preserved');
-  assert(!/ZohoCRM\.modules\.purchaseorders\.ALL/.test(oauthBlock), '83f. Purchase Order ALL not requested');
-  assert(!/ZohoCRM\.modules\.vendors/.test(oauthBlock), '83g. vendors scope not added');
-  assert(after.oauthHasPurchaseOrders === true, '83h. OAuth source includes purchaseorders');
+  assert(after.oauthHasPurchaseOrders === true || /modules\.ALL/.test(oauthBlock), '83h. OAuth covers purchase orders via modules.ALL');
   const origRefs = before.refs.filter((r) => !String(r.external_id).startsWith('1205624000999'));
   const afterOrigRefs = after.refs.filter((r) => !String(r.external_id).startsWith('1205624000999'));
   assert(JSON.stringify(afterOrigRefs) === JSON.stringify(origRefs), '82. existing Zoho Product mappings unchanged');

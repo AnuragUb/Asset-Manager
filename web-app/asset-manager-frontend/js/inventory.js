@@ -1,5 +1,5 @@
-import { showToast } from './utils.js?v=6.60';
-import { HierarchyManager } from './hierarchy.js?v=6.60';
+import { showToast, hasPermission } from './utils.js?v=6.60';
+import { HierarchyManager } from './hierarchy.js?v=6.67';
 import {
     getEventDisplayName,
     getEventUi,
@@ -444,8 +444,36 @@ function populateInventoryHierarchyInSharedModal(existingItem = null) {
 
     rebuildKinds(selectedFolderId, selectedKindId);
 
+    const pathInput = getEl('itemFolderPath');
+    const pathList = getEl('itemFolderPathList');
+    if (pathInput && pathList) {
+        pathList.innerHTML = kinds.map((kind) => {
+            const folder = folders.find((item) => item.id === kind.folderid);
+            return folder ? `<option value="${escapeHtml(`${folder.name} / ${kind.name}`)}"></option>` : '';
+        }).join('');
+        const folderName = folders.find((item) => item.id === selectedFolderId)?.name || '';
+        const kindName = kinds.find((item) => item.id === selectedKindId)?.name || '';
+        const stored = existingItem?.folder_path || existingItem?.folderPath || '';
+        pathInput.value = stored || [folderName, kindName].filter(Boolean).join(' / ');
+        pathInput.oninput = () => {
+            const parts = String(pathInput.value || '').split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+            const folder = folders.find((item) => item.name.toLowerCase() === String(parts[0] || '').toLowerCase());
+            const kind = folder
+                ? kinds.find((item) => item.folderid === folder.id && item.name.toLowerCase() === String(parts[1] || '').toLowerCase())
+                : null;
+            if (folder) folderSelect.value = folder.id;
+            rebuildKinds(folder ? folder.id : '', kind ? kind.id : '');
+        };
+    }
+
     folderSelect.onchange = () => {
         rebuildKinds(folderSelect.value, '');
+        const pathInput = getEl('itemFolderPath');
+        if (!pathInput) return;
+        const folderName = folderSelect.selectedOptions[0]?.textContent || '';
+        const kindName = kindSelect.selectedOptions[0]?.textContent || '';
+        const parts = [folderName, kindName].map((part) => String(part || '').trim()).filter((part) => part && !part.startsWith('Select '));
+        if (parts.length) pathInput.value = parts.join(' / ');
     };
     kindSelect.onchange = () => {
         brandSelect.innerHTML = '<option value="" selected>Generic / Default</option>';
@@ -511,6 +539,15 @@ function openInventorySharedModal(existingItem = null) {
     updateHistoryBtnVisibility();
 
     window.__inventoryModalActive = true;
+    const sharedStatusSelect = getEl('itemStatus');
+    if (sharedStatusSelect) {
+        sharedStatusSelect.disabled = false;
+        sharedStatusSelect.title = '';
+        Array.from(sharedStatusSelect.options).forEach((opt) => {
+            opt.disabled = false;
+            opt.textContent = opt.value;
+        });
+    }
     form.dataset.entity = 'inventory';
     delete form.dataset.catalogZohoProductId;
     delete form.dataset.catalogUuid;
@@ -587,6 +624,7 @@ function openInventorySharedModal(existingItem = null) {
     setVal('itemDate', existingItem?.DispatchReceiveDt || existingItem?.dispatchreceivedt || '');
     setVal('itemPurchase', existingItem?.PurchaseDetails || existingItem?.purchasedetails || '');
     setVal('itemHsnCode', existingItem?.HSNCode || existingItem?.hsn_code || '');
+    if (typeof window.bindHsnHistoryButton === 'function') window.bindHsnHistoryButton();
     setVal('itemRemarks', existingItem?.Remarks || existingItem?.remarks || '');
     setVal('itemWeight', existingItem?.Weight || existingItem?.weight || '');
     setVal('itemWarranty', existingItem?.warranty_months || 0);
@@ -600,6 +638,7 @@ function openInventorySharedModal(existingItem = null) {
     setVal('itemQtyTotal', existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? '1');
     setVal('itemQtyPrecision', existingItem?.QuantityPrecision ?? existingItem?.quantity_precision ?? 0);
     setVal('itemQtyNote', existingItem?.quantity_note || '');
+    if (typeof window.aeApplyQtyOverrideGuard === 'function') window.aeApplyQtyOverrideGuard({ isSplitChild: false });
     setVal('itemConvUnit', existingItem?.conversion_unit || '');
     setVal('itemConvFactor', existingItem?.conversion_factor ?? '');
     setVal('itemConvMode', existingItem?.conversion_mode || 'multiply');
@@ -1131,7 +1170,7 @@ function renderInventoryItemsTable(items) {
                 <td style="white-space: nowrap;">
                     <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
                         <button type="button" class="inv-row-edit" data-id="${idAttr}" title="Edit" style="background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Edit</button>
-                        ${(!isConsumed && isQtyTracked) ? `<button type="button" class="inv-row-consume" data-id="${idAttr}" title="Consume quantity" style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Consume</button>` : ''}
+                        ${(!isConsumed && isQtyTracked && hasPermission('inventory.adjust')) ? `<button type="button" class="inv-row-consume" data-id="${idAttr}" title="Consume quantity" style="background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Consume</button>` : ''}
                         <button type="button" class="inv-row-details" data-id="${idAttr}" title="View Full Details" style="background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Details</button>
                         <button type="button" class="inv-row-print-qr" data-id="${idAttr}" title="Print QR / Label" style="background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc; padding: 3px 7px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">🖨️ QR</button>
                     </div>
@@ -1671,13 +1710,14 @@ function openInventoryFromCatalog(catalogItem) {
     };
 
     setVal('itemName', catalogItem?.product_name || '');
-    setVal('itemDescription', catalogItem?.description || '');
+    setVal('itemDescription', '');
     setVal('itemMake', catalogItem?.make || '');
     setVal('itemModel', catalogItem?.model || '');
     setVal('itemHsnCode', catalogItem?.hsn_code || '');
     setVal('itemValue', Number(catalogItem?.unit_price || 0));
 
     setVal('itemQtyTotal', '1');
+    if (typeof window.aeApplyQtyOverrideGuard === 'function') window.aeApplyQtyOverrideGuard({ isSplitChild: false });
     setVal('itemQtyUnit', 'Nos');
     setVal('itemQtyPrecision', '0');
     setChecked('itemIsQtyTracked', false);
@@ -1854,15 +1894,18 @@ function openCrudModal(type, existingItem = null) {
                     <label for="inventoryItemDescription">Description</label>
                     <input type="text" id="inventoryItemDescription" value="${itemDescriptionValue}">
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="form-group">
-                        <label for="inventoryItemFolder">Folder</label>
-                        <select id="inventoryItemFolder" required>${folderOptions}</select>
-                    </div>
-                    <div class="form-group">
-                        <label for="inventoryItemKind">Category</label>
-                        <select id="inventoryItemKind" required>${kindOptions}</select>
-                    </div>
+                <div class="form-group">
+                    <label for="inventoryItemPath">Folder Path</label>
+                    <input type="text" id="inventoryItemPath" list="inventoryItemPathList" required value="${escapeHtml([
+                        folderList.find((folder) => folder.id === String(defaults.folderId))?.name,
+                        kindList.find((kind) => kind.id === String(defaults.kindId))?.name
+                    ].filter(Boolean).join(' / ') || String(existingItem?.folder_path || existingItem?.folderPath || ''))}" placeholder="Stores / Cables">
+                    <datalist id="inventoryItemPathList">${kindList.map((kind) => {
+                        const folder = folderList.find((item) => item.id === kind.folderid);
+                        return folder ? `<option value="${escapeHtml(`${folder.name} / ${kind.name}`)}"></option>` : '';
+                    }).join('')}</datalist>
+                    <input type="hidden" id="inventoryItemFolder" value="${escapeHtml(defaults.folderId)}">
+                    <input type="hidden" id="inventoryItemKind" value="${escapeHtml(defaults.kindId)}">
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div class="form-group">
@@ -1941,13 +1984,22 @@ function openCrudModal(type, existingItem = null) {
 
     const form = getEl('inventoryCrudForm');
     if (form) {
-        const folderSelect = getEl('inventoryItemFolder');
-        const kindSelect = getEl('inventoryItemKind');
-        if (type === 'item' && folderSelect && kindSelect) {
-            folderSelect.addEventListener('change', () => {
-                const selectedFolderId = folderSelect.value;
-                kindSelect.innerHTML = buildKindOptions(selectedFolderId, '');
-            });
+        const pathInput = getEl('inventoryItemPath');
+        if (type === 'item' && pathInput) {
+            const applyInventoryPath = () => {
+                const parts = String(pathInput.value || '').split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+                const folder = folderList.find((item) => item.name.toLowerCase() === String(parts[0] || '').toLowerCase());
+                const kind = folder
+                    ? kindList.find((item) => item.folderid === folder.id && item.name.toLowerCase() === String(parts[1] || '').toLowerCase())
+                    : null;
+                const folderHidden = getEl('inventoryItemFolder');
+                const kindHidden = getEl('inventoryItemKind');
+                if (folderHidden) folderHidden.value = folder ? folder.id : '';
+                if (kindHidden) kindHidden.value = kind ? kind.id : '';
+            };
+            pathInput.addEventListener('input', applyInventoryPath);
+            pathInput.addEventListener('change', applyInventoryPath);
+            applyInventoryPath();
         }
 
         if (type === 'item' && existingItem && typeof window.setupBreakLineageUI === 'function') {
@@ -2025,26 +2077,25 @@ function openCrudModal(type, existingItem = null) {
                 } else {
                     const folderValue = getEl('inventoryItemFolder')?.value || '';
                     const kindValue = getEl('inventoryItemKind')?.value || '';
-                    if (!folderValue) {
-                        showToast('Folder is required.', 'error');
-                        return;
-                    }
-                    if (!kindValue) {
-                        showToast('Category is required.', 'error');
+                    const folderPath = String(getEl('inventoryItemPath')?.value || '').trim();
+                    if (!folderValue || !kindValue) {
+                        showToast('Folder Path must be an existing folder and category. Example: Stores / Cables', 'error');
                         return;
                     }
                     if (!existingItem) {
                         showToast('Procurement stock is created through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.', 'info');
                         return;
                     }
-                    const res = await fetchJson(existingItem ? `/api/inventory/items/${encodeURIComponent(existingItem.ID || existingItem.id)}` : '/api/inventory/items', {
-                        method: existingItem ? 'PUT' : 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
+                    const itemUrl = `/api/inventory/items/${encodeURIComponent(existingItem.ID || existingItem.id)}`;
+                    const itemResponse = await window.aeFetchWithOverride(itemUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' }
+                    }, {
                             ItemName: getEl('inventoryItemName')?.value,
                             ItemDescription: getEl('inventoryItemDescription')?.value || '',
                             FolderID: folderValue,
                             KindID: kindValue,
+                            FolderPath: folderPath,
                             Make: getEl('inventoryItemMake')?.value || '',
                             Model: getEl('inventoryItemModel')?.value || '',
                             CurrentLocation: getEl('inventoryItemLocation')?.value || 'Mumbai',
@@ -2055,9 +2106,10 @@ function openCrudModal(type, existingItem = null) {
                             IsSet: Number(getEl('inventoryItemSet')?.value || 0),
                             IsBatch: Number(existingItem?.IsBatch ?? existingItem?.is_batch ?? 0),
                             Remarks: getEl('inventoryItemRemarks')?.value || getEl('itemRemarks')?.value || ''
-                        })
                     });
-                    createdId = String(existingItem ? (existingItem.ID || existingItem.id) : (res.ID || res.id || res.item?.ID || res.item?.id || ''));
+                    if (!itemResponse) return;
+                    if (!itemResponse.ok) throw new Error(await window.aeReadResponseError(itemResponse));
+                    createdId = String(existingItem.ID || existingItem.id);
                 }
 
                 modal.style.display = 'none';
@@ -2147,6 +2199,9 @@ function openConsumeMovementModal(item) {
                 <p id="inventoryConsumeSubtitle" style="margin:0 0 14px 0; color:#64748b; font-size:13px;"></p>
                 <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Amount</label>
                 <input id="inventoryConsumeAmount" type="number" min="0" step="any" class="form-input" style="width:100%; margin-bottom:12px;" />
+                <p style="margin:0 0 12px 0; font-size:12px; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">Consumed stock leaves the tally permanently. Use a Delivery Challan if it is going to a customer or site. The reason is recorded in quantity history.</p>
+                <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Reason</label>
+                <input id="inventoryConsumeReason" type="text" maxlength="1000" class="form-input" style="width:100%; margin-bottom:12px;" placeholder="Required — e.g. used for studio rigging" />
                 <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Notes</label>
                 <textarea id="inventoryConsumeNote" class="form-input" rows="3" style="width:100%; margin-bottom:16px;" placeholder="Optional note"></textarea>
                 <div style="display:flex; gap:8px; justify-content:flex-end;">
@@ -2163,16 +2218,22 @@ function openConsumeMovementModal(item) {
     getEl('inventoryConsumeSubtitle').textContent = `${name} · Available Quantity: ${available} ${unit}`;
     getEl('inventoryConsumeAmount').value = available > 0 ? String(available) : '1';
     getEl('inventoryConsumeNote').value = '';
+    getEl('inventoryConsumeReason').value = '';
     modal.style.display = 'flex';
 
     getEl('inventoryConsumeSubmit').onclick = async () => {
         const amount = Number(getEl('inventoryConsumeAmount').value);
         const note = getEl('inventoryConsumeNote').value || null;
+        const reason = getEl('inventoryConsumeReason').value.trim();
+        if (reason.length < 5) {
+            showToast('Enter a reason of at least 5 characters', 'warning');
+            return;
+        }
         try {
             await fetchJson('/api/inventory/movements', {
                 method: 'POST',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ type: 'CONSUME', itemId, amount, note })
+                body: JSON.stringify({ type: 'CONSUME', itemId, amount, note, reason })
             });
             modal.style.display = 'none';
             showToast('Quantity consumed', 'success');

@@ -119,6 +119,8 @@ function handleTemplateSelection(e) {
         document.getElementById('dcCompanyAddress').value = template.address || '';
         document.getElementById('dcCompanyGST').value = template.gst || '';
         document.getElementById('dcCompanyCIN').value = template.cin || '';
+        const panEl = document.getElementById('dcCompanyPAN');
+        if (panEl) panEl.value = template.pan || '';
         document.getElementById('dcCompanyState').value = template.state_name || '';
         document.getElementById('dcCompanyStateCode').value = template.state_code || '';
         
@@ -147,6 +149,7 @@ async function handleSaveTemplate() {
         address: document.getElementById('dcCompanyAddress').value.trim(),
         gst: document.getElementById('dcCompanyGST').value.trim(),
         cin: document.getElementById('dcCompanyCIN').value.trim(),
+        pan: (document.getElementById('dcCompanyPAN')?.value || '').trim(),
         state_name: document.getElementById('dcCompanyState').value.trim(),
         state_code: document.getElementById('dcCompanyStateCode').value.trim(),
         is_default: false // Could add checkbox for this later
@@ -217,6 +220,8 @@ async function handleDeleteTemplate() {
             document.getElementById('dcCompanyAddress').value = '';
             document.getElementById('dcCompanyGST').value = '';
             document.getElementById('dcCompanyCIN').value = '';
+            const panEl = document.getElementById('dcCompanyPAN');
+            if (panEl) panEl.value = '';
             document.getElementById('dcCompanyState').value = '';
             document.getElementById('dcCompanyStateCode').value = '';
             

@@ -1,0 +1,401 @@
+/* Lamp login scene — scoped to #loginView so the rest of the app is untouched. */
+#loginView {
+    --cineom-red: #c4161c;
+    --cineom-red-hot: #e31c24;
+    background: #050505;
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+#loginView .login-room {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 100vh;
+    background-color: #050505;
+    overflow: hidden;
+    transition: background-color 0.8s ease;
+}
+
+#loginView .login-room.on {
+    background-color: #111;
+}
+
+#loginView .login-room-glow {
+    position: absolute;
+    top: -30%;
+    left: 0;
+    width: 1000px;
+    height: 1000px;
+    background: radial-gradient(circle, rgba(196, 22, 28, 0.22) 0%, rgba(227, 28, 36, 0.08) 30%, rgba(0, 0, 0, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+#loginView .login-room.on .login-room-glow {
+    opacity: 1;
+    transform: scale(1.5);
+}
+
+#loginView .login-fireflies {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 15;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+}
+
+#loginView .login-room.on .login-fireflies {
+    opacity: 1;
+}
+
+#loginView .login-firefly {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 50%;
+    background-color: var(--cineom-red-hot);
+    box-shadow: 0 0 10px 3px rgba(227, 28, 36, 0.95), 0 0 20px rgba(196, 22, 28, 0.65);
+    animation-name: login-firefly-drift, login-firefly-flicker;
+    animation-timing-function: ease-in-out, ease-in-out;
+    animation-iteration-count: infinite, infinite;
+}
+
+@keyframes login-firefly-flicker {
+    0%, 100% { opacity: 0.45; }
+    40% { opacity: 1; }
+    70% { opacity: 0.65; }
+}
+
+#loginView .login-lamp-col {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 5;
+}
+
+#loginView .login-pull-hint {
+    position: absolute;
+    top: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #555;
+    font-size: 16px;
+    font-weight: 500;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    width: 80%;
+    max-width: 280px;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    z-index: 8;
+}
+
+#loginView .login-room.on .login-pull-hint {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-16px);
+}
+
+#loginView .login-cube-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 280px;
+    height: 280px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    z-index: 6;
+    overflow: visible;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#loginView .login-cube-backglow {
+    position: absolute;
+    width: 280px;
+    height: 280px;
+    left: 50%;
+    top: 42%;
+    transform: translate(-50%, -50%) scale(0.4);
+    clip-path: polygon(49.6% 20%, 78.1% 34.6%, 50% 49.2%, 21.7% 34.6%);
+    background: radial-gradient(circle at 50% 48%, rgba(227, 28, 36, 0.95) 0%, rgba(196, 22, 28, 0.45) 42%, rgba(196, 22, 28, 0) 72%);
+    filter: blur(10px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 0.55s ease, transform 0.55s ease;
+}
+
+#loginView .login-room.on .login-cube-backglow {
+    opacity: 0.85;
+    transform: translate(-50%, calc(-50% - 10px)) scale(1);
+}
+
+#loginView .login-cube-stage {
+    position: relative;
+    width: 240px;
+    overflow: visible;
+    z-index: 2;
+}
+
+#loginView .login-cube-logo {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: auto;
+    display: block;
+    filter: brightness(0.45) saturate(0.7);
+    transition: filter 0.6s ease;
+    user-select: none;
+    pointer-events: none;
+}
+
+#loginView .login-room.on .login-cube-logo {
+    filter: brightness(1) saturate(1);
+}
+
+#loginView .login-cube-well,
+#loginView .login-cube-gap,
+#loginView .login-cube-lid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+#loginView .login-cube-well svg,
+#loginView .login-cube-gap svg,
+#loginView .login-cube-lid svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+#loginView .login-cube-well {
+    z-index: 3;
+    opacity: 0;
+    transition: opacity 0.35s ease 0.05s;
+}
+
+#loginView .login-room.on .login-cube-well {
+    opacity: 1;
+}
+
+#loginView .login-cube-well-fill {
+    fill: url(#loginWellCore);
+    stroke: #ff8a8a;
+    stroke-width: 1.5;
+}
+
+#loginView .login-cube-gap {
+    z-index: 4;
+    opacity: 0;
+    transition: opacity 0.3s ease 0.08s;
+}
+
+#loginView .login-room.on .login-cube-gap {
+    opacity: 1;
+}
+
+#loginView .login-cube-gap polygon {
+    fill: url(#loginGapWall);
+}
+
+#loginView .login-cube-lid {
+    z-index: 5;
+    transform: translateY(0);
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    filter: none;
+}
+
+#loginView .login-room.on .login-cube-lid {
+    transform: translateY(-10px);
+    filter: drop-shadow(0 8px 12px rgba(255, 80, 80, 0.85)) drop-shadow(0 2px 4px rgba(255, 200, 200, 0.65));
+}
+
+#loginView .login-cube-lid-under {
+    fill: url(#loginLidUnder);
+    opacity: 0;
+    filter: url(#loginLidMould);
+    transition: opacity 0.35s ease 0.1s;
+}
+
+#loginView .login-room.on .login-cube-lid-under {
+    opacity: 1;
+}
+
+#loginView .login-cube-lid-top {
+    fill: #f7f7f7;
+    stroke: #111;
+    stroke-width: 3.4;
+    stroke-linejoin: round;
+}
+
+#loginView .login-cube-lid-inner {
+    fill: var(--cineom-red);
+}
+
+#loginView .login-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    z-index: 10;
+    padding: 48px 10% 48px 24px;
+    background: transparent;
+    max-width: none;
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateX(40px);
+    pointer-events: none;
+    transition: opacity 0.55s ease, filter 0.55s ease, transform 0.55s ease;
+}
+
+#loginView .login-room.on .login-right {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+#loginView .login-right.glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    border-radius: 24px;
+    margin: 40px 6% 40px 0;
+    padding: 40px 40px;
+    max-width: 460px;
+    width: 100%;
+    align-self: center;
+}
+
+#loginView .login-welcome {
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+#loginView .login-welcome h2 {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    color: #fff;
+    letter-spacing: -0.5px;
+}
+
+#loginView .login-welcome p {
+    color: #aaa;
+    font-size: 14px;
+    margin: 0 0 16px 0;
+}
+
+#loginView .form-group label {
+    color: #ddd;
+}
+
+#loginView #loginForm input[type="text"],
+#loginView #loginForm input[type="password"] {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-radius: 12px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+#loginView #loginForm input:focus {
+    background: rgba(0, 0, 0, 0.55);
+    border-color: rgba(196, 22, 28, 0.55);
+    box-shadow: 0 0 0 2px rgba(196, 22, 28, 0.2);
+}
+
+#loginView .form-options,
+#loginView .form-options label,
+#loginView .signup-link {
+    color: #aaa;
+}
+
+#loginView .signup-link a,
+#loginView #forgotPasswordLink {
+    color: var(--cineom-red-hot);
+}
+
+#loginView .login-button {
+    background: var(--cineom-red);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+}
+
+#loginView .login-button:hover {
+    background: var(--cineom-red-hot);
+    box-shadow: 0 0 20px rgba(196, 22, 28, 0.45);
+}
+
+#loginView .login-button.login-button-saver,
+.login-button.login-button-saver {
+    position: fixed;
+    z-index: 80;
+    width: 168px;
+    margin: 0;
+    box-shadow: 0 0 18px rgba(196, 22, 28, 0.55);
+}
+
+#loginView .login-sign-slot {
+    height: 44px;
+}
+
+#loginView #loginMsg {
+    color: #ffb4b4;
+}
+
+@media (max-width: 900px) {
+    #loginView .login-room {
+        flex-direction: column;
+        min-height: 100vh;
+        overflow: auto;
+    }
+
+    #loginView .login-lamp-col {
+        min-height: 240px;
+        flex: none;
+        padding-top: 32px;
+    }
+
+    #loginView .login-cube-btn {
+        width: 200px;
+        height: 200px;
+    }
+
+    #loginView .login-cube-stage {
+        width: 170px;
+    }
+
+    #loginView .login-cube-backglow {
+        width: 200px;
+        height: 200px;
+    }
+
+    #loginView .login-right.glass {
+        margin: 0 16px 32px;
+        padding: 28px 20px;
+        max-width: none;
+        align-self: stretch;
+    }
+}

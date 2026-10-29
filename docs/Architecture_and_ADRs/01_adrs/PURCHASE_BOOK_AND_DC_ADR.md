@@ -184,6 +184,8 @@ Identity on each DC line: `product_id`; optional `procurement_po_line_id`; when 
 - Identity = holding (+ its `product_id`).
 - Presentation fields still editable for the client document.
 
+> **Superseded 2026-09-28:** the pool exclusions below are withdrawn by [PHYSICAL_TALLY_AUTHORITY_ADR.md](./PHYSICAL_TALLY_AUTHORITY_ADR.md) §3 — any in-store holding is DC-able regardless of origin; PO / Purchase Book are optional references. Kept here for history.
+
 **Excluded from the Mode B available pool (locked):**
 
 - Holdings with procurement / PO commercial parentage (Sourced via PO / RN, or otherwise tied to a PO).
@@ -240,7 +242,7 @@ Purchase Book v1 tables/UI exist. Landed / in flight:
 3. Mode B holdings search exclusions (PO / awaiting adoption; book link when available) — landed
 4. DC void/delete releases book consumption — landed
 5. Purchase Book ↔ holding / serial physical link (`purchase_book_physical`) — landed
-6. **Later:** deeper Receipt Note ↔ Purchase Book coherence
+6. **Later:** deeper Receipt Note ↔ Purchase Book coherence. The invoice number on both is the same vendor invoice; a shared invoice record and hosted PDF come later — [VENDOR_INVOICE_IDENTITY_ADR.md](./VENDOR_INVOICE_IDENTITY_ADR.md).
 
 ---
 
@@ -255,6 +257,8 @@ Purchase Book v1 tables/UI exist. Landed / in flight:
 | 2026-09-16 | Purchase Book lifecycle = Logistics for now |
 | 2026-09-17 | DC may reference **multiple** Purchase Books |
 | 2026-09-17 | Book lock is **partial** (qty used only); remainder stays DC-able |
+| 2026-10-05 | Purchase Book and Receipt Note invoice numbers are the same vendor invoice. Shared invoice table and PDF hosting are later — [VENDOR_INVOICE_IDENTITY_ADR.md](./VENDOR_INVOICE_IDENTITY_ADR.md) |
 | 2026-09-17 | **Keep** PO-linked DC without a book (A1) |
 | 2026-09-17 | Mode B pool excludes PO-sourced / awaiting-PO (and book-linked when that exists) |
 | 2026-09-17 | Purchase Book owns physical/serial allocation; DC ships linked serials |
+| 2026-09-28 | Mode B pool exclusions withdrawn; Purchase Books are not the tally — see [PHYSICAL_TALLY_AUTHORITY_ADR.md](./PHYSICAL_TALLY_AUTHORITY_ADR.md) |

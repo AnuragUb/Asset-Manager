@@ -19,7 +19,10 @@ const BLOCKED_ASSET_STATUSES = new Set([
   'sold',
   'scraped',
   'consumed',
-  'deleted'
+  'deleted',
+  'out on demo',
+  'out on rental',
+  'out for repair'
 ]);
 
 function httpError(message, statusCode, reasonCode, details) {
@@ -95,8 +98,10 @@ async function uniqueReservationId(trx) {
   throw httpError('Could not allocate a unique reservation ID', 500);
 }
 
-function publicReservation(row) {
+function publicReservation(row, setMeta) {
   if (!row) return null;
+  const isSet = String(row.owner_type || '').toUpperCase() === 'SET';
+  const setRow = isSet && setMeta ? setMeta.get(row.owner_id) : null;
   return {
     id: row.id,
     resourceType: row.resource_type,
@@ -105,6 +110,9 @@ function publicReservation(row) {
     quantityOriginal: row.quantity_original,
     ownerType: row.owner_type,
     ownerId: row.owner_id,
+    reservedForSet: isSet ? (row.owner_id || null) : null,
+    reservedForSetName: setRow && setRow.name ? setRow.name : null,
+    reservedForSetCode: setRow && setRow.set_code ? setRow.set_code : null,
     status: row.status,
     reason: row.reason || null,
     reasonCode: row.reason_code || null,
@@ -395,12 +403,22 @@ function isUniqueViolation(err, name) {
   return hay.includes(name);
 }
 
+async function loadSetMeta(runner, rows) {
+  const ids = [...new Set((rows || [])
+    .filter((row) => String(row.owner_type || '').toUpperCase() === 'SET' && row.owner_id)
+    .map((row) => row.owner_id))];
+  if (!ids.length || !(await runner.schema.hasTable('managed_sets'))) return new Map();
+  const sets = await runner('managed_sets').whereIn('id', ids).select('id', 'name', 'set_code');
+  return new Map(sets.map((row) => [row.id, row]));
+}
+
 async function hydrate(runner, row) {
   const events = await runner('reservation_event')
     .where({ reservation_id: row.id })
     .orderBy('id');
+  const setMeta = await loadSetMeta(runner, [row]);
   return {
-    reservation: publicReservation(row),
+    reservation: publicReservation(row, setMeta),
     events: events.map(publicEvent)
   };
 }
@@ -851,10 +869,35 @@ async function list(filters = {}) {
   if (filters.status) {
     q = q.andWhere('status', String(filters.status).toUpperCase());
   }
+  const search = String(filters.q || '').trim();
+  if (search) {
+    const term = `%${search}%`;
+    const hasManagedSets = await db.schema.hasTable('managed_sets');
+    let setIds = [];
+    if (hasManagedSets) {
+      setIds = await db('managed_sets')
+        .select('id')
+        .where(function setFields() {
+          this.whereILike('name', term).orWhereILike('set_code', term);
+        })
+        .then((rows) => rows.map((row) => row.id));
+    }
+    q = q.andWhere(function filterQ() {
+      this.where('id', 'ilike', term)
+        .orWhere('resource_id', 'ilike', term)
+        .orWhere('owner_id', 'ilike', term);
+      if (setIds.length) {
+        this.orWhere(function matchSetOwner() {
+          this.where('owner_type', 'SET').whereIn('owner_id', setIds);
+        });
+      }
+    });
+  }
   const limit = Math.min(500, Math.max(1, parseInt(filters.limit, 10) || 100));
   const offset = Math.max(0, parseInt(filters.offset, 10) || 0);
   const rows = await q.limit(limit).offset(offset);
-  return { reservations: rows.map(publicReservation), limit, offset };
+  const setMeta = await loadSetMeta(db, rows);
+  return { reservations: rows.map((row) => publicReservation(row, setMeta)), limit, offset };
 }
 
 async function listForResource(resourceType, resourceId) {
@@ -873,11 +916,12 @@ async function listForResource(resourceType, resourceId) {
     if (!byRes.has(ev.reservation_id)) byRes.set(ev.reservation_id, []);
     byRes.get(ev.reservation_id).push(publicEvent(ev));
   }
+  const setMeta = await loadSetMeta(db, rows);
   return {
     resourceType: type,
     resourceId: id,
     reservations: rows.map((row) => ({
-      ...publicReservation(row),
+      ...publicReservation(row, setMeta),
       events: byRes.get(row.id) || []
     }))
   };

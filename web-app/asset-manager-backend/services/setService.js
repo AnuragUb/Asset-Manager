@@ -392,7 +392,8 @@ async function getSet(id, opts = {}) {
 async function listSets({ q, status, composition, completeness, engine } = {}) {
   await requireTables();
   let query = db('managed_sets').select('*').orderBy('updated_at', 'desc');
-  if (status) query = query.where('status', String(status).toUpperCase());
+  const statusFilter = String(status || 'ACTIVE').toUpperCase();
+  if (statusFilter && statusFilter !== 'ALL') query = query.where('status', statusFilter);
   if (q) {
     const like = `%${q}%`;
     query = query.andWhere(function search() {
@@ -986,6 +987,35 @@ async function replaceAllocation(setId, allocationId, args = {}) {
   }
 }
 
+async function releaseSetHoldings(trx, setRow, actor, reason, reasonCode) {
+  const active = await trx('managed_set_components')
+    .where({ set_id: setRow.id, is_active: true })
+    .forUpdate();
+  const now = new Date().toISOString();
+  for (const row of active) {
+    if (row.reservation_id) {
+      const rsv = await trx('reservation').where({ id: row.reservation_id }).forUpdate().first();
+      if (rsv && rsv.status === 'ACTIVE') {
+        if (rsv.owner_type !== 'SET' || String(rsv.owner_id) !== String(setRow.id)) {
+          throw httpError('Reservation does not belong to this Set', 409, 'RESERVATION_OWNER_MISMATCH');
+        }
+        const resourceType = row.component_type;
+        const resourceId = resourceType === 'ASSET' ? row.asset_id : row.inventory_item_id;
+        await lockHoldingRow(trx, resourceType, resourceId);
+        await reservationService.release({
+          trx,
+          id: rsv.id,
+          actor,
+          reason: reason || `Set ${reasonCode || 'release'} ${setRow.id}`,
+          reasonCode: reasonCode || 'SET_DISBAND'
+        });
+      }
+    }
+    await deactivateAllocation(trx, row, actor, now);
+  }
+  return { released: active.length, now };
+}
+
 async function disband(setId, args = {}) {
   await requireTables();
   const key = idempotencyKeyOf(args);
@@ -1012,31 +1042,13 @@ async function disband(setId, args = {}) {
       }
       assertActive(setRow);
 
-      const active = await trx('managed_set_components')
-        .where({ set_id: setRow.id, is_active: true })
-        .forUpdate();
-      const now = new Date().toISOString();
-      for (const row of active) {
-        if (row.reservation_id) {
-          const rsv = await trx('reservation').where({ id: row.reservation_id }).forUpdate().first();
-          if (rsv && rsv.status === 'ACTIVE') {
-            if (rsv.owner_type !== 'SET' || String(rsv.owner_id) !== String(setRow.id)) {
-              throw httpError('Reservation does not belong to this Set', 409, 'RESERVATION_OWNER_MISMATCH');
-            }
-            const resourceType = row.component_type;
-            const resourceId = resourceType === 'ASSET' ? row.asset_id : row.inventory_item_id;
-            await lockHoldingRow(trx, resourceType, resourceId);
-            await reservationService.release({
-              trx,
-              id: rsv.id,
-              actor,
-              reason: reason || `Set disband ${setRow.id}`,
-              reasonCode: 'SET_DISBAND'
-            });
-          }
-        }
-        await deactivateAllocation(trx, row, actor, now);
-      }
+      const { released, now } = await releaseSetHoldings(
+        trx,
+        setRow,
+        actor,
+        reason || `Set disband ${setRow.id}`,
+        'SET_DISBAND'
+      );
 
       await trx('managed_sets').where({ id: setRow.id }).update({
         status: 'DISBANDED',
@@ -1048,7 +1060,7 @@ async function disband(setId, args = {}) {
         type: 'DISBANDED',
         actor,
         note: reason,
-        metadata: { released_allocations: active.length }
+        metadata: { released_allocations: released }
       });
       const formatted = await formatSet(trx, await loadSet(trx, setRow.id));
       const result = { set: formatted };
@@ -1121,6 +1133,66 @@ async function archiveSet(setId, args = {}) {
         type: 'ARCHIVED',
         actor,
         note: args.reason || null
+      });
+      const formatted = await formatSet(trx, await loadSet(trx, setRow.id));
+      const result = { set: formatted };
+      await storeIdempotency(trx, key, 'ARCHIVE', setRow.id, result);
+      return result;
+    });
+  } catch (err) {
+    if (key && err && err.code === '23505' && String(err.constraint || '').includes('set_idempotency')) {
+      const replay = await findIdempotency(db, key);
+      if (replay) return replay;
+    }
+    throw mapPgError(err);
+  }
+}
+
+async function deleteSet(setId, args = {}) {
+  await requireTables();
+  const key = idempotencyKeyOf(args);
+  const existingKey = await findIdempotency(db, key);
+  if (existingKey) return existingKey;
+  const actor = args.actor || null;
+  const reason = args.reason ? String(args.reason) : null;
+
+  try {
+    return await db.transaction(async (trx) => {
+      const replay = await findIdempotency(trx, key);
+      if (replay) return replay;
+      const setRow = await trx('managed_sets').where({ id: setId }).forUpdate().first()
+        || await trx('managed_sets').whereRaw('LOWER(id) = LOWER(?)', [setId]).forUpdate().first();
+      if (!setRow) throw httpError('Set not found', 404, 'NOT_FOUND');
+      const status = String(setRow.status).toUpperCase();
+      if (status === 'ABSORBED') {
+        throw httpError('An absorbed Set cannot be deleted.', 409, 'SET_ABSORBED');
+      }
+      if (status === 'ARCHIVED') {
+        const formatted = await formatSet(trx, setRow);
+        const result = { set: formatted, alreadyDeleted: true };
+        await storeIdempotency(trx, key, 'ARCHIVE', setRow.id, result);
+        return result;
+      }
+
+      const { released, now } = await releaseSetHoldings(
+        trx,
+        setRow,
+        actor,
+        reason || `Set delete ${setRow.id}`,
+        'SET_DELETE'
+      );
+      await trx('managed_sets').where({ id: setRow.id }).update({
+        status: 'ARCHIVED',
+        archived_at: now,
+        updated_at: now,
+        updated_by: actor || setRow.updated_by
+      });
+      await writeSetEvent(trx, {
+        setId: setRow.id,
+        type: 'ARCHIVED',
+        actor,
+        note: reason || 'Deleted from Sets list',
+        metadata: { via: 'DELETE', released_allocations: released }
       });
       const formatted = await formatSet(trx, await loadSet(trx, setRow.id));
       const result = { set: formatted };
@@ -1425,6 +1497,7 @@ module.exports = {
   replaceAllocation,
   disband,
   archiveSet,
+  deleteSet,
   listHistory,
   allocationsAt,
   listEligibleAssets,

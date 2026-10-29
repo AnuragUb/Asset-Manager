@@ -330,7 +330,9 @@ async function hydrate(runner, row) {
   const [outputs, events, product] = await Promise.all([
     runner('physical_intake_output').where({ physical_intake_id: row.id }).orderBy('id', 'asc'),
     runner('physical_intake_event').where({ physical_intake_id: row.id }).orderBy('id', 'asc'),
-    runner('product').where({ id: row.product_id }).first()
+    row.product_id
+      ? runner('product').where({ id: row.product_id }).first()
+      : Promise.resolve(null)
   ]);
   let commercialProvenance = null;
   if (await commercialProvenanceService.tablesReady(runner)) {
@@ -355,6 +357,7 @@ function fingerprintOf({
   holdingType,
   intakeType,
   productId,
+  itemName,
   quantity,
   unit,
   reason,
@@ -363,7 +366,7 @@ function fingerprintOf({
   procurementPoId,
   procurementPoLineId
 }) {
-  return JSON.stringify({
+  const body = {
     holdingType,
     intakeType,
     productId,
@@ -374,7 +377,9 @@ function fingerprintOf({
     expectedPoNumber: String(expectedPoNumber || ''),
     procurementPoId: String(procurementPoId || ''),
     procurementPoLineId: String(procurementPoLineId || '')
-  });
+  };
+  if (!productId && itemName) body.itemName = String(itemName);
+  return JSON.stringify(body);
 }
 
 function sameFingerprint(row, fp) {
@@ -433,7 +438,7 @@ async function resolveAssetHierarchy(trx, args) {
   }
   let parentFolder = trimText(args.parentFolder || args.parent_folder || args.folderName);
   if (!parentFolder) {
-    const folder = await trx('folders')
+    const folder = await trx('asset_folders')
       .where({ id: folderId })
       .first();
     parentFolder = trimText(folder?.name || folder?.Name) || folderId;
@@ -537,17 +542,87 @@ function validateRequest(args) {
   };
 }
 
-async function createInventoryRow(trx, { product, qty, unit, location, host, actor, intakeId, folder }) {
-  const holdingId = await uniqueHoldingId(trx, 'inventory_items', location, folder.type || product.name || 'Inventory');
+function normalizePurchaseDate(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  let year;
+  let month;
+  let day;
+  let match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    year = Number(match[1]);
+    month = Number(match[2]);
+    day = Number(match[3]);
+  } else {
+    match = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+    if (match) {
+      day = Number(match[1]);
+      month = Number(match[2]);
+      year = Number(match[3]);
+    } else if (/^\d+(\.\d+)?$/.test(text)) {
+      const serial = Math.floor(Number(text));
+      if (serial > 20000 && serial < 80000) {
+        const utc = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+        year = utc.getUTCFullYear();
+        month = utc.getUTCMonth() + 1;
+        day = utc.getUTCDate();
+      }
+    }
+  }
+  if (!year) return undefined;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return undefined;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function parseIntakePrice(value) {
+  if (value == null || value === '') return null;
+  const text = String(value).trim().replace(/[₹$]/g, '').replace(/,/g, '').trim();
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) {
+    throw httpError(`Price "${String(value).trim()}" is not a number.`, 400, 'INTAKE_PRICE_INVALID');
+  }
+  return n;
+}
+
+function truthyFlag(value) {
+  return value === true || value === 1 || /^(true|1|yes)$/i.test(String(value || '').trim());
+}
+
+function requireHoldingDescription(args, product, holdingType) {
+  const label = String(holdingType || 'ASSET').toUpperCase() === 'INVENTORY' ? 'Inventory' : 'Asset';
+  const port = truthyFlag(args.portProductDescription || args.port_product_description);
+  let text = trimText(args.itemDescription || args.itemdescription || args.holdingDescription);
+  if (!text && !(product && product.id)) {
+    text = trimText(args.description);
+  }
+  if (!text && port) {
+    text = trimText(product && product.description);
+    if (!text) {
+      throw httpError(`Cannot port Product description onto this ${label}: the Product description is blank.`, 400, 'PRODUCT_DESCRIPTION_BLANK');
+    }
+  }
+  if (!text) {
+    throw httpError(`${label} description is required. It is not the Product description unless you port it.`, 400, 'HOLDING_DESCRIPTION_REQUIRED');
+  }
+  return text;
+}
+
+async function createInventoryRow(trx, { product, qty, unit, location, host, actor, intakeId, folder, itemName, purchaseDate, folderPath, price, itemDescription }) {
+  const named = product || {};
+  const holdingId = await uniqueHoldingId(trx, 'inventory_items', location, folder.type || named.name || 'Inventory');
   const now = new Date().toISOString();
   const qr = await buildQrDataUrl(host, 'inventory', holdingId);
-  await trx('inventory_items').insert({
+  const row = {
     id: holdingId,
-    itemname: product.name,
-    itemdescription: product.description || '',
+    itemname: trimText(itemName) || named.name || '',
+    itemdescription: trimText(itemDescription),
     status: 'In Store',
-    make: product.make || '',
-    model: product.model || '',
+    make: named.make || '',
+    model: named.model || '',
+    purchasedate: purchaseDate || null,
     type: folder.type || 'Inventory',
     category: folder.category || folder.type || 'Inventory',
     folderid: folder.folderid,
@@ -568,7 +643,7 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
     quantity_root_id: holdingId,
     quantity_original: qty,
     lineage_status: 'ACTIVE',
-    product_id: product.id,
+    product_id: named.id || null,
     receipt_line_id: null,
     physical_intake_id: intakeId,
     parentid: null,
@@ -576,7 +651,14 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
     noqr: 0,
     client_label: clientLabelFromId(holdingId),
     quantity_updated_at: now
-  });
+  };
+  if (await trx.schema.hasColumn('inventory_items', 'folder_path')) {
+    row.folder_path = folderPath || null;
+  }
+  if (price != null && await trx.schema.hasColumn('inventory_items', 'asset_value')) {
+    row.asset_value = price;
+  }
+  await trx('inventory_items').insert(row);
   const outputInserted = await trx('physical_intake_output').insert({
     physical_intake_id: intakeId,
     resource_type: 'INVENTORY',
@@ -597,8 +679,9 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
   return { resourceType: 'INVENTORY', resourceId: holdingId, quantity: qty, qr: true, outputId };
 }
 
-async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId, hierarchy }) {
-  const type = hierarchy?.type || product.make || 'GEN';
+async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId, hierarchy, itemName, purchaseDate, folderPath, price, itemDescription }) {
+  const named = product || {};
+  const type = hierarchy?.type || named.make || 'GEN';
   const category = hierarchy?.category || 'IT';
   const parentFolder = hierarchy?.parentFolder || '';
   const holdingId = await uniqueHoldingId(trx, 'assets', location, type);
@@ -606,11 +689,12 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
   const qr = await buildQrDataUrl(host, 'asset', holdingId);
   const row = {
     id: holdingId,
-    itemname: product.name,
-    itemdescription: product.description || '',
+    itemname: trimText(itemName) || named.name || '',
+    itemdescription: trimText(itemDescription),
     status: 'In Store',
-    make: product.make || '',
-    model: product.model || '',
+    make: named.make || '',
+    model: named.model || '',
+    purchasedate: purchaseDate || null,
     srno: '',
     type,
     category,
@@ -636,13 +720,21 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
     quantity_root_id: holdingId,
     quantity_original: qty,
     lineage_status: 'ACTIVE',
-    product_id: product.id,
+    product_id: named.id || null,
     receipt_line_id: null,
     physical_intake_id: intakeId,
     quantity_updated_at: now
   };
   if (await trx.schema.hasColumn('assets', 'parent_folder')) {
     row.parent_folder = parentFolder;
+  }
+  if (await trx.schema.hasColumn('assets', 'folder_path')) {
+    row.folder_path = folderPath || null;
+  }
+  if (price != null && await trx.schema.hasColumn('assets', 'asset_value')) {
+    row.asset_value = price;
+  } else if (price != null && await trx.schema.hasColumn('assets', 'unitprice')) {
+    row.unitprice = price;
   }
   await trx('assets').insert(row);
   const outputInserted = await trx('physical_intake_output').insert({
@@ -674,6 +766,171 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
   return { resourceType: 'ASSET', resourceId: holdingId, quantity: qty, qr: true, outputId };
 }
 
+/** Write one intake + its holding + provenance inside the caller's transaction. */
+async function insertIntakeRecord(trx, { args, validated, product, unit, location, key, fp, actor, host }) {
+  const intakeId = await uniquePrefixedId(
+    trx,
+    'physical_intake',
+    () => generatePhysicalIntakeId(),
+    verifyPhysicalIntakeId,
+    'Physical Intake'
+  );
+  const now = new Date().toISOString();
+  const productId = product && product.id ? product.id : null;
+  const price = parseIntakePrice(args.price);
+  const sourceJson = { ...validated.source, _fingerprint: fp };
+  const approvingActor = validated.intakeType === 'OTHER_APPROVED'
+    ? (trimText(args.approvingActor || args.approving_actor) || actor)
+    : null;
+
+  await trx('physical_intake').insert({
+    id: intakeId,
+    status: 'POSTED',
+    holding_type: validated.holdingType,
+    intake_type: validated.intakeType,
+    product_id: productId,
+    quantity: validated.quantity,
+    unit,
+    reason: validated.reason,
+    source_json: JSON.stringify(sourceJson),
+    location,
+    folder_id: validated.folderId,
+    kind_id: validated.kindId,
+    actor,
+    approving_actor: approvingActor,
+    idempotency_key: key,
+    created_at: now,
+    updated_at: now
+  });
+  if (key) {
+    await trx('physical_intake_idempotency').insert({
+      idempotency_key: key,
+      physical_intake_id: intakeId,
+      created_at: now
+    });
+  }
+
+  await writeIntakeEvent(trx, {
+    physicalIntakeId: intakeId,
+    type: 'PHYSICAL_INTAKE_CREATED',
+    productId,
+    quantity: validated.quantity,
+    unit,
+    actor,
+    reason: validated.reason,
+    metadata: {
+      intakeType: validated.intakeType,
+      holdingType: validated.holdingType,
+      origin: 'NON_PROCUREMENT_INTAKE',
+      poChoice: validated.commercialChoice,
+      poState: commercialProvenanceService.stateForChoice(validated.commercialChoice)
+    }
+  });
+
+  const holdingDescription = requireHoldingDescription(args, product, validated.holdingType);
+
+  let created;
+  if (validated.holdingType === 'INVENTORY') {
+    const folder = await resolveInventoryFolder(trx, {
+      folderId: validated.folderId,
+      kindId: validated.kindId,
+      type: validated.type,
+      category: validated.category
+    });
+    created = await createInventoryRow(trx, {
+      product,
+      qty: validated.quantity,
+      unit,
+      location,
+      host,
+      actor,
+      intakeId,
+      folder,
+      itemName: trimText(args.itemName || args.item_name),
+      purchaseDate: args.purchaseDate || args.purchase_date || null,
+      folderPath: trimText(args.folderPath || args.folder_path),
+      price,
+      itemDescription: holdingDescription
+    });
+    await writeIntakeEvent(trx, {
+      physicalIntakeId: intakeId,
+      type: 'PHYSICAL_INTAKE_INVENTORY_CREATED',
+      productId,
+      quantity: validated.quantity,
+      unit,
+      actor,
+      reason: validated.reason,
+      resourceType: 'INVENTORY',
+      resourceId: created.resourceId
+    });
+  } else {
+    const hierarchy = await resolveAssetHierarchy(trx, {
+      folderId: validated.folderId,
+      kindId: validated.kindId,
+      parentFolder: validated.parentFolder,
+      type: validated.type,
+      category: validated.category
+    });
+    created = await createAssetRow(trx, {
+      product,
+      qty: validated.quantity,
+      unit,
+      location,
+      host,
+      actor,
+      intakeId,
+      hierarchy,
+      itemName: trimText(args.itemName || args.item_name),
+      purchaseDate: args.purchaseDate || args.purchase_date || null,
+      folderPath: trimText(args.folderPath || args.folder_path),
+      price,
+      itemDescription: holdingDescription
+    });
+    await writeIntakeEvent(trx, {
+      physicalIntakeId: intakeId,
+      type: 'PHYSICAL_INTAKE_ASSET_CREATED',
+      productId,
+      quantity: validated.quantity,
+      unit,
+      actor,
+      reason: validated.reason,
+      resourceType: 'ASSET',
+      resourceId: created.resourceId
+    });
+  }
+
+  const attached = await commercialProvenanceService.attachAtIntake(trx, {
+    choice: validated.commercialChoice,
+    args,
+    resourceType: created.resourceType,
+    resourceId: created.resourceId,
+    quantity: validated.quantity,
+    productId,
+    physicalIntakeId: intakeId,
+    physicalIntakeOutputId: created.outputId,
+    actor
+  });
+  await commercialProvenanceService.writeIntakeProvenanceEvents(trx, {
+    physicalIntakeId: intakeId,
+    productId,
+    quantity: validated.quantity,
+    unit,
+    actor,
+    resourceType: created.resourceType,
+    resourceId: created.resourceId,
+    choice: attached.choice,
+    state: attached.state,
+    po: attached.po,
+    line: attached.line,
+    meta: attached.meta
+  });
+
+  const row = await trx('physical_intake').where({ id: intakeId }).first();
+  const result = await hydrate(trx, row);
+  result.created = created;
+  return result;
+}
+
 async function createPhysicalIntake(args = {}) {
   await requireTables();
   if (!(await commercialProvenanceService.tablesReady())) {
@@ -683,7 +940,30 @@ async function createPhysicalIntake(args = {}) {
   const actor = actorOf(args);
   const host = args.host;
   const validated = validateRequest(args);
-  const product = await loadActiveProduct(args.productId || args.product_id);
+  const skipProduct = args.noProduct === true || args.no_product === true;
+  const requestedProductId = trimText(args.productId || args.product_id);
+  if (skipProduct && requestedProductId) {
+    throw httpError('Choose an existing Product or No PRD required.', 400, 'PRODUCT_CHOICE_CONFLICT');
+  }
+  let product;
+  if (skipProduct) {
+    product = {
+      id: null,
+      name: trimText(args.itemName || args.item_name),
+      description: trimText(args.description || args.itemDescription) || '',
+      make: trimText(args.make) || '',
+      model: trimText(args.model) || '',
+      unit: null
+    };
+    if (!product.name) {
+      throw httpError('Item name is required when no Product is selected.', 400, 'ITEM_NAME_REQUIRED');
+    }
+    if (validated.commercialChoice === 'AVAILABLE') {
+      throw httpError('A Product is required to link a Purchase Order.', 409, 'PRODUCT_REQUIRED');
+    }
+  } else {
+    product = await loadActiveProduct(requestedProductId);
+  }
   const unit = trimText(args.unit) || trimText(product.unit) || 'Nos';
   if (!unit) {
     throw httpError('A unit is required.', 400, 'INTAKE_QUANTITY_INVALID');
@@ -697,7 +977,8 @@ async function createPhysicalIntake(args = {}) {
   const fp = fingerprintOf({
     holdingType: validated.holdingType,
     intakeType: validated.intakeType,
-    productId: product.id,
+    productId: product.id || null,
+    itemName: skipProduct ? product.name : '',
     quantity: validated.quantity,
     unit,
     reason: validated.reason,
@@ -737,153 +1018,7 @@ async function createPhysicalIntake(args = {}) {
         }
       }
 
-      const intakeId = await uniquePrefixedId(
-        trx,
-        'physical_intake',
-        () => generatePhysicalIntakeId(),
-        verifyPhysicalIntakeId,
-        'Physical Intake'
-      );
-      const now = new Date().toISOString();
-      const sourceJson = { ...validated.source, _fingerprint: fp };
-      const approvingActor = validated.intakeType === 'OTHER_APPROVED'
-        ? (trimText(args.approvingActor || args.approving_actor) || actor)
-        : null;
-
-      await trx('physical_intake').insert({
-        id: intakeId,
-        status: 'POSTED',
-        holding_type: validated.holdingType,
-        intake_type: validated.intakeType,
-        product_id: product.id,
-        quantity: validated.quantity,
-        unit,
-        reason: validated.reason,
-        source_json: JSON.stringify(sourceJson),
-        location,
-        folder_id: validated.folderId,
-        kind_id: validated.kindId,
-        actor,
-        approving_actor: approvingActor,
-        idempotency_key: key,
-        created_at: now,
-        updated_at: now
-      });
-      if (key) {
-        await trx('physical_intake_idempotency').insert({
-          idempotency_key: key,
-          physical_intake_id: intakeId,
-          created_at: now
-        });
-      }
-
-      await writeIntakeEvent(trx, {
-        physicalIntakeId: intakeId,
-        type: 'PHYSICAL_INTAKE_CREATED',
-        productId: product.id,
-        quantity: validated.quantity,
-        unit,
-        actor,
-        reason: validated.reason,
-        metadata: {
-          intakeType: validated.intakeType,
-          holdingType: validated.holdingType,
-          origin: 'NON_PROCUREMENT_INTAKE',
-          poChoice: validated.commercialChoice,
-          poState: commercialProvenanceService.stateForChoice(validated.commercialChoice)
-        }
-      });
-
-      let created;
-      if (validated.holdingType === 'INVENTORY') {
-        const folder = await resolveInventoryFolder(trx, {
-          folderId: validated.folderId,
-          kindId: validated.kindId,
-          type: validated.type,
-          category: validated.category
-        });
-        created = await createInventoryRow(trx, {
-          product,
-          qty: validated.quantity,
-          unit,
-          location,
-          host,
-          actor,
-          intakeId,
-          folder
-        });
-        await writeIntakeEvent(trx, {
-          physicalIntakeId: intakeId,
-          type: 'PHYSICAL_INTAKE_INVENTORY_CREATED',
-          productId: product.id,
-          quantity: validated.quantity,
-          unit,
-          actor,
-          reason: validated.reason,
-          resourceType: 'INVENTORY',
-          resourceId: created.resourceId
-        });
-      } else {
-        const hierarchy = await resolveAssetHierarchy(trx, {
-          folderId: validated.folderId,
-          kindId: validated.kindId,
-          parentFolder: validated.parentFolder,
-          type: validated.type,
-          category: validated.category
-        });
-        created = await createAssetRow(trx, {
-          product,
-          qty: validated.quantity,
-          unit,
-          location,
-          host,
-          actor,
-          intakeId,
-          hierarchy
-        });
-        await writeIntakeEvent(trx, {
-          physicalIntakeId: intakeId,
-          type: 'PHYSICAL_INTAKE_ASSET_CREATED',
-          productId: product.id,
-          quantity: validated.quantity,
-          unit,
-          actor,
-          reason: validated.reason,
-          resourceType: 'ASSET',
-          resourceId: created.resourceId
-        });
-      }
-
-      const attached = await commercialProvenanceService.attachAtIntake(trx, {
-        choice: validated.commercialChoice,
-        args,
-        resourceType: created.resourceType,
-        resourceId: created.resourceId,
-        quantity: validated.quantity,
-        productId: product.id,
-        physicalIntakeId: intakeId,
-        physicalIntakeOutputId: created.outputId,
-        actor
-      });
-      await commercialProvenanceService.writeIntakeProvenanceEvents(trx, {
-        physicalIntakeId: intakeId,
-        productId: product.id,
-        quantity: validated.quantity,
-        unit,
-        actor,
-        resourceType: created.resourceType,
-        resourceId: created.resourceId,
-        choice: attached.choice,
-        state: attached.state,
-        po: attached.po,
-        line: attached.line,
-        meta: attached.meta
-      });
-
-      const row = await trx('physical_intake').where({ id: intakeId }).first();
-      const result = await hydrate(trx, row);
-      result.created = created;
-      return result;
+      return insertIntakeRecord(trx, { args, validated, product, unit, location, key, fp, actor, host });
     });
   } catch (err) {
     if (key && isUniqueViolation(err, 'physical_intake_idempotency_key_unique')) {
@@ -905,6 +1040,182 @@ async function createPhysicalIntake(args = {}) {
     }
     throw err;
   }
+}
+
+const BULK_INTAKE_LIMIT = 200;
+const BULK_ROW_FIELDS = ['productId', 'itemName', 'itemDescription', 'portProductDescription', 'purchaseDate', 'price', 'folderPath', 'quantity', 'unit', 'folderId', 'kindId', 'parentFolder', 'type', 'category', 'location'];
+
+function bulkRowNumber(row, idx) {
+  const n = parseInt(row && (row.rowNumber || row.row_number), 10);
+  return Number.isFinite(n) && n > 0 ? n : idx + 1;
+}
+
+function bulkRowKey(batchKey, rowNumber) {
+  return `${batchKey}:${rowNumber}`.slice(0, 64);
+}
+
+/** Validate one bulk row exactly as a single intake would be validated (no writes). */
+async function prepareBulkRow(header, row) {
+  const args = { ...header };
+  for (const field of BULK_ROW_FIELDS) {
+    if (row[field] != null && row[field] !== '') args[field] = row[field];
+  }
+  let choice = null;
+  try {
+    choice = commercialProvenanceService.resolveRegistrationChoice(args.intakeType || args.intake_type, args);
+  } catch (_) {
+    // validateRequest reports the same problem with its own message
+  }
+  if (choice === 'AVAILABLE') {
+    throw httpError(
+      'Bulk intake cannot link Purchase Order lines. Register as PO Expected Later and link from Awaiting Adoption.',
+      400,
+      'BULK_PO_LINK_UNSUPPORTED'
+    );
+  }
+  const rawPurchaseDate = args.purchaseDate != null ? args.purchaseDate : args.purchase_date;
+  const purchaseDate = normalizePurchaseDate(rawPurchaseDate);
+  if (purchaseDate === undefined) {
+    throw httpError(
+      `Purchase Date "${String(rawPurchaseDate).trim()}" is not a date. Use YYYY-MM-DD or DD/MM/YYYY.`,
+      400,
+      'INTAKE_PURCHASE_DATE_INVALID'
+    );
+  }
+  args.purchaseDate = purchaseDate;
+  args.price = parseIntakePrice(args.price);
+  const validated = validateRequest(args);
+  const product = await loadActiveProduct(args.productId);
+  const unit = trimText(args.unit) || trimText(product.unit) || 'Nos';
+  const location = trimText(args.location) || 'Mumbai';
+  if (validated.holdingType === 'INVENTORY') {
+    await resolveInventoryFolder(db, { folderId: validated.folderId, kindId: validated.kindId });
+  }
+  const fp = fingerprintOf({
+    holdingType: validated.holdingType,
+    intakeType: validated.intakeType,
+    productId: product.id,
+    itemName: trimText(args.itemName || args.item_name),
+    purchaseDate: args.purchaseDate || null,
+    quantity: validated.quantity,
+    unit,
+    reason: validated.reason,
+    commercialChoice: validated.commercialChoice,
+    expectedPoNumber: trimText(args.expectedPoNumber || args.expected_po_number),
+    procurementPoId: null,
+    procurementPoLineId: null
+  });
+  return { args, validated, product, unit, location, fp };
+}
+
+/**
+ * Register many intakes from one header (holding type, intake type, source, PO status)
+ * plus rows (Product, quantity, unit, folder, kind).
+ * dryRun: validate every row, no writes.
+ * commit: all rows must be valid; everything is written in one transaction (all-or-nothing).
+ *         Each row gets idempotency key `${batchKey}:${rowNumber}`, so a resubmitted batch replays.
+ */
+async function createPhysicalIntakesBulk({ header = {}, rows, actor, host, batchKey, dryRun = false } = {}) {
+  await requireTables();
+  if (!(await commercialProvenanceService.tablesReady())) {
+    throw httpError('Commercial provenance tables are not installed', 503, 'NOT_INSTALLED');
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw httpError('rows must be a non-empty array', 400, 'BULK_ROWS_REQUIRED');
+  }
+  if (rows.length > BULK_INTAKE_LIMIT) {
+    throw httpError(`At most ${BULK_INTAKE_LIMIT} rows per bulk intake`, 400, 'BULK_TOO_MANY_ROWS');
+  }
+  const key = trimText(batchKey);
+  if (!dryRun && !key) {
+    throw httpError('A batch key is required to register a bulk intake.', 400, 'BULK_KEY_REQUIRED');
+  }
+  const baseHeader = { ...header, actor, host };
+  for (const field of BULK_ROW_FIELDS) {
+    if (field !== 'location') delete baseHeader[field];
+  }
+  delete baseHeader.procurementPoId;
+  delete baseHeader.procurementPoLineId;
+  delete baseHeader.idempotencyKey;
+
+  const prepared = [];
+  const seen = new Set();
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] || {};
+    const rowNumber = bulkRowNumber(row, idx);
+    if (seen.has(rowNumber)) {
+      prepared.push({ row: rowNumber, status: 'ERROR', errors: ['Duplicate row number'] });
+      continue;
+    }
+    seen.add(rowNumber);
+    try {
+      const ctx = await prepareBulkRow(baseHeader, row);
+      prepared.push({
+        row: rowNumber,
+        status: 'VALID',
+        errors: [],
+        product: { id: ctx.product.id, name: ctx.product.name, unit: ctx.product.unit || null },
+        quantity: ctx.validated.quantity,
+        unit: ctx.unit,
+        ctx
+      });
+    } catch (err) {
+      if (!err.statusCode || err.statusCode >= 500) throw err;
+      prepared.push({ row: rowNumber, status: 'ERROR', errors: [err.message], reasonCode: err.reasonCode || null });
+    }
+  }
+
+  const summary = {
+    total: prepared.length,
+    valid: prepared.filter((p) => p.status === 'VALID').length,
+    error: prepared.filter((p) => p.status === 'ERROR').length
+  };
+  const publicRows = prepared.map(({ ctx, ...rest }) => rest);
+  if (dryRun) return { dryRun: true, summary, rows: publicRows };
+
+  if (summary.error) {
+    throw httpError(
+      `${summary.error} row(s) need attention; nothing was registered`,
+      409,
+      'BULK_VALIDATION_FAILED',
+      { summary, rows: publicRows }
+    );
+  }
+
+  const intakes = await db.transaction(async (trx) => {
+    const out = [];
+    for (const p of prepared) {
+      const rowKey = bulkRowKey(key, p.row);
+      const existing = await findByCreateKey(trx, rowKey);
+      let intake;
+      if (existing) {
+        if (!sameFingerprint(existing, p.ctx.fp)) {
+          throw httpError(
+            `Row ${p.row}: this batch was already registered with different data.`,
+            409,
+            'INTAKE_IDEMPOTENCY_CONFLICT'
+          );
+        }
+        intake = await hydrate(trx, existing);
+      } else {
+        intake = await insertIntakeRecord(trx, { ...p.ctx, key: rowKey, actor, host });
+      }
+      const out0 = intake.created || (intake.outputs || [])[0] || {};
+      out.push({
+        row: p.row,
+        id: intake.id,
+        productId: intake.productId,
+        productName: intake.productName || p.product.name,
+        quantity: intake.quantity,
+        unit: intake.unit,
+        resourceType: out0.resourceType || intake.holdingType,
+        resourceId: out0.resourceId || null,
+        replayed: Boolean(existing)
+      });
+    }
+    return out;
+  });
+  return { dryRun: false, summary, intakes };
 }
 
 async function getPhysicalIntake(id) {
@@ -976,6 +1287,8 @@ module.exports = {
   REASON_REQUIRED_TYPES,
   tablesReady,
   createPhysicalIntake,
+  createPhysicalIntakesBulk,
+  BULK_INTAKE_LIMIT,
   getPhysicalIntake,
   listPhysicalIntakes,
   listHistory,

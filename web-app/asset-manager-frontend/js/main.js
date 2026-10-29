@@ -1,37 +1,39 @@
 console.log('MAIN.JS: Entry point (v7.61)');
-import { showView, hasPermission, canOpenAppView } from './utils.js?v=7.40';
-import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.114';
-import './dcDocumentView.js?v=1.3';
+import { showView, hasPermission, canOpenAppView } from './utils.js?v=7.43';
+import { renderDashboard, setupDashboard, setupDashboardFormHandlers, renderSidebarTree, editAsset } from './dashboard.js?v=7.166';
+import './dcDocumentView.js?v=2.3';
 // import { initScannerView } from './networkScanner.js?v=5.50';
 import { renderItAssets } from './itAssets.js?v=6.60';
-import { setupAuth, checkSession } from './auth.js?v=7.29';
-import { HierarchyManager } from './hierarchy.js?v=6.60';
+import { setupAuth, checkSession } from './auth.js?v=7.31';
+import { HierarchyManager } from './hierarchy.js?v=6.67';
 import { initEmployeeView, loadEmployees } from './employees.js?v=6.60';
 // import { setupOcr } from './ocr.js?v=5.50';
 import { initWarrantyView } from './warranty.js?v=6.60';
-import { initProjectsView } from './projects.js?v=7.26';
-import { initInventoryView } from './inventory.js?v=7.114';
-import { initKitSetsView } from './kitSets.js?v=7.53';
-import { initReceiptsView } from './receipts.js?v=7.102';
-import { initPurchaseOrdersView } from './purchase-orders.js?v=7.104';
-import { initPurchaseBooksView } from './purchase-books.js?v=7.110';
-import { initProductsView } from './products.js?v=7.80';
-import { initOperationsView } from './operations.js?v=7.78';
-import { initReservationsView } from './reservations.js?v=7.28';
-import { initHistoryView } from './lifecycle-history.js?v=7.113';
-import { initPhysicalIntakesView } from './physical-intakes.js?v=7.84';
+import { initProjectsView } from './projects.js?v=7.27';
+import { initInventoryView } from './inventory.js?v=7.120';
+import { initKitSetsView } from './kitSets.js?v=7.56';
+import { initReceiptsView } from './receipts.js?v=7.134';
+import { initPurchaseOrdersView } from './purchase-orders.js?v=7.132';
+import { initPurchaseBooksView } from './purchase-books.js?v=7.129';
+import { initProductsView } from './products.js?v=7.131';
+import { initOperationsView } from './operations.js?v=7.80';
+import { initReservationsView } from './reservations.js?v=7.31';
+import { initHistoryView } from './lifecycle-history.js?v=7.116';
+import { initPhysicalIntakesView } from './physical-intakes.js?v=7.112';
+import { initTallyView } from './tally.js?v=2.5';
 import { initRecoveryCenterView, refreshRecoveryCenterBadge } from './recovery-center.js?v=7.07';
-import { initSettingsView } from './settings.js?v=6.60';
-import { initCompanyTemplates } from './companyTemplates.js?v=6.60';
+import { initSettingsView } from './settings.js?v=6.61';
+import { initCompanyTemplates } from './companyTemplates.js?v=6.61';
 // import { initAssetsReportView } from './assetsReport.js?v=6.60';  // file does not exist; dead import caused ES6 module graph abort
-import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=7.29';
+import { initLoginAnimations, initLoginModuleSelector, initSignupModal } from './loginAnimations.js?v=7.36';
 import { initFormAutosave } from './formAutosave.js?v=6.60';
-import { initContextMenu } from './contextMenu.js?v=7.44';
+import { initContextMenu } from './contextMenu.js?v=7.48';
 import { initServicePortal } from './servicePortal.js?v=6.60';
-import { initDCProjectFetcher, initDCAliasLogic, initDCPoFetcher } from './dcProjectFetcher.js?v=7.111';
+import { initDCProjectFetcher, initDCAliasLogic, initDCPoFetcher } from './dcProjectFetcher.js?v=7.116';
 import { bindSerialIdentityPanel } from './serialIdentityUi.js?v=7.112';
 import './lifecycle.js?v=7.33';
 import './quantity-usage-modal.js?v=7.112';
+import './hsn-history-modal.js?v=1.0';
 
 // Mark the ES module graph as successfully evaluated. The index.html watchdog
 // only means "main.js (or a dependency) failed to import" — not that every
@@ -171,44 +173,8 @@ async function loadAssetKinds() {
         window.hierarchyManager = new HierarchyManager(combinedData);
         console.log('HierarchyManager initialized with', combinedData.length, 'nodes');
 
-        // Populate parent dropdown in modal
-        const parentSelect = document.getElementById('newKindParent');
-        if (parentSelect) {
-            const currentCategory = localStorage.getItem('selectedAssetCategory');
-            const filteredKinds = assetKinds.filter(k => k.Module === currentCategory);
-            const filteredFolders = folders.filter(f => f.Module === currentCategory);
-            
-            // Keep the "None" option
-            parentSelect.innerHTML = '<option value="">None (Top Level)</option>';
-            
-            // Add Folders first as potential parents
-            if (filteredFolders.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Folders';
-                filteredFolders.forEach(f => {
-                    const opt = document.createElement('option');
-                    opt.value = f.Name;
-                    const icon = (f.Icon && (f.Icon.startsWith('/') || f.Icon.startsWith('http'))) ? '📁' : (f.Icon || '📁');
-                    opt.textContent = `${icon} ${f.Name}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-
-            // Add Kinds
-            if (filteredKinds.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Existing Categories';
-                filteredKinds.forEach(k => {
-                    const opt = document.createElement('option');
-                    opt.value = k.Name;
-                    const icon = (k.Icon && (k.Icon.startsWith('/') || k.Icon.startsWith('http'))) ? '📦' : (k.Icon || '📦');
-                    opt.textContent = `${icon} ${k.Name}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-        }
+        // Parent options for Category / Make are filled when the modal opens
+        // (folder vs category vs make rules live in openAddKindModal).
     } catch (err) {
         console.error('Failed to load asset kinds/folders:', err);
     }
@@ -250,6 +216,7 @@ async function loadAssets() {
                 Status: a.Status || 'In Store'
             }));
             assets = processedAssets;
+            window.assets = processedAssets;
             window.allAssets = processedAssets; // Store globally for other views
             console.log('Processed assets:', assets.length);
         } else {
@@ -283,14 +250,17 @@ async function saveAsset(asset) {
     const url = `/api/assets/${encodeURIComponent(assetId)}`;
 
     try {
-        const response = await fetch(url, {
+        const init = {
             method: method,
             headers: { 
                 'Content-Type': 'application/json',
                 'x-user': username
-            },
-            body: JSON.stringify(asset)
-        });
+            }
+        };
+        const response = typeof window.aeFetchWithOverride === 'function'
+            ? await window.aeFetchWithOverride(url, init, asset)
+            : await fetch(url, { ...init, body: JSON.stringify(asset) });
+        if (!response) return false;
         
         if (response.ok) {
             const result = await response.json().catch(() => ({ success: true }));
@@ -311,7 +281,9 @@ async function saveAsset(asset) {
             
             return result;
         } else {
-            const errText = await response.text();
+            const errText = typeof window.aeReadResponseError === 'function'
+                ? await window.aeReadResponseError(response)
+                : await response.text();
             alert('Error saving asset: ' + errText);
             return false;
         }
@@ -323,6 +295,77 @@ async function saveAsset(asset) {
 window.loadAssets = loadAssets;
 window.saveAsset = saveAsset;
 window.editAsset = editAsset;
+
+// Page-level info tips (.rn-info-tip--portal) render in one fixed #aeGhostTip on <body>,
+// so they sit above every stacking context and never hide behind the top bar.
+// Buttons already bound directly (products.js) are left to their own handler.
+function setupGhostInfoTips() {
+    const GAP = 10;
+    const MARGIN = 8;
+    const ensureTip = () => {
+        let tip = document.getElementById('aeGhostTip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'aeGhostTip';
+            tip.className = 'ae-ghost-tip';
+            tip.setAttribute('role', 'tooltip');
+            document.body.appendChild(tip);
+        }
+        return tip;
+    };
+    const tipAnchor = (target) => {
+        const btn = target && target.closest ? target.closest('.rn-info-tip--portal[data-tip]') : null;
+        return btn && !btn.dataset.ghostTipBound ? btn : null;
+    };
+    const show = (btn) => {
+        const tip = ensureTip();
+        tip.textContent = btn.getAttribute('data-tip') || '';
+        tip.style.left = '0px';
+        tip.style.top = '0px';
+        tip.classList.add('is-on');
+        const a = btn.getBoundingClientRect();
+        const t = tip.getBoundingClientRect();
+        const header = document.getElementById('app-header');
+        const headerBottom = header && !header.classList.contains('hidden') ? header.getBoundingClientRect().bottom : 0;
+        const minTop = Math.max(MARGIN, headerBottom + MARGIN);
+        let left = a.right + GAP;
+        if (left + t.width > window.innerWidth - MARGIN) left = a.left - GAP - t.width;
+        let top = a.top + (a.height / 2) - (t.height / 2);
+        if (left < MARGIN) {
+            left = a.left + (a.width / 2) - (t.width / 2);
+            top = a.bottom + GAP;
+        }
+        left = Math.max(MARGIN, Math.min(left, window.innerWidth - t.width - MARGIN));
+        top = Math.max(minTop, Math.min(top, window.innerHeight - t.height - MARGIN));
+        tip.style.left = `${Math.round(left)}px`;
+        tip.style.top = `${Math.round(top)}px`;
+    };
+    const hide = () => document.getElementById('aeGhostTip')?.classList.remove('is-on');
+
+    document.addEventListener('mouseover', (e) => {
+        const btn = tipAnchor(e.target);
+        if (btn && !btn.contains(e.relatedTarget)) show(btn);
+    });
+    document.addEventListener('mouseout', (e) => {
+        const btn = tipAnchor(e.target);
+        if (btn && !btn.contains(e.relatedTarget)) hide();
+    });
+    document.addEventListener('focusin', (e) => {
+        const btn = tipAnchor(e.target);
+        if (btn) show(btn);
+    });
+    document.addEventListener('focusout', (e) => {
+        if (tipAnchor(e.target)) hide();
+    });
+    document.addEventListener('click', (e) => {
+        if (tipAnchor(e.target)) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+    window.addEventListener('scroll', hide, true);
+}
+setupGhostInfoTips();
 
 function handleInitialUrl() {
     const hash = window.location.hash;
@@ -373,11 +416,14 @@ function handleInitialUrl() {
     } else if (APP_VIEWS[viewName]) {
         if (!canOpenAppView(viewName)) {
             console.warn('[RBAC] blocked hash view:', viewName);
-            const fallback = canOpenAppView('operations-view')
-                ? 'operations-view'
-                : (canOpenAppView('arri-view') ? 'arri-view' : null);
-            if (fallback && typeof window.switchDashboardSubView === 'function') {
-                window.switchDashboardSubView(fallback);
+            const fallback = typeof findFirstAllowedLandingView === 'function'
+                ? findFirstAllowedLandingView()
+                : null;
+            if (fallback) {
+                if (typeof openLandingView === 'function') openLandingView(fallback);
+                else if (typeof window.switchDashboardSubView === 'function') window.switchDashboardSubView(fallback);
+            } else if (typeof showRbacNoAccessState === 'function') {
+                showRbacNoAccessState();
             }
             return;
         }
@@ -432,7 +478,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup navigation early, before auth
     setupNavigation();
     
-    // Ensure login view is shown first
+    // Ensure login view is shown first — never leave PO carousel over auth
+    if (typeof window.closePoCarousel === 'function') window.closePoCarousel();
     showView('loginView');
     
     // Initialize dynamic background
@@ -447,6 +494,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Login success callback triggered in main.js for user:', user.username);
         currentUser = user;
         window.currentUser = user; // Expose to window for global RBAC checks in other modules
+        try {
+            localStorage.setItem('currentUser', JSON.stringify({
+                username: user.username,
+                role: user.role,
+                permissions: user.permissions || [],
+                category: user.category || 'IT'
+            }));
+        } catch (_err) { /* ignore quota / private mode */ }
         localStorage.setItem('username', user.username); // Store for legacy module support
         if (window.location.hash) {
             window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
@@ -525,66 +580,37 @@ document.addEventListener('DOMContentLoaded', () => {
             // ------------------------------------------------------
 
             // --- SMART DEFAULT VIEW (RBAC AWARE) ---
-            const canViewDashboard = hasPermission('view.dashboard');
-
-            if (canViewDashboard) {
+            // Page visibility uses canOpenAppView / hasPermission (superuser bypass centralized there).
+            // Roles with zero page grants get an empty shell (no dashboard content).
+            const landing = findFirstAllowedLandingView();
+            if (!landing) {
+                console.warn('[RBAC] No accessible pages for this role — showing blank state.');
+                showRbacNoAccessState();
+            } else if (landing === 'operations-view') {
                 console.log('Found dashboardView and permission ok, switching...');
                 showView('dashboardView');
-                
-                // Set nav-dashboard as active
                 document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
                 syncTopNavActive('operations-view');
-
-                // Show operations overview by default (Assets is a top-level workspace)
-                const subViews = ['operations-view', 'home-view', 'sheet-view', 'employee-view', 'inventory-view', 'sets-view', 'receipts-view', 'purchase-orders-view', 'purchase-books-view', 'products-view', 'reservations-view', 'history-view', 'physical-intakes-view', 'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view', 'warranty-view', 'settings-view'];
-                subViews.forEach(sv => {
-                    const el = document.getElementById(sv);
-                    if (el) {
-                        if (sv === 'operations-view') {
-                            el.classList.remove('hidden');
-                            el.style.display = 'flex';
-                            el.style.flexDirection = 'column';
-                        } else {
-                            el.classList.add('hidden');
-                            el.style.display = 'none';
-                            // Still set flexDirection so it's ready when the view is shown
-                            if (sv === 'dc-view' || sv === 'warranty-view') {
-                                el.style.flexDirection = 'column';
-                            }
-                        }
-                    }
-                });
-
-                // Render sidebar tree AFTER showView to ensure container is visible and ready
+                hideAllDashboardSubviews();
+                const ops = document.getElementById('operations-view');
+                if (ops) {
+                    ops.classList.remove('hidden');
+                    ops.style.display = 'flex';
+                    ops.style.flexDirection = 'column';
+                }
                 console.log('Rendering sidebar tree. Kinds:', (window.allAssetKinds || []).length);
                 await renderSidebarTree();
-                
                 setupDashboard();
                 setupDashboardFormHandlers();
                 if (typeof initOperationsView === 'function') initOperationsView();
                 renderDashboard(assets, filteredAssets);
             } else {
-                // Dashboard restricted - Find first available tab based on RBAC
-                console.log('Dashboard restricted. Finding alternative landing tab...');
-                const availableTabs = [
-                    { id: 'nav-projects', view: 'dashboardView', sub: 'projects-view' },
-                    { id: 'nav-dc', view: 'dashboardView', sub: 'dc-view' },
-                    { id: 'nav-warranty', view: 'dashboardView', sub: 'warranty-view' },
-                    { id: 'nav-releases', view: 'dashboardView', sub: 'releases-view' }
-                ];
-
-                const target = availableTabs.find(t => {
-                    const perm = t.id.replace('nav-', 'view.');
-                    return hasPermission(perm);
-                });
-
-                if (target) {
-                    console.log(`Redirecting to: ${target.id}`);
-                    const el = document.getElementById(target.id);
-                    if (el) el.click(); // Trigger the standard click handler
-                } else {
-                    console.warn('No accessible tabs found for this user.');
-                    showView('dashboardView'); // Fallback
+                console.log('[RBAC] Landing on allowed view:', landing);
+                openLandingView(landing);
+                if (landing === 'home-view' || landing === 'inventory-view') {
+                    await renderSidebarTree();
+                    setupDashboard();
+                    setupDashboardFormHandlers();
                 }
             }
             // ----------------------------------------
@@ -592,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check for edit parameter in URL
             const urlParams = new URLSearchParams(window.location.search);
             const editId = urlParams.get('edit');
-            if (editId) {
+            if (editId && canOpenAppView('home-view')) {
                 const assetToEdit = assets.find(a => a.ID === editId);
                 if (assetToEdit) {
                     editAsset(assetToEdit);
@@ -605,14 +631,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle hash-based routing and details (e.g. from QR scan)
             handleInitialUrl();
             
-            // Ensure default view has a hash if none exists
-            if (!window.location.hash) {
-                const landing = canOpenAppView('operations-view')
-                    ? 'operations-view'
-                    : (canOpenAppView('arri-view') ? 'arri-view' : null);
-                if (landing) {
-                    window.history.replaceState({ subView: landing }, '', '#' + landing);
-                }
+            // Ensure default view has a hash if none exists (and role may open a page)
+            if (!window.location.hash && landing) {
+                window.history.replaceState({ subView: landing }, '', '#' + landing);
             }
         } else {
             console.error('Could NOT find dashboardView element!');
@@ -666,6 +687,7 @@ const APP_VIEWS = {
     'products-view': { id: 'products-view', navId: 'nav-products', sidebar: false },
     'reservations-view': { id: 'reservations-view', navId: 'nav-reservations', sidebar: false },
     'history-view': { id: 'history-view', navId: 'nav-history', sidebar: false },
+    'tally-view': { id: 'tally-view', navId: 'nav-tally', sidebar: false },
     'dc-view': { id: 'dc-view', navId: 'nav-dc', sidebar: false },
     'releases-view': { id: 'releases-view', navId: 'nav-releases', sidebar: true },
     'scanner-view': { id: 'scanner-view', navId: 'nav-scanner', sidebar: false },
@@ -678,7 +700,101 @@ const APP_VIEWS = {
     'arri-view': { id: 'arri-view', navId: 'nav-arri', sidebar: false }
 };
 
-const LOGISTICS_NAV_IDS = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
+function hideAllDashboardSubviews() {
+    const ids = [
+        'rbac-no-access-view',
+        'operations-view', 'home-view', 'sheet-view', 'employee-view', 'inventory-view',
+        'sets-view', 'receipts-view', 'purchase-orders-view', 'purchase-books-view',
+        'products-view', 'reservations-view', 'history-view', 'tally-view', 'physical-intakes-view',
+        'dc-view', 'releases-view', 'scanner-view', 'projects-view', 'ocr-view',
+        'warranty-view', 'settings-view', 'recovery-center-view', 'admin-view', 'arri-view'
+    ];
+    ids.forEach((sv) => {
+        const el = document.getElementById(sv);
+        if (!el) return;
+        el.classList.add('hidden');
+        el.style.display = 'none';
+    });
+}
+
+/** Preferred landing order when the role has at least one page grant. */
+const RBAC_LANDING_ORDER = [
+    'operations-view',
+    'home-view',
+    'products-view',
+    'inventory-view',
+    'purchase-orders-view',
+    'purchase-books-view',
+    'receipts-view',
+    'reservations-view',
+    'history-view',
+    'sets-view',
+    'dc-view',
+    'physical-intakes-view',
+    'warranty-view',
+    'releases-view',
+    'settings-view',
+    'recovery-center-view',
+    'admin-view',
+    'employee-view',
+    'arri-view'
+];
+
+function findFirstAllowedLandingView() {
+    return RBAC_LANDING_ORDER.find((id) => canOpenAppView(id)) || null;
+}
+
+function showRbacNoAccessState() {
+    showView('dashboardView');
+    hideAllDashboardSubviews();
+    const panel = document.getElementById('rbac-no-access-view');
+    if (panel) {
+        panel.classList.remove('hidden');
+        panel.style.display = 'flex';
+    }
+    const sidebar = document.getElementById('app-sidebar');
+    if (sidebar) {
+        sidebar.classList.add('hidden');
+        sidebar.style.display = 'none';
+    }
+    document.querySelectorAll('.nav-link').forEach((n) => n.classList.remove('active'));
+    if (window.location.hash) {
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    }
+}
+
+function openLandingView(viewId) {
+    if (!viewId) {
+        showRbacNoAccessState();
+        return;
+    }
+    if (viewId === 'arri-view') {
+        showView('arri-view');
+        document.querySelectorAll('.nav-link').forEach((n) => n.classList.remove('active'));
+        document.getElementById('nav-arri')?.classList.add('active');
+        return;
+    }
+    showView('dashboardView');
+    if (typeof window.switchDashboardSubView === 'function') {
+        window.switchDashboardSubView(viewId);
+        return;
+    }
+    hideAllDashboardSubviews();
+    const target = document.getElementById(viewId);
+    if (target) {
+        target.classList.remove('hidden');
+        target.style.display = 'flex';
+        if (viewId === 'dc-view' || viewId === 'warranty-view' || viewId === 'operations-view') {
+            target.style.flexDirection = 'column';
+        }
+    }
+    const navId = APP_VIEWS[viewId]?.navId;
+    document.querySelectorAll('.nav-link').forEach((n) => n.classList.remove('active'));
+    if (navId) document.getElementById(navId)?.classList.add('active');
+    window.history.replaceState({ subView: viewId }, '', '#' + viewId);
+}
+
+const LOGISTICS_NAV_IDS = ['nav-operations', 'nav-products', 'nav-history', 'nav-tally', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
 
 function closeLogisticsMenu() {
     const item = document.getElementById('nav-logistics-item');
@@ -1002,10 +1118,14 @@ function setupNavigation() {
             init: () => {
                 console.log('nav-dashboard init');
                 window.currentDashboardParent = null;
-                window.filteredAssets = [...window.assets];
+                const assetList = Array.isArray(window.assets)
+                    ? window.assets
+                    : (Array.isArray(window.allAssets) ? window.allAssets : []);
+                window.assets = assetList;
+                window.filteredAssets = [...assetList];
                 
                 if (typeof renderDashboard === 'function') {
-                    renderDashboard(window.assets, () => window.assets);
+                    renderDashboard(assetList, () => assetList);
                 }
                 
                 switchDashboardSubView('home-view');
@@ -1080,6 +1200,11 @@ function setupNavigation() {
             view: 'dashboardView',
             subView: 'history-view',
             init: () => typeof initHistoryView === 'function' && initHistoryView()
+        },
+        'nav-tally': {
+            view: 'dashboardView',
+            subView: 'tally-view',
+            init: () => typeof initTallyView === 'function' && initTallyView()
         },
         'nav-physical-intakes': {
             view: 'dashboardView',
@@ -1170,7 +1295,7 @@ function setupNavigation() {
                                 content.classList.remove('hidden');
                                 // Special init for RBAC
                                 if (targetId === 'admin-rbac-tab') {
-                                    import('./rbac.js?v=7.39').then(module => {
+                                    import('./rbac.js?v=7.42').then(module => {
                                         module.renderRBAC();
                                     });
                                 }
@@ -1296,15 +1421,37 @@ function setupNavigation() {
                                 return;
                             }
                             const users = body.users || [];
-                            const availableRoles = body.roles || [];
-                            
-                            // Update the "Create User" role dropdown too
+                            const teamOptions = [
+                                { value: 'logistics', label: 'Logistics' },
+                                { value: 'procurement', label: 'Procurement' },
+                                { value: 'sales', label: 'Sales' },
+                                { value: 'HR', label: 'HR' },
+                                { value: 'it', label: 'IT' }
+                            ];
+                            const privilegedOptions = [
+                                { value: 'director', label: 'Director' },
+                                { value: 'admin', label: 'Admin' },
+                                { value: 'it_manager', label: 'IT Admin' },
+                                { value: 'superuser', label: 'Super User' }
+                            ];
+                            function teamSelectHtml(selected) {
+                                let html = '<optgroup label="Teams">';
+                                teamOptions.forEach((opt) => {
+                                    html += `<option value="${opt.value}"${selected === opt.value ? ' selected' : ''}>${opt.label}</option>`;
+                                });
+                                html += '</optgroup><optgroup label="Privileged">';
+                                privilegedOptions.forEach((opt) => {
+                                    html += `<option value="${opt.value}"${selected === opt.value ? ' selected' : ''}>${opt.label}</option>`;
+                                });
+                                html += '</optgroup>';
+                                if (selected && !teamOptions.some((o) => o.value === selected) && !privilegedOptions.some((o) => o.value === selected)) {
+                                    html += `<option value="${selected}" selected>${selected}</option>`;
+                                }
+                                return html;
+                            }
                             const newUserRoleSelect = document.getElementById('adminNewRole');
-                            if (newUserRoleSelect && availableRoles.length > 0) {
-                                newUserRoleSelect.innerHTML = availableRoles.map(r => {
-                                    const rName = r.Name || r.name;
-                                    return `<option value="${rName}">${rName}</option>`;
-                                }).join('');
+                            if (newUserRoleSelect) {
+                                newUserRoleSelect.innerHTML = teamSelectHtml(newUserRoleSelect.value || 'sales');
                             }
                             
                             if (!users.length) {
@@ -1323,26 +1470,7 @@ function setupNavigation() {
                                 html += '<td>' + fullname + '</td>';
                                 html += '<td>';
                                 html += '<select class="admin-role-select raul-role-select" data-username="' + username + '">';
-                                
-                                // Build role options dynamically from DB roles
-                                if (availableRoles.length > 0) {
-                                    availableRoles.forEach(r => {
-                                        const rName = r.Name || r.name;
-                                        html += `<option value="${rName}" ${role === rName ? 'selected' : ''}>${rName}</option>`;
-                                    });
-                                } else {
-                                    // Fallback to defaults if no roles in DB
-                                    const roleMap = {
-                                        'user': 'User',
-                                        'manager': 'Manager',
-                                        'admin': 'Admin',
-                                        'it_manager': 'IT Admin',
-                                        'superuser': 'Superuser'
-                                    };
-                                    Object.keys(roleMap).forEach(r => {
-                                        html += '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + roleMap[r] + '</option>';
-                                    });
-                                }
+                                html += teamSelectHtml(role);
                                 html += '</select>';
                                 html += '</td>';
                                 html += '<td><button type="button" class="admin-delete-user-btn" data-username="' + username + '">Delete</button></td>';
@@ -1690,27 +1818,28 @@ function setupNavigation() {
     const checkTabPermission = (perm) => hasPermission(perm);
 
     const navVisibility = {
-        'nav-operations': checkTabPermission('view.dashboard') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-dashboard': checkTabPermission('view.assets') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-operations': checkTabPermission('dashboard.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-dashboard': checkTabPermission('asset.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-arri': userCategory === 'SERVICE' || userCategory === 'In-House',
-        'nav-projects': checkTabPermission('view.projects') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-dc': checkTabPermission('view.dc') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-projects': false,
+        'nav-dc': checkTabPermission('dc.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
         'nav-employees': checkTabPermission('user.manage') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-inventory': checkTabPermission('view.inventory') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-sets': checkTabPermission('view.sets') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-receipts': checkTabPermission('view.receipt_notes') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-purchase-orders': checkTabPermission('view.purchase_orders') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-purchase-books': (checkTabPermission('view.purchase_books') || checkTabPermission('view.purchase_orders')) && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-products': checkTabPermission('view.products') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-reservations': checkTabPermission('view.reservations') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-history': checkTabPermission('view.history') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-physical-intakes': checkTabPermission('view.physical_intake') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-warranty': checkTabPermission('view.warranty') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
-        'nav-releases': checkTabPermission('view.releases'),
-        'nav-admin': checkTabPermission('view.admin'),
-        'nav-settings': checkTabPermission('view.settings'),
-        'nav-recovery-center': checkTabPermission('view.recovery'),
-        'nav-scanner': checkTabPermission('view.scanner')
+        'nav-inventory': checkTabPermission('inventory.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-sets': checkTabPermission('set.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-receipts': checkTabPermission('receipt_note.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-purchase-orders': checkTabPermission('purchase_order.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-purchase-books': (checkTabPermission('purchase_book.view') || checkTabPermission('purchase_order.view')) && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-products': checkTabPermission('product.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-reservations': checkTabPermission('reservation.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-history': checkTabPermission('history.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-tally': checkTabPermission('dashboard.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-physical-intakes': checkTabPermission('physical_intake.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-warranty': checkTabPermission('warranty.view') && (userCategory !== 'SERVICE' && userCategory !== 'In-House'),
+        'nav-releases': checkTabPermission('release.view'),
+        'nav-admin': checkTabPermission('admin.view'),
+        'nav-settings': checkTabPermission('settings.view'),
+        'nav-recovery-center': checkTabPermission('recovery.view'),
+        'nav-scanner': false
     };
 
     Object.entries(navVisibility).forEach(([id, isVisible]) => {
@@ -1730,7 +1859,7 @@ function setupNavigation() {
         }
     });
 
-    const logisticsChildIds = ['nav-operations', 'nav-products', 'nav-history', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
+    const logisticsChildIds = ['nav-operations', 'nav-products', 'nav-history', 'nav-tally', 'nav-reservations', 'nav-purchase-orders', 'nav-purchase-books', 'nav-receipts', 'nav-dc'];
     const logisticsItem = document.getElementById('nav-logistics-item');
     if (logisticsItem) {
         const anyChild = logisticsChildIds.some((id) => {

@@ -1089,7 +1089,8 @@ window.showEditOrderModal = async function() {
 window.viewProjectOrder = function(orderId) {
     goToPurchaseOrders();
     if (orderId && typeof window.openPurchaseOrderDetail === 'function') {
-        setTimeout(() => window.openPurchaseOrderDetail(orderId), 120);
+        // Project orders are always local LEGACY (project_orders), not Zoho procurement_po.
+        setTimeout(() => window.openPurchaseOrderDetail(orderId, 'LOCAL'), 120);
     }
 };
 

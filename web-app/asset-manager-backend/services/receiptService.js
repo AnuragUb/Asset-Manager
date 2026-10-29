@@ -17,6 +17,7 @@ const {
 } = require('../utils');
 const { EVENT_TYPES } = require('../../shared/inventoryEventSystem');
 const receiptProjectionService = require('./receiptProjectionService');
+const { ensureVendorInvoice } = require('./vendorInvoiceService');
 
 const NOTE_STATUSES = Object.freeze(['OPEN', 'POSTED', 'CANCELLED', 'REVERSED']);
 const CREATION_MODES = Object.freeze(['INVENTORY', 'ASSET_GROUPED', 'ASSET_INDIVIDUAL']);
@@ -56,6 +57,15 @@ function nonempty(value) {
 
 function trimText(value) {
   return nonempty(value) ? String(value).trim() : null;
+}
+
+function commercialPoNumber(header) {
+  if (!header) return null;
+  const identifier = trimText(header.outbound_po_identifier);
+  const outboundNumber = trimText(header.outbound_po_number);
+  const stored = trimText(header.ponumber);
+  const generated = stored && /^PPO-[0-9]{4}-[A-Z0-9]{6}-[A-Z0-9]$/.test(stored);
+  return identifier || outboundNumber || (generated ? null : stored) || null;
 }
 
 function actorOf(args) {
@@ -167,9 +177,15 @@ function holdingFields(line, product, location) {
   const assetKind = trimText(holding.assetKind || holding.asset_kind || holding.kindName);
   const hierarchyType = brandCategory || assetKind || trimText(holding.type);
   const hierarchyCategory = brandCategory || assetKind || trimText(holding.category);
+  const port = holding.portProductDescription === true || holding.port_product_description === true;
+  let itemdescription = trimText(holding.description || holding.itemdescription);
+  if (!itemdescription && port) itemdescription = trimText(product && product.description);
+  if (!itemdescription) {
+    throw httpError('Asset / Inventory description is required. It is not the Product description unless you port it.', 400, 'HOLDING_DESCRIPTION_REQUIRED');
+  }
   return {
     itemname: trimText(holding.itemName || holding.itemname) || product.name,
-    itemdescription: trimText(holding.description || holding.itemdescription) || line.item_description_snapshot || product.description || '',
+    itemdescription,
     make: trimText(holding.make) || product.make || '',
     model: trimText(holding.model) || product.model || '',
     srno: trimText(holding.serialNo || holding.srno) || '',
@@ -191,6 +207,10 @@ function publicLine(row, extra = {}) {
     id: row.id,
     receiptNoteId: row.receipt_note_id,
     poLineId: row.po_line_id,
+    dispositionLineId: row.disposition_line_id || null,
+    resourceType: row.resource_type || null,
+    resourceId: row.resource_id || null,
+    serialSnapshot: row.serial_snapshot || null,
     productId: row.product_id || null,
     orderedQtySnapshot: qtyNum(row.ordered_qty_snapshot),
     orderedQtyCurrent: row.ordered_qty_current == null ? null : qtyNum(row.ordered_qty_current),
@@ -225,6 +245,7 @@ function publicNote(row, extra = {}) {
     poNumber: row.po_number || null,
     vendorName: row.vendor_name || null,
     vendorInvoiceNo: row.vendor_invoice_no || null,
+    vendorInvoiceId: row.vendor_invoice_id || null,
     deliveryNoteNo: row.delivery_note_no || null,
     receivedAt: row.received_at,
     receivedAtLocation: row.received_at_location || null,
@@ -237,6 +258,12 @@ function publicNote(row, extra = {}) {
     reversedBy: row.reversed_by || null,
     reversedAt: row.reversed_at,
     idempotencyKey: row.idempotency_key || null,
+    inwardKind: row.inward_kind || 'PURCHASE_INWARD',
+    deliveryChallanId: row.delivery_challan_id || null,
+    returnLogId: row.return_log_id || null,
+    returnReason: row.return_reason || null,
+    returnedByParty: row.returned_by_party || null,
+    receivedByUser: row.received_by_user || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...extra
@@ -494,7 +521,7 @@ function snapshotFromPoLine(header, poLine, productId) {
     orderedQty: ordered,
     unit,
     description,
-    poNumber: trimText(header.ponumber) || header.id,
+    poNumber: commercialPoNumber(header),
     vendorName: trimText(header.vendorname),
     fetchedAt: new Date().toISOString(),
     sourceHash: sourceHash({
@@ -589,12 +616,21 @@ async function hydrate(runner, row) {
   const canReverse = row.status === 'POSTED'
     ? (await reverseBlockers(runner, row.id)).length === 0
     : false;
+  let returnHome = null;
+  let returnLocation = null;
+  if (row.return_log_id && (await runner.schema.hasTable('dc_return_log')) && (await runner.schema.hasColumn('dc_return_log', 'return_home'))) {
+    const log = await runner('dc_return_log').where({ id: row.return_log_id }).first('return_home', 'return_location');
+    returnHome = log ? log.return_home : null;
+    returnLocation = log ? log.return_location : null;
+  }
   return {
     receiptNote: publicNote(row, {
       projectionStatus: outbox ? outbox.status : null,
       projectionSkipReason: outbox ? outbox.skip_reason : null,
       zohoReceiptId: outbox ? outbox.zoho_receipt_id : null,
-      canReverse
+      canReverse,
+      returnHome,
+      returnLocation
     }),
     lines: lines.map((line) => publicLine(line, {
       productName: line.product_id ? (productNameById.get(String(line.product_id)) || null) : null,
@@ -769,14 +805,19 @@ async function createReceiptNote(args) {
       }
       const noteId = await uniquePrefixedId(trx, 'receipt_note', generateReceiptNoteId, verifyReceiptNoteId, 'Receipt Note');
       const now = new Date().toISOString();
+      const vendorName = trimText(header.vendorname);
+      const vendorInvoiceNo = trimText(args.vendorInvoiceNo || args.vendor_invoice_no);
+      if (!vendorInvoiceNo) {
+        throw httpError('Invoice number is required', 400, 'INVOICE_REQUIRED');
+      }
       const noteInsert = {
         id: noteId,
         status: 'OPEN',
         po_source: poSource,
         po_id: header.id,
-        po_number: trimText(header.ponumber) || header.id,
-        vendor_name: trimText(header.vendorname),
-        vendor_invoice_no: trimText(args.vendorInvoiceNo || args.vendor_invoice_no),
+        po_number: commercialPoNumber(header),
+        vendor_name: vendorName,
+        vendor_invoice_no: vendorInvoiceNo,
         delivery_note_no: trimText(args.deliveryNoteNo || args.delivery_note_no),
         received_at: args.receivedAt || args.received_at || now,
         received_at_location: trimText(args.receivedAtLocation || args.received_at_location),
@@ -788,6 +829,13 @@ async function createReceiptNote(args) {
       };
       if (await trx.schema.hasColumn('receipt_note', 'zoho_po_id')) {
         noteInsert.zoho_po_id = header.zoho_po_id ? String(header.zoho_po_id) : null;
+      }
+      if (await trx.schema.hasColumn('receipt_note', 'vendor_invoice_id')) {
+        noteInsert.vendor_invoice_id = await ensureVendorInvoice(trx, {
+          vendorName,
+          invoiceNumber: vendorInvoiceNo,
+          invoiceDate: null
+        });
       }
       await trx('receipt_note').insert(noteInsert);
       await writeReceiptEvent(trx, {
@@ -833,6 +881,16 @@ async function updateReceiptNote(id, args) {
     const patch = { updated_at: new Date().toISOString() };
     if (args.vendorInvoiceNo !== undefined || args.vendor_invoice_no !== undefined) {
       patch.vendor_invoice_no = trimText(args.vendorInvoiceNo || args.vendor_invoice_no);
+      if (!patch.vendor_invoice_no) {
+        throw httpError('Invoice number is required', 400, 'INVOICE_REQUIRED');
+      }
+      if (await trx.schema.hasColumn('receipt_note', 'vendor_invoice_id')) {
+        patch.vendor_invoice_id = await ensureVendorInvoice(trx, {
+          vendorName: row.vendor_name,
+          invoiceNumber: patch.vendor_invoice_no,
+          invoiceDate: null
+        });
+      }
     }
     if (args.deliveryNoteNo !== undefined || args.delivery_note_no !== undefined) {
       patch.delivery_note_no = trimText(args.deliveryNoteNo || args.delivery_note_no);
@@ -1178,6 +1236,14 @@ async function createAssetRow(trx, { product, qty, unit, location, line, host, a
   if (await trx.schema.hasColumn('assets', 'parent_folder')) {
     row.parent_folder = holding.parentFolder || '';
   }
+  if (await trx.schema.hasColumn('assets', 'asset_value')) {
+    const fromHolding = Number(holding.assetValue ?? holding.asset_value);
+    const fromLine = Number(line.unitprice ?? line.unit_price ?? line.UnitPrice);
+    const value = Number.isFinite(fromHolding) && fromHolding > 0
+      ? fromHolding
+      : (Number.isFinite(fromLine) && fromLine > 0 ? fromLine : null);
+    if (value != null) row.asset_value = value;
+  }
   await trx('assets').insert(row);
   await trx('receipt_physical_output').insert({
     receipt_line_id: line.id,
@@ -1242,7 +1308,7 @@ async function createPhysicalForLine(trx, { line, product, host, actor, noteId, 
     return [await createInventoryRow(trx, { product, qty: accepted, unit, location, line, host, actor, noteId })];
   }
   if (mode === 'ASSET_GROUPED') {
-    const serial = holdingFields(line, product, location).srno;
+    const serial = trimText((markingPayload(line).holding || {}).serialNo || (markingPayload(line).holding || {}).srno);
     return [await createAssetRow(trx, {
       product,
       qty: accepted,
@@ -1320,6 +1386,42 @@ async function postReceipt(id, args = {}) {
       if (note.status !== 'OPEN') {
         throw httpError(`Receipt Note ${note.status} cannot be posted`, 409, 'INVALID_STATUS');
       }
+      if (!trimText(note.vendor_invoice_no)) {
+        throw httpError('Invoice number is required', 400, 'INVOICE_REQUIRED');
+      }
+
+      // RETURN_INWARD: restore DC holdings; do not create purchase physicals or touch PO qty
+      if (String(note.inward_kind || '').toUpperCase() === 'RETURN_INWARD') {
+        const dcReturnInwardService = require('./dcReturnInwardService');
+        const physical = await dcReturnInwardService.applyPhysicalReturnOnPost(trx, note, actor);
+        const now = new Date().toISOString();
+        await trx('receipt_note').where({ id: note.id }).update({
+          status: 'POSTED',
+          posted_by: actor,
+          posted_at: now,
+          received_at: now,
+          updated_at: now
+        });
+        await writeReceiptEvent(trx, {
+          receiptNoteId: note.id,
+          type: 'POSTED',
+          actor,
+          receivedAtLocation: note.received_at_location,
+          note: 'Return Inward posted — physical restoration',
+          metadata: {
+            eventType: 'RETURN_INWARD_POSTED',
+            returnLogId: note.return_log_id,
+            deliveryChallanId: note.delivery_challan_id,
+            returnReason: note.return_reason,
+            returnedByParty: note.returned_by_party,
+            receivedByUser: note.received_by_user,
+            restored: physical.restored || []
+          }
+        });
+        if (key) await storeIdempotency(trx, key, 'POST', note.id);
+        return hydrate(trx, await trx('receipt_note').where({ id: note.id }).first());
+      }
+
       if (note.po_source === 'ZOHO') {
         const procurementService = require('./procurementService');
         await procurementService.assertReceivable(trx, note.po_id, {
@@ -1458,7 +1560,8 @@ async function postReceipt(id, args = {}) {
       const projection = await receiptProjectionService.enqueue(trx, {
         receiptNoteId: note.id,
         poSource: note.po_source,
-        poId: note.po_id
+        poId: note.po_id,
+        zohoPoId: note.zoho_po_id || null
       });
       await writeReceiptEvent(trx, {
         receiptNoteId: note.id,
@@ -1518,6 +1621,14 @@ async function cancelReceipt(id, args = {}) {
       cancelled_at: now,
       updated_at: now
     });
+    if (String(note.inward_kind || '').toUpperCase() === 'RETURN_INWARD' && note.return_log_id) {
+      await trx('dc_return_log').where({ id: note.return_log_id }).where({ status: 'OPEN' }).update({
+        status: 'CANCELLED',
+        cancelled_at: now,
+        cancelled_by: actor,
+        updated_at: now
+      });
+    }
     await writeReceiptEvent(trx, {
       receiptNoteId: noteId,
       type: 'CANCELLED',
@@ -1626,6 +1737,13 @@ async function reverseReceipt(id, args = {}) {
     if (note.status === 'REVERSED') return hydrate(trx, note);
     if (note.status !== 'POSTED') {
       throw httpError('Only POSTED Receipt Notes can be reversed', 409, 'INVALID_STATUS');
+    }
+    if (String(note.inward_kind || '').toUpperCase() === 'RETURN_INWARD') {
+      throw httpError(
+        'Return Inward reverse is a controlled corrective path and is not available yet',
+        409,
+        'RETURN_INWARD_REVERSE_BLOCKED'
+      );
     }
     const blockers = await reverseBlockers(trx, note.id);
     if (blockers.length) {

@@ -26,9 +26,17 @@ Single folder for AssetEngine / CineEAM **architecture documents** and **Archite
 |-----|--------|
 | [FRONTEND_REACT_ADR.md](./01_adrs/FRONTEND_REACT_ADR.md) | Vanilla SPA now; React deferred; Express stays |
 | [LIFECYCLE_SOURCED_ADOPTED_ADR.md](./01_adrs/LIFECYCLE_SOURCED_ADOPTED_ADR.md) | Sourced vs Adopted lifecycles; Awaiting Adoption |
+| [RBAC_V2_RESOURCE_ACTION_ADR.md](./01_adrs/RBAC_V2_RESOURCE_ACTION_ADR.md) | Resource-and-action RBAC; view≠mutation; admin stored ticks |
 | [PRODUCT_ARCHITECTURE_DECISION.md](./01_adrs/PRODUCT_ARCHITECTURE_DECISION.md) | Product architecture decision |
 | [PURCHASE_BOOK_AND_DC_ADR.md](./01_adrs/PURCHASE_BOOK_AND_DC_ADR.md) | Purchase Book (multi-invoice per PO) + dual-mode DC; presentation vs identity |
+| [VENDOR_INVOICE_IDENTITY_ADR.md](./01_adrs/VENDOR_INVOICE_IDENTITY_ADR.md) | Shared `vendor_invoice` row for a Purchase Book and a Receipt Note; PDF store later |
+| [DC_DISPATCH_DISPOSITION_ADR.md](./01_adrs/DC_DISPATCH_DISPOSITION_ADR.md) | DC Dispatch Reason + physical disposition (DEMO/RENTAL/REPAIR/SALE) |
+| [DC_RETURN_INWARD_LIFECYCLE_ADR.md](./01_adrs/DC_RETURN_INWARD_LIFECYCLE_ADR.md) | DC Return Log + Return Inward Receipt Note lifecycle |
+| [POST_COMMIT_COMMERCIAL_RECONCILIATION_ADR.md](./01_adrs/POST_COMMIT_COMMERCIAL_RECONCILIATION_ADR.md) | Post-commit PO revision vs physical reconciliation + Vendor Return |
 | [SERIAL_IDENTITY_ADR.md](./01_adrs/SERIAL_IDENTITY_ADR.md) | First-class manufacturer serial rows (`serial_identity`) |
+| [PHYSICAL_TALLY_AUTHORITY_ADR.md](./01_adrs/PHYSICAL_TALLY_AUTHORITY_ADR.md) | On-hand tally = DC dispatch + Retire (+ Vendor Return); any-origin DC; superuser overrides |
+| [ASSET_HIERARCHY_LEVELS_ADR.md](./01_adrs/ASSET_HIERARCHY_LEVELS_ADR.md) | Folder → Category → Make; Makes only under categories; ™ vs box vs folder |
+| [SET_COMMERCIAL_DEFINITION_ADR.md](./01_adrs/SET_COMMERCIAL_DEFINITION_ADR.md) | Set = product-level definition; Zoho gets name + description; physical allocation per PB / RN line only; kit = one DC line |
 
 ---
 

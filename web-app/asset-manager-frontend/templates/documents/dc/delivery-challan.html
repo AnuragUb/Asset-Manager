@@ -11,17 +11,46 @@
 -->
 <article class="dc-qt-sheet" aria-label="Delivery Challan">
     <div class="dc-qt-main">
+        {{#if company.letterheadHeader}}
+        <img class="dc-qt-letterhead dc-qt-letterhead-header" src="{{{company.letterheadHeader}}}" alt="{{company.name}}">
+        {{/if}}
         <header class="dc-qt-top">
-            <div class="dc-qt-logo">
-                {{#if company.logoUrl}}
-                <img src="{{{company.logoUrl}}}" alt="">
+            <div class="dc-qt-top-left">
+                {{#if company.cssHeader}}
+                <div class="dc-qt-logo">
+                    {{#if company.logoUrl}}
+                    <img src="{{{company.logoUrl}}}" alt="">
+                    {{/if}}
+                    {{#if company.showFallback}}
+                    <div class="dc-qt-logo-fallback">{{company.name}}</div>
+                    {{/if}}
+                </div>
                 {{/if}}
-                {{#if company.showFallback}}
-                <div class="dc-qt-logo-fallback">{{company.name}}</div>
-                {{/if}}
+                <div class="dc-qt-dispatched" aria-label="Dispatched By">
+                    <div class="dc-qt-label">Dispatched By</div>
+                    <div class="dc-qt-value">{{company.name}}</div>
+                    {{#if company.address}}
+                    <div class="dc-qt-value-pre">{{company.address}}</div>
+                    {{/if}}
+                    {{#if company.gstin}}
+                    <div class="dc-qt-kind"><span>GSTIN:</span> {{company.gstin}}</div>
+                    {{/if}}
+                    {{#if company.cin}}
+                    <div class="dc-qt-kind"><span>CIN:</span> {{company.cin}}</div>
+                    {{/if}}
+                    {{#if company.pan}}
+                    <div class="dc-qt-kind"><span>Company's PAN:</span> {{company.pan}}</div>
+                    {{/if}}
+                    {{#if company.stateLine}}
+                    <div class="dc-qt-kind"><span>State:</span> {{company.stateLine}}</div>
+                    {{/if}}
+                </div>
             </div>
             <div class="dc-qt-top-right">
+                <div class="dc-qt-copy-header">{{document.copyLabel}}</div>
+                {{#if company.cssHeader}}
                 <div class="dc-qt-accent" aria-hidden="true"></div>
+                {{/if}}
                 <h1 class="dc-qt-doc-title">{{document.title}}</h1>
             </div>
         </header>
@@ -30,10 +59,6 @@
             <div>
                 <div class="dc-qt-label">DC No.</div>
                 <div class="dc-qt-value dc-qt-value-red">{{document.legalNumber}}</div>
-                <div style="margin-top:10px;">
-                    <div class="dc-qt-label">Document</div>
-                    <div class="dc-qt-value">{{document.copyLabel}}</div>
-                </div>
             </div>
             <div>
                 <div class="dc-qt-label">Date</div>
@@ -48,6 +73,12 @@
             <div>
                 <div class="dc-qt-label">Status</div>
                 <div class="dc-qt-value">{{document.status}}</div>
+                {{#if document.transferDestination}}
+                <div style="margin-top:10px;">
+                    <div class="dc-qt-label">Transfer To</div>
+                    <div class="dc-qt-value">{{document.transferDestination}}</div>
+                </div>
+                {{/if}}
                 {{#if document.createdBy}}
                 <div style="margin-top:10px;">
                     <div class="dc-qt-label">Created By</div>
@@ -71,11 +102,8 @@
             <div class="dc-qt-party-block">
                 <div class="dc-qt-label">Customer / Receiver</div>
                 <div class="dc-qt-value">{{customer.name}}</div>
-                {{#if customer.zohoAccountId}}
-                <div class="dc-qt-kind"><span>Account ref:</span> {{customer.zohoAccountId}}</div>
-                {{/if}}
 
-                <div class="dc-qt-label" style="margin-top:14px;">Consignee</div>
+                <div class="dc-qt-label" style="margin-top:14px;">Consignee (Ship To)</div>
                 <div class="dc-qt-value">{{consignee.name}}</div>
                 {{#if consignee.address}}
                 <div class="dc-qt-value-pre">{{consignee.address}}</div>
@@ -91,14 +119,7 @@
                 {{/if}}
             </div>
             <div class="dc-qt-party-block">
-                <div class="dc-qt-label">Dispatched By</div>
-                <div class="dc-qt-value">{{company.name}}</div>
-                {{#if company.address}}
-                <div class="dc-qt-value-pre">{{company.address}}</div>
-                {{/if}}
-
-                {{#if buyer.name}}
-                <div class="dc-qt-label" style="margin-top:14px;">Buyer</div>
+                <div class="dc-qt-label">Buyer (Bill To)</div>
                 <div class="dc-qt-value">{{buyer.name}}</div>
                 {{#if buyer.address}}
                 <div class="dc-qt-value-pre">{{buyer.address}}</div>
@@ -108,7 +129,6 @@
                 {{/if}}
                 {{#if buyer.stateLine}}
                 <div class="dc-qt-kind"><span>State:</span> {{buyer.stateLine}}</div>
-                {{/if}}
                 {{/if}}
             </div>
         </section>
@@ -152,7 +172,9 @@
                     <th>Make</th>
                     <th>Model</th>
                     <th>Asset ID</th>
+                    {{#if showSerial}}
                     <th class="ctr">Serial No</th>
+                    {{/if}}
                     <th class="ctr">HSN/SAC</th>
                     <th class="num">Qty</th>
                     <th class="ctr">Unit</th>
@@ -164,13 +186,16 @@
             </thead>
             <tbody>
                 {{#each items}}
+                {{#if isLine}}
                 <tr>
                     <td class="ctr">{{n}}</td>
-                    <td class="desc">{{description}}</td>
+                    <td class="desc">{{description}}{{#if setDescription}}<div class="dc-qt-set-desc">{{setDescription}}</div>{{/if}}{{#if serialInDescription}}<div class="dc-qt-set-desc">{{serialInDescription}}</div>{{/if}}</td>
                     <td>{{make}}</td>
                     <td>{{model}}</td>
                     <td class="mono">{{assetId}}</td>
+                    {{#if showSerial}}
                     <td class="ctr">{{serialNo}}</td>
+                    {{/if}}
                     <td class="ctr">{{hsn}}</td>
                     <td class="num">{{qty}}</td>
                     <td class="ctr">{{unit}}</td>
@@ -179,6 +204,7 @@
                     <td class="num">{{amount}}</td>
                     {{/if}}
                 </tr>
+                {{/if}}
                 {{/each}}
                 {{#if itemsEmpty}}
                 <tr><td class="dc-qt-empty" colspan="{{colCount}}">No items</td></tr>
@@ -250,6 +276,10 @@
     </div>
 
     <div class="dc-qt-bottom">
+        {{#if company.letterheadFooter}}
+        <img class="dc-qt-letterhead dc-qt-letterhead-footer" src="{{{company.letterheadFooter}}}" alt="{{company.footerAddress}}">
+        {{/if}}
+        {{#if company.cssFooter}}
         {{#if company.contactLine}}
         <div class="dc-qt-contact">{{company.contactLine}}</div>
         {{/if}}
@@ -260,5 +290,6 @@
                 <span class="dc-qt-footer-web-text">{{company.footerWeb}}</span>
             </div>
         </footer>
+        {{/if}}
     </div>
 </article>

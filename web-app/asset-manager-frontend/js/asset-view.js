@@ -123,10 +123,7 @@ async function renderAsset(data) {
     }
     
     const canDelete = currentUser && (
-        currentUser.role === 'admin' || 
-        currentUser.role === 'superuser' ||
-        (Array.isArray(currentUser.role) && (currentUser.role.includes('admin') || currentUser.role.includes('superuser'))) ||
-        (typeof currentUser.role === 'string' && currentUser.role.startsWith('[') && (currentUser.role.includes('"admin"') || currentUser.role.includes('"superuser"')))
+        (typeof window !== 'undefined' && typeof window.hasPermission === 'function' && window.hasPermission('asset.delete'))
     );
 
     console.log('[AssetView] Current User:', currentUser ? currentUser.username : 'Guest', 'Can Delete:', canDelete);
@@ -183,10 +180,10 @@ async function renderAsset(data) {
                     <div style="font-size: 14px; margin-top: 4px;">${safe(asset.Remarks)}</div>
                 </div>
             ` : ''}
-            ${asset.ItemDescription ? `
+            ${(asset.ItemDescription || asset.itemdescription || asset.Description) ? `
                 <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
                     <div style="font-size: 11px; color: #666; font-weight: bold; text-transform: uppercase;">Description</div>
-                    <div style="font-size: 14px; margin-top: 4px;">${safe(asset.ItemDescription)}</div>
+                    <div style="font-size: 14px; margin-top: 4px;">${safe(asset.ItemDescription || asset.itemdescription || asset.Description)}</div>
                 </div>
             ` : ''}
         </div>
@@ -446,10 +443,7 @@ async function renderAsset(data) {
 
     // Zoho Sync UI Block
     const canSyncToZoho = currentUser && (
-        currentUser.role === 'admin' || 
-        currentUser.role === 'superuser' ||
-        currentUser.role === 'manager' ||
-        (Array.isArray(currentUser.role) && (currentUser.role.includes('admin') || currentUser.role.includes('superuser') || currentUser.role.includes('manager')))
+        (typeof window !== 'undefined' && typeof window.hasPermission === 'function' && window.hasPermission('zoho.sync'))
     );
 
     if (canSyncToZoho) {
@@ -513,7 +507,7 @@ async function renderAsset(data) {
                     </div>
                     `;
                 };
-                import('/js/physical-intakes.js?v=7.48').then((mod) => {
+                import('/js/physical-intakes.js?v=7.112').then((mod) => {
                     provenanceHost.innerHTML = mod.provenanceHtml(intake, { compact: true });
                     mod.bindPhysicalIntakePoLink(provenanceHost, intake, { onLinked: () => window.location.reload() });
                 }).catch(renderFallback);

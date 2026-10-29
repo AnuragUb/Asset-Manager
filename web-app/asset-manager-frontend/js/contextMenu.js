@@ -26,10 +26,20 @@ export function initContextMenu() {
                 <span class="menu-icon">📁</span> <span class="menu-label">Add Parent Folder</span>
             </div>
             <div class="menu-item" data-action="add-category">
-                <span class="menu-icon">📂</span> <span class="menu-label">Add Category</span>
+                <span class="menu-icon">📦</span> <span class="menu-label">Add Category</span>
+            </div>
+            <div class="menu-item" data-action="add-make">
+                <span class="menu-icon">™</span> <span class="menu-label">Create Make</span>
             </div>
             <div class="menu-item" data-action="add-item" style="display: none;">
                 <span class="menu-icon">➕</span> <span class="menu-label">Add Item</span>
+            </div>
+            <div class="menu-divider" data-section="edit"></div>
+            <div class="menu-item" data-action="edit-node">
+                <span class="menu-icon">✏️</span> <span class="menu-label">Edit</span>
+            </div>
+            <div class="menu-item" data-action="delete-node">
+                <span class="menu-icon">🗑️</span> <span class="menu-label">Delete</span>
             </div>
             <div class="menu-divider" data-section="zoho"></div>
             <div class="menu-item" data-action="sync-zoho-catalog">
@@ -44,6 +54,18 @@ export function initContextMenu() {
             </div>
         `;
         document.body.appendChild(menu);
+    }
+    if (!menu.querySelector('[data-action="edit-node"]')) {
+        const html = `<div class="menu-divider" data-section="edit"></div>
+            <div class="menu-item" data-action="edit-node">
+                <span class="menu-icon">✏️</span> <span class="menu-label">Edit</span>
+            </div>
+            <div class="menu-item" data-action="delete-node">
+                <span class="menu-icon">🗑️</span> <span class="menu-label">Delete</span>
+            </div>`;
+        const zoho = menu.querySelector('[data-section="zoho"]');
+        if (zoho) zoho.insertAdjacentHTML('beforebegin', html);
+        else menu.insertAdjacentHTML('beforeend', html);
     }
 
     // Hide menu on any click outside
@@ -72,17 +94,28 @@ export function initContextMenu() {
         const contextType = treeItem ? treeItem.dataset.type : (nodeDiv ? nodeDiv.dataset.type : 'none');
         const contextName = treeItem ? treeItem.dataset.name : (nodeDiv ? nodeDiv.dataset.name : '');
         const contextId = treeItem ? treeItem.dataset.id : (nodeDiv ? nodeDiv.dataset.id : '');
+        const contextRole = treeItem ? treeItem.dataset.role : (nodeDiv ? nodeDiv.dataset.role : '');
 
         // Store context data for actions
         menu.dataset.contextType = contextType || 'none';
         menu.dataset.contextName = contextName || '';
         menu.dataset.contextId = contextId || '';
+        menu.dataset.contextRole = contextRole || '';
         menu.dataset.contextModule = contextModule;
 
+        const addFolderItem = menu.querySelector('[data-action="add-folder"]');
+        const addCategoryItem = menu.querySelector('[data-action="add-category"]');
+        const addMakeItem = menu.querySelector('[data-action="add-make"]');
         const addFolderLabel = menu.querySelector('[data-action="add-folder"] .menu-label');
         const addCategoryLabel = menu.querySelector('[data-action="add-category"] .menu-label');
+        const addMakeLabel = menu.querySelector('[data-action="add-make"] .menu-label');
         const addItemNode = menu.querySelector('[data-action="add-item"]');
         const addItemLabel = menu.querySelector('[data-action="add-item"] .menu-label');
+        const editNode = menu.querySelector('[data-action="edit-node"]');
+        const editLabel = menu.querySelector('[data-action="edit-node"] .menu-label');
+        const deleteNode = menu.querySelector('[data-action="delete-node"]');
+        const deleteLabel = menu.querySelector('[data-action="delete-node"] .menu-label');
+        const editDivider = menu.querySelector('[data-section="edit"]');
         const refreshLabel = menu.querySelector('[data-action="refresh"] .menu-label');
         const zohoDivider = menu.querySelector('[data-section="zoho"]');
         const zohoSync = menu.querySelector('[data-action="sync-zoho-catalog"]');
@@ -97,11 +130,34 @@ export function initContextMenu() {
             if (zohoDivider) zohoDivider.style.display = 'none';
             if (zohoSync) zohoSync.style.display = 'none';
             if (zohoStatus) zohoStatus.style.display = 'none';
+            if (addMakeItem) addMakeItem.style.display = 'none';
+            if (editNode) editNode.style.display = 'none';
+            if (deleteNode) deleteNode.style.display = 'none';
+            if (editDivider) editDivider.style.display = 'none';
         } else {
-            if (addFolderLabel) addFolderLabel.textContent = 'Add Parent Folder';
-            if (addCategoryLabel) addCategoryLabel.textContent = 'Add Category';
+            const isMake = contextType === 'kind' && String(contextRole || '').toUpperCase() === 'MAKE';
+            const isCategory = contextType === 'kind' && !isMake;
+            const isFolder = contextType === 'folder' || contextType === 'none' || !contextType;
+            if (addFolderItem) addFolderItem.style.display = (!contextType || contextType === 'none' || contextType === 'folder') && !isMake ? 'flex' : 'none';
+            if (addCategoryItem) addCategoryItem.style.display = isMake ? 'none' : 'flex';
+            if (addMakeItem) addMakeItem.style.display = isCategory ? 'flex' : 'none';
+            if (addFolderLabel) addFolderLabel.textContent = contextName && contextType === 'folder' ? `Create folder inside ${contextName}` : 'Add Parent Folder';
+            if (addCategoryLabel) addCategoryLabel.textContent = isCategory ? `Create category inside ${contextName}` : 'Add Category';
+            if (addMakeLabel) addMakeLabel.textContent = contextName ? `Create make inside ${contextName}` : 'Create Make';
             if (refreshLabel) refreshLabel.textContent = 'Refresh Hierarchy';
-            if (addItemNode) addItemNode.style.display = 'none';
+            if (addItemNode) addItemNode.style.display = isMake ? 'flex' : 'none';
+            if (addItemLabel) addItemLabel.textContent = '+ Asset';
+            const nodeLabel = isMake ? 'Make' : (isCategory ? 'Category' : 'Folder');
+            const canEditDelete = contextType === 'folder' || contextType === 'kind';
+            if (editDivider) editDivider.style.display = canEditDelete ? 'block' : 'none';
+            if (editNode) {
+                editNode.style.display = canEditDelete ? 'flex' : 'none';
+                if (editLabel) editLabel.textContent = `Edit ${nodeLabel}`;
+            }
+            if (deleteNode) {
+                deleteNode.style.display = canEditDelete ? 'flex' : 'none';
+                if (deleteLabel) deleteLabel.textContent = `Delete ${nodeLabel}`;
+            }
             if (zohoDivider) zohoDivider.style.display = 'block';
             if (zohoSync) zohoSync.style.display = 'block';
             if (zohoStatus) zohoStatus.style.display = 'block';
@@ -119,6 +175,7 @@ export function initContextMenu() {
         const contextType = menu.dataset.contextType;
         const contextName = menu.dataset.contextName;
         const contextId = menu.dataset.contextId;
+        const contextRole = menu.dataset.contextRole;
         const contextModule = menu.dataset.contextModule || 'assets';
 
         console.log(`[ContextMenu] Executing action: ${action} on ${contextType}`);
@@ -128,7 +185,11 @@ export function initContextMenu() {
                 document.getElementById('btnAddInventoryFolder')?.click();
             } else {
                 if (typeof window.openAddFolderModal === 'function') {
-                    window.openAddFolderModal();
+                    window.openAddFolderModal(contextId || contextName ? {
+                        id: contextId,
+                        name: contextName,
+                        type: contextType
+                    } : null);
                 } else {
                     const modal = document.getElementById('addFolderModal');
                     if (modal) modal.style.display = 'flex';
@@ -156,15 +217,51 @@ export function initContextMenu() {
                 }
 
                 if (typeof window.openAddKindModal === 'function') {
-                    window.openAddKindModal();
+                    window.openAddKindModal({
+                        role: 'CATEGORY',
+                        parentName: contextType === 'folder' || contextType === 'kind' ? contextName : ''
+                    });
                 } else {
                     const modal = document.getElementById('addAssetKindModal');
                     if (modal) modal.style.display = 'flex';
                 }
             }
+        } else if (action === 'add-make') {
+            if (contextModule === 'inventory') return;
+            if (contextType !== 'kind' || String(contextRole || '').toUpperCase() === 'MAKE') return;
+            if (typeof window.openAddKindModal === 'function') {
+                window.openAddKindModal({ role: 'MAKE', parentName: contextName });
+            }
+        } else if (action === 'edit-node') {
+            if (contextModule === 'inventory') return;
+            const node = window.hierarchyManager && typeof window.hierarchyManager.findNode === 'function'
+                ? window.hierarchyManager.findNode(contextId || contextName)
+                : null;
+            if (contextType === 'kind') {
+                if (typeof window.openEditKindModal === 'function') {
+                    window.openEditKindModal(node || { ID: contextId, Name: contextName, type: 'kind', KindRole: contextRole });
+                }
+            } else if (contextType === 'folder' && typeof window.openAddFolderModal === 'function') {
+                window.openAddFolderModal(node || { ID: contextId, Name: contextName, type: 'folder' }, { edit: true });
+            }
+        } else if (action === 'delete-node') {
+            if (contextModule === 'inventory') return;
+            const node = window.hierarchyManager && typeof window.hierarchyManager.findNode === 'function'
+                ? window.hierarchyManager.findNode(contextId || contextName)
+                : { ID: contextId, Name: contextName, type: contextType, KindRole: contextRole };
+            if (typeof window.deleteHierarchyNode === 'function') {
+                await window.deleteHierarchyNode(node);
+            } else if (contextType === 'kind' && typeof window.deleteAssetKind === 'function') {
+                await window.deleteAssetKind(contextId || contextName);
+            }
         } else if (action === 'add-item') {
             if (contextModule === 'inventory') {
                 document.getElementById('btnAddInventoryItem')?.click();
+            } else if (typeof window.startAssetIntakeFromHierarchy === 'function') {
+                const node = window.hierarchyManager && typeof window.hierarchyManager.findNode === 'function'
+                    ? window.hierarchyManager.findNode(contextId || contextName)
+                    : null;
+                window.startAssetIntakeFromHierarchy(node || contextName);
             }
         } else if (action === 'sync-zoho-catalog') {
             if (window.syncZohoCatalog) {
@@ -325,9 +422,10 @@ async function showZohoStatusModal() {
         const actions = document.getElementById('zohoOAuthActions');
         const canManageOAuth = (() => {
             try {
-                const u = window.currentUser || JSON.parse(localStorage.getItem('user') || 'null');
-                const role = u?.role;
-                return role === 'admin' || role === 'superuser' || (Array.isArray(role) && (role.includes('admin') || role.includes('superuser')));
+                if (typeof window !== 'undefined' && typeof window.hasPermission === 'function') {
+                    return window.hasPermission('zoho.oauth.manage');
+                }
+                return false;
             } catch {
                 return false;
             }
@@ -349,7 +447,7 @@ async function showZohoStatusModal() {
                     parts.push(`<button type="button" id="btnZohoDisconnect" class="action-button" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;">Disconnect Zoho</button>`);
                 }
                 if (health.status === 'CONNECTED') {
-                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Reauthorize asks Zoho for the current scope list (including Purchase Order READ). Tokens are replaced only after consent succeeds. Disconnect removes OAuth tokens only; catalog and local Zoho IDs are kept.</span>`);
+                    parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Reauthorize asks Zoho for the current scope list (including ZohoCRM.modules.ALL for CRM modules). Tokens are replaced only after consent succeeds. Disconnect removes OAuth tokens only; catalog and local Zoho IDs are kept.</span>`);
                 } else {
                     parts.push(`<span style="font-size:12px;color:#6b7280;align-self:center;">Opens Zoho authorization (India). Tokens never appear in the browser.</span>`);
                 }

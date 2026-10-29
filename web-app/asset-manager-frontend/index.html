@@ -9,11 +9,13 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/static/logo.png?v=6.44">
     <link rel="apple-touch-icon" href="/static/logo.png?v=6.44">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=7.114">
-    <link rel="stylesheet" href="/templates/documents/dc/delivery-challan.css?v=1.3">
+    <link rel="stylesheet" href="/static/style.css?v=7.164">
+    <link rel="stylesheet" href="/static/login-lamp.css?v=1.7">
+    <link rel="stylesheet" href="/templates/documents/dc/delivery-challan.css?v=1.9">
     <link rel="stylesheet" href="/static/modal.css?v=6.46">
-    <link rel="stylesheet" href="/static/sidebar-raul.css?v=6.44">
-    <link rel="stylesheet" href="/static/mobile.css?v=6.44">
+    <link rel="stylesheet" href="/static/sidebar-raul.css?v=6.45">
+    <link rel="stylesheet" href="/static/mobile.css?v=6.45">
+    <link rel="stylesheet" href="/static/tally.css?v=1.3">
     <link href="https://unpkg.com/tabulator-tables@5.5.0/dist/css/tabulator.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.0/dist/js/tabulator.min.js"></script>
     <script type="text/javascript" src="https://oss.sheetjs.com/sheetjs/xlsx.full.min.js"></script>
@@ -417,10 +419,10 @@
         <header id="app-header" class="hidden">
             <div class="top-bar-pill">
                 <div class="header-left">
-                    <button id="sidebarToggle" class="icon-button burger-container" type="button" aria-label="Toggle sidebar" aria-controls="app-sidebar" aria-expanded="false">
-                    <div class="burger-line line-left" aria-hidden="true"></div>
+                    <button id="sidebarToggle" class="icon-button burger-container stage-0" type="button" aria-label="Toggle sidebar" aria-controls="app-sidebar" aria-expanded="false">
+                    <div class="burger-line line-top" aria-hidden="true"></div>
                     <div class="burger-line line-center" aria-hidden="true"></div>
-                    <div class="burger-line line-right" aria-hidden="true"></div>
+                    <div class="burger-line line-bottom" aria-hidden="true"></div>
                 </button>
                     <div class="app-logo-container">
                         <img src="/static/logo.png?v=1.1" alt="Logo" class="app-logo">
@@ -438,6 +440,7 @@
                                 <li><a href="#operations-view" class="nav-link" id="nav-operations">Dashboard</a></li>
                                 <li><a href="#products-view" class="nav-link" id="nav-products">Products</a></li>
                                 <li><a href="#history-view" class="nav-link" id="nav-history">History</a></li>
+                                <li><a href="#tally-view" class="nav-link" id="nav-tally">Stock Tally</a></li>
                                 <li><a href="#reservations-view" class="nav-link" id="nav-reservations">Reservations</a></li>
                                 <li><a href="#purchase-orders-view" class="nav-link" id="nav-purchase-orders">Purchase Orders</a></li>
                                 <li><a href="#purchase-books-view" class="nav-link" id="nav-purchase-books">Purchase Books</a></li>
@@ -448,7 +451,7 @@
                         <li><a href="#home-view" class="nav-link" id="nav-dashboard">Assets</a></li>
                         <li><a href="#inventory-view" class="nav-link" id="nav-inventory">Inventory</a></li>
                         <li><a href="#sets-view" class="nav-link" id="nav-sets">Sets</a></li>
-                        <li><a href="#projects-view" class="nav-link" id="nav-projects">Projects</a></li>
+                        <li class="hidden"><a href="#projects-view" class="nav-link" id="nav-projects">Projects</a></li>
                         <li><a href="#warranty-view" class="nav-link" id="nav-warranty">Warranty</a></li>
                         <li class="hidden"><a href="#physical-intakes-view" class="nav-link" id="nav-physical-intakes">Physical Intake</a></li>
                         <li class="hidden"><a href="#arri-view" class="nav-link" id="nav-arri">ARRI Service</a></li>
@@ -471,6 +474,11 @@
             <div class="sidebar-search">
                 <input type="text" id="globalSidebarSearch" placeholder="Search assets…" aria-label="Search">
                 <button class="icon-button" type="button" id="globalSidebarSearchBtn" aria-label="Search">🔍</button>
+            </div>
+            <div id="hierarchyCreateBar" class="hierarchy-create-bar" aria-label="Create in hierarchy">
+                <button type="button" class="hierarchy-create-btn" id="btnAddAssetFolder" title="Create a folder" aria-label="Folder">📁</button>
+                <button type="button" class="hierarchy-create-btn" id="btnAddAssetKind" title="Create a category" aria-label="Category">📦</button>
+                <button type="button" class="hierarchy-create-btn" id="btnAddAssetMake" title="Create a make" aria-label="Make">™</button>
             </div>
 
             <ul class="sidebar-menu" id="sidebar-tree">
@@ -503,37 +511,89 @@
 
         <main id="main-content">
             <div id="loginView" class="view active">
-                <div class="login-container">
-                    <div class="login-left">
-                        <div class="brand-logo">
-                             <span>Asset Manager</span>
+                <div class="login-room" id="loginRoom">
+                    <div class="login-room-glow" aria-hidden="true"></div>
+                    <div id="loginFireflies" class="login-fireflies" aria-hidden="true"></div>
+                    <div class="login-lamp-col">
+                        <div class="login-pull-hint" id="loginPullHint">
+                            <span>Double-click the cube to turn on the login form</span>
                         </div>
-                        <div class="login-left-content">
-                            <span class="quote-label">A WISE QUOTE</span>
-                            <h1>Get<br>Everything<br>You Want</h1>
-                            <p>You can get everything you want if you work hard, trust the process, and stick to the plan.</p>
-                        </div>
-                        <div class="login-bg-overlay"></div>
+                        <button type="button" class="login-cube-btn" id="loginCubeBtn" aria-label="Double-click to turn on the login form">
+                            <span class="login-cube-backglow" aria-hidden="true"></span>
+                            <span class="login-cube-stage">
+                                <img src="/static/logo.png?v=1.1" alt="AssetEngine" class="login-cube-logo">
+                                <span class="login-cube-well" aria-hidden="true">
+                                    <svg viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
+                                        <defs>
+                                            <radialGradient id="loginWellCore" cx="50%" cy="48%" r="55%">
+                                                <stop offset="0%" stop-color="#ff6b6b"/>
+                                                <stop offset="35%" stop-color="#e31c24"/>
+                                                <stop offset="100%" stop-color="#4a0508"/>
+                                            </radialGradient>
+                                        </defs>
+                                        <polygon class="login-cube-well-fill" points="119,48 187.5,83 120,118 52,83" fill="url(#loginWellCore)"></polygon>
+                                    </svg>
+                                </span>
+                                <span class="login-cube-gap" aria-hidden="true">
+                                    <svg viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
+                                        <defs>
+                                            <linearGradient id="loginGapWall" x1="0" y1="1" x2="0" y2="0">
+                                                <stop offset="0%" stop-color="#ff4d4d" stop-opacity="0.95"/>
+                                                <stop offset="100%" stop-color="#ffb3b3" stop-opacity="0.15"/>
+                                            </linearGradient>
+                                        </defs>
+                                        <polygon points="119,48 187.5,83 187.5,73 119,38" fill="url(#loginGapWall)"></polygon>
+                                        <polygon points="187.5,83 120,118 120,108 187.5,73" fill="url(#loginGapWall)"></polygon>
+                                        <polygon points="120,118 52,83 52,73 120,108" fill="url(#loginGapWall)"></polygon>
+                                        <polygon points="52,83 119,48 119,38 52,73" fill="url(#loginGapWall)"></polygon>
+                                    </svg>
+                                </span>
+                                <span class="login-cube-lid" aria-hidden="true">
+                                    <svg viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet">
+                                        <defs>
+                                            <radialGradient id="loginLidUnder" cx="50%" cy="55%" r="62%">
+                                                <stop offset="0%" stop-color="#fff1f1" stop-opacity="0.95"/>
+                                                <stop offset="28%" stop-color="#e31c24" stop-opacity="0.9"/>
+                                                <stop offset="100%" stop-color="#7a1014" stop-opacity="0.05"/>
+                                            </radialGradient>
+                                            <filter id="loginLidMould" x="-40%" y="-40%" width="180%" height="180%">
+                                                <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="blur"/>
+                                                <feMerge>
+                                                    <feMergeNode in="blur"/>
+                                                    <feMergeNode in="SourceGraphic"/>
+                                                </feMerge>
+                                            </filter>
+                                        </defs>
+                                        <polygon class="login-cube-lid-under" points="119,48 187.5,83 120,118 52,83" fill="url(#loginLidUnder)" filter="url(#loginLidMould)"></polygon>
+                                        <polygon class="login-cube-lid-top" points="119,48 187.5,83 120,118 52,83"></polygon>
+                                        <polygon class="login-cube-lid-inner" points="119,61 162,83 120,105 78,83"></polygon>
+                                    </svg>
+                                </span>
+                            </span>
+                        </button>
                     </div>
-                    <div class="login-right">
-                        
+                    <div class="login-right glass" id="loginGlass">
+                        <div class="login-welcome">
+                            <h2>Welcome Back</h2>
+                            <p>Double-click the cube, then sign in to AssetEngine</p>
+                        </div>
                         <form id="loginForm">
                             <div class="form-group">
                                 <label for="username">Username / Email</label>
-                                <input type="text" id="username" name="username" placeholder="Enter your username or email" required autocomplete="username">
+                                <input type="text" id="username" name="username" placeholder="Enter your username or email" autocomplete="username">
                             </div>
                             <div class="form-group">
                                 <label for="password">Password</label>
                                 <div class="password-input-wrapper">
-                                     <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                                     <input type="password" id="password" name="password" placeholder="Enter your password">
                                 </div>
                             </div>
                             
                             <div class="form-options" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 13px;">
-                                <label class="checkbox-label" style="display: flex; align-items: center; cursor: pointer; color: #666;">
+                                <label class="checkbox-label" style="display: flex; align-items: center; cursor: pointer;">
                                     <input type="checkbox" id="rememberMe" name="remember" style="margin-right: 8px;"> Remember me
                                 </label>
-                                <a href="#" id="forgotPasswordLink" class="forgot-password" style="color: #007bff; text-decoration: none; font-weight: 500;">Forgot Password?</a>
+                                <a href="#" id="forgotPasswordLink" class="forgot-password" style="text-decoration: none; font-weight: 500;">Forgot Password?</a>
                             </div>
 
                             <div class="form-group">
@@ -555,12 +615,12 @@
                                 </div>
                             </div>
 
-                            <button type="submit" class="login-button">Sign In</button>
+                            <button type="submit" class="login-button" id="loginSignInBtn" form="loginForm">Sign In</button>
                             
                         </form>
                         
                         <p class="signup-link">Don't have an account? <a href="#" id="signupLink">Sign Up</a></p>
-                        <p id="loginMsg" class="error-msg"></p>
+                        <p id="loginMsg" class="error-msg" style="white-space: pre-wrap;"></p>
                     </div>
                 </div>
             </div>
@@ -568,6 +628,12 @@
             <div id="dashboardView" class="view hidden" style="flex: 1 1 0; min-height: 0; box-sizing: border-box; display: flex; flex-direction: column; padding: 0; margin: 0; background: transparent; box-shadow: none; overflow: hidden;">
                 <!-- Main Dashboard Container -->
                 <div id="dashboard-container" style="display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: hidden;">
+                    <div id="rbac-no-access-view" class="view hidden" style="flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; color: #64748b;">
+                        <div style="font-size: 15px; font-weight: 600; color: #334155; margin-bottom: 8px;">No pages assigned</div>
+                        <p style="margin: 0; max-width: 420px; font-size: 13px; line-height: 1.5;">
+                            Your role has no page access yet. Ask a superuser to grant view permissions under Admin → RBAC, then sign out and sign back in.
+                        </p>
+                    </div>
                     <div id="operations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column;">
                         <div class="view-toolbar" style="margin-bottom: 6px; flex-shrink: 0;">
                             <div class="ops-dash-title-row">
@@ -583,7 +649,7 @@
                     </div>
 
                     <!-- Dashboard Section (Assets) -->
-                    <div id="home-view" class="view hidden" style="flex: 1 1 0; min-height: 0; padding: 20px; margin: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
+                    <div id="home-view" class="view hidden" style="flex: 1 1 0; min-height: 0; padding: 14px 20px; margin: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
                         <div class="dashboard-header" style="flex-shrink: 0;">
                             <h2 id="dashboard-title">Assets</h2>
                             <div class="dashboard-actions">
@@ -604,7 +670,6 @@
                                 </button>
                             </div>
                         </div>
-                        <p class="lc-stock-banner">ASSET = individually identified physical holding. This is not a Product. Quantity-tracked holdings are under Inventory. Procurement stock arrives through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake.</p>
                         <div id="assetGridWrapper" class="asset-grid-scroll-wrapper" style="flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%;">
                             <div class="asset-grid" id="assetGrid" style="height: auto; width: 100%;">
                                 <!-- Asset cards will be dynamically inserted here -->
@@ -828,16 +893,41 @@
                                 <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center;">
                                     <input id="dcOpenId" type="text" placeholder="Open existing DC by ID (e.g. DC123...)" style="flex: 1; min-width: 240px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; background: white;">
                                     <button id="btnOpenDC" class="action-button purple" style="justify-content: center;">Open DC</button>
+                                    <button type="button" id="btnDcCancel" class="action-button red" style="justify-content: center; flex-shrink: 0; display: none;">Cancel DC</button>
+                                    <button type="button" id="btnDcReturnHeader" class="action-button green" style="justify-content: center; flex-shrink: 0; display: none;">Return Inward</button>
+                                    <button type="button" id="btnDcSplitReturnHeader" class="action-button grey" style="justify-content: center; flex-shrink: 0; display: none;">Split Return</button>
+                                    <button id="btnGenerateDC" class="action-button blue" style="justify-content: center; flex-shrink: 0;">Save Draft DC</button>
                                     <button id="btnShowDCHistory" class="action-button blue" style="justify-content: center; background: #0078d4;">📋 View All DCs</button>
                                 </div>
                             </div>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 30%, 450px), 1fr)); gap: 15px; flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 1400px; margin: 0 auto;">
-                            <!-- Left: Form -->
-                            <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
-                                <h3 style="margin-top: 0;">Challan Details</h3>
-                                <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                        <div class="dc-create-page">
+                            <div class="dc-summary-grid">
+                                <section class="card-panel dc-summary-card dc-summary-card--details" aria-labelledby="dcDetailsSummaryTitle">
+                                    <div class="dc-summary-head">
+                                        <h3 id="dcDetailsSummaryTitle"><span aria-hidden="true">📝</span> Challan Details</h3>
+                                        <button type="button" id="btnDcEditDetails" class="action-button blue">Edit details</button>
+                                    </div>
+                                    <div id="dcDetailsSummary" class="dc-summary-body"></div>
+                                </section>
+                                <section class="card-panel dc-summary-card dc-summary-card--items" aria-labelledby="dcItemsSummaryTitle">
+                                    <div class="dc-summary-head">
+                                        <h3 id="dcItemsSummaryTitle"><span aria-hidden="true">📦</span> Asset / Inventory Selection</h3>
+                                        <button type="button" id="btnDcEditItems" class="action-button blue">Select items</button>
+                                    </div>
+                                    <div id="dcItemsSummary" class="dc-summary-body"></div>
+                                </section>
+                            </div>
+
+                            <!-- Challan Details pop-up (moved to <body> by dcCreateModals.js) -->
+                            <div id="dcDetailsModal" class="dc-create-modal" aria-hidden="true">
+                                <div class="dc-create-dialog" role="dialog" aria-modal="true" aria-labelledby="dcDetailsModalTitle">
+                                <div class="dc-create-modal-head">
+                                    <h3 id="dcDetailsModalTitle">Challan Details</h3>
+                                    <button type="button" class="dc-create-modal-x" data-dc-modal-close aria-label="Close">&times;</button>
+                                </div>
+                                <div class="dc-create-modal-body">
                                     <div class="form-group" style="margin-bottom: 15px;">
                                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                             <div style="font-weight: 700;">Company</div>
@@ -874,33 +964,12 @@
                                             <input type="text" id="dcCompanyCIN" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="CIN">
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                                            <input type="text" id="dcCompanyPAN" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Company's PAN" autocomplete="off">
                                             <input type="text" id="dcCompanyState" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="State Name">
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
                                             <input type="text" id="dcCompanyStateCode" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="State Code">
-                                        </div>
-                                        <input type="text" id="dcCompanyWebsite" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px;" placeholder="Website (footer, e.g. www.company.com)" autocomplete="off">
-                                    </div>
-
-                                    <div class="form-group" style="margin-bottom: 15px; background: #f6fffb; padding: 15px; border-radius: 8px; border: 1px solid #b7ebd8;">
-                                        <div style="font-weight: 700; margin-bottom: 8px; color: #0f766e; display: flex; align-items: center; gap: 6px;">
-                                            <span>📄</span> Fetch Purchase Order
-                                        </div>
-                                        <p style="margin: 0 0 8px; font-size: 12px; color: #667085;">Search an imported Purchase Order to link this DC, fill Buyer’s Order No, and add its line items. Optional — you can still create a DC without a PO.</p>
-                                        <div style="position: relative; margin-bottom: 8px;">
-                                            <input type="text" id="dcPoSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #99f6e4; border-radius: 4px; background: white;" placeholder="Search PO number, Zoho PO ID, vendor, subject..." autocomplete="off">
-                                            <div id="dcPoSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
-                                        </div>
-                                        <div id="dcPoLinked" style="display:none; font-size: 12px; color: #0f766e; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 8px 10px;">
-                                            Linked PO: <strong id="dcPoLinkedLabel"></strong>
-                                            <button type="button" id="dcPoClear" class="action-button grey" style="margin-left: 8px; padding: 2px 8px; font-size: 11px;">Clear</button>
-                                        </div>
-                                        <div id="dcPurchaseBookPanel" style="display:none; margin-top: 10px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
-                                            <div style="font-weight: 700; font-size: 13px; color: #92400e; margin-bottom: 6px;">Purchase Books (optional)</div>
-                                            <p style="margin: 0 0 8px; font-size: 12px; color: #78716c;">Select one or more posted books to seed this DC. Only remaining DC-able qty is available. Or use PO lines only (no book).</p>
-                                            <div id="dcPurchaseBookList" style="max-height: 180px; overflow-y: auto; margin-bottom: 8px;"></div>
-                                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                                <button type="button" id="btnDcAddSelectedBooks" class="action-button green" style="padding: 6px 12px; font-size: 12px;">Add selected books</button>
-                                                <button type="button" id="btnDcAddPoLinesOnly" class="action-button grey" style="padding: 6px 12px; font-size: 12px;">Add PO lines only</button>
-                                            </div>
+                                            <input type="text" id="dcCompanyWebsite" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Website (footer, e.g. www.company.com)" autocomplete="off">
                                         </div>
                                     </div>
 
@@ -960,8 +1029,18 @@
                                             <input type="text" id="dcBuyerOrderNo" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Buyer’s Order No.">
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
-                                            <input type="text" id="dcDispatchDocNo" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatch Doc No.">
+                                            <div>
+                                                <label for="dcRefDate" style="display:block;margin-bottom:4px;font-size:12px;color:#667085;">Order / Reference Date</label>
+                                                <input type="date" id="dcRefDate" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" autocomplete="off">
+                                            </div>
+                                            <div>
+                                                <label for="dcDispatchDocNo" style="display:block;margin-bottom:4px;font-size:12px;color:#667085;">Dispatch Doc No.</label>
+                                                <input type="text" id="dcDispatchDocNo" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatch Doc No.">
+                                            </div>
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
                                             <input type="text" id="dcOtherReferences" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Other References">
+                                            <span aria-hidden="true"></span>
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
                                             <div>
@@ -976,6 +1055,31 @@
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
                                             <input type="text" id="dcDispatchedThrough" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Dispatched through">
                                             <input type="text" id="dcPlaceOfSupply" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Place of Supply">
+                                        </div>
+                                        <div style="margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                            <label for="dcDispatchReason" style="display:block;margin-bottom:6px;font-size:12px;font-weight:700;color:#334155;">DISPATCH REASON <span style="color:#b91c1c;">*</span></label>
+                                            <select id="dcDispatchReason" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" required aria-required="true">
+                                                <option value="">— Select why stock is leaving —</option>
+                                                <optgroup label="Returnable (comes back via Return Inward)">
+                                                    <option value="DEMO">Demo</option>
+                                                    <option value="RENTAL">Rental</option>
+                                                    <option value="REPAIR">Repair</option>
+                                                    <option value="INTERNAL_USE">Internal Use / Project / Shoot</option>
+                                                    <option value="STOCK_TRANSFER">Stock Transfer (to another location)</option>
+                                                </optgroup>
+                                                <optgroup label="Exit (leaves ownership)">
+                                                    <option value="SALE">Sale</option>
+                                                    <option value="REPLACEMENT">Replacement / Warranty swap</option>
+                                                    <option value="FOC">Free of Cost / Sample</option>
+                                                    <option value="VENDOR_RETURN">Return to Vendor</option>
+                                                </optgroup>
+                                            </select>
+                                            <div id="dcTransferDestinationWrap" style="display:none;margin-top:8px;">
+                                                <label for="dcTransferDestination" style="display:block;margin-bottom:4px;font-size:12px;font-weight:700;color:#334155;">DESTINATION LOCATION <span style="color:#b91c1c;">*</span></label>
+                                                <input type="text" id="dcTransferDestination" class="form-input" maxlength="255" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Branch / warehouse receiving the stock">
+                                                <p class="lc-muted" style="margin:4px 0 0;font-size:11px;">Items show In Transit until the destination posts a Return Inward with reason "Transfer received"; assets then move to this location.</p>
+                                            </div>
+                                            <p class="lc-muted" style="margin:6px 0 0;font-size:11px;">Required for physical DCs. Stock moves only when you Dispatch — not when Draft is created.</p>
                                         </div>
                                         <textarea id="dcTermsOfDelivery" class="form-input" style="width: 100%; min-height: 50px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-top: 8px;" placeholder="Terms of Delivery"></textarea>
                                     </div>
@@ -992,35 +1096,134 @@
                                         <textarea id="dcRemarks" class="form-input" style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;" placeholder="Enter remarks here..."></textarea>
                                     </div>
                                 </div>
-                                <button id="btnGenerateDC" class="action-button blue" style="width: 100%; margin-top: 10px; justify-content: center; flex-shrink: 0;">Generate DC & QR Code</button>
+                                <div class="dc-create-modal-foot">
+                                    <button type="button" class="action-button blue" data-dc-modal-close>Done</button>
+                                </div>
+                                </div>
                             </div>
 
-                            <!-- Right: Selected Assets -->
-                            <div class="card-panel" style="display: flex; flex-direction: column; min-height: 0;">
-                                <h3 style="margin-top: 0;">Selected Assets</h3>
-                                <div id="dcLinkModePanel" style="margin-bottom: 12px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
-                                    <div style="font-weight: 700; font-size: 13px; color: #92400e; margin-bottom: 8px;">Line source</div>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-weight: 600;">
+                            <section id="dcVersionPanel" class="card-panel dc-version-panel" aria-live="polite">
+                                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                    <h3 style="margin:0; font-size:15px;">DC versions</h3>
+                                    <span id="dcVersionHeading" style="font-size:12px; color:#64748b;"></span>
+                                </div>
+                                <ul id="dcVersionList" class="dc-version-list"></ul>
+                            </section>
+                            <div class="card-panel dc-actions-panel" id="dcActionsPanel">
+                                <div id="dcLifecycleActions" class="dc-lifecycle-actions">
+                                    <div class="dc-lifecycle-primary">
+                                        <button type="button" id="btnDcMarkReady" class="action-button grey">Mark READY (reserve stock)</button>
+                                        <button type="button" id="btnDcDispatch" class="action-button green">DISPATCH (physical commit)</button>
+                                    </div>
+                                    <p id="dcLifecycleNote" hidden style="margin:0; font-size:12px; color:#64748b;"></p>
+                                    <button type="button" id="btnDcReturn" class="action-button grey" style="width:100%; justify-content:center; display:none;">Create Return Inward</button>
+                                    <button type="button" id="btnDcSplitReturn" class="action-button grey" style="width:100%; justify-content:center; display:none;">Split Return</button>
+                                    <div id="dcReturnForm" style="display:none; margin-top:8px; padding:12px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc;">
+                                        <div id="dcReturnFormTitle" style="font-weight:700;font-size:12px;margin-bottom:8px;color:#334155;">RETURN INWARD (creates OPEN Return Log + RN — stock restores on POST)</div>
+                                        <div id="dcReturnLines" style="display:none; margin-bottom:8px;"></div>
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Where does it come back?</label>
+                                        <select id="dcReturnHome" class="form-input" style="width:100%;margin-bottom:8px;">
+                                            <option value="ORIGIN">Origin place — the location it left from</option>
+                                            <option value="ASSET">An Asset location</option>
+                                            <option value="INVENTORY">An Inventory location</option>
+                                        </select>
+                                        <div id="dcReturnLocationWrap" style="display:none;">
+                                            <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Receive at</label>
+                                            <input type="text" id="dcReturnLocation" class="form-input" list="dcReturnLocationList" style="width:100%;margin-bottom:8px;" placeholder="Location">
+                                            <datalist id="dcReturnLocationList"></datalist>
+                                        </div>
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Return Reason</label>
+                                        <select id="dcReturnReason" class="form-input" style="width:100%;margin-bottom:8px;">
+                                            <option value="DEMO_COMPLETED">DEMO_COMPLETED</option>
+                                            <option value="RENTAL_COMPLETED">RENTAL_COMPLETED</option>
+                                            <option value="REPAIR_COMPLETED">REPAIR_COMPLETED</option>
+                                            <option value="INTERNAL_USE_COMPLETED">INTERNAL_USE_COMPLETED</option>
+                                            <option value="TRANSFER_RECEIVED">TRANSFER_RECEIVED</option>
+                                            <option value="CUSTOMER_RETURN">CUSTOMER_RETURN</option>
+                                            <option value="PROJECT_COMPLETED">PROJECT_COMPLETED</option>
+                                            <option value="UNUSED_RETURN">UNUSED_RETURN</option>
+                                            <option value="DAMAGED_RETURN">DAMAGED_RETURN</option>
+                                            <option value="OTHER">OTHER</option>
+                                        </select>
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Invoice number</label>
+                                        <input type="text" id="dcReturnInvoice" class="form-input rn-invoice-required" required style="width:100%;margin-bottom:8px;border-left:2px solid #b91c1c;border-right:2px solid #b91c1c;" placeholder="Vendor invoice number">
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Returned By (party)</label>
+                                        <input type="text" id="dcReturnedByParty" class="form-input" style="width:100%;margin-bottom:8px;" placeholder="Account / customer / team">
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Received By (Cineom)</label>
+                                        <input type="text" id="dcReceivedByUser" class="form-input" style="width:100%;margin-bottom:8px;" placeholder="Employee who accepted goods">
+                                        <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;">Notes</label>
+                                        <input type="text" id="dcReturnNotes" class="form-input" style="width:100%;margin-bottom:8px;">
+                                        <button type="button" id="btnDcReturnSubmit" class="action-button green" style="width:100%;justify-content:center;">Create Return Log + OPEN RN</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Asset / Inventory Selection pop-up (moved to <body> by dcCreateModals.js) -->
+                            <div id="dcItemsModal" class="dc-create-modal" aria-hidden="true">
+                                <div class="dc-create-dialog dc-create-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dcItemsModalTitle">
+                                <div class="dc-create-modal-head">
+                                    <h3 id="dcItemsModalTitle">Asset / Inventory Selection</h3>
+                                    <button type="button" class="dc-create-modal-x" data-dc-modal-close aria-label="Close">&times;</button>
+                                </div>
+                                <div class="dc-create-modal-body">
+                                <div class="dc-items-source-row">
+                                <div id="dcLinkModePanel" style="padding: 6px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                                    <div style="font-weight: 700; font-size: 12px; color: #92400e; margin-bottom: 4px;">Line source</div>
+                                    <div style="display: flex; flex-wrap: wrap; column-gap: 14px; row-gap: 3px; font-size: 12px; font-weight: 600;">
                                         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
                                             <input type="radio" name="dcLinkMode" class="dc-link-mode" value="PO_LINKED" checked> Link to PO (seed from PO / books)
                                         </label>
                                         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-                                            <input type="radio" name="dcLinkMode" class="dc-link-mode" value="HOLDINGS"> No PO — search free holdings
+                                            <input type="radio" name="dcLinkMode" class="dc-link-mode" value="HOLDINGS"> No PO — search in-store holdings
                                         </label>
                                     </div>
-                                    <p id="dcLinkModeHint" class="lc-muted" style="margin:8px 0 0;font-size:12px;">PO-linked: fetch a PO, optionally pick Purchase Books. No-PO search excludes PO-sourced and awaiting-adoption stock.</p>
+                                    <p id="dcLinkModeHint" class="lc-muted" style="margin:4px 0 0;font-size:11px;line-height:1.3;">PO-linked: fetch a PO, optionally pick Purchase Books. No-PO search covers any in-store Asset / Inventory, whatever its origin.</p>
                                 </div>
-                                <div style="margin-bottom: 15px; position: relative;">
-                                    <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search & Add Assets by Name or ID...">
-                                    <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                <div class="form-group" style="margin: 0; background: #f6fffb; padding: 6px 10px; border-radius: 8px; border: 1px solid #b7ebd8;">
+                                    <div style="font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #0f766e; display: flex; align-items: center; gap: 6px;">
+                                        <span>📄</span> Fetch Purchase Order
+                                    </div>
+                                    <p style="margin: 0 0 4px; font-size: 11px; line-height: 1.3; color: #667085;">Search an imported Purchase Order to link this DC, fill Buyer’s Order No, and add its line items. Optional — you can still create a DC without a PO.</p>
+                                    <div style="position: relative; margin-bottom: 0;">
+                                        <input type="text" id="dcPoSearch" class="form-input" style="width: 100%; padding: 5px 8px; font-size: 12px; border: 1px solid #99f6e4; border-radius: 4px; background: white;" placeholder="Search PO number, Zoho PO ID, vendor, subject..." autocomplete="off">
+                                        <div id="dcPoSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 250px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                    </div>
+                                    <div id="dcPoLinked" style="display:none; margin-top: 6px; font-size: 12px; color: #0f766e; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 8px 10px;">
+                                        Linked PO: <strong id="dcPoLinkedLabel"></strong>
+                                        <button type="button" id="dcPoClear" class="action-button grey" style="margin-left: 8px; padding: 2px 8px; font-size: 11px;">Clear</button>
+                                    </div>
+                                    <div id="dcPurchaseBookPanel" style="display:none; margin-top: 10px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                                        <div style="font-weight: 700; font-size: 13px; color: #92400e; margin-bottom: 6px;">Purchase Books (optional)</div>
+                                        <p style="margin: 0 0 8px; font-size: 12px; color: #78716c;">Select one or more posted books to seed this DC. Only remaining DC-able qty is available. Or use PO lines only (no book).</p>
+                                        <div id="dcPurchaseBookList" style="max-height: 180px; overflow-y: auto; margin-bottom: 8px;"></div>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                            <button type="button" id="btnDcAddSelectedBooks" class="action-button green" style="padding: 6px 12px; font-size: 12px;">Add selected books</button>
+                                            <button type="button" id="btnDcAddPoLinesOnly" class="action-button grey" style="padding: 6px 12px; font-size: 12px;">Add PO lines only</button>
+                                        </div>
+                                    </div>
                                 </div>
-
-                                <div style="margin-bottom: 10px; display: flex; gap: 10px;">
+                                </div>
+                                <div class="dc-items-toolbar">
+                                    <div style="position: relative; flex: 1 1 280px; min-width: 220px; max-width: 460px;">
+                                        <input type="text" id="dcAssetSearch" name="dcAssetSearch" class="form-input" style="width: 100%; height: 32px; padding: 6px 10px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Search & Add Assets by Name or ID...">
+                                        <div id="dcSearchResults" style="position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: white; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;"></div>
+                                    </div>
+                                    <button type="button" id="btnDcAddSet" title="Add a Set: pick the physical units for each component" style="height: 32px; padding: 0 12px; font-size: 12px; background: #4f46e5; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; font-weight: 600;">＋ Add Set</button>
+                                    <span class="dc-items-toolbar-sep" aria-hidden="true"></span>
                                     <button id="btnToggleRateAmount" type="button" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                                         <span style="font-size: 14px;">👁️</span> Rate & Amount
                                     </button>
                                     <button id="btnToggleTotalPrice" type="button" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                                         <span style="font-size: 14px;">👁️</span> Total Price (Footer)
+                                    </button>
+                                    <button id="btnToggleDescription" type="button" title="Show or hide the Set description printed under each kit line" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-size: 14px;">👁️</span> Description
+                                    </button>
+                                    <button id="btnToggleSerial" type="button" title="Show or hide the Serial No column on the printed challan" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-size: 14px;">👁️</span> Serial No
+                                    </button>
+                                    <button id="btnToggleSerialInDescription" type="button" title="Print each line's serial number inside its description" style="padding: 6px 12px; font-size: 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-size: 14px;">🚫</span> Serial in Description
                                     </button>
                                 </div>
 
@@ -1046,6 +1249,11 @@
                                     <div id="dcEmptyState" style="padding: 40px; text-align: center; color: #999;">
                                         No assets selected. Search above to add.
                                     </div>
+                                </div>
+                                </div>
+                                <div class="dc-create-modal-foot">
+                                    <button type="button" class="action-button blue" data-dc-modal-close>Done</button>
+                                </div>
                                 </div>
                             </div>
                         </div>
@@ -1226,6 +1434,12 @@
                                     <option value="COMPLETE">Complete</option>
                                     <option value="OVERCOMPLETE">Overcomplete</option>
                                 </select>
+                                <select id="setStatusFilter" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;" title="Set status">
+                                    <option value="ACTIVE">Active</option>
+                                    <option value="DISBANDED">Disbanded</option>
+                                    <option value="ARCHIVED">Archived / deleted</option>
+                                    <option value="ALL">All statuses</option>
+                                </select>
                                 <button class="action-button grey" id="btnReloadSets">Refresh</button>
                                 <button class="action-button green" id="btnCreateSet">+ Create Set</button>
                             </div>
@@ -1274,6 +1488,8 @@
                             <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                                 <input type="text" id="poSearch" placeholder="Search PO number or Zoho ID..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
                                 <button class="action-button grey" id="btnReloadPos">Refresh</button>
+                                <button class="action-button grey" id="btnSyncZohoAccounts" style="display:none;">Sync Zoho Accounts</button>
+                                <button class="action-button grey" id="btnSyncDealProjects" style="display:none;">Sync Deal Projects</button>
                                 <button class="action-button blue" id="btnImportZohoPo">Import from Zoho</button>
                             </div>
                         </div>
@@ -1296,51 +1512,62 @@
                         <div id="purchaseBooksContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
                     </div>
 
-                    <div id="products-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
-                        <div class="view-toolbar prd-toolbar" style="margin-bottom: 12px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                                <h2 class="view-title" style="margin: 0;">Products</h2>
-                                <span id="productCountBadge" style="background: #eff6ff; color: #1d4ed8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 AssetEngine Products</span>
+                    <div id="products-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 6px 16px 16px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar prd-toolbar" style="flex-shrink: 0;">
+                            <div class="prd-toolbar-title-row">
+                                <h2 class="view-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+                                    Products
+                                    <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Products" data-tip="AssetEngine Product Master — authoritative product identity. PRODUCT is catalogue identity. ZOHO PRODUCT is the commercial mapping. PHYSICAL STOCK is Assets and Inventory — never the Product itself."><span aria-hidden="true">i</span></button>
+                                </h2>
+                                <button type="button" class="prd-icon-btn" id="btnReloadProducts" title="Refresh" aria-label="Refresh products">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-4.9 6.1l-1.42.7A6.97 6.97 0 0 0 19 12c0-1.93-.78-3.68-2.05-4.95z"/></svg>
+                                </button>
+                                <span id="productCountBadge" class="prd-count-badge">0 AssetEngine Products</span>
+                                <div class="prd-title-actions">
+                                    <button class="action-button grey prd-sm-btn" id="btnOpenZohoCatalog" aria-expanded="false" aria-controls="zohoCatalogSection">Zoho Product Reference</button>
+                                    <button class="action-button blue prd-sm-btn" id="btnCreateFromCatalog" aria-label="Create AssetEngine Product from Zoho">Create Against Zoho Products</button>
+                                    <button class="action-button grey prd-standalone-btn prd-sm-btn" id="btnCreateProduct" aria-label="Standalone AE Product"><img src="/static/logo.png?v=6.44" alt="" class="prd-standalone-logo" aria-hidden="true">Standalone AE Product</button>
+                                    <button class="action-button grey prd-sm-btn" id="btnImportProducts" aria-label="Import Products from CSV or Excel">Import Products</button>
+                                </div>
                             </div>
-                            <div class="view-actions prd-toolbar-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <div class="view-actions prd-toolbar-filters">
                                 <label for="productSearch" class="lc-k" style="margin:0;">Search</label>
-                                <input type="search" id="productSearch" placeholder="Search Product ID, Zoho Product ID, name, model, SKU..." aria-label="Search Product ID, Zoho Product ID, name, model, SKU" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: min(360px, 100%);">
-                                <div class="prd-filter-chips" role="group" aria-label="Product status and mapping filters">
-                                    <button type="button" class="prd-chip is-on" data-prd-status="" aria-pressed="true">All</button>
-                                    <button type="button" class="prd-chip" data-prd-status="ACTIVE" aria-pressed="false">Active</button>
-                                    <button type="button" class="prd-chip" data-prd-status="ARCHIVED" aria-pressed="false">Archived</button>
-                                    <button type="button" class="prd-chip" data-prd-linked="1" aria-pressed="false">Zoho Linked</button>
-                                    <button type="button" class="prd-chip" data-prd-unsynced="1" aria-pressed="false" title="Zoho Product Catalog items with no AssetEngine Product yet">Not Yet Synced</button>
+                                <input type="search" id="productSearch" placeholder="Search Product ID, Zoho Product ID, name, model, SKU..." aria-label="Search Product ID, Zoho Product ID, name, model, SKU" class="prd-search-input">
+                                <div class="prd-filter-menu" data-prd-menu="status">
+                                    <button type="button" class="prd-filter-trigger" id="btnPrdStatusFilter" aria-haspopup="true" aria-expanded="false" aria-controls="prdStatusMenu">Status ▾</button>
+                                    <div class="prd-filter-panel" id="prdStatusMenu" role="menu" hidden>
+                                        <button type="button" class="prd-chip is-on" role="menuitemradio" data-prd-status="" aria-pressed="true">All</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-status="ACTIVE" aria-pressed="false">Active</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-status="ARCHIVED" aria-pressed="false">Archived</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-unsynced="1" aria-pressed="false" title="Zoho Product Catalog items with no AssetEngine Product yet">Not Yet Synced</button>
+                                    </div>
                                 </div>
-                                <select id="productSourceFilter" aria-label="Product source" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
-                                    <option value="">All sources</option>
-                                    <option value="ZOHO_DERIVED">Zoho-derived</option>
-                                    <option value="STANDALONE">Standalone AE</option>
-                                    <option value="ZOHO_UNSYNCED">Not Yet Synced (Zoho catalog)</option>
-                                </select>
+                                <div class="prd-filter-menu" data-prd-menu="type">
+                                    <button type="button" class="prd-filter-trigger" id="btnPrdTypeFilter" aria-haspopup="true" aria-expanded="false" aria-controls="prdTypeMenu">Type ▾</button>
+                                    <div class="prd-filter-panel" id="prdTypeMenu" role="menu" hidden>
+                                        <button type="button" class="prd-chip is-on" role="menuitemradio" data-prd-type="" aria-pressed="true">All</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-type="LINKED" aria-pressed="false">Zoho Linked</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-type="STANDALONE" aria-pressed="false">Standalone</button>
+                                        <button type="button" class="prd-chip" role="menuitemradio" data-prd-type="ZOHO_DERIVED" aria-pressed="false">Zoho-derived</button>
+                                    </div>
+                                </div>
                                 <div class="prd-view-toggle" role="group" aria-label="Product view mode">
-                                    <button type="button" class="prd-view-btn is-on" id="btnProductViewCards" aria-pressed="true" title="Cards view">▦ Cards</button>
-                                    <button type="button" class="prd-view-btn" id="btnProductViewList" aria-pressed="false" title="List view">☷ List</button>
+                                    <button type="button" class="prd-view-btn is-on" id="btnProductViewCards" aria-pressed="true" title="Cards view" aria-label="Cards view">▦</button>
+                                    <button type="button" class="prd-view-btn" id="btnProductViewList" aria-pressed="false" title="List view" aria-label="List view">☷</button>
                                 </div>
-                                <button class="action-button grey" id="btnReloadProducts">Refresh</button>
-                                <button class="action-button grey" id="btnOpenZohoCatalog" aria-expanded="false" aria-controls="zohoCatalogSection">Zoho Product Reference</button>
-                                <button class="action-button blue" id="btnCreateFromCatalog" aria-label="Create AssetEngine Product from Zoho">Create Against Zoho Products</button>
-                                <button class="action-button grey prd-standalone-btn" id="btnCreateProduct" aria-label="Standalone AE Product"><img src="/static/logo.png?v=6.44" alt="" class="prd-standalone-logo" aria-hidden="true">Standalone AE Product</button>
                             </div>
                         </div>
-                        <p class="lc-muted" style="margin: 0 0 8px;">AssetEngine Product Master — authoritative product identity. PRODUCT is catalogue identity. ZOHO PRODUCT is the commercial mapping. PHYSICAL STOCK is Assets and Inventory — never the Product itself.</p>
+                        <input type="hidden" id="productSourceFilter" value="">
                         <input type="hidden" id="productStatusFilter" value="">
                         <input type="hidden" id="productOriginFilter" value="">
-                        <div style="flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 20px;">
-                            <section class="prd-ae-section" aria-labelledby="localProductsHeading">
-                                <div class="lc-section-label" id="localProductsHeading" title="Authoritative Product record in AssetEngine.">AssetEngine Products</div>
-                                <div id="productsRecentlyAdded" class="prd-recent-wrap" hidden></div>
-                                <div class="prd-browser-head">
-                                    <div class="lc-section-label" style="margin:0;">All Products</div>
-                                </div>
-                                <div id="productsContent"></div>
-                            </section>
-                            <section id="zohoCatalogSection" class="prd-zoho-section hidden" aria-labelledby="zohoCatalogHeading" hidden>
+                        <div id="productsRecentlyAdded" class="prd-recent-wrap" hidden></div>
+                        <section class="prd-all-section" aria-labelledby="allProductsHeading">
+                            <div class="prd-browser-head">
+                                <div class="lc-section-label" id="allProductsHeading" style="margin:0;">All Products</div>
+                            </div>
+                            <div id="productsContent" class="prd-all-scroll"></div>
+                        </section>
+                        <section id="zohoCatalogSection" class="prd-zoho-section hidden" aria-labelledby="zohoCatalogHeading" hidden>
                                 <div class="prd-zoho-head">
                                     <span class="prd-prov-pill prd-prov-zoho" title="Read-only reference from Zoho. Not an AssetEngine Product." aria-label="Zoho Reference. Read-only reference from Zoho. Not an AssetEngine Product.">ZOHO</span>
                                     <div class="lc-section-label" id="zohoCatalogHeading" style="margin: 0;" title="Read-only reference from Zoho. Not an AssetEngine Product.">Zoho Product Reference</div>
@@ -1354,7 +1581,6 @@
                                 </div>
                                 <div id="zohoCatalogContent" role="status" aria-live="polite"></div>
                             </section>
-                        </div>
                     </div>
 
                     <div id="productCreateModal" class="modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="productCreateModalTitle">
@@ -1367,14 +1593,28 @@
                         </div>
                     </div>
 
-                    <div id="reservations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; display: flex; flex-direction: column;">
-                        <div class="view-toolbar" style="margin-bottom: 16px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <h2 class="view-title" style="margin: 0;">Reservations</h2>
-                                <span id="reservationCountBadge" style="background: #eef2ff; color: #3730a3; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Reservations</span>
+                    <div id="productDetailModal" class="modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="productDetailModalTitle">
+                        <div class="modal-content prd-detail-modal-card">
+                            <span class="close-modal" id="closeProductDetailModal" aria-label="Close">&times;</span>
+                            <div class="modal-header">
+                                <h2 id="productDetailModalTitle">Product</h2>
                             </div>
-                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                                <select id="reservationStatusFilter" aria-label="Reservation status" style="padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <div class="modal-body" id="productDetailModalBody"></div>
+                        </div>
+                    </div>
+
+                    <div id="reservations-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 14px 20px; gap: 10px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 8px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h2 class="view-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 18px;">
+                                    Reservations
+                                    <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Reservations" data-tip="A reservation holds physical stock for an owner. Create a reservation from an Asset or Inventory record. Quantity shown is what operators need; reservation IDs are for audit."><span aria-hidden="true">i</span></button>
+                                </h2>
+                                <span id="reservationCountBadge" style="background: #eef2ff; color: #3730a3; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;">0 Reservations</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="reservationSearch" placeholder="Search reservation, resource, or set..." aria-label="Search reservations" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; width: 220px; font-size: 12px;">
+                                <select id="reservationStatusFilter" aria-label="Reservation status" style="padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                                     <option value="ACTIVE">Active</option>
                                     <option value="RELEASED">Released</option>
                                     <option value="TRANSFERRED">Transferred</option>
@@ -1383,7 +1623,6 @@
                                 <button type="button" class="action-button grey" id="btnReloadReservations">Refresh</button>
                             </div>
                         </div>
-                        <p class="lc-muted">A reservation holds physical stock for an owner. Create a reservation from an Asset or Inventory record. Quantity shown is what operators need; reservation IDs are for audit.</p>
                         <div id="reservationsContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
                     </div>
 
@@ -1402,29 +1641,62 @@
                         <div id="historyContent" style="flex: 1; min-height: 0; overflow: auto;"></div>
                     </div>
 
-                    <div id="physical-intakes-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px; display: flex; flex-direction: column;">
-                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <h2 class="view-title" style="margin: 0;">Physical Intake</h2>
-                                <span id="physicalIntakeCountBadge" style="background: #f5f3ff; color: #6d28d9; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">0 Intakes</span>
+                    <div id="tally-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 14px 20px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 10px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h2 class="view-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 18px;">
+                                    Stock Tally
+                                    <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Stock Tally" data-tip="Lifetime is on-hand now. Period ledger is the same documents as a Tally-style FY / quarter / month quantity book (Opening, Inwards, Outwards, Closing). It does not create a second stock figure."><span aria-hidden="true">i</span></button>
+                                </h2>
+                                <span id="tallyGeneratedAt" class="sub"></span>
                             </div>
-                            <div class="view-actions" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                                <input type="text" id="physicalIntakeSearch" placeholder="Search intake, Product, reason..." style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 240px;">
+                            <div class="view-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                <div id="tallyViewMode" class="tally-mode" role="group" aria-label="Tally view">
+                                    <button type="button" data-tally-mode="lifetime" aria-pressed="true">Lifetime</button>
+                                    <button type="button" data-tally-mode="period" aria-pressed="false">Period ledger</button>
+                                </div>
+                                <div id="tallyTypeFilter" role="group" aria-label="Holding type">
+                                    <button type="button" data-tally-type="ALL" aria-pressed="true">All</button>
+                                    <button type="button" data-tally-type="ASSET" aria-pressed="false">Assets</button>
+                                    <button type="button" data-tally-type="INVENTORY" aria-pressed="false">Inventory</button>
+                                </div>
+                                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin: 0;">
+                                    <input type="checkbox" id="tallyMismatchOnly"> Mismatches only
+                                </label>
+                                <input type="text" id="tallySearch" placeholder="Search product or code">
+                                <button class="action-button grey" id="btnReloadTally">Refresh</button>
+                            </div>
+                        </div>
+                        <div id="tallyContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
+                    </div>
+
+                    <div id="physical-intakes-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 14px 20px; gap: 10px; display: flex; flex-direction: column;">
+                        <div class="view-toolbar" style="margin-bottom: 8px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h2 class="view-title" style="margin: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 18px;">
+                                    Physical Intake
+                                    <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Physical Intake" data-tip="Register existing / non-procurement stock. This physical stock is being registered outside procurement. Receipt Notes remain the path when the stock came through a Purchase Order."><span aria-hidden="true">i</span></button>
+                                </h2>
+                                <span id="physicalIntakeCountBadge" style="background: #e2e8f0; color: #334155; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;">0 Intakes</span>
+                            </div>
+                            <div class="view-actions" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="physicalIntakeSearch" placeholder="Search intake, Product, reason..." style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; width: 200px; font-size: 12px;">
                                 <button class="action-button grey" id="btnReloadPhysicalIntakes">Refresh</button>
+                                <button type="button" class="action-button grey" id="btnBulkPhysicalIntake" onclick="window.startBulkPhysicalIntake && window.startBulkPhysicalIntake()">Bulk Upload (CSV / Excel)</button>
                                 <button class="action-button green" id="btnStartPhysicalIntake">+ Physical Intake</button>
                             </div>
                         </div>
-                        <p class="lc-muted">Register existing / non-procurement stock. This physical stock is being registered outside procurement. Receipt Notes remain the path when the stock came through a Purchase Order.</p>
                         <div id="physicalIntakesContent" style="flex: 1; min-height: 0; overflow-y: auto;"></div>
                     </div>
 
-                    <div id="inventory-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 20px; gap: 20px;">
-                        <div class="view-toolbar" style="margin-bottom: 20px; flex-shrink: 0;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <h2 class="view-title" id="inventoryWorkspaceTitle" style="margin: 0;">Inventory</h2>
-                                <span id="inventoryWorkspaceBadge" style="background: #eef6ff; color: #0f5ea8; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;">Inventory</span>
+                    <div id="inventory-view" class="view hidden" style="flex: 1; overflow: hidden; padding: 14px 20px; gap: 10px;">
+                        <div class="view-toolbar" style="margin-bottom: 8px; flex-shrink: 0;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h2 class="view-title" id="inventoryWorkspaceTitle" style="margin: 0; font-size: 18px;">Inventory</h2>
+                                <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Inventory" data-tip="INVENTORY = quantity-tracked physical holding. Total, Available, and Reserved are the operator quantities. This is not a Product. Procurement stock arrives through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake."><span aria-hidden="true">i</span></button>
+                                <span id="inventoryWorkspaceBadge" style="background: #eef6ff; color: #0f5ea8; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;">Inventory</span>
                             </div>
-                            <div class="view-actions" id="inventoryWorkspaceActions" style="display: flex; gap: 10px;">
+                            <div class="view-actions" id="inventoryWorkspaceActions" style="display: flex; gap: 6px;">
                                 <button class="action-button grey" id="btnInventoryReload">Refresh</button>
                                 <button class="action-button blue" id="btnInventoryShowItems">Inventory</button>
                                 <button class="action-button grey" id="btnInventoryConsumed" title="Browse consumed inventory">Consumed Inventory</button>
@@ -1558,13 +1830,13 @@
                                         <input id="adminNewPassword" type="password" class="form-input" placeholder="Password">
                                     </div>
                                     <div class="admin-field">
-                                        <label for="adminNewRole">Role</label>
+                                        <label for="adminNewRole">Team</label>
                                         <select id="adminNewRole" class="form-input raul-role-select">
-                                            <option value="user">User</option>
-                                            <option value="manager">Manager</option>
-                                            <option value="admin">Admin</option>
-                                            <option value="it_manager">IT Admin</option>
-                                            <option value="superuser">Superuser</option>
+                                            <option value="logistics">Logistics</option>
+                                            <option value="procurement">Procurement</option>
+                                            <option value="sales" selected>Sales</option>
+                                            <option value="HR">HR</option>
+                                            <option value="it">IT</option>
                                         </select>
                                     </div>
                                     <div class="admin-field">
@@ -1733,6 +2005,59 @@
                                 </div>
                             </form>
                         </div>
+
+                        <div id="dcReasonsCard" class="card-panel" style="max-width: 1000px; margin: 40px auto 0; display: none;">
+                            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 12px;">DC Dispatch Reasons</h3>
+                            <p style="font-size: 12px; color: #666; margin: 0 0 14px;">
+                                Reasons offered on the Delivery Challan form. Each reason has a fixed <strong>behaviour</strong> that decides how dispatch, Return Inward and the Stock Tally treat it.
+                                Behaviour and asset status lock once a reason has been used on a DC — deactivate it instead. Built-in reasons can be renamed, reordered or deactivated.
+                            </p>
+                            <div style="overflow-x: auto;">
+                                <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                    <thead>
+                                        <tr style="text-align: left; border-bottom: 1px solid #e2e8f0;">
+                                            <th style="padding: 8px;">Label</th>
+                                            <th style="padding: 8px;">Code</th>
+                                            <th style="padding: 8px;">Behaviour</th>
+                                            <th style="padding: 8px;">Asset status on dispatch</th>
+                                            <th style="padding: 8px;">Tally column</th>
+                                            <th style="padding: 8px; text-align: right;">Order</th>
+                                            <th style="padding: 8px; text-align: right;">Used</th>
+                                            <th style="padding: 8px;">Active</th>
+                                            <th style="padding: 8px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dcReasonsBody"><tr><td colspan="9" style="padding: 12px; color: #94a3b8;">Loading…</td></tr></tbody>
+                                </table>
+                            </div>
+                            <form id="dcReasonForm" style="margin-top: 18px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                <h4 id="dcReasonFormTitle" style="margin: 0 0 10px; font-size: 14px;">Add a reason</h4>
+                                <input type="hidden" id="dcReasonEditCode">
+                                <div style="display: grid; grid-template-columns: 2fr 2fr 2fr 1fr; gap: 12px;">
+                                    <div class="form-group">
+                                        <label for="dcReasonLabel">Label</label>
+                                        <input type="text" id="dcReasonLabel" class="form-input" maxlength="80" placeholder="e.g. Exhibition" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="dcReasonBehaviour">Behaviour</label>
+                                        <select id="dcReasonBehaviour" class="form-input" required></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="dcReasonAssetStatus">Asset status on dispatch</label>
+                                        <input type="text" id="dcReasonAssetStatus" class="form-input" maxlength="64" placeholder="e.g. Out for Exhibition" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="dcReasonSort">Order</label>
+                                        <input type="number" id="dcReasonSort" class="form-input" value="500">
+                                    </div>
+                                </div>
+                                <p id="dcReasonBehaviourHint" class="lc-muted" style="margin: 6px 0 0; font-size: 11px;"></p>
+                                <div style="margin-top: 12px; display: flex; gap: 10px;">
+                                    <button type="submit" id="dcReasonSubmit" class="action-button green">Add Reason</button>
+                                    <button type="button" id="dcReasonCancel" class="action-button" style="display: none;">Cancel edit</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
 
                     <!-- Range Management Modal -->
@@ -1812,8 +2137,9 @@
             <div id="addAssetKindModal" class="modal">
                 <div class="modal-content">
                     <span class="close-modal">&times;</span>
-                    <h3>Add New Asset Kind</h3>
+                    <h3>Add New Asset Category</h3>
                     <form id="addAssetKindForm">
+                        <input type="hidden" id="newKindRole" name="newKindRole" value="CATEGORY">
                         <div class="form-group">
                             <label for="newKindName">Name (e.g., Laptops)</label>
                             <input type="text" id="newKindName" name="newKindName" required>
@@ -1825,7 +2151,7 @@
                         <div class="form-group">
                         <label for="newKindIcon">Icon (Emoji or Image)</label>
                         <div style="display: flex; gap: 5px; align-items: center;">
-                            <input type="text" id="newKindIcon" name="newKindIcon" placeholder="💻" style="flex: 1;">
+                            <input type="text" id="newKindIcon" name="newKindIcon" placeholder="📦" value="📦" style="flex: 1;">
                             <select id="kindIconPicker" style="width: 40px;" onchange="document.getElementById('newKindIcon').value = this.value">
                                 <option value="📦">📦</option>
                                 <option value="💻">💻</option>
@@ -1841,9 +2167,9 @@
                         </div>
                     </div>
                         <div class="form-group">
-                            <label for="newKindParent">Parent Kind (Optional)</label>
-                            <select id="newKindParent" name="newKindParent">
-                                <option value="">None (Top Level)</option>
+                            <label for="newKindParent">Parent (Folder or Category)</label>
+                            <select id="newKindParent" name="newKindParent" required>
+                                <option value="">Select parent…</option>
                                 <!-- Will be populated dynamically -->
                             </select>
                         </div>
@@ -1855,7 +2181,7 @@
                                 <button type="button" class="action-button blue" onclick="document.getElementById('kindImageFile').click()" style="padding: 5px 10px; font-size: 12px;">Upload Image</button>
                             </div>
                         </div>
-                        <button type="submit" class="login-button">Add Kind</button>
+                        <button type="submit" class="login-button">Add Category</button>
                     </form>
                 </div>
             </div>
@@ -1872,6 +2198,13 @@
                             Create a high-level folder like <strong>Hardware</strong>, <strong>Networking</strong>, or <strong>Media</strong>.
                         </p>
                         <form id="addFolderForm">
+                            <div class="form-group">
+                                <label>Place inside</label>
+                                <select id="folderParent" name="folderParent" class="form-input">
+                                    <option value="">Top level</option>
+                                </select>
+                                <p id="folderParentHint" style="font-size:12px;color:#64748b;margin:6px 0 0;">The new folder is stored under the folder you pick.</p>
+                            </div>
                             <div class="form-group">
                                 <label>Folder Name</label>
                                 <input type="text" id="folderName" name="folderName" class="form-input" placeholder="e.g., Hardware" required>
@@ -1909,6 +2242,12 @@
                             <button type="button" id="btnUnassignEmployeeFromAsset" style="display: none; align-items: center; gap: 5px; background: #ecfdf5; color: #047857; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #a7f3d0; cursor: pointer;">
                                 Return To Store
                             </button>
+                            <button type="button" id="btnRetireAsset" style="display: none; align-items: center; gap: 5px; background: #fef2f2; color: #b91c1c; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #fecaca; cursor: pointer;">
+                                Retire
+                            </button>
+                            <button type="button" id="btnReclassifyAsset" style="display: none; align-items: center; gap: 5px; background: #fffbeb; color: #b45309; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #fde68a; cursor: pointer;" title="Superuser only: move this asset into inventory (recorded)">
+                                Reclassify as Inventory
+                            </button>
                             <a id="btnViewAssetHistory" href="#" target="_blank" style="text-decoration: none; display: flex; align-items: center; gap: 5px; background: #eef2ff; color: #6366f1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #e0e7ff; transition: all 0.2s;">
                                 📜 View Full History & Details
                             </a>
@@ -1917,31 +2256,18 @@
                     <form id="addAssetItemForm">
                         <input type="hidden" id="assetDbId" name="assetDbId">
                         
-                        <!-- 3-Level Hierarchy Selection -->
                         <div style="background: #f1f5f9; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e2e8f0;">
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; display: block;">Hierarchy Selection</label>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label for="itemFolder" style="font-size: 11px;">1. Parent Folder</label>
-                                    <select id="itemFolder" name="itemFolder" required style="font-size: 12px; padding: 6px;">
-                                        <option value="" disabled selected>Select Folder...</option>
-                                    </select>
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label for="itemKind" style="font-size: 11px;">2. Category / Kind</label>
-                                    <select id="itemKind" name="itemKind" required disabled style="font-size: 12px; padding: 6px;">
-                                        <option value="" disabled selected>Select Kind...</option>
-                                    </select>
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label for="itemBrandCategory" style="font-size: 11px;">3. Make Category</label>
-                                    <select id="itemBrandCategory" name="itemBrandCategory" disabled style="font-size: 12px; padding: 6px;">
-                                        <option value="" selected>Generic / Default</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="kindIdentifierDisplay" style="font-size: 10px; color: #64748b; margin-top: 6px; display: none; background: white; padding: 4px 8px; border-radius: 4px; display: inline-block;">
+                            <label for="itemFolderPath" style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; display: block;">Folder Path</label>
+                            <input type="text" id="itemFolderPath" name="itemFolderPath" list="itemFolderPathList" required placeholder="Cineom Assets / Accessories / URSA / Case" style="width:100%;font-size:13px;padding:8px;">
+                            <datalist id="itemFolderPathList"></datalist>
+                            <p id="itemFolderPathHint" style="font-size:12px;color:#64748b;margin:6px 0 0;">Pick an existing folder / category / make. Edit cannot create a missing category or Make.</p>
+                            <div id="kindIdentifierDisplay" style="font-size: 10px; color: #64748b; margin-top: 6px; display: none; background: white; padding: 4px 8px; border-radius: 4px;">
                                 🏷️ ID Prefix: <span id="kindIdentifierValue" style="font-weight: 700; color: #2563eb;"></span>
+                            </div>
+                            <div hidden>
+                                <select id="itemFolder" name="itemFolder"><option value=""></option></select>
+                                <select id="itemKind" name="itemKind"><option value=""></option></select>
+                                <select id="itemBrandCategory" name="itemBrandCategory"><option value=""></option></select>
                             </div>
                         </div>
 
@@ -1951,8 +2277,9 @@
                                 <input type="text" id="itemName" name="itemName" required>
                             </div>
                             <div class="form-group" style="grid-column: span 2;">
-                                <label for="itemDescription">Description</label>
-                                <textarea id="itemDescription" name="itemDescription" rows="3" placeholder="Product/Asset description (syncs to Zoho Product Description)"></textarea>
+                                <label for="itemDescription">Asset description</label>
+                                <textarea id="itemDescription" name="itemDescription" rows="3" required placeholder="Required. Separate from Product description."></textarea>
+                                <button type="button" id="btnPortProductDescription" class="action-button grey" style="display:none;margin-top:8px;width:auto;">Copy Product description</button>
                             </div>
                             <div class="form-group">
                                 <label for="itemIcon">Asset Icon (Emoji or Image)</label>
@@ -2049,7 +2376,12 @@
                                     <input type="text" id="itemPurchase" name="itemPurchase">
                                 </div>
                                 <div class="form-group">
-                                    <label for="itemHsnCode">HSN / SAC Code</label>
+                                    <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                        <label for="itemHsnCode" style="margin:0;">HSN / SAC Code</label>
+                                        <button type="button" id="btnOpenHsnHistory" title="What HSN / SAC was on this holding" style="display: none; background: #e0e7ff; color: #4338ca; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 5px; border: 1px solid #c7d2fe; cursor: pointer; align-items: center; gap: 4px;">
+                                            📅 History
+                                        </button>
+                                    </div>
                                     <input type="text" id="itemHsnCode" name="itemHsnCode" placeholder="e.g. 8471, 9983">
                                 </div>
                             </div>
@@ -2081,6 +2413,7 @@
                                     </select>
                                     <input type="number" id="itemValue" name="itemValue" value="0" style="flex: 1;">
                                 </div>
+                                <button type="button" id="btnPortProductPrice" class="action-button grey" style="display:none;margin-top:8px;width:auto;">Copy Product price</button>
                             </div>
                             <div class="form-group">
                                 <label for="itemPurchaseDate">Purchase Date</label>
@@ -2873,7 +3206,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=7.114"></script>
+<script type="module" src="/js/main.js?v=7.248"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {
@@ -2929,6 +3262,17 @@
                 <input type="tel" id="signupPhone" name="phone" placeholder="Optional" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="tel">
             </div>
             <div class="form-group">
+                <label for="signupTeam">Team</label>
+                <select id="signupTeam" name="team" required class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;">
+                    <option value="" disabled selected>Select a team</option>
+                    <option value="logistics">Logistics</option>
+                    <option value="procurement">Procurement</option>
+                    <option value="sales">Sales</option>
+                    <option value="HR">HR</option>
+                    <option value="it">IT</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label for="signupPassword">Password</label>
                 <input type="password" id="signupPassword" name="password" placeholder="At least 8 characters" required minlength="8" class="form-input" style="width: 100%; padding: 12px; border: 1px solid #e1e1e1; border-radius: 8px;" autocomplete="new-password">
             </div>
@@ -2944,7 +3288,7 @@
 
 <!-- Delivery Challan History Modal -->
 <div id="dcHistoryModal" class="modal">
-    <div class="modal-content" style="max-width: 900px; height: 80vh; display: flex; flex-direction: column;">
+    <div class="modal-content" style="max-width: 1140px; height: 80vh; display: flex; flex-direction: column;">
         <div class="modal-header">
             <h2 style="display: flex; align-items: center; gap: 10px;">
                 <span>📋</span> Delivery Challan Index
@@ -2967,6 +3311,7 @@
                     <thead style="position: sticky; top: 0; background: #fff; z-index: 10; box-shadow: 0 1px 0 #e2e8f0;">
                         <tr>
                             <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">DC Number</th>
+                            <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Stage</th>
                             <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Date</th>
                             <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Customer</th>
                             <th style="text-align: left; padding: 12px 15px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Serial Numbers</th>
@@ -2988,8 +3333,12 @@
             </div>
         </div>
         <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
-            <div style="font-size: 12px; color: #94a3b8; font-style: italic;">
-                💡 Tip: Search by <strong>Asset ID</strong> to see history for a specific item.
+            <div class="dc-stage-legend" style="font-size: 12px; color: #64748b;">
+                <span class="dc-stage dc-stage--draft">Drafted</span>
+                <span class="dc-stage dc-stage--ready">Stock Reserved</span>
+                <span class="dc-stage dc-stage--posted">Posted</span>
+                <span class="dc-stage dc-stage--split">Split Return</span>
+                <span class="dc-stage dc-stage--returned">Returned</span>
             </div>
             <button type="button" class="action-button" id="btnCloseDcHistory" style="background: #fff; color: #64748b; border: 1px solid #e2e8f0; padding: 8px 20px; border-radius: 50px; font-weight: 600; cursor: pointer;">Close</button>
         </div>
@@ -3252,8 +3601,8 @@
 <div id="resetPasswordModal" class="modal">
     <div class="modal-content" style="max-width: 400px; padding: 30px; border-radius: 16px;">
         <div style="text-align: center; margin-bottom: 25px;">
-            <h2 style="margin: 0; color: #333; font-size: 24px;">Reset Password</h2>
-            <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Create a secure password (at least 8 characters)</p>
+            <h2 style="margin: 0; color: #333; font-size: 24px;">Set a new password</h2>
+            <p style="margin: 5px 0 0; color: #666; font-size: 14px;">At least 8 characters. Do not reuse the temporary password.</p>
         </div>
         <form id="resetPasswordForm">
             <input type="hidden" id="resetToken">

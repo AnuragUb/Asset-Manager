@@ -1,9 +1,10 @@
 import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.59';
-import { HierarchyManager } from './hierarchy.js?v=6.59';
+import { HierarchyManager } from './hierarchy.js?v=6.67';
 import { DataProcessor } from './dataProcessor.js?v=6.59';
 import { initScannerView } from './networkScanner.js?v=6.59';
 import { fetchWithAuth } from './auth.js?v=7.29';
 import { setupAssetReturnUI } from './conversions.js?v=7.28';
+import { initDcCreateModals, openDcCreateModal, refreshDcSummaries } from './dcCreateModals.js?v=1.2';
 
 window.showSetImportTemplate = function(forcedType) {
     const type = forcedType || (confirm('Download IT-specific template? (Click Cancel for General template)') ? 'it' : 'general');
@@ -31,6 +32,9 @@ let isSelectionMode = false;
 let dcItemsByAssetId = {};
 let showRateAmount = true;
 let showTotalPrice = true;
+let showDescription = true;
+let showSerial = true;
+let showSerialInDescription = false;
 
 window.allDCs = [];
 
@@ -38,7 +42,7 @@ async function fetchDCHistory() {
     const list = document.getElementById('dcHistoryList');
     if (!list) return;
 
-    list.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;"><div class="spinner" style="margin: 0 auto 10px;"></div>Loading Challan history...</td></tr>';
+    list.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #94a3b8;"><div class="spinner" style="margin: 0 auto 10px;"></div>Loading Challan history...</td></tr>';
 
     try {
         const response = await fetch('/api/dc');
@@ -47,7 +51,7 @@ async function fetchDCHistory() {
         renderDCHistory(dcs);
     } catch (err) {
         console.error('Failed to fetch DC history:', err);
-        list.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: red;">Failed to load DC history.</td></tr>';
+        list.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: red;">Failed to load DC history.</td></tr>';
     }
 }
 
@@ -56,11 +60,12 @@ function renderDCHistory(dcs) {
     if (!list) return;
 
     if (!dcs || dcs.length === 0) {
-        list.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">No Delivery Challans found.</td></tr>';
+        list.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #94a3b8;">No Delivery Challans found.</td></tr>';
         return;
     }
 
     list.innerHTML = dcs.map(dc => {
+        const stage = dcStageOf(dc);
         const date = dc.DeliveryDate || (dc.Timestamp ? dc.Timestamp.split('T')[0] : '-');
         let assetIds = [];
         try {
@@ -81,11 +86,15 @@ function renderDCHistory(dcs) {
             }
         } catch (e) {}
         
+        const versionCount = Number(dc.version_count || dc.versionCount || 0);
+        const canEdit = stage.key === 'draft' || stage.key === 'ready';
+        const canCancel = userCanCancelDc() && (canEdit || stage.key === 'legacy');
         return `
-            <tr>
-                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-weight: 600;">${dc.ChallanNo || dc.ID}</td>
-                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${date}</td>
-                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${dc.CustomerName || '-'}</td>
+            <tr class="dc-row dc-row--${stage.key}">
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-weight: 600;">${escapeHtml(dc.ChallanNo || dc.ID)}</td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;"><span class="dc-stage dc-stage--${stage.key}">${escapeHtml(stage.label)}</span></td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${escapeHtml(date)}</td>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">${escapeHtml(dc.CustomerName || '-')}</td>
                 <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">
                     <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b;" title="${serialNumbers}">
                         ${serialNumbers}
@@ -97,13 +106,575 @@ function renderDCHistory(dcs) {
                 <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0;">
                     <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #475569;">${assetIds.length} Assets</span>
                 </td>
-                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; text-align: right;">
-                    <button onclick="window.dcHistoryAction('${dc.ID}')" class="btn-action" style="padding: 4px 10px; font-size: 11px;">View</button>
+                <td style="padding: 12px 15px; border-bottom: 1px solid #e2e8f0; text-align: right; white-space: nowrap;">
+                    <button type="button" onclick="window.dcHistoryAction('${escapeHtml(dc.ID)}')" class="btn-action" style="padding: 4px 10px; font-size: 11px;">View</button>
+                    ${canEdit ? `<button type="button" onclick="window.loadDcIntoBuilder('${escapeHtml(dc.ID)}')" class="btn-action" style="padding: 4px 10px; font-size: 11px; margin-left: 4px;">Edit in builder</button>` : ''}
+                    ${(stage.key === 'posted' || stage.key === 'split') ? `<button type="button" onclick="window.loadDcIntoBuilder('${escapeHtml(dc.ID)}')" class="btn-action" style="padding: 4px 10px; font-size: 11px; margin-left: 4px;">Open for return</button>` : ''}
+                    ${canCancel ? `<button type="button" onclick="window.cancelDeliveryChallan('${escapeHtml(dc.ID)}')" class="btn-action" style="padding: 4px 10px; font-size: 11px; margin-left: 4px; color:#b91c1c;">Cancel</button>` : ''}
+                    <button type="button" onclick="window.showDcVersions('${escapeHtml(dc.ID)}')" class="btn-action" style="padding: 4px 10px; font-size: 11px; margin-left: 4px;">Versions${versionCount ? ` (${versionCount})` : ''}</button>
                 </td>
             </tr>
         `;
     }).join('');
 }
+
+function dcStageOf(dc) {
+    const life = String(dc.lifecycle_status || dc.lifecycleStatus || dc.Status || '').toUpperCase();
+    const position = String(dc.return_position || dc.returnPosition || '').toUpperCase();
+    if (life === 'READY') return { key: 'ready', label: 'Stock Reserved' };
+    if (life === 'DISPATCHED' && position === 'FULLY_RETURNED') return { key: 'returned', label: 'Returned' };
+    if (life === 'DISPATCHED' && position === 'PARTIALLY_RETURNED') return { key: 'split', label: 'Split Return' };
+    if (life === 'DISPATCHED') return { key: 'posted', label: 'Posted' };
+    if (life === 'VOID') return { key: 'void', label: 'Void' };
+    if (life === 'LEGACY') return { key: 'legacy', label: 'Legacy' };
+    return { key: 'draft', label: 'Drafted' };
+}
+
+function dcDisplayStage() {
+    return dcStageOf({
+        lifecycle_status: window.__editingDcStage || 'DRAFT',
+        return_position: window.__dcReturnPosition || ''
+    });
+}
+
+function outstandingDispositionLines() {
+    return (window.__dcDispositionLines || []).filter((line) => {
+        const qty = Number(line.quantity) || 0;
+        const returned = Number(line.quantity_returned) || 0;
+        return String(line.disposition_status || '').toUpperCase() !== 'RETURNED' && returned + 1e-9 < qty;
+    });
+}
+
+function dispositionLineLabel(line) {
+    const id = String(line.resource_id || '');
+    const item = (window.__dcLoadedItems || []).find((row) => String(row.assetId || row.resourceId || '') === id);
+    const name = item && (item.description || item.displayName);
+    const serial = line.serial_snapshot || (item && item.srNo) || '';
+    return [name || id, serial].filter(Boolean).join(' · ');
+}
+
+function renderDcReturnLines(split) {
+    const box = document.getElementById('dcReturnLines');
+    if (!box) return;
+    if (!split) {
+        box.style.display = 'none';
+        box.innerHTML = '';
+        return;
+    }
+    const lines = outstandingDispositionLines();
+    box.style.display = 'block';
+    if (!lines.length) {
+        box.innerHTML = '<div style="font-size:12px;color:#64748b;">No lines are still out on this DC.</div>';
+        return;
+    }
+    box.innerHTML = lines.map((line) => {
+        const qty = Number(line.quantity) || 0;
+        const returned = Number(line.quantity_returned) || 0;
+        const outstanding = Math.max(qty - returned, 0);
+        const asset = String(line.resource_type || '').toUpperCase() === 'ASSET';
+        const qtyField = asset
+            ? '<span style="font-size:11px;color:#64748b;">1</span>'
+            : `<input type="number" class="form-input dc-split-qty" min="0.001" step="any" max="${outstanding}" value="${outstanding}" data-line="${escapeHtml(line.id)}" style="width:88px;padding:4px 6px;">`;
+        return `<label style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:12px;">
+            <input type="checkbox" class="dc-split-pick" data-line="${escapeHtml(line.id)}" data-asset="${asset ? '1' : '0'}" checked>
+            <span style="flex:1;">${escapeHtml(dispositionLineLabel(line))}<div style="color:#64748b;">Still out ${outstanding}${returned ? ` · already returned ${returned}` : ''}</div></span>
+            ${qtyField}
+        </label>`;
+    }).join('');
+}
+
+function syncDcReturnHome() {
+    const home = String(document.getElementById('dcReturnHome')?.value || 'ORIGIN').toUpperCase();
+    const wrap = document.getElementById('dcReturnLocationWrap');
+    if (wrap) wrap.style.display = home === 'ORIGIN' ? 'none' : 'block';
+    const list = document.getElementById('dcReturnLocationList');
+    const places = window.__dcReturnPlaces || { asset: [], inventory: [] };
+    const options = home === 'ASSET' ? places.asset : home === 'INVENTORY' ? places.inventory : [];
+    if (list) {
+        list.innerHTML = (options || []).map((place) => `<option value="${escapeHtml(place)}"></option>`).join('');
+    }
+}
+
+async function loadReturnPlaces() {
+    if (window.__dcReturnPlaces) {
+        syncDcReturnHome();
+        return;
+    }
+    const response = await fetchWithAuth('/api/dc/return-places');
+    const data = await response.json();
+    if (!response.ok || data.success === false) return;
+    window.__dcReturnPlaces = data.places || { asset: [], inventory: [] };
+    syncDcReturnHome();
+}
+
+function collectSplitReturnLines() {
+    const picks = [...document.querySelectorAll('#dcReturnLines .dc-split-pick:checked')];
+    return picks.map((pick) => {
+        const id = pick.dataset.line;
+        if (pick.dataset.asset === '1') return { dispositionLineId: id, quantity: 1 };
+        const qtyInput = document.querySelector(`#dcReturnLines .dc-split-qty[data-line="${CSS.escape(id)}"]`);
+        return { dispositionLineId: id, quantity: Number(qtyInput && qtyInput.value) };
+    }).filter((line) => line.dispositionLineId && line.quantity > 0);
+}
+
+function dcStageLabel(status) {
+    return dcStageOf({ lifecycle_status: status }).label;
+}
+
+function dcReturnAvailable() {
+    const postedView = window.__dcPanelMode === 'posted';
+    const reason = String(window.__lastDcDispatchReason || '').toUpperCase();
+    const position = String(window.__dcReturnPosition || '').toUpperCase();
+    return postedView && isDcReasonReturnable(reason) && position !== 'FULLY_RETURNED';
+}
+
+function userCanCancelDc() {
+    if (typeof window.hasPermission !== 'function') return true;
+    return window.hasPermission('dc.cancel') || window.hasPermission('dc.void');
+}
+
+function syncDcLifecycleChrome() {
+    const stage = String(window.__dcActionsStage || window.__editingDcStage || '').toUpperCase();
+    const id = window.__editingDcId || window.__lastDcId;
+    const postedView = window.__dcPanelMode === 'posted';
+    const cancellable = !postedView && userCanCancelDc() && Boolean(id)
+        && (stage === 'DRAFT' || stage === 'READY' || stage === 'LEGACY');
+    const cancelBtn = document.getElementById('btnDcCancel');
+    const readyBtn = document.getElementById('btnDcMarkReady');
+    const dispatchBtn = document.getElementById('btnDcDispatch');
+    const note = document.getElementById('dcLifecycleNote');
+    if (cancelBtn) cancelBtn.style.display = cancellable ? '' : 'none';
+    if (readyBtn) readyBtn.style.display = (stage === 'VOID' || postedView) ? 'none' : '';
+    if (dispatchBtn) dispatchBtn.style.display = (stage === 'VOID' || postedView) ? 'none' : '';
+    const editDetails = document.getElementById('btnDcEditDetails');
+    const editItems = document.getElementById('btnDcEditItems');
+    if (editDetails) editDetails.style.display = postedView ? 'none' : '';
+    if (editItems) editItems.style.display = postedView ? 'none' : '';
+    const returnHeader = document.getElementById('btnDcReturnHeader');
+    const returnPanel = document.getElementById('btnDcReturn');
+    const splitHeader = document.getElementById('btnDcSplitReturnHeader');
+    const splitPanel = document.getElementById('btnDcSplitReturn');
+    const canReturn = dcReturnAvailable();
+    if (returnHeader) returnHeader.style.display = canReturn ? '' : 'none';
+    if (returnPanel) returnPanel.style.display = canReturn ? 'block' : 'none';
+    if (splitHeader) splitHeader.style.display = canReturn ? '' : 'none';
+    if (splitPanel) splitPanel.style.display = canReturn ? 'block' : 'none';
+    if (!canReturn) {
+        const returnForm = document.getElementById('dcReturnForm');
+        if (returnForm) returnForm.style.display = 'none';
+    }
+    if (note) {
+        if (stage === 'VOID' && !postedView) {
+            note.hidden = false;
+            note.textContent = 'This DC is cancelled. Reserved stock and purchase-book links are released.';
+        } else if (postedView && String(window.__dcReturnPosition || '').toUpperCase() === 'FULLY_RETURNED') {
+            note.hidden = false;
+            note.textContent = 'This DC is Returned. Every line is back, so Return Inward and Split Return are closed.';
+        } else if (postedView && String(window.__dcReturnPosition || '').toUpperCase() === 'PARTIALLY_RETURNED') {
+            note.hidden = false;
+            note.textContent = 'This DC is a Split Return. Lines still out can be returned. Returned lines stay on the challan.';
+        } else {
+            note.hidden = true;
+            note.textContent = '';
+        }
+    }
+}
+
+function syncDcSaveLabel() {
+    const btn = document.getElementById('btnGenerateDC');
+    if (btn) {
+        if (window.__editingDcStage === 'VOID') {
+            btn.disabled = true;
+            btn.textContent = 'Cancelled';
+        } else if (window.__editingDcStage === 'DISPATCHED') {
+            btn.disabled = true;
+            btn.textContent = 'Posted — locked';
+        } else {
+            btn.disabled = false;
+            if (!window.__editingDcId) btn.textContent = 'Save Draft DC';
+            else btn.textContent = window.__editingDcStage === 'READY' ? 'Save reserved version' : 'Save draft version';
+        }
+    }
+    syncDcLifecycleChrome();
+}
+
+function askDcCancelReason() {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('dcCancelReasonModal');
+        if (existing) existing.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'dcCancelReasonModal';
+        overlay.className = 'modal';
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '10050';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:460px; padding:22px;">
+                <h3 style="margin:0 0 8px;">Cancel this DC</h3>
+                <p style="margin:0 0 12px; font-size:13px; color:#475569;">Draft and stock-reserved challans can be cancelled. Posted challans stay posted — use Return Inward. Cancelling releases reserved stock and purchase-book links.</p>
+                <label for="dcCancelReasonInput" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Reason</label>
+                <textarea id="dcCancelReasonInput" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px; box-sizing:border-box;" placeholder="Why this DC is being cancelled"></textarea>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                    <button type="button" id="dcCancelReasonKeep" class="action-button grey">Keep DC</button>
+                    <button type="button" id="dcCancelReasonOk" class="action-button red">Cancel DC</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('#dcCancelReasonInput');
+        const close = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('#dcCancelReasonKeep').onclick = () => close(null);
+        overlay.querySelector('#dcCancelReasonOk').onclick = () => {
+            const value = String(input.value || '').trim();
+            if (!value) {
+                showToast('Enter a reason for cancelling this DC', 'warning');
+                input.focus();
+                return;
+            }
+            close(value);
+        };
+        input.focus();
+    });
+}
+
+window.cancelDeliveryChallan = async function(id) {
+    const dcId = String(id || window.__editingDcId || window.__lastDcId || '').trim();
+    if (!dcId) {
+        showToast('Save a Draft DC first', 'error');
+        return;
+    }
+    if (!userCanCancelDc()) {
+        showToast('You do not have permission to cancel a DC', 'error');
+        return;
+    }
+    const reason = await askDcCancelReason();
+    if (!reason) return;
+    try {
+        const response = await fetchWithAuth(`/api/dc/${encodeURIComponent(dcId)}/void`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.success === false) {
+            const posted = result.reasonCode === 'ALREADY_DISPATCHED' || response.status === 409;
+            showToast(posted
+                ? 'Posted DCs cannot be cancelled. Use Return Inward.'
+                : (result.error || 'Cancel failed'), 'error');
+            return;
+        }
+        showToast(result.alreadyVoided
+            ? 'This DC was already cancelled.'
+            : `DC ${result.challanNo || dcId} cancelled. Reserved stock is released.`, 'success');
+        const cancelledId = String(result.id || dcId);
+        const openId = String(window.__editingDcId || '');
+        if (openId && (openId === cancelledId || openId === dcId)) {
+            window.__editingDcStage = 'VOID';
+            window.__dcActionsStage = 'VOID';
+            window.__dcPanelMode = 'build';
+            document.getElementById('dcActionsPanel')?.classList.add('is-active');
+            syncDcSaveLabel();
+        }
+        const modal = document.getElementById('dcHistoryModal');
+        if (modal && modal.style.display === 'flex') fetchDCHistory();
+    } catch (err) {
+        showToast(err.message || 'Cancel failed', 'error');
+    }
+};
+
+function askDcVersionReason(stage) {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('dcVersionReasonModal');
+        if (existing) existing.remove();
+        const label = dcStageLabel(stage);
+        const tone = String(stage || '').toUpperCase() === 'READY' ? 'ready' : 'draft';
+        const overlay = document.createElement('div');
+        overlay.id = 'dcVersionReasonModal';
+        overlay.className = 'modal';
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '10050';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:440px; padding:22px;">
+                <h3 style="margin:0 0 8px;">Save a new version</h3>
+                <p style="margin:0 0 12px; font-size:13px; color:#475569;">This version is recorded as <span class="dc-stage dc-stage--${tone}">${escapeHtml(label)}</span>. Posted DCs are not edited here.</p>
+                <label for="dcVersionReasonInput" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Reason</label>
+                <textarea id="dcVersionReasonInput" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px; box-sizing:border-box;" placeholder="Why this version is being saved"></textarea>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                    <button type="button" id="dcVersionReasonCancel" class="action-button grey">Cancel</button>
+                    <button type="button" id="dcVersionReasonOk" class="action-button blue">Save version</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const input = overlay.querySelector('#dcVersionReasonInput');
+        const close = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('#dcVersionReasonCancel').onclick = () => close(null);
+        overlay.querySelector('#dcVersionReasonOk').onclick = () => {
+            const value = String(input.value || '').trim();
+            if (!value) {
+                showToast('Enter a reason for this version', 'warning');
+                input.focus();
+                return;
+            }
+            close(value);
+        };
+        input.focus();
+    });
+}
+
+function renderDcVersionList(versions) {
+    const list = document.getElementById('dcVersionList');
+    const panel = document.getElementById('dcVersionPanel');
+    const heading = document.getElementById('dcVersionHeading');
+    if (!list || !panel) return;
+    panel.classList.add('is-active');
+    if (heading) {
+        const no = window.__editingDcChallan || window.__editingDcId || '';
+        const stage = dcDisplayStage();
+        heading.textContent = no ? `${no} · current ${stage.label}` : '';
+    }
+    if (!versions || !versions.length) {
+        list.innerHTML = '<li class="dc-version-item">No versions recorded yet.</li>';
+        return;
+    }
+    list.innerHTML = versions.map((version) => {
+        const stage = dcStageOf({ lifecycle_status: version.lifecycleStatus });
+        const when = version.createdAt ? String(version.createdAt).replace('T', ' ').slice(0, 16) : '';
+        return `<li class="dc-version-item">
+            <strong>v${escapeHtml(version.versionNo)}</strong>
+            <span class="dc-stage dc-stage--${stage.key}">${escapeHtml(stage.label)}</span>
+            <span style="flex:1;">${escapeHtml(version.reason || '')}<div style="color:#94a3b8; margin-top:2px;">${escapeHtml(version.actor || '—')} · ${escapeHtml(when)}</div></span>
+        </li>`;
+    }).join('');
+}
+
+async function refreshDcVersionPanel(dcId) {
+    const id = String(dcId || window.__editingDcId || '').trim();
+    if (!id) return;
+    try {
+        const res = await fetchWithAuth(`/api/dc/${encodeURIComponent(id)}/versions`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+            showToast(data.error || 'Could not load DC versions', 'error');
+            return;
+        }
+        renderDcVersionList(data.versions || []);
+    } catch (err) {
+        showToast(err.message || 'Could not load DC versions', 'error');
+    }
+}
+
+window.showDcVersions = async function(id) {
+    const dcId = String(id || '').trim();
+    if (!dcId) return;
+    try {
+        const res = await fetchWithAuth(`/api/dc/${encodeURIComponent(dcId)}/versions`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+            showToast(data.error || 'Could not load DC versions', 'error');
+            return;
+        }
+        document.getElementById('dcVersionBrowseModal')?.remove();
+        const versions = data.versions || [];
+        const rows = versions.length
+            ? versions.map((version) => {
+                const stage = dcStageOf({ lifecycle_status: version.lifecycleStatus });
+                const when = version.createdAt ? String(version.createdAt).replace('T', ' ').slice(0, 16) : '';
+                return `<li class="dc-version-item">
+                    <strong>v${escapeHtml(version.versionNo)}</strong>
+                    <span class="dc-stage dc-stage--${stage.key}">${escapeHtml(stage.label)}</span>
+                    <span style="flex:1;">${escapeHtml(version.reason || '')}<div style="color:#94a3b8; margin-top:2px;">${escapeHtml(version.actor || '—')} · ${escapeHtml(when)}</div></span>
+                </li>`;
+            }).join('')
+            : '<li class="dc-version-item">No versions recorded yet. Versions start when a draft is saved after the versioning update, or when this DC is edited.</li>';
+        const overlay = document.createElement('div');
+        overlay.id = 'dcVersionBrowseModal';
+        overlay.className = 'modal';
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '10050';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:560px; width:92%; padding:22px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <h3 style="margin:0;">Versions</h3>
+                    <button type="button" id="dcVersionBrowseClose" class="action-button grey">Close</button>
+                </div>
+                <ul class="dc-version-list" style="margin-top:12px; max-height:360px;">${rows}</ul>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#dcVersionBrowseClose').onclick = () => overlay.remove();
+        overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
+    } catch (err) {
+        showToast(err.message || 'Could not load DC versions', 'error');
+    }
+};
+
+function setDcInput(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = value == null ? '' : value;
+}
+
+window.loadDcIntoBuilder = async function(id) {
+    const dcId = String(id || '').trim();
+    if (!dcId) return;
+    try {
+        const res = await fetchWithAuth(`/api/dc/${encodeURIComponent(dcId)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            showToast(data.error || 'Failed to load DC', 'error');
+            return;
+        }
+        const stage = dcStageOf({ lifecycle_status: data.lifecycleStatus });
+        const posted = stage.key === 'posted';
+        if (!posted && stage.key !== 'draft' && stage.key !== 'ready') {
+            showToast(`${data.dc?.ChallanNo || data.dc?.challanno || dcId} is ${stage.label}. Only a drafted, stock-reserved, or posted DC can be opened.`, 'warning');
+            return;
+        }
+        const payload = data.payload || {};
+        const company = payload.company || {};
+        const consignee = payload.consignee || {};
+        const buyer = payload.buyer || {};
+        const account = payload.account || {};
+        const meta = payload.meta || {};
+        const nav = document.getElementById('nav-dc');
+        if (nav) nav.click();
+        const modal = document.getElementById('dcHistoryModal');
+        if (modal) modal.style.display = 'none';
+
+        setDcInput('dcCompanyName', company.name);
+        setDcInput('dcCompanyAddress', company.address);
+        setDcInput('dcCompanyGST', company.gstin);
+        setDcInput('dcCompanyCIN', company.cin);
+        setDcInput('dcCompanyPAN', company.pan);
+        setDcInput('dcCompanyState', company.stateName);
+        setDcInput('dcCompanyStateCode', company.stateCode);
+        setDcInput('dcCompanyWebsite', company.website);
+        setDcInput('dcLogoSelect', company.logoUrl || meta.logoUrl || '');
+        const logoImg = document.getElementById('dcLogoPreviewImg');
+        if (logoImg) logoImg.src = company.logoUrl || meta.logoUrl || '';
+        setDcInput('dcCustomerName', account.accountName || meta.customerName || data.dc?.CustomerName || data.customerName || '');
+        setDcInput('dcZohoAccountId', account.zohoAccountId || '');
+        setDcInput('dcConsigneeName', consignee.name);
+        setDcInput('dcConsigneeAddress', consignee.address);
+        setDcInput('dcConsigneeGST', consignee.gstin);
+        setDcInput('dcConsigneeState', consignee.stateName);
+        setDcInput('dcConsigneeStateCode', consignee.stateCode);
+        setDcInput('dcBuyerName', buyer.name);
+        setDcInput('dcBuyerAddress', buyer.address);
+        setDcInput('dcBuyerGST', buyer.gstin);
+        setDcInput('dcBuyerState', buyer.stateName);
+        setDcInput('dcBuyerStateCode', buyer.stateCode);
+        setDcInput('dcDate', meta.deliveryDate || data.dc?.DeliveryDate || data.deliveryDate || '');
+        setDcInput('dcRefNo', meta.referenceNo);
+        setDcInput('dcBuyerOrderNo', meta.buyerOrderNo);
+        setDcInput('dcRefDate', meta.referenceDate || meta.orderDate || '');
+        setDcInput('dcDispatchDocNo', meta.dispatchDocNo);
+        setDcInput('dcOtherReferences', meta.otherReferences);
+        setDcInput('dcPickup', meta.pickup);
+        setDcInput('dcDestination', meta.destination);
+        setDcInput('dcDispatchedThrough', meta.dispatchedThrough);
+        setDcInput('dcPlaceOfSupply', meta.placeOfSupply);
+        setDcInput('dcTermsOfDelivery', meta.termsOfDelivery);
+        setDcInput('dcRemarks', meta.remarks);
+        await populateDcDispatchReasonSelect(true);
+        setDcInput('dcDispatchReason', data.dispatchReason || meta.dispatchReason || '');
+        setDcInput('dcTransferDestination', data.transferDestination || meta.transferDestination || '');
+        if (typeof syncDcTransferDestination === 'function') syncDcTransferDestination();
+        const mode = meta.linkMode || 'PO_LINKED';
+        const modeInput = document.querySelector(`input.dc-link-mode[value="${mode}"]`);
+        if (modeInput) modeInput.checked = true;
+        if (meta.showRateAmount === false) showRateAmount = false;
+        if (meta.showTotalPrice === false) showTotalPrice = false;
+        if (meta.showDescription === false) showDescription = false;
+        showSerial = meta.showSerial !== false;
+        showSerialInDescription = meta.showSerialInDescription === true;
+        syncDcPrintToggles();
+
+        selectedDCAssets = [];
+        dcItemsByAssetId = {};
+        (payload.items || []).forEach((item, idx) => {
+            const rowId = `row_load_${idx}`;
+            const assetId = item.assetId || item.resourceId || '';
+            const isPoLine = Boolean(item.isPoLine) || String(assetId).startsWith('PO-LINE-');
+            const isPurchaseBookLine = Boolean(item.isPurchaseBookLine) || String(assetId).startsWith('PB-LINE-') || Boolean(item.purchaseBookLineId && !item.assetId);
+            dcItemsByAssetId[rowId] = {
+                rowId,
+                assetId,
+                description: item.description || item.displayName || assetId,
+                make: item.make || '',
+                model: item.model || '',
+                srNo: item.srNo || '',
+                hsn: item.hsn || '',
+                qty: item.qty ?? 1,
+                per: item.per || 'NO',
+                rate: item.rate ?? '',
+                amount: item.amount ?? '',
+                resourceType: item.resourceType || null,
+                productId: item.productId || null,
+                poLineId: item.poLineId || null,
+                purchaseBookId: item.purchaseBookId || null,
+                purchaseBookLineId: item.purchaseBookLineId || null
+            };
+            selectedDCAssets.push({
+                ID: assetId,
+                ItemName: item.description || item.displayName || assetId,
+                Make: item.make || '',
+                Model: item.model || '',
+                SrNo: item.srNo || '',
+                resourceType: item.resourceType || (isPoLine || isPurchaseBookLine ? null : 'ASSET'),
+                productId: item.productId || null,
+                poLineId: item.poLineId || null,
+                purchaseBookId: item.purchaseBookId || null,
+                purchaseBookLineId: item.purchaseBookLineId || null,
+                isPoLine,
+                isPurchaseBookLine,
+                rowId,
+                ...(item.setGroup ? {
+                    setId: item.setId,
+                    setName: item.setName,
+                    setDescription: item.setDescription || '',
+                    setHsn: item.setHsn || '',
+                    setMake: item.setMake || '',
+                    setModel: item.setModel || '',
+                    setProductId: item.setProductId || '',
+                    setKits: item.setKits,
+                    setGroup: item.setGroup,
+                    setRequirementId: item.setRequirementId
+                } : {})
+            });
+        });
+        renderSelectedAssets();
+        window.__editingDcId = data.dc?.ID || data.dc?.id || dcId;
+        window.__editingDcChallan = data.dc?.ChallanNo || data.dc?.challanno || data.challanNo || '';
+        window.__editingDcStage = posted ? 'DISPATCHED' : (stage.key === 'ready' ? 'READY' : 'DRAFT');
+        window.__dcActionsStage = window.__editingDcStage;
+        window.__dcPanelMode = posted ? 'posted' : 'build';
+        window.__lastDcId = window.__editingDcId;
+        window.__lastDcDispatchReason = data.dispatchReason || meta.dispatchReason || null;
+        window.__dcReturnPosition = data.returnPosition && data.returnPosition.position ? data.returnPosition.position : '';
+        window.__dcDispositionLines = Array.isArray(data.disposition) ? data.disposition : [];
+        window.__dcLoadedItems = Array.isArray(payload.items) ? payload.items : [];
+        document.getElementById('dcActionsPanel')?.classList.add('is-active');
+        const retBtn = document.getElementById('btnDcReturn');
+        const returnForm = document.getElementById('dcReturnForm');
+        if (returnForm && !posted) returnForm.style.display = 'none';
+        syncDcSaveLabel();
+        refreshDcSummaries();
+        await refreshDcVersionPanel(window.__editingDcId);
+        const loadedStage = dcDisplayStage();
+        if (posted && loadedStage.key !== 'returned' && retBtn && retBtn.style.display !== 'none') {
+            retBtn.scrollIntoView({ block: 'nearest' });
+        }
+        showToast(posted
+            ? (loadedStage.key === 'returned'
+                ? `${window.__editingDcChallan || window.__editingDcId} is Returned. Return Inward is closed.`
+                : loadedStage.key === 'split'
+                    ? `${window.__editingDcChallan || window.__editingDcId} is a Split Return. Return the lines that are still out.`
+                    : `${window.__editingDcChallan || window.__editingDcId} is posted. Use Return Inward or Split Return. The challan itself stays locked.`)
+            : `${window.__editingDcChallan || window.__editingDcId} loaded as ${stage.label}. Saving writes a new version.`,
+        posted ? 'info' : 'success');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to load DC into the builder', 'error');
+    }
+};
 
 window.dcHistoryAction = function(id) {
     const modal = document.getElementById('dcHistoryModal');
@@ -189,6 +760,449 @@ window.showSaleModal = function(assetId, assetData = null) {
     
     modal.style.display = 'flex';
 };
+
+const RETIRE_BLOCKED_STATUSES = [
+    'sold', 'scraped', 'retired',
+    'out on demo', 'out on rental', 'out for repair',
+    'out for internal use', 'in transit',
+    'demo', 'rental', 'in-repair'
+];
+const DC_UNSELECTABLE_STATUSES = new Set([
+    ...RETIRE_BLOCKED_STATUSES,
+    'consumed', 'replaced', 'issued foc', 'returned to vendor'
+]);
+
+function isDcSelectableHolding(row) {
+    if (!row || row.isPoLine || row.isPurchaseBookLine) return true;
+    const retired = Number(row.IsRetired ?? row.is_retired ?? 0) === 1;
+    if (retired) return false;
+    const status = String(row.Status || row.status || '').trim().toLowerCase();
+    if (DC_UNSELECTABLE_STATUSES.has(status)) return false;
+    const avail = row.quantity_available ?? row.QuantityAvailable ?? row.quantityAvailable;
+    if (avail != null && avail !== '' && Number(avail) <= 0) return false;
+    return true;
+}
+const RETIRE_REASON_OPTIONS = [
+    ['SCRAPPED', 'Scrapped'],
+    ['LOST', 'Lost'],
+    ['DAMAGED_BEYOND_REPAIR', 'Damaged beyond repair'],
+    ['WRITTEN_OFF', 'Written off']
+];
+
+function showRetireAssetModal(asset) {
+    if (!asset || !asset.ID) return;
+    document.getElementById('aeRetireAssetModal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'aeRetireAssetModal';
+    overlay.className = 'modal';
+    overlay.style.display = 'flex';
+    overlay.style.zIndex = '10050';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 460px;">
+            <span class="close-modal" data-retire-close>&times;</span>
+            <h3 style="margin-top:0;">Retire Asset</h3>
+            <p style="font-size:13px;color:#475569;margin:0 0 12px;">
+                <strong>${escapeHtml(asset.ItemName || asset.ID)}</strong>
+                <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px;margin-left:4px;">${escapeHtml(asset.ID)}</span>
+            </p>
+            <p style="font-size:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin:0 0 14px;">
+                Retiring permanently removes this asset from on-hand stock. Use a DC with Sale for items that were sold.
+            </p>
+            <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Reason</label>
+            <select id="aeRetireReason" style="width:100%;padding:8px;margin-bottom:12px;">
+                <option value="">Select a reason…</option>
+                ${RETIRE_REASON_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+            </select>
+            <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Note (optional)</label>
+            <textarea id="aeRetireNote" rows="3" maxlength="2000" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="e.g. Damaged in transit, insurance claim #…"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <button type="button" class="action-button light-grey" data-retire-close>Cancel</button>
+                <button type="button" class="action-button red" id="aeRetireConfirm">Retire Asset</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelectorAll('[data-retire-close]').forEach((el) => { el.onclick = close; });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const confirmBtn = overlay.querySelector('#aeRetireConfirm');
+    confirmBtn.onclick = async () => {
+        const reason = overlay.querySelector('#aeRetireReason').value;
+        const note = overlay.querySelector('#aeRetireNote').value.trim();
+        if (!reason) return showToast('Select a retirement reason', 'warning');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Retiring…';
+        try {
+            const res = await fetchWithAuth(`/api/assets/${encodeURIComponent(asset.ID)}/retire`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason, note })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) throw new Error(data.error || `Retire failed (${res.status})`);
+            showToast(`${asset.ID} retired`, 'success');
+            close();
+            const editModal = document.getElementById('addAssetItemModal');
+            if (editModal) editModal.style.display = 'none';
+            if (window.loadAssets) await window.loadAssets();
+        } catch (err) {
+            showToast(err.message || 'Retire failed', 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Retire Asset';
+        }
+    };
+}
+window.showRetireAssetModal = showRetireAssetModal;
+
+async function showReclassifyAssetModal(asset) {
+    if (!asset || !asset.ID) return;
+    document.getElementById('aeReclassifyAssetModal')?.remove();
+    let opts;
+    try {
+        const res = await fetchWithAuth(`/api/assets/${encodeURIComponent(asset.ID)}/reclassify-to-inventory`);
+        opts = await res.json().catch(() => ({}));
+        if (!res.ok || opts.success === false) throw new Error(opts.error || `Could not load (${res.status})`);
+    } catch (err) {
+        showToast(err.message || 'Could not load reclassify options', 'error');
+        return;
+    }
+    const a = opts.asset || {};
+    const blockers = Array.isArray(opts.blockers) ? opts.blockers : [];
+    const targets = Array.isArray(opts.targets) ? opts.targets : [];
+    const kinds = Array.isArray(opts.kinds) ? opts.kinds : [];
+    const minLen = Number(opts.minReasonLength) || 10;
+    const fmt = (v) => String(Math.round(Number(v || 0) * 1e6) / 1e6);
+
+    const overlay = document.createElement('div');
+    overlay.id = 'aeReclassifyAssetModal';
+    overlay.className = 'modal';
+    overlay.style.display = 'flex';
+    overlay.style.zIndex = '10050';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width: 520px;">
+            <span class="close-modal" data-rc-close>&times;</span>
+            <h3 style="margin-top:0;">Reclassify as Inventory</h3>
+            <p style="font-size:13px;color:#475569;margin:0 0 10px;">
+                <strong>${escapeHtml(a.name || asset.ItemName || asset.ID)}</strong>
+                <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px;margin-left:4px;">${escapeHtml(asset.ID)}</span>
+                <br><span style="font-size:12px;">Moves the whole record: <strong>${fmt(a.quantity)} ${escapeHtml(a.unit || 'Nos')}</strong>${a.hasSerial ? ' · serial number(s) move with it' : ''}</span>
+            </p>
+            <p style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin:0 0 12px;">
+                The asset record is closed (not deleted) and linked to the inventory item. This is recorded with your name and reason, and cannot be undone silently. To move only part of the quantity, use Break first.
+            </p>
+            ${blockers.length ? `
+                <div style="font-size:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin:0 0 12px;">
+                    <strong>Cannot reclassify yet:</strong>
+                    <ul style="margin:6px 0 0 18px;padding:0;">${blockers.map((b) => `<li>${escapeHtml(b.message)}</li>`).join('')}</ul>
+                </div>` : ''}
+            <label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px;">Where does the quantity go?</label>
+            <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px;cursor:pointer;">
+                <input type="radio" name="aeRcTarget" value="NEW" checked> New inventory item (copies name, product, location, unit)
+            </label>
+            <select id="aeRcKind" style="width:100%;padding:8px;margin:0 0 10px;">
+                <option value="">Inventory Kind (decides the folder)…</option>
+                ${kinds.map((k) => `<option value="${escapeHtml(k.id)}">${escapeHtml(k.name)} — ${escapeHtml(k.folderName || '')}</option>`).join('')}
+            </select>
+            <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px;cursor:${targets.length ? 'pointer' : 'not-allowed'};color:${targets.length ? 'inherit' : '#94a3b8'};">
+                <input type="radio" name="aeRcTarget" value="EXISTING" ${targets.length ? '' : 'disabled'}> Add to an existing inventory item ${targets.length ? '' : '(none of the same product and unit)'}
+            </label>
+            <select id="aeRcInventory" style="width:100%;padding:8px;margin:0 0 12px;display:none;">
+                ${targets.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name || t.id)} — ${escapeHtml(t.id)} · ${fmt(t.quantityAvailable)}/${fmt(t.quantityTotal)} ${escapeHtml(t.unit)}${t.location ? ` · ${escapeHtml(t.location)}` : ''}</option>`).join('')}
+            </select>
+            <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Reason (required, at least ${minLen} characters)</label>
+            <textarea id="aeRcReason" rows="3" maxlength="2000" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="e.g. Consumable cable wrongly booked as an asset at intake"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <button type="button" class="action-button light-grey" data-rc-close>Cancel</button>
+                <button type="button" class="action-button" id="aeRcConfirm" style="background:#b45309;color:#fff;" ${blockers.length ? 'disabled' : ''}>Reclassify</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelectorAll('[data-rc-close]').forEach((el) => { el.onclick = close; });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const select = overlay.querySelector('#aeRcInventory');
+    const kindSelect = overlay.querySelector('#aeRcKind');
+    const selectedTarget = () => overlay.querySelector('input[name="aeRcTarget"]:checked')?.value || 'NEW';
+    overlay.querySelectorAll('input[name="aeRcTarget"]').forEach((r) => {
+        r.onchange = () => {
+            const existing = selectedTarget() === 'EXISTING';
+            select.style.display = existing ? 'block' : 'none';
+            kindSelect.style.display = existing ? 'none' : 'block';
+        };
+    });
+
+    const confirmBtn = overlay.querySelector('#aeRcConfirm');
+    confirmBtn.onclick = async () => {
+        const reason = overlay.querySelector('#aeRcReason').value.trim();
+        if (reason.length < minLen) return showToast(`Enter a reason of at least ${minLen} characters`, 'warning');
+        const target = selectedTarget();
+        const body = { target, reason, idempotencyKey: `rc-${asset.ID}-${Date.now()}`.slice(0, 64) };
+        if (target === 'EXISTING') {
+            if (!select.value) return showToast('Choose the inventory item', 'warning');
+            body.inventoryId = select.value;
+        } else {
+            if (!kindSelect.value) return showToast('Choose the inventory Kind', 'warning');
+            body.kindId = kindSelect.value;
+        }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Reclassifying…';
+        try {
+            const res = await fetchWithAuth(`/api/assets/${encodeURIComponent(asset.ID)}/reclassify-to-inventory`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) throw new Error(data.error || `Reclassify failed (${res.status})`);
+            const destId = data.destination?.id || '';
+            showToast(`${asset.ID} reclassified to inventory ${destId} (${data.conversion?.id || ''})`, 'success');
+            close();
+            const editModal = document.getElementById('addAssetItemModal');
+            if (editModal) editModal.style.display = 'none';
+            if (window.loadAssets) await window.loadAssets();
+        } catch (err) {
+            showToast(err.message || 'Reclassify failed', 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Reclassify';
+        }
+    };
+}
+window.showReclassifyAssetModal = showReclassifyAssetModal;
+
+// Built-in fallback; replaced by the /api/dc/reasons catalog once loaded.
+let dcReasonCatalog = [
+    ['DEMO', 'Demo', true, false], ['RENTAL', 'Rental', true, false], ['REPAIR', 'Repair', true, false],
+    ['INTERNAL_USE', 'Internal Use / Project / Shoot', true, false], ['STOCK_TRANSFER', 'Stock Transfer', true, true],
+    ['SALE', 'Sale', false, false], ['REPLACEMENT', 'Replacement / Warranty swap', false, false],
+    ['FOC', 'Free of Cost / Sample', false, false], ['VENDOR_RETURN', 'Return to Vendor', false, false]
+].map(([code, label, returnable, requiresDestination]) => ({ code, label, returnable, exit: !returnable, requiresDestination, isActive: true }));
+let dcReasonCatalogLoadedAt = 0;
+
+function dcReasonDef(code) {
+    const key = String(code || '').trim().toUpperCase();
+    return dcReasonCatalog.find((r) => r.code === key) || null;
+}
+function isDcReasonReturnable(code) {
+    return Boolean(dcReasonDef(code)?.returnable);
+}
+
+async function loadDcReasonCatalog(force = false) {
+    if (!force && dcReasonCatalogLoadedAt && Date.now() - dcReasonCatalogLoadedAt < 60000) return dcReasonCatalog;
+    try {
+        const res = await fetchWithAuth('/api/dc/reasons?includeInactive=1');
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.data) && data.data.length) {
+            dcReasonCatalog = data.data;
+            dcReasonCatalogLoadedAt = Date.now();
+            data.data.forEach((r) => {
+                if (!r.assetStatus) return;
+                const s = String(r.assetStatus).trim().toLowerCase();
+                OVERRIDE_CONTROLLED_STATUSES.add(s);
+                if (r.returnable && !RETIRE_BLOCKED_STATUSES.includes(s)) RETIRE_BLOCKED_STATUSES.push(s);
+            });
+        }
+    } catch (_err) { /* keep fallback */ }
+    return dcReasonCatalog;
+}
+
+/** Rebuild the DC form's Dispatch Reason dropdown from the catalog (active reasons only). */
+async function populateDcDispatchReasonSelect(force = false) {
+    await loadDcReasonCatalog(force);
+    const select = document.getElementById('dcDispatchReason');
+    if (!select) return;
+    const current = select.value;
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const active = dcReasonCatalog.filter((r) => r.isActive);
+    const group = (label, rows) => (rows.length
+        ? `<optgroup label="${esc(label)}">${rows.map((r) => `<option value="${esc(r.code)}">${esc(r.label)}${r.requiresDestination ? ' (to another location)' : ''}</option>`).join('')}</optgroup>`
+        : '');
+    let html = '<option value="">— Select why stock is leaving —</option>'
+        + group('Returnable (comes back via Return Inward)', active.filter((r) => r.returnable))
+        + group('Exit (leaves ownership)', active.filter((r) => !r.returnable));
+    if (current && !active.some((r) => r.code === current)) {
+        const def = dcReasonDef(current);
+        html += `<option value="${esc(current)}">${esc(def ? `${def.label} (inactive)` : current)}</option>`;
+    }
+    select.innerHTML = html;
+    select.value = current;
+    syncDcTransferDestination();
+}
+window.populateDcDispatchReasonSelect = populateDcDispatchReasonSelect;
+
+/** Show the destination field only for reasons that require one (e.g. Stock Transfer). */
+function syncDcTransferDestination() {
+    const reason = document.getElementById('dcDispatchReason')?.value;
+    const wrap = document.getElementById('dcTransferDestinationWrap');
+    if (wrap) wrap.style.display = dcReasonDef(reason)?.requiresDestination ? 'block' : 'none';
+}
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'dcDispatchReason') syncDcTransferDestination();
+});
+
+const OVERRIDE_CONTROLLED_STATUSES = new Set([
+    'sold', 'scraped', 'scrapped', 'retired', 'lost',
+    'demo', 'rental', 'in-repair', 'in repair',
+    'out on demo', 'out on rental', 'out for repair',
+    'out for internal use', 'in transit',
+    'replaced', 'issued foc', 'returned to vendor'
+]);
+
+function sessionRole() {
+    try {
+        const user = window.currentUser && window.currentUser.role
+            ? window.currentUser
+            : JSON.parse(localStorage.getItem('currentUser') || '{}');
+        return String(user.role || '').toLowerCase();
+    } catch (_err) {
+        return '';
+    }
+}
+
+function isSuperuserSession() {
+    return sessionRole() === 'superuser';
+}
+
+function canUseUnitConversionTool() {
+    const role = sessionRole();
+    return role === 'superuser' || role === 'admin';
+}
+
+function isOverrideControlledStatus(status) {
+    return OVERRIDE_CONTROLLED_STATUSES.has(String(status || '').trim().toLowerCase());
+}
+
+/** Resolves to the entered reason, or null when cancelled. */
+function promptOverrideReason({ message = '', changes = [] } = {}) {
+    return new Promise((resolve) => {
+        document.getElementById('aeOverrideReasonModal')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'aeOverrideReasonModal';
+        overlay.className = 'modal';
+        overlay.style.display = 'flex';
+        overlay.style.zIndex = '10060';
+        const changeList = (changes || []).length
+            ? `<ul style="margin:0 0 12px;padding-left:18px;font-size:12px;color:#334155;">${changes.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`
+            : '';
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width: 480px;">
+                <h3 style="margin-top:0;">Manual override</h3>
+                <p style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin:0 0 12px;">
+                    ${escapeHtml(message || 'This change bypasses the Delivery Challan / Retire controls.')}
+                </p>
+                ${changeList}
+                <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Reason (recorded in History)</label>
+                <textarea id="aeOverrideReason" rows="3" maxlength="1000" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="e.g. Correcting a data entry error from migration"></textarea>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                    <button type="button" class="action-button light-grey" data-override-cancel>Cancel</button>
+                    <button type="button" class="action-button" id="aeOverrideConfirm" style="background:#b45309;color:#fff;">Apply override</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const finish = (value) => { overlay.remove(); resolve(value); };
+        overlay.querySelector('[data-override-cancel]').onclick = () => finish(null);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+        const input = overlay.querySelector('#aeOverrideReason');
+        overlay.querySelector('#aeOverrideConfirm').onclick = () => {
+            const reason = input.value.trim();
+            if (reason.length < 5) return showToast('Enter a reason of at least 5 characters', 'warning');
+            finish(reason);
+        };
+        input.focus();
+    });
+}
+
+/**
+ * JSON request that, when the server asks for a manual override reason, prompts the
+ * (superuser) operator and retries once with `overrideReason`. Resolves to the final
+ * Response, or null when the operator cancels the prompt.
+ */
+async function fetchWithOverride(url, init = {}, bodyObj = {}) {
+    let body = { ...bodyObj };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const res = await fetch(url, { ...init, body: JSON.stringify(body) });
+        if (res.ok || attempt > 0) return res;
+        const data = await res.clone().json().catch(() => null);
+        if (data?.reasonCode !== 'MANUAL_OVERRIDE_REASON_REQUIRED') return res;
+        const reason = await promptOverrideReason({ message: data.error, changes: data.details?.changes });
+        if (!reason) return null;
+        body = { ...body, overrideReason: reason };
+    }
+    return null;
+}
+
+async function readResponseError(res) {
+    const text = await res.text().catch(() => '');
+    try {
+        const data = JSON.parse(text);
+        return data.error || data.message || text;
+    } catch (_err) {
+        return text || `Request failed (${res.status})`;
+    }
+}
+
+/** Quantity Total is typed only by superuser. Admin may convert the existing quantity. */
+function applyQtyOverrideGuard({ isSplitChild = false } = {}) {
+    const superuser = isSuperuserSession();
+    const canConvert = canUseUnitConversionTool() && !isSplitChild;
+    const lockTotal = !superuser || isSplitChild;
+    const qtyTotal = document.getElementById('itemQtyTotal');
+    const convUnit = document.getElementById('itemConvUnit');
+    const convFactor = document.getElementById('itemConvFactor');
+    const convMode = document.getElementById('itemConvMode');
+    const convBtn = document.getElementById('btnApplyConversion');
+    const qtyHint = lockTotal
+        ? 'Quantity is set by Receipt Note, Physical Intake, DC, Break, or Consume. Convert units below, or ask a superuser to type a new total.'
+        : (isSplitChild ? 'Split children keep the quantity from Break.' : '');
+    if (qtyTotal) {
+        qtyTotal.disabled = lockTotal;
+        qtyTotal.title = qtyHint;
+        qtyTotal.readOnly = lockTotal;
+    }
+    const convHint = canConvert
+        ? 'Restates the same stock in another unit. Recorded in history. Does not add new quantity.'
+        : 'Unit conversion is available to admin and superuser.';
+    [convUnit, convFactor, convMode, convBtn].forEach((el) => {
+        if (!el) return;
+        el.disabled = !canConvert;
+        el.title = convHint;
+    });
+}
+
+/** Non-superusers cannot pick, or move away from, DC / Retire controlled statuses. */
+function applyStatusOverrideGuard(select, currentStatus) {
+    if (!select) return;
+    const superuser = isSuperuserSession();
+    const currentControlled = isOverrideControlledStatus(currentStatus);
+    select.disabled = !superuser && currentControlled;
+    select.title = select.disabled
+        ? 'Set by a Delivery Challan or Retire. Only a superuser can override.'
+        : '';
+    Array.from(select.options).forEach((opt) => {
+        const controlled = isOverrideControlledStatus(opt.value);
+        opt.disabled = !superuser && controlled && opt.value !== currentStatus;
+        opt.textContent = opt.value + (controlled && !superuser && opt.value !== currentStatus ? ' (via DC / Retire)' : '');
+    });
+}
+
+window.aeIsSuperuser = isSuperuserSession;
+window.aeIsOverrideControlledStatus = isOverrideControlledStatus;
+window.aePromptOverrideReason = promptOverrideReason;
+window.aeFetchWithOverride = fetchWithOverride;
+window.aeReadResponseError = readResponseError;
+window.aeApplyQtyOverrideGuard = applyQtyOverrideGuard;
+window.aeCanUseUnitConversionTool = canUseUnitConversionTool;
+
+function pendingUnitConversionFromForm(form) {
+    if (!form || !form.dataset.unitConversion) return null;
+    try {
+        const parsed = JSON.parse(form.dataset.unitConversion);
+        if (!parsed || !parsed.toUnit || !(parsed.factor > 0)) return null;
+        return parsed;
+    } catch (_err) {
+        return null;
+    }
+}
 
 window.showInspectionModal = function(assetId, projectId, isUnassign = false) {
     const modal = document.getElementById('inspectionModal');
@@ -288,17 +1302,17 @@ function setupLifecycleFormHandlers() {
             const assetId = document.getElementById('saleAssetId').value;
             
             try {
-                const response = await fetch(`/api/assets/${assetId}/sell`, {
+                const response = await fetchWithOverride(`/api/assets/${encodeURIComponent(assetId)}/sell`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        buyerName: formData.get('buyerName'),
-                        saleDate: formData.get('saleDate'),
-                        salePrice: formData.get('salePrice'),
-                        invoiceNo: formData.get('invoiceNo'),
-                        remarks: formData.get('remarks')
-                    })
+                    headers: { 'Content-Type': 'application/json' }
+                }, {
+                    buyerName: formData.get('buyerName'),
+                    saleDate: formData.get('saleDate'),
+                    salePrice: formData.get('salePrice'),
+                    invoiceNo: formData.get('invoiceNo'),
+                    remarks: formData.get('remarks')
                 });
+                if (!response) return;
                 
                 if (response.status === 401) {
                     alert('Your session has expired. Please refresh the page and log in again.');
@@ -311,8 +1325,7 @@ function setupLifecycleFormHandlers() {
                     document.getElementById('addAssetItemModal').style.display = 'none';
                     if (window.loadAssets) await window.loadAssets();
                 } else {
-                    const err = await response.text();
-                    throw new Error(err);
+                    throw new Error(await readResponseError(response));
                 }
             } catch (err) {
                 alert('Failed to sell asset: ' + err.message);
@@ -338,6 +1351,30 @@ function toNumber(value) {
 
 function round2(n) {
     return Math.round(n * 100) / 100;
+}
+
+function dcHoldingAvailable(holding) {
+    if (!holding) return null;
+    const raw = holding.quantityAvailable
+        ?? holding.QuantityAvailable
+        ?? holding.quantity_available
+        ?? holding.quantity?.available;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+}
+
+function clampDcLineQty(rowId, requested) {
+    const asset = selectedDCAssets.find((a) => a.rowId === rowId);
+    const row = dcItemsByAssetId[rowId] || {};
+    let qty = Number(requested);
+    if (!Number.isFinite(qty) || qty <= 0) qty = 1;
+    if (asset?.isPoLine && !asset?.ID) return qty;
+    const available = dcHoldingAvailable(asset);
+    if (available != null && qty > available + 1e-9) {
+        showToast(`Only ${available} available for ${asset.ID || row.assetId || 'this item'}.`, 'error');
+        return available;
+    }
+    return qty;
 }
 
 function escapeHtml(value) {
@@ -718,14 +1755,14 @@ function renderAssetKanban(assets) {
             
             if (assetId && newStatus) {
                 try {
-                    const response = await fetch(`/api/assets/${assetId}`, {
+                    const response = await fetchWithOverride(`/api/assets/${encodeURIComponent(assetId)}`, {
                         method: 'PUT',
                         headers: { 
                             'Content-Type': 'application/json',
                             'x-user': localStorage.getItem('username') || 'web'
-                        },
-                        body: JSON.stringify({ Status: newStatus })
-                    });
+                        }
+                    }, { Status: newStatus });
+                    if (!response) return;
                     
                     if (response.ok) {
                         // Refresh dashboard data
@@ -734,8 +1771,7 @@ function renderAssetKanban(assets) {
                             renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
                         }
                     } else {
-                        const error = await response.text();
-                        showToast(`Failed to update status: ${error}`, 'error');
+                        showToast(`Failed to update status: ${await readResponseError(response)}`, 'error');
                     }
                 } catch (err) {
                     console.error('Error updating asset status:', err);
@@ -1033,6 +2069,18 @@ function initDcAccountLookup() {
     }, true);
 }
 
+function syncDcPrintToggles() {
+    const paint = (id, on) => {
+        const span = document.getElementById(id)?.querySelector('span');
+        if (span) span.textContent = on ? '👁️' : '🚫';
+    };
+    paint('btnToggleDescription', showDescription);
+    paint('btnToggleSerial', showSerial);
+    paint('btnToggleSerialInDescription', showSerialInDescription);
+    paint('btnToggleRateAmount', showRateAmount);
+    paint('btnToggleTotalPrice', showTotalPrice);
+}
+
 function initDCView() {
     console.log('initDCView() called');
     
@@ -1040,6 +2088,8 @@ function initDCView() {
     if (typeof window.loadCompanyTemplates === 'function') {
         window.loadCompanyTemplates();
     }
+    populateDcDispatchReasonSelect(true);
+    initDcCreateModals();
 
     const dcAssetSearch = document.getElementById('dcAssetSearch');
     const dcSearchResults = document.getElementById('dcSearchResults');
@@ -1051,6 +2101,9 @@ function initDCView() {
     const btnOpenDC = document.getElementById('btnOpenDC');
     const btnToggleRateAmount = document.getElementById('btnToggleRateAmount');
     const btnToggleTotalPrice = document.getElementById('btnToggleTotalPrice');
+    const btnToggleDescription = document.getElementById('btnToggleDescription');
+    const btnToggleSerial = document.getElementById('btnToggleSerial');
+    const btnToggleSerialInDescription = document.getElementById('btnToggleSerialInDescription');
     
     // Set default date
     const dateInput = document.getElementById('dcDate');
@@ -1100,6 +2153,28 @@ function initDCView() {
             if (span) span.textContent = showTotalPrice ? '👁️' : '🚫';
         };
     }
+
+    if (btnToggleDescription) {
+        btnToggleDescription.onclick = () => {
+            showDescription = !showDescription;
+            syncDcPrintToggles();
+        };
+    }
+
+    if (btnToggleSerial) {
+        btnToggleSerial.onclick = () => {
+            showSerial = !showSerial;
+            syncDcPrintToggles();
+        };
+    }
+
+    if (btnToggleSerialInDescription) {
+        btnToggleSerialInDescription.onclick = () => {
+            showSerialInDescription = !showSerialInDescription;
+            syncDcPrintToggles();
+        };
+    }
+    syncDcPrintToggles();
 
     // --- Remarks Template Logic ---
     const dcRemarksTemplate = document.getElementById('dcRemarksTemplate');
@@ -1216,6 +2291,21 @@ function initDCView() {
         };
     }
 
+    const btnDcAddSet = document.getElementById('btnDcAddSet');
+    if (btnDcAddSet) {
+        btnDcAddSet.onclick = async () => {
+            try {
+                const { openDcSetPicker } = await import('./dcSetPicker.js?v=1.1');
+                const excludeKeys = new Set(selectedDCAssets
+                    .filter((a) => !a.isPoLine && !a.isPurchaseBookLine)
+                    .map((a) => `${String(a.resourceType || 'ASSET').toUpperCase()}:${String(a.ID || '').toLowerCase()}`));
+                await openDcSetPicker({ excludeKeys, onApply: addSetToDC });
+            } catch (err) {
+                showToast(err.message || 'Could not open the Set picker', 'error');
+            }
+        };
+    }
+
     // Search assets for DC
     if (dcAssetSearch) {
         const applyDcLinkMode = () => {
@@ -1224,8 +2314,8 @@ function initDCView() {
             const hint = document.getElementById('dcLinkModeHint');
             const projectBox = document.getElementById('dcProjectSearch')?.closest('.form-group');
             if (mode === 'HOLDINGS') {
-                dcAssetSearch.placeholder = 'Search free Asset / Inventory (excludes PO / awaiting)…';
-                if (hint) hint.textContent = 'No PO — only holdings not on a procurement path (excludes awaiting adoption and PO-sourced).';
+                dcAssetSearch.placeholder = 'Search in-store Asset / Inventory by name, ID or serial…';
+                if (hint) hint.textContent = 'No PO — any in-store holding, whatever its origin. Sold, retired, already-out or fully reserved stock is not listed. Purchase Book links are recorded automatically.';
                 if (projectBox) projectBox.style.opacity = '0.55';
                 window.currentDC_POReference = null;
             } else {
@@ -1258,12 +2348,25 @@ function initDCView() {
                             dcSearchResults.style.display = 'block';
                             return;
                         }
-                        dcSearchResults.innerHTML = holdings.map((h) => `
-                            <div class="search-result-item" data-id="${h.resourceId}" data-type="${h.resourceType}" style="padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;">
-                                <div style="font-weight: 600;">[${h.resourceType}] ${h.name}</div>
-                                <div style="font-size: 11px; color: #666; font-family: monospace;">${h.resourceId}${h.productId ? ` · ${h.productId}` : ''}</div>
-                            </div>
-                        `).join('');
+                        const originLabels = {
+                            RECEIPT_NOTE: ['Receipt Note', '#1d4ed8', '#dbeafe'],
+                            PO_LINKED: ['PO-linked', '#0f766e', '#ccfbf1'],
+                            AWAITING_PO: ['Awaiting PO', '#b45309', '#fef3c7'],
+                            PHYSICAL_INTAKE: ['Physical Intake', '#6d28d9', '#ede9fe'],
+                            DIRECT: ['Direct', '#475569', '#f1f5f9']
+                        };
+                        const chip = (label, color, bg) => `<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;color:${color};background:${bg};white-space:nowrap;">${escapeHtml(label)}</span>`;
+                        dcSearchResults.innerHTML = holdings.map((h) => {
+                            const origin = originLabels[h.origin] || originLabels.DIRECT;
+                            const qty = h.quantityAvailable != null
+                                ? ` · ${escapeHtml(h.quantityAvailable)} ${escapeHtml(h.unit || '')} available`
+                                : '';
+                            return `
+                            <div class="search-result-item" data-id="${escapeHtml(h.resourceId)}" data-type="${escapeHtml(h.resourceType)}" style="padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;">
+                                <div style="font-weight: 600; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">[${escapeHtml(h.resourceType)}] ${escapeHtml(h.name)} ${chip(...origin)}${h.purchaseBookLinked ? ` ${chip('Book-linked', '#b45309', '#fff7ed')}` : ''}</div>
+                                <div style="font-size: 11px; color: #666; font-family: monospace;">${escapeHtml(h.resourceId)}${h.productId ? ` · ${escapeHtml(h.productId)}` : ''}${qty}</div>
+                            </div>`;
+                        }).join('');
                         dcSearchResults.style.display = 'block';
                         dcSearchResults.querySelectorAll('.search-result-item').forEach((item) => {
                             item.onclick = () => {
@@ -1278,7 +2381,10 @@ function initDCView() {
                                     CurrentLocation: hit.location,
                                     productId: hit.productId,
                                     resourceType: type,
-                                    SrNo: hit.srNo || ''
+                                    SrNo: hit.srNo || '',
+                                    quantityAvailable: hit.quantityAvailable,
+                                    QuantityAvailable: hit.quantityAvailable,
+                                    quantity_available: hit.quantityAvailable
                                 });
                                 dcAssetSearch.value = '';
                                 dcSearchResults.style.display = 'none';
@@ -1300,11 +2406,9 @@ function initDCView() {
                 ...(window.allTempAssets || [])
             ];
 
-            const matches = allSearchableAssets.filter(a => 
-                // Strict Category Filter - only for permanent assets (Temp assets usually don't have standard categories or we ignore it)
-                // Actually, let's allow Temp assets to be searched regardless of category if they don't have one matching
-                ((category === 'ALL' || a.Category === category) || !a.Category) && 
-                // Global Search Logic (matchesQuery checks ID, Name, Serial, Location, User, etc.)
+            const matches = allSearchableAssets.filter(a =>
+                isDcSelectableHolding(a) &&
+                ((category === 'ALL' || a.Category === category) || !a.Category) &&
                 matchesQuery(a, query)
             ).slice(0, 10);
 
@@ -1365,9 +2469,30 @@ function initDCView() {
             const poRef = linkMode === 'HOLDINGS' ? null : (window.currentDC_POReference || null);
             const hasPoLines = selectedDCAssets.some((a) => a.isPoLine || a.isPurchaseBookLine);
 
-            if (!customerName) return showToast('Please enter customer name', 'warning');
-            if (selectedDCAssets.length === 0) return showToast('Please select at least one asset or fetch a Purchase Order with lines', 'warning');
-            if (!hasPoLines && assetIds.length === 0) return showToast('Please select at least one asset', 'warning');
+            if (!customerName) {
+                openDcCreateModal('details', 'dcCustomerName');
+                return showToast('Please enter customer name', 'warning');
+            }
+            if (selectedDCAssets.length === 0) {
+                openDcCreateModal('items', 'dcAssetSearch');
+                return showToast('Please select at least one asset or fetch a Purchase Order with lines', 'warning');
+            }
+            if (!hasPoLines && assetIds.length === 0) {
+                openDcCreateModal('items', 'dcAssetSearch');
+                return showToast('Please select at least one asset', 'warning');
+            }
+
+            for (const a of selectedDCAssets) {
+                if (a.isPoLine || a.isPurchaseBookLine) continue;
+                const row = dcItemsByAssetId[a.rowId] || {};
+                const available = dcHoldingAvailable(a);
+                const qty = Number(row.qty ?? 1);
+                if (available != null && qty > available + 1e-9) {
+                    openDcCreateModal('items');
+                    showToast(`Cannot save this DC: ${a.ID} has ${available} available, quantity entered is ${qty}.`, 'error');
+                    return;
+                }
+            }
 
             const purchaseBookConsumptions = [];
             for (const a of selectedDCAssets) {
@@ -1392,6 +2517,7 @@ function initDCView() {
                     address: document.getElementById('dcCompanyAddress')?.value || '',
                     gstin: document.getElementById('dcCompanyGST')?.value || '',
                     cin: document.getElementById('dcCompanyCIN')?.value || '',
+                    pan: document.getElementById('dcCompanyPAN')?.value || '',
                     stateName: document.getElementById('dcCompanyState')?.value || '',
                     stateCode: document.getElementById('dcCompanyStateCode')?.value || '',
                     website: (() => {
@@ -1435,7 +2561,18 @@ function initDCView() {
                     remarks: document.getElementById('dcRemarks')?.value || '', // Ensure remarks are captured
                     showRateAmount, // Pass toggle state
                     showTotalPrice, // Pass toggle state
-                    orderDate: window.tempDCOrderDate || '', // Pass order date
+                    showDescription,
+                    showSerial,
+                    showSerialInDescription,
+                    orderDate: (() => {
+                        const fromField = (document.getElementById('dcRefDate')?.value || '').trim();
+                        if (fromField) {
+                            window.tempDCOrderDate = fromField;
+                            return fromField;
+                        }
+                        return window.tempDCOrderDate || '';
+                    })(),
+                    referenceDate: (document.getElementById('dcRefDate')?.value || '').trim() || window.tempDCOrderDate || '',
                     logoUrl: selectedLogoUrl,
                     linkMode: document.querySelector('input.dc-link-mode:checked')?.value || window.__dcLinkMode || 'PO_LINKED',
                     procurementPoId: window.currentDC_POReference?.ProcurementPoId || window.currentDC_POReference?.procurementPoId || null
@@ -1459,47 +2596,299 @@ function initDCView() {
                         qty: row.qty ?? 1,
                         per: row.per || 'NO',
                         rate: row.rate ?? '',
-                        amount: row.amount ?? ''
+                        amount: row.amount ?? '',
+                        ...(a.setGroup ? {
+                            setId: a.setId,
+                            setName: a.setName,
+                            setDescription: a.setDescription || '',
+                            setHsn: a.setHsn || '',
+                            setMake: a.setMake || '',
+                            setModel: a.setModel || '',
+                            setProductId: a.setProductId || '',
+                            setKits: a.setKits,
+                            setGroup: a.setGroup,
+                            setRequirementId: a.setRequirementId
+                        } : {})
                     };
                 })
             };
 
             try {
-                btnGenerateDC.textContent = 'Generating...';
+                const dispatchReason = String(document.getElementById('dcDispatchReason')?.value || '').trim().toUpperCase();
+                const hasPhysical = selectedDCAssets.some((a) => {
+                    if (a.isPoLine || a.isPurchaseBookLine) return Boolean(a.ID && !String(a.ID).startsWith('PB-LINE-') && !String(a.ID).startsWith('PO-LINE-'));
+                    return true;
+                });
+                const reasonDef = dcReasonDef(dispatchReason);
+                if (hasPhysical && !(reasonDef && reasonDef.isActive)) {
+                    openDcCreateModal('details', 'dcDispatchReason');
+                    showToast('Select a Dispatch Reason', 'error');
+                    return;
+                }
+                const transferDestination = reasonDef?.requiresDestination
+                    ? String(document.getElementById('dcTransferDestination')?.value || '').trim()
+                    : '';
+                if (reasonDef?.requiresDestination && !transferDestination) {
+                    showToast(`Enter the destination location for the ${reasonDef.label}`, 'error');
+                    openDcCreateModal('details', 'dcTransferDestination');
+                    return;
+                }
+
+                const editingId = window.__editingDcId || null;
+                let versionReason = null;
+                if (editingId) {
+                    versionReason = await askDcVersionReason(window.__editingDcStage || 'DRAFT');
+                    if (!versionReason) return;
+                }
+
+                btnGenerateDC.textContent = editingId ? 'Saving version...' : 'Saving draft...';
                 btnGenerateDC.disabled = true;
 
-                const response = await fetchWithAuth('/api/dc', {
-                    method: 'POST',
+                const body = {
+                    CustomerName: customerName,
+                    DeliveryDate: deliveryDate,
+                    AssetIds: assetIds,
+                    CreatedBy: localStorage.getItem('username') || 'System',
+                    POReference: poRef,
+                    PurchaseBookConsumptions: purchaseBookConsumptions,
+                    dispatchReason: dispatchReason || undefined,
+                    transferDestination: transferDestination || undefined,
+                    payload: {
+                        ...payload,
+                        meta: {
+                            ...payload.meta,
+                            dispatchReason: dispatchReason || null,
+                            dispatchReasonLabel: reasonDef?.label || null,
+                            transferDestination: transferDestination || null
+                        }
+                    }
+                };
+                if (versionReason) body.reason = versionReason;
+
+                const response = await fetchWithAuth(editingId ? `/api/dc/${encodeURIComponent(editingId)}` : '/api/dc', {
+                    method: editingId ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        CustomerName: customerName,
-                        DeliveryDate: deliveryDate,
-                        AssetIds: assetIds,
-                        CreatedBy: localStorage.getItem('username') || 'System',
-                        POReference: poRef,
-                        PurchaseBookConsumptions: purchaseBookConsumptions,
-                        payload
-                    })
+                    body: JSON.stringify(body)
                 });
 
                 const result = await response.json();
                 if (result.success) {
+                    window.__lastDcId = result.id;
+                    window.__editingDcId = result.id;
+                    window.__editingDcChallan = result.challanNo || window.__editingDcChallan || '';
+                    window.__editingDcStage = String(result.lifecycleStatus || window.__editingDcStage || 'DRAFT').toUpperCase();
+                    window.__dcActionsStage = window.__editingDcStage;
+                    window.__dcPanelMode = 'build';
+                    window.__lastDcDispatchReason = dispatchReason || null;
                     showDCPreview(result);
+                    const life = document.getElementById('dcLifecycleActions');
+                    document.getElementById('dcActionsPanel')?.classList.add('is-active');
+                    if (life) {
+                        const retBtn = document.getElementById('btnDcReturn');
+                        if (retBtn) retBtn.style.display = 'none';
+                    }
+                    if (result.version) {
+                        showToast(`Version ${result.version.versionNo} saved as ${dcStageLabel(result.version.lifecycleStatus)}.`, 'success');
+                    } else {
+                        showToast(`Draft DC ${result.challanNo} saved. Mark READY then DISPATCH to move stock.`, 'success');
+                    }
                     window.currentDC_POReference = null;
                     window.__dcPurchaseBooksCache = null;
                     const pbPanel = document.getElementById('dcPurchaseBookPanel');
                     if (pbPanel) pbPanel.style.display = 'none';
+                    refreshDcSummaries();
+                    await refreshDcVersionPanel(result.id);
                 } else {
-                    showToast('Error creating DC: ' + (result.error || 'Unknown'), 'error');
+                    const qtyProblem = result.reasonCode === 'DC_HOLDING_NO_QUANTITY'
+                        || result.reasonCode === 'INSUFFICIENT_QUANTITY'
+                        || result.reasonCode === 'INSUFFICIENT_AVAILABLE';
+                    showToast(
+                        qtyProblem
+                            ? (result.error || 'Requested quantity is more than what is available.')
+                            : ((editingId ? 'Error saving version: ' : 'Error creating DC: ') + (result.error || 'Unknown')),
+                        'error'
+                    );
                 }
             } catch (err) {
                 console.error('DC Creation Error:', err);
                 showToast('Failed to connect to server', 'error');
             } finally {
-                btnGenerateDC.textContent = 'Generate DC & QR Code';
                 btnGenerateDC.disabled = false;
+                syncDcSaveLabel();
             }
         };
+
+        const runDcLifecycle = async (path, successMsg) => {
+            const id = window.__lastDcId;
+            if (!id) {
+                showToast('Save a Draft DC first', 'error');
+                return;
+            }
+            const dispatchReason = String(document.getElementById('dcDispatchReason')?.value || window.__lastDcDispatchReason || '').trim().toUpperCase();
+            const transferDestination = dcReasonDef(dispatchReason)?.requiresDestination
+                ? String(document.getElementById('dcTransferDestination')?.value || '').trim()
+                : '';
+            try {
+                const response = await fetchWithAuth(`/api/dc/${encodeURIComponent(id)}${path}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dispatchReason: dispatchReason || undefined,
+                        transferDestination: transferDestination || undefined
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok || result.success === false) {
+                    showToast(result.reasonCode ? `${result.reasonCode}: ${result.error}` : (result.error || 'Request failed'), 'error');
+                    return;
+                }
+                showToast(successMsg, 'success');
+                if (result.dc) {
+                    window.__lastDcDispatchReason = result.dc.dispatchReason || dispatchReason;
+                    const lifeNow = String(result.dc.lifecycleStatus || '').toUpperCase();
+                    if (lifeNow === 'READY' || lifeNow === 'DISPATCHED') {
+                        window.__editingDcStage = lifeNow;
+                        window.__dcActionsStage = lifeNow;
+                        window.__dcPanelMode = lifeNow === 'DISPATCHED' ? 'posted' : 'build';
+                        syncDcSaveLabel();
+                        const heading = document.getElementById('dcVersionHeading');
+                        if (heading && window.__editingDcId) {
+                            heading.textContent = `${window.__editingDcChallan || window.__editingDcId} · current ${dcStageLabel(lifeNow)}`;
+                        }
+                    }
+                    if (lifeNow === 'DISPATCHED') {
+                        window.__dcReturnPosition = 'NO_RETURN';
+                        syncDcLifecycleChrome();
+                        const reasonEl = document.getElementById('dcDispatchReason');
+                        if (reasonEl) reasonEl.disabled = true;
+                        const destEl = document.getElementById('dcTransferDestination');
+                        if (destEl) destEl.disabled = true;
+                    }
+                }
+                if (typeof showDCPreviewById === 'function') {
+                    await showDCPreviewById(id);
+                } else if (result.dc) {
+                    showDCPreview({ success: true, id, challanNo: result.dc.challanNo, payload: result.dc.payload });
+                }
+            } catch (err) {
+                showToast(err.message || 'Request failed', 'error');
+            }
+        };
+
+        const openReturnForm = (split) => {
+            const form = document.getElementById('dcReturnForm');
+            if (!form) return;
+            form.dataset.returnMode = split ? 'split' : 'all';
+            form.style.display = 'block';
+            const title = document.getElementById('dcReturnFormTitle');
+            if (title) {
+                title.textContent = split
+                    ? 'SPLIT RETURN — tick the lines coming back now. The rest stay out on this DC.'
+                    : 'RETURN INWARD — every line still out comes back (creates OPEN Return Log + RN — stock restores on POST)';
+            }
+            renderDcReturnLines(split);
+            const recv = document.getElementById('dcReceivedByUser');
+            if (recv && !recv.value) recv.value = localStorage.getItem('username') || '';
+            const party = document.getElementById('dcReturnedByParty');
+            if (party && !party.value) {
+                party.value = document.getElementById('dcTransferDestination')?.value
+                    || document.getElementById('dcCustomerName')?.value
+                    || '';
+            }
+            const submit = document.getElementById('btnDcReturnSubmit');
+            if (submit) submit.textContent = split ? 'Create Split Return Log + OPEN RN' : 'Create Return Log + OPEN RN';
+            syncDcReturnHome();
+            loadReturnPlaces().catch(() => {});
+            form.scrollIntoView({ block: 'nearest' });
+        };
+        if (!window.__dcLifecycleHandlersBound) {
+        window.__dcLifecycleHandlersBound = true;
+        document.getElementById('btnDcMarkReady')?.addEventListener('click', () => {
+            runDcLifecycle('/ready', 'DC marked READY — stock reserved');
+        });
+        document.getElementById('btnDcDispatch')?.addEventListener('click', () => {
+            if (!confirm('Dispatch this DC? Physical stock will move according to the Dispatch Reason.')) return;
+            runDcLifecycle('/dispatch', 'DC DISPATCHED — physical disposition committed');
+        });
+        document.getElementById('btnDcCancel')?.addEventListener('click', () => {
+            window.cancelDeliveryChallan(window.__editingDcId || window.__lastDcId);
+        });
+        document.getElementById('btnDcReturn')?.addEventListener('click', () => openReturnForm(false));
+        document.getElementById('btnDcReturnHeader')?.addEventListener('click', () => openReturnForm(false));
+        document.getElementById('btnDcSplitReturn')?.addEventListener('click', () => openReturnForm(true));
+        document.getElementById('btnDcSplitReturnHeader')?.addEventListener('click', () => openReturnForm(true));
+        document.getElementById('dcReturnHome')?.addEventListener('change', syncDcReturnHome);
+        document.getElementById('btnDcReturnSubmit')?.addEventListener('click', async () => {
+            const submitBtn = document.getElementById('btnDcReturnSubmit');
+            if (submitBtn?.dataset.busy === '1') return;
+            if (submitBtn) submitBtn.dataset.busy = '1';
+            try {
+            const id = window.__lastDcId;
+            if (!id) {
+                showToast('Save / load a DC first', 'error');
+                return;
+            }
+            const split = document.getElementById('dcReturnForm')?.dataset.returnMode === 'split';
+            const vendorInvoiceNo = String(document.getElementById('dcReturnInvoice')?.value || '').trim();
+            const returnReason = String(document.getElementById('dcReturnReason')?.value || '').trim();
+            const returnedByParty = String(document.getElementById('dcReturnedByParty')?.value || '').trim();
+            const receivedByUser = String(document.getElementById('dcReceivedByUser')?.value || '').trim();
+            const notes = String(document.getElementById('dcReturnNotes')?.value || '').trim();
+            const returnHome = String(document.getElementById('dcReturnHome')?.value || 'ORIGIN').trim().toUpperCase();
+            const returnLocation = String(document.getElementById('dcReturnLocation')?.value || '').trim();
+            if ((returnHome === 'ASSET' || returnHome === 'INVENTORY') && !returnLocation) {
+                showToast('Choose the Asset or Inventory location this return is received into', 'error');
+                return;
+            }
+            if (!vendorInvoiceNo) {
+                showToast('Invoice number is required', 'error');
+                document.getElementById('dcReturnInvoice')?.focus();
+                return;
+            }
+            if (!returnedByParty || !receivedByUser) {
+                showToast('Returned By and Received By are required', 'error');
+                return;
+            }
+            let lines = null;
+            if (split) {
+                lines = collectSplitReturnLines();
+                if (!lines.length) {
+                    showToast('Tick at least one line for the split return', 'error');
+                    return;
+                }
+            }
+            const homeText = returnHome === 'ORIGIN'
+                ? 'Lands at the origin place.'
+                : `Lands at ${returnHome === 'ASSET' ? 'Asset' : 'Inventory'} location ${returnLocation}.`;
+            const confirmText = split
+                ? `Create a Split Return for ${lines.length} line${lines.length === 1 ? '' : 's'}?\n${homeText}\nStock is NOT restored until the Receipt Note is POSTED. Unticked lines stay out on this DC.`
+                : `Create Return Log + OPEN Return Inward RN for every line still out?\n${homeText}\nStock is NOT restored until the Receipt Note is POSTED.`;
+            if (!confirm(confirmText)) return;
+            try {
+                const response = await fetchWithAuth(`/api/dc/${encodeURIComponent(id)}/return`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ returnReason, returnedByParty, receivedByUser, vendorInvoiceNo, notes, returnHome, returnLocation, ...(lines ? { lines } : {}) })
+                });
+                const result = await response.json();
+                if (!response.ok || result.success === false) {
+                    showToast(result.reasonCode ? `${result.reasonCode}: ${result.error}` : (result.error || 'Return failed'), 'error');
+                    return;
+                }
+                showToast(`Return Log ${result.returnLog?.id} → RN ${result.receiptNoteId} (OPEN). Post that receipt to restore the stock.`, 'success');
+                const form = document.getElementById('dcReturnForm');
+                if (form) form.style.display = 'none';
+                if (result.receiptNoteId && typeof window.lifecycleGo === 'function') {
+                    window.lifecycleGo('receipts-view', { open: result.receiptNoteId });
+                }
+            } catch (err) {
+                showToast(err.message || 'Return failed', 'error');
+            }
+            } finally {
+                if (submitBtn) delete submitBtn.dataset.busy;
+            }
+        });
+        }
     }
 
     // Print DC Button
@@ -1508,25 +2897,90 @@ function initDCView() {
             const body = document.body;
             const cleanup = () => {
                 body.classList.remove('print-dc');
+                document.documentElement.classList.remove('print-dc');
                 window.removeEventListener('afterprint', cleanup);
             };
             body.classList.add('print-dc');
+            document.documentElement.classList.add('print-dc');
             window.addEventListener('afterprint', cleanup);
             setTimeout(() => window.print(), 50);
         };
     }
 }
 
+/** Rows of one applied Set share setGroup; their quantities are fixed by the picker. */
+function addSetToDC({ set, kits, lines }) {
+    const setGroup = `SG-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    lines.forEach(({ requirement, holding, qty }, idx) => {
+        const rowId = `row_${Date.now()}_${idx}_${Math.floor(Math.random() * 1000)}`;
+        const mm = [requirement.make, requirement.model].filter(Boolean);
+        dcItemsByAssetId[rowId] = {
+            rowId,
+            assetId: holding.resourceId,
+            description: holding.name || requirement.productName,
+            make: requirement.make || '',
+            model: requirement.model || '',
+            srNo: holding.srNo || '',
+            hsn: '',
+            qty,
+            per: holding.unit || 'Nos',
+            rate: '',
+            amount: ''
+        };
+        selectedDCAssets.push({
+            ID: holding.resourceId,
+            ItemName: holding.name,
+            Make: mm[0] || '',
+            Model: mm[1] || '',
+            resourceType: holding.resourceType,
+            productId: requirement.productId,
+            SrNo: holding.srNo || '',
+            quantityAvailable: holding.quantityAvailable,
+            QuantityAvailable: holding.quantityAvailable,
+            quantity_available: holding.quantityAvailable,
+            rowId,
+            setId: set.id,
+            setName: set.name,
+            setDescription: set.description || '',
+            setHsn: set.hsn || '',
+            setMake: set.make || '',
+            setModel: set.model || '',
+            setProductId: set.productId || '',
+            setKits: kits,
+            setGroup,
+            setRequirementId: requirement.id
+        });
+    });
+    renderSelectedAssets();
+    showToast(`${set.name} × ${kits} added (${lines.length} line${lines.length === 1 ? '' : 's'})`, 'success');
+}
+
+function removeSetGroupFromDC(setGroup) {
+    const rowIds = selectedDCAssets.filter((a) => a.setGroup === setGroup).map((a) => a.rowId);
+    selectedDCAssets = selectedDCAssets.filter((a) => a.setGroup !== setGroup);
+    rowIds.forEach((rowId) => { delete dcItemsByAssetId[rowId]; });
+    renderSelectedAssets();
+}
+window.removeSetGroupFromDC = removeSetGroupFromDC;
+
 function addAssetToDC(asset) {
+    if (!isDcSelectableHolding(asset)) {
+        showToast('Sold, retired, or consumed stock cannot be added to a Delivery Challan.', 'warning');
+        return;
+    }
     // Check if the asset is already in the list
     const existingAsset = selectedDCAssets.find(a => a.ID === asset.ID);
+    if (existingAsset && existingAsset.setGroup) {
+        showToast(`${asset.ID} is already on this DC as part of ${existingAsset.setName}`, 'warning');
+        return;
+    }
     
     if (existingAsset) {
         // If it exists, just increment the quantity in the row data
         const rowId = existingAsset.rowId;
         if (dcItemsByAssetId[rowId]) {
             const currentQty = toNumber(dcItemsByAssetId[rowId].qty) || 0;
-            dcItemsByAssetId[rowId].qty = currentQty + 1;
+            dcItemsByAssetId[rowId].qty = clampDcLineQty(rowId, currentQty + 1);
             
             // Re-calculate amount
             const rate = toNumber(dcItemsByAssetId[rowId].rate);
@@ -1774,12 +3228,28 @@ function renderSelectedAssets() {
     }
 
     dcEmptyState.style.display = 'none';
+    let lastSetGroup = null;
     dcSelectedAssetsBody.innerHTML = selectedDCAssets.map(a => {
         const rowId = a.rowId;
         const row = dcItemsByAssetId[rowId] || {};
         const displayStyle = showRateAmount ? '' : 'display: none;';
-        return `
-            <tr style="border-bottom: 1px solid #eee;">
+        const inSet = Boolean(a.setGroup);
+        let setHeader = '';
+        if (inSet && a.setGroup !== lastSetGroup) {
+            setHeader = `
+            <tr style="background:#eef2ff;border-bottom:1px solid #c7d2fe;">
+                <td colspan="${showRateAmount ? 8 : 6}" style="padding:8px 10px;font-weight:700;color:#3730a3;">
+                    🧩 ${escapeHtml(a.setName || a.setId)} × ${escapeHtml(a.setKits || 1)}
+                    <span style="font-weight:400;font-size:11px;color:#6366f1;margin-left:6px;">Set — quantities fixed by the Set; remove the whole Set to change it</span>
+                </td>
+                <td style="padding:8px;text-align:center;">
+                    <button type="button" onclick="removeSetGroupFromDC('${escapeHtml(a.setGroup)}')" title="Remove this Set" style="background:none;border:none;color:#dc3545;cursor:pointer;font-size:18px;">&times;</button>
+                </td>
+            </tr>`;
+        }
+        lastSetGroup = inSet ? a.setGroup : null;
+        return `${setHeader}
+            <tr style="border-bottom: 1px solid #eee;${inSet ? 'background:#fafaff;' : ''}">
                 <td style="padding: 10px; font-family: monospace; font-size: 12px; white-space: nowrap;">${a.isPurchaseBookLine && String(a.ID || '').startsWith('PB-LINE-') ? `<span title="${a.ID}" style="color:#b45309;">Book</span>` : (a.isPurchaseBookLine ? `<span title="Book ${a.purchaseBookLineId || ''}" style="color:#b45309;">${a.ID}${String(a.resourceType || '').toUpperCase() === 'INVENTORY' ? ' · INV' : ''}</span>` : (a.isPoLine ? `<span title="${a.ID}" style="color:#0f766e;">PO Line</span>` : a.ID))}</td>
                 <td style="padding: 10px;">
                     <input data-dc-field="description" data-row-id="${rowId}" value="${String(row.description || a.ItemName || '').replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" />
@@ -1794,7 +3264,7 @@ function renderSelectedAssets() {
                     <input data-dc-field="per" data-row-id="${rowId}" value="${row.per || 'Pcs'}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: center;" />
                 </td>
                 <td style="padding: 10px; width: 70px;">
-                    <input data-dc-field="qty" data-row-id="${rowId}" value="${row.qty ?? 1}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
+                    <input data-dc-field="qty" data-row-id="${rowId}" type="number" min="0.000001" step="any"${dcHoldingAvailable(a) != null ? ` max="${dcHoldingAvailable(a)}"` : ''} value="${row.qty ?? 1}" ${inSet ? 'readonly title="Set quantity is fixed by the Set"' : ''} title="${dcHoldingAvailable(a) != null ? `${dcHoldingAvailable(a)} available` : ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;${inSet ? 'background:#f1f5f9;' : ''}" />
                 </td>
                 <td class="dc-rate-col" style="padding: 10px; width: 90px; ${displayStyle}">
                     <input data-dc-field="rate" data-row-id="${rowId}" value="${row.rate ?? ''}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" />
@@ -1803,7 +3273,7 @@ function renderSelectedAssets() {
                     <span data-dc-field="amount" data-row-id="${rowId}">${row.amount ?? ''}</span>
                 </td>
                 <td style="padding: 10px; text-align: center; width: 60px;">
-                    <button onclick="removeAssetFromDC('${rowId}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>
+                    ${inSet ? '' : `<button onclick="removeAssetFromDC('${rowId}')" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">&times;</button>`}
                 </td>
             </tr>
         `;
@@ -1818,9 +3288,13 @@ function renderSelectedAssets() {
             const existing = dcItemsByAssetId[rowId] || { rowId };
             const next = { ...existing, [field]: input.value };
             if (field === 'qty' || field === 'rate') {
-                const qty = toNumber(next.qty);
+                let qty = toNumber(next.qty);
                 const rate = toNumber(next.rate);
-                if (qty !== null) next.qty = qty;
+                if (field === 'qty' && qty !== null) {
+                    qty = clampDcLineQty(rowId, qty);
+                    next.qty = qty;
+                    input.value = String(qty);
+                } else if (qty !== null) next.qty = qty;
                 if (rate !== null) next.rate = rate;
                 if (qty !== null && rate !== null) {
                     next.amount = round2(qty * rate);
@@ -1846,12 +3320,18 @@ function showDCPreview(result) {
         if (typeof window.showDcDocumentPreview === 'function') {
             return window.showDcDocumentPreview(result, {
                 showRateAmount: typeof showRateAmount === 'boolean' ? showRateAmount : undefined,
-                showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined
+                showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined,
+                showDescription,
+                showSerial,
+                showSerialInDescription
             });
         }
-        return import('./dcDocumentView.js?v=1.3').then((mod) => mod.showDcDocumentPreview(result, {
+        return import('./dcDocumentView.js?v=2.3').then((mod) => mod.showDcDocumentPreview(result, {
             showRateAmount: typeof showRateAmount === 'boolean' ? showRateAmount : undefined,
-            showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined
+            showTotalPrice: typeof showTotalPrice === 'boolean' ? showTotalPrice : undefined,
+            showDescription,
+            showSerial,
+            showSerialInDescription
         }));
     };
     Promise.resolve(run()).catch((err) => {
@@ -1873,7 +3353,7 @@ async function openDeliveryChallan(dcId) {
     if (nav) nav.click();
 
     try {
-        const res = await fetch(`/api/dc/${encodeURIComponent(id)}`);
+        const res = await fetchWithAuth(`/api/dc/${encodeURIComponent(id)}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
             showToast('Failed to load DC: ' + (data.error || res.statusText), 'error');
@@ -1881,13 +3361,22 @@ async function openDeliveryChallan(dcId) {
         }
 
         const dc = data.dc || {};
+        window.__lastDcId = dc.ID || dc.id || id;
+        window.__lastDcDispatchReason = data.dispatchReason || null;
+        if (String(data.lifecycleStatus || '').toUpperCase() === 'DISPATCHED') {
+            await window.loadDcIntoBuilder(window.__lastDcId);
+        }
         showDCPreview({
-            id: dc.ID,
-            challanNo: dc.ChallanNo,
-            qrCode: dc.QRCode,
+            id: dc.ID || dc.id,
+            challanNo: dc.ChallanNo || dc.challanno,
+            qrCode: dc.QRCode || dc.qrcode,
             payload: data.payload || null,
-            deliveryDate: dc.DeliveryDate,
-            customerName: dc.CustomerName
+            deliveryDate: dc.DeliveryDate || dc.deliverydate,
+            customerName: dc.CustomerName || dc.customername,
+            lifecycleStatus: data.lifecycleStatus,
+            dispatchReason: data.dispatchReason,
+            returnPosition: data.returnPosition,
+            returnLogs: data.returnLogs
         });
     } catch (err) {
         console.error('Failed to load DC:', err);
@@ -1896,6 +3385,31 @@ async function openDeliveryChallan(dcId) {
 }
 
 window.openDeliveryChallan = openDeliveryChallan;
+
+async function showDCPreviewById(dcId) {
+    const id = String(dcId || '').trim();
+    if (!id) return;
+    const res = await fetchWithAuth(`/api/dc/${encodeURIComponent(id)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        showToast(data.error || 'Failed to reload DC', 'error');
+        return;
+    }
+    const dc = data.dc || {};
+    showDCPreview({
+        id: dc.ID || dc.id || id,
+        challanNo: dc.ChallanNo || dc.challanno,
+        qrCode: dc.QRCode || dc.qrcode,
+        payload: data.payload || null,
+        deliveryDate: dc.DeliveryDate || dc.deliverydate,
+        customerName: dc.CustomerName || dc.customername,
+        lifecycleStatus: data.lifecycleStatus,
+        dispatchReason: data.dispatchReason,
+        returnPosition: data.returnPosition,
+        returnLogs: data.returnLogs
+    });
+}
+window.showDCPreviewById = showDCPreviewById;
 
 async function initSheetView() {
     console.log('initSheetView() called');
@@ -2041,7 +3555,11 @@ async function initSheetView() {
             { title: "ID", field: "ID", width: 150, headerFilter: "input" },
             { title: "Type", field: "Type", width: 120, headerFilter: "input" },
             { title: "Item Name", field: "ItemName", editor: "input", headerFilter: "input" },
-            { title: "Status", field: "Status", width: 120, editor: "select", editorParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"] }, headerFilter: "select", headerFilterParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"] } },
+            { title: "Status", field: "Status", width: 120, editor: "select",
+                editable: (cell) => isSuperuserSession() || !isOverrideControlledStatus(cell.getValue()),
+                editorParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"]
+                    .filter((s) => isSuperuserSession() || !isOverrideControlledStatus(s)) },
+                headerFilter: "select", headerFilterParams: { values: ["In Store", "Under Inspection", "Project", "Owned", "Sold", "Demo", "In-Use", "Rental", "Stand By", "In-Repair", "Scraped"] } },
             { title: "Make", field: "Make", editor: "input", headerFilter: "input" },
             { title: "Model", field: "Model", editor: "input", headerFilter: "input" },
             { title: "Serial No", field: "SrNo", editor: "input", headerFilter: "input" },
@@ -2104,7 +3622,9 @@ async function initSheetView() {
             const id = String(data.ID || data.Id || data.id || '').trim();
             if (id) data.ID = id;
             console.log('Cell edited, saving asset:', data);
-            window.saveAsset(data);
+            Promise.resolve(window.saveAsset(data)).then((saved) => {
+                if (!saved && typeof cell.restoreOldValue === 'function') cell.restoreOldValue();
+            });
         },
         rowClick: function(e, row) {
             const data = row.getData();
@@ -2249,9 +3769,25 @@ export function setupConversionUI() {
                 operationLabel = 'multiply';
             }
 
+            if (!canUseUnitConversionTool()) {
+                showToast('Unit conversion is available to admin and superuser.', 'error');
+                return;
+            }
             if (confirm(`Are you sure you want to convert base unit from "${qtyUnitEl.value || 'None'}" to "${convUnit}"?\n\nThis will ${operationLabel} current quantity (${currentQty}) by ${convFactor} resulting in ${newQty} ${convUnit}.`)) {
+                const fromUnit = String(qtyUnitEl.value || '').trim();
                 qtyUnitEl.value = convUnit;
                 qtyTotalEl.value = parseFloat(newQty); // Remove trailing zeros
+                const form = document.getElementById('addAssetItemForm');
+                if (form) {
+                    form.dataset.unitConversion = JSON.stringify({
+                        fromUnit,
+                        fromQty: currentQty,
+                        toUnit: convUnit,
+                        toQty: Number(parseFloat(newQty)),
+                        factor: convFactor,
+                        mode: convMode
+                    });
+                }
                 
                 // Keep the conversion parameters for persistence so they can be reused
                 // Only clear the "Apply" state visually if needed, but we want them saved
@@ -2321,6 +3857,143 @@ export function addChildField(data = null) {
     container.appendChild(row);
 }
 
+function folderPathLabel(node, byKey) {
+    const names = [];
+    const seen = new Set();
+    let current = node;
+    while (current && !seen.has(current.ID)) {
+        seen.add(current.ID);
+        names.unshift(current.Name || current.ID);
+        const parentKey = current.ParentID;
+        current = parentKey ? (byKey.get(String(parentKey)) || null) : null;
+    }
+    return names.join(' / ');
+}
+
+function nodesInModule(moduleName) {
+    const all = (window.hierarchyManager && window.hierarchyManager.data) || [];
+    const byKey = new Map();
+    all.forEach((node) => {
+        if (node.ID) byKey.set(String(node.ID), node);
+        if (node.Name) byKey.set(String(node.Name), node);
+    });
+    const folders = all.filter((node) => node.type === 'folder' && (!moduleName || !node.Module || node.Module === moduleName));
+    const folderKeys = new Set(folders.flatMap((node) => [String(node.ID), String(node.Name)]));
+    const belongs = (node) => {
+        const seen = new Set();
+        let current = node;
+        while (current && !seen.has(current.ID)) {
+            seen.add(current.ID);
+            if (current.type === 'folder') return folderKeys.has(String(current.ID)) || folderKeys.has(String(current.Name));
+            current = current.ParentID ? byKey.get(String(current.ParentID)) : null;
+        }
+        return false;
+    };
+    return all
+        .filter((node) => node.type === 'folder' ? folders.includes(node) : belongs(node))
+        .map((node) => ({ node, label: folderPathLabel(node, byKey) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function fillAndOpenFolderModal(preset, { edit = false } = {}) {
+    const modal = document.getElementById('addFolderModal');
+    const select = document.getElementById('folderParent');
+    const moduleSelect = document.getElementById('folderModule');
+    const hint = document.getElementById('folderParentHint');
+    if (!modal || !select) return;
+    const form = document.getElementById('addFolderForm');
+    if (form) {
+        form.reset();
+        delete form.dataset.editId;
+    }
+    const moduleName = localStorage.getItem('selectedAssetCategory') || 'IT';
+    if (moduleSelect) moduleSelect.value = moduleName;
+    const editId = edit ? String(preset?.ID || preset?.id || '') : '';
+    const options = nodesInModule(moduleName).filter(({ node }) => node.type === 'folder' && (!editId || String(node.ID) !== editId));
+    select.innerHTML = '<option value="">Top level</option>' + options.map(({ node, label }) => {
+        const value = `folder:${node.ID}`;
+        return `<option value="${String(value).replace(/"/g, '&quot;')}">${label.replace(/</g, '')}</option>`;
+    }).join('');
+    let chosen = '';
+    const title = modal.querySelector('h3');
+    const submitBtn = form?.querySelector('button[type="submit"]');
+    if (edit && preset) {
+        if (form) form.dataset.editId = editId;
+        const nameInput = document.getElementById('folderName');
+        const iconInput = document.getElementById('folderIcon');
+        if (nameInput) nameInput.value = preset.Name || preset.name || '';
+        if (iconInput) iconInput.value = preset.Icon || preset.icon || '📁';
+        const parentId = String(preset.ParentID || preset.parentid || preset.ParentId || '');
+        if (parentId) chosen = `folder:${parentId}`;
+        if (title) title.textContent = '📁 Edit Folder';
+        if (submitBtn) submitBtn.textContent = 'Save Folder';
+    } else if (preset && (preset.ID || preset.id || preset.Name || preset.name)) {
+        const id = String(preset.ID || preset.id || '');
+        const name = String(preset.Name || preset.name || '');
+        const type = preset.type || '';
+        const match = options.find(({ node }) => (id && String(node.ID) === id) || (name && String(node.Name) === name));
+        if (match) chosen = `folder:${match.node.ID}`;
+        else if (type === 'folder' && id) chosen = `folder:${id}`;
+        if (title) title.textContent = '📁 Add New Parent Folder';
+        if (submitBtn) submitBtn.textContent = 'Create Folder';
+    } else {
+        if (title) title.textContent = '📁 Add New Parent Folder';
+        if (submitBtn) submitBtn.textContent = 'Create Folder';
+    }
+    select.value = chosen;
+    if (hint) {
+        const picked = options.find(({ node }) => `folder:${node.ID}` === select.value);
+        hint.textContent = picked
+            ? `This folder will be stored inside ${picked.label}.`
+            : 'Leave this as Top level to create a root folder.';
+    }
+    select.onchange = () => {
+        if (!hint) return;
+        const picked = options.find(({ node }) => `folder:${node.ID}` === select.value);
+        hint.textContent = picked
+            ? `This folder will be stored inside ${picked.label}.`
+            : 'Leave this as Top level to create a root folder.';
+    };
+    modal.style.display = 'flex';
+};
+
+function setupPageFolderMenu() {
+    const home = document.getElementById('home-view');
+    if (!home || home.dataset.folderMenuBound === '1') return;
+    home.dataset.folderMenuBound = '1';
+    let menu = document.getElementById('page-folder-menu');
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'page-folder-menu';
+        menu.className = 'custom-context-menu';
+        menu.innerHTML = `<div class="menu-item" data-action="create-folder"><span class="menu-icon">📁</span> <span class="menu-label">Create new folder</span></div>`;
+        document.body.appendChild(menu);
+        document.addEventListener('click', () => { menu.style.display = 'none'; });
+        menu.onclick = (event) => {
+            const item = event.target.closest('.menu-item');
+            if (!item) return;
+            menu.style.display = 'none';
+            const node = window.currentDashboardParent;
+            if (node && node.type === 'kind') {
+                showToast('A folder can only be created inside another folder.', 'error');
+                return;
+            }
+            if (node && typeof window.openAddFolderModal === 'function') window.openAddFolderModal(node);
+        };
+    }
+    home.addEventListener('contextmenu', (event) => {
+        const node = window.currentDashboardParent;
+        if (!node || !node.Name || node.type !== 'folder') return;
+        if (event.target.closest('#sidebar-tree, input, textarea, select, button, a, .custom-context-menu')) return;
+        event.preventDefault();
+        const label = menu.querySelector('.menu-label');
+        if (label) label.textContent = `Create new folder inside ${node.Name}`;
+        menu.style.top = `${event.clientY}px`;
+        menu.style.left = `${event.clientX}px`;
+        menu.style.display = 'block';
+    });
+}
+
 // --- Parent Folder Modal Logic ---
 function setupFolderHandlers() {
     const btnAddFolder = document.getElementById('btnAddAssetFolder');
@@ -2334,8 +4007,7 @@ function setupFolderHandlers() {
         btnAddFolder.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log('Add Parent Folder button clicked');
-            if (modal) modal.style.display = 'flex';
+            window.openAddFolderModal();
         };
     }
 
@@ -2351,16 +4023,29 @@ function setupFolderHandlers() {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
+            const parentValue = String(formData.get('folderParent') || '');
+            const parentSep = parentValue.indexOf(':');
+            const parentKind = parentSep === -1 ? '' : parentValue.slice(0, parentSep);
+            const parentId = parentSep === -1 ? '' : parentValue.slice(parentSep + 1);
+            if (parentKind && parentKind !== 'folder') {
+                showToast('A folder can only be created inside another folder.', 'error');
+                return;
+            }
             const data = {
                 Name: formData.get('folderName'),
                 Module: formData.get('folderModule'),
-                Icon: formData.get('folderIcon') || '📁'
+                Icon: formData.get('folderIcon') || '📁',
+                ParentID: parentKind === 'folder' ? parentId : null
             };
+            if (form.dataset.editId) data.ID = form.dataset.editId;
 
             try {
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers.Authorization = `Bearer ${token}`;
                 const response = await fetch('/api/folders', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify(data)
                 });
 
@@ -2369,7 +4054,7 @@ function setupFolderHandlers() {
                     let created = {};
                     try { created = text ? JSON.parse(text) : {}; } catch(_) {}
                     const createdId = String(created.ID || created.id || created.folder?.ID || created.folder?.id || '');
-                    showToast('Parent Folder created successfully!', 'success');
+                    showToast(form.dataset.editId ? 'Folder saved.' : 'Folder created.', 'success');
                     closeModal();
                     // Refresh the folders globally
                     if (window.loadFolders) {
@@ -2407,6 +4092,7 @@ export function setupDashboard() {
 
     // Setup Parent Folder Handlers
     setupFolderHandlers();
+    setupPageFolderMenu();
 
     // Setup Children / Components UI
     setupChildrenUI();
@@ -2656,8 +4342,30 @@ function syncGlobalSearchPlaceholder() {
             
             // 2. Handle Add Asset Kind Button (top right)
             if (e.target.id === 'btnAddAssetKind' || e.target.closest('#btnAddAssetKind')) {
-                console.log('Add Asset Kind button clicked');
-                openAddKindModal();
+                const node = window.currentDashboardParent;
+                const type = node?.type || '';
+                const role = type === 'kind' ? kindRoleOf(node) : '';
+                if (type === 'kind' && role === 'MAKE') {
+                    showToast('A Category cannot be created inside a Make.', 'error');
+                    return;
+                }
+                if (type && type !== 'folder' && role !== 'CATEGORY') {
+                    showToast('A Category must be created inside a Folder or Category.', 'error');
+                    return;
+                }
+                openAddKindModal({
+                    role: 'CATEGORY',
+                    parentName: (type === 'folder' || role === 'CATEGORY') ? (node.Name || node.name) : ''
+                });
+                return;
+            }
+            if (e.target.id === 'btnAddAssetMake' || e.target.closest('#btnAddAssetMake')) {
+                const node = window.currentDashboardParent;
+                if (!node || node.type !== 'kind' || kindRoleOf(node) === 'MAKE') {
+                    showToast('A Make can only be created inside a Category or Sub-category.', 'error');
+                    return;
+                }
+                openAddKindModal({ role: 'MAKE', parentName: node.Name || node.name });
                 return;
             }
 
@@ -2681,12 +4389,7 @@ function syncGlobalSearchPlaceholder() {
             if (addBtn) {
                 e.preventDefault();
                 e.stopPropagation();
-                if (typeof window.switchDashboardSubView === 'function') {
-                    window.switchDashboardSubView('physical-intakes-view');
-                }
-                if (typeof window.startPhysicalIntake === 'function') {
-                    window.startPhysicalIntake();
-                }
+                startAssetIntakeFromHierarchy(addBtn.getAttribute('data-path') || addBtn.getAttribute('data-kind') || '');
                 return;
             }
 
@@ -2762,7 +4465,7 @@ function syncGlobalSearchPlaceholder() {
     if (btnAddAssetKind) {
         btnAddAssetKind.style.display = 'flex';
         btnAddAssetKind.style.visibility = 'visible';
-        btnAddAssetKind.style.opacity = '1';
+        btnAddAssetKind.style.removeProperty('opacity');
     }
 
     const btnAddAssetItem = document.getElementById('btnAddAssetItem');
@@ -2776,7 +4479,13 @@ function syncGlobalSearchPlaceholder() {
     if (btnAddAssetFolder) {
         btnAddAssetFolder.style.display = 'flex';
         btnAddAssetFolder.style.visibility = 'visible';
-        btnAddAssetFolder.style.opacity = '1';
+        btnAddAssetFolder.style.removeProperty('opacity');
+    }
+    const btnAddAssetMakeVis = document.getElementById('btnAddAssetMake');
+    if (btnAddAssetMakeVis) {
+        btnAddAssetMakeVis.style.display = 'flex';
+        btnAddAssetMakeVis.style.visibility = 'visible';
+        btnAddAssetMakeVis.style.removeProperty('opacity');
     }
 
     const btnBatchPrintQr_visibility = document.getElementById('btnBatchPrintQr');
@@ -2813,6 +4522,8 @@ function syncGlobalSearchPlaceholder() {
         btnRetired.style.visibility = 'visible';
         btnRetired.style.opacity = '1';
     }
+
+    syncHierarchyCreateButtons();
 }
 
 // --- Project View Functions ---
@@ -3122,7 +4833,10 @@ window.showProjectDetails = async function(projectId) {
             const user = JSON.parse(userStr);
             console.log('[ProjectDetails] Current user role:', user.role);
             if (clientUserAction) {
-                clientUserAction.style.display = (user.role === 'admin' || user.role === 'superuser') ? 'block' : 'none';
+                const canCreateProjectUser = (typeof window !== 'undefined' && typeof window.hasPermission === 'function')
+                    ? window.hasPermission('user.manage')
+                    : false;
+                clientUserAction.style.display = canCreateProjectUser ? 'block' : 'none';
             }
         } catch (e) {
             console.warn('[ProjectDetails] Failed to parse currentUser from localStorage');
@@ -3407,6 +5121,7 @@ window.renderDashboardByNode = async function(node) {
     
     // Set global parent
     window.currentDashboardParent = node;
+    syncHierarchyCreateButtons();
     
     // Clear search and other filters
     const searchInput = document.getElementById('searchInput');
@@ -3886,6 +5601,47 @@ This action CANNOT be undone once the 30-day window closes.`;
     } catch (err) {
         console.error('Delete category error:', err);
         alert('Error deleting category');
+    }
+};
+
+window.deleteHierarchyNode = async function(node) {
+    if (!node) return;
+    const isKind = node.type === 'kind';
+    const isMake = isKind && kindRoleOf(node) === 'MAKE';
+    const typeLabel = isMake ? 'Make' : (isKind ? 'Category' : 'Folder');
+    const nodeName = node.Name || node.name || '';
+    const id = node.ID || node.id || nodeName;
+    const title = `⚠️  Delete ${typeLabel}: "${nodeName}"`;
+    const body = `Are you SURE you want to DELETE this ${typeLabel}?
+
+Name:  "${nodeName}"
+
+This will:
+  • Remove the ${typeLabel} node
+  • Hide it from sidebar and cards
+  • PERMANENTLY purge after 30 days
+
+This action CANNOT be undone once the 30-day window closes.`;
+    if (!(await window.safeConfirm(title, body, { confirmBtnLabel: `Yes, Delete ${typeLabel} "${nodeName}"` }))) return;
+    try {
+        const url = isKind
+            ? `/api/asset_kinds/${encodeURIComponent(id)}`
+            : `/api/folders/${encodeURIComponent(id)}`;
+        const response = await fetch(url, { method: 'DELETE' });
+        if (response.ok) {
+            showToast(`${typeLabel} deleted.`, 'success');
+            if (window.loadFolders) await window.loadFolders();
+            if (window.renderSidebarTree) await window.renderSidebarTree();
+            const assets = window.allAssets || [];
+            const filterFn = window.getFilteredAssets || (() => assets);
+            renderDashboard(assets, filterFn);
+        } else {
+            const err = await response.text();
+            showToast(`Failed to delete: ${err}`, 'error');
+        }
+    } catch (err) {
+        console.error('Hierarchy delete error:', err);
+        showToast('Error during deletion', 'error');
     }
 };
 
@@ -4554,6 +6310,7 @@ export function renderSidebarTree() {
 
         // Bridge UI and UX Bubbles
         if (manager.syncUX) manager.syncUX();
+        syncHierarchyCreateButtons();
 
         // Add toggle functionality for the main "All Assets" group
         const mainToggle = sidebarMenu.querySelector('.tree-toggle-main');
@@ -4574,6 +6331,7 @@ export function renderSidebarTree() {
                 e.preventDefault();
                 window.currentInventorySidebar = null;
                 window.currentDashboardParent = null;
+                syncHierarchyCreateButtons();
                 if (window.showView) window.showView('dashboardView');
                 if (window.switchDashboardSubView) window.switchDashboardSubView('home-view');
                 
@@ -4787,32 +6545,17 @@ export function renderSidebarTree() {
                         // Sync bubbles after activation
                         if (window.syncSidebarBubbles) window.syncSidebarBubbles();
 
-                        // Navigate dashboard to this parent
+                        window.currentInventorySidebar = null;
                         window.currentDashboardParent = node;
-                        
-                        // Determine which view to refresh
-                        const activeSubViewId = getActiveDashboardSubView();
-                        if (activeSubViewId === 'sheet-view') {
-                            if (window.initSheetView) window.initSheetView();
-                        } else if (!activeSubViewId || activeSubViewId === 'home-view') {
-                            const homeView = document.getElementById('home-view');
-                            if (homeView && homeView.style.display === 'none') {
-                                homeView.style.display = 'flex';
-                                homeView.classList.remove('hidden');
-                                document.querySelectorAll('.view').forEach(v => {
-                                    if (v.id !== 'home-view' && v.id !== 'dashboardView' && v.parentElement?.id === 'dashboard-container') {
-                                        v.style.display = 'none';
-                                        v.classList.add('hidden');
-                                    }
-                                });
-                            }
-                            renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
+                        syncHierarchyCreateButtons();
+                        if (window.showView) window.showView('dashboardView');
+                        if (window.switchDashboardSubView) window.switchDashboardSubView('home-view');
+                        const homeView = document.getElementById('home-view');
+                        if (homeView) {
+                            homeView.style.display = 'flex';
+                            homeView.classList.remove('hidden');
                         }
-                        
-                        // If it's a leaf kind, also open the list modal immediately
-                        if (node.type === 'kind' && (!node.children || node.children.length === 0)) {
-                            showAssetList(node);
-                        }
+                        renderDashboard(window.allAssets, window.getFilteredAssets || (() => window.allAssets));
                     }
                 };
             });
@@ -5384,23 +7127,15 @@ export function renderDashboard(assets, filteredAssets) {
             
         console.log(`[Dashboard] Selected Node: ${parentNode.Name} (${parentNode.type})`);
         
-        // Filter assets for this hierarchy branch
-        const filteredByBranch = assets.filter(a => {
-            if (a.Category !== category) return false;
-            const assetType = (a.Type || '').toLowerCase().trim();
-            const assetName = (a.Name || '').toLowerCase().trim();
-            
-            return descendantKindNames.some(kindName => {
-                const k = kindName.toLowerCase().trim();
-                return assetType === k || assetName === k || assetType === k + 's' || assetType === k + 'es';
-            });
-        });
+        const filteredByBranch = assets.filter((a) => assetBelongsUnderNode(a, parentNode, category));
 
         recursiveAssets = filteredByBranch;
         
-        // Direct assets: match the current node's name exactly
-        const pName = parentNode.Name.toLowerCase().trim();
-        directAssets = filteredByBranch.filter(a => {
+        const nodePath = hierarchyPathForNode(parentNode).toLowerCase();
+        directAssets = filteredByBranch.filter((a) => {
+            const stored = assetFolderPathText(a).toLowerCase();
+            if (stored && nodePath) return stored === nodePath;
+            const pName = parentNode.Name.toLowerCase().trim();
             const t = (a.Type || '').toLowerCase().trim();
             const n = (a.Name || '').toLowerCase().trim();
             return t === pName || n === pName;
@@ -5413,7 +7148,9 @@ export function renderDashboard(assets, filteredAssets) {
     const dashboardTitle = document.getElementById('dashboard-title');
     if (dashboardTitle) {
         const isLeafKindNode = parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0);
-        const haveAssets = (isLeafKindNode && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0)) || (parentNode && directAssets && directAssets.length > 0) || (window.currentSearchQuery && (typeof assetsToRender !== 'undefined' ? assetsToRender.length > 0 : recursiveAssets.length > 0));
+        const haveAssets = (isLeafKindNode && recursiveAssets.length > 0)
+            || (parentNode && directAssets && directAssets.length > 0)
+            || (window.currentSearchQuery && assetsToRender.length > 0);
         // Match Inventory: show Cards/Table only when the view is an asset listing (leaf list,
         // direct assets, or search results) — not on root / category / manufacturer / model folders.
         const showAssetViewToggle = Boolean(haveAssets);
@@ -5450,6 +7187,8 @@ export function renderDashboard(assets, filteredAssets) {
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
                 ${window.currentDashboardParent ? '<button id="btnDashboardBack" class="icon-button" style="background: #e7f3ff; color: #0078d4; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #b3d7ff; cursor: pointer;">←</button>' : ''}
                 <span>${parentNode ? parentNode.Name : (category === 'In-House' || category === 'SERVICE' ? 'Service Assets' : `${category} Assets`)}</span>
+                <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About Assets" data-tip="ASSET = individually identified physical holding. This is not a Product. Quantity-tracked holdings are under Inventory. Procurement stock arrives through Receipt Notes. Existing / non-procurement stock is registered with Physical Intake."><span aria-hidden="true">i</span></button>
+                ${parentNode && parentNode.type === 'kind' ? '<button type="button" id="btnRegisterAssetHere" class="action-button green" style="padding:4px 10px;font-size:11px;font-weight:700;">+ Asset</button>' : ''}
                 ${window.currentSearchQuery ? `<span style="background: #e7f3ff; color: #0078d4; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: flex; align-items: center; gap: 5px; border: 1px solid #0078d4;">🔍 "${window.currentSearchQuery}" <span id="btnClearSearch" style="cursor: pointer; font-weight: bold;">&times;</span></span>` : ''}
                 ${viewToggleHtml}
                 <button id="btnHierarchyDebug" style="background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 10px; padding: 2px 6px; cursor: pointer; margin-left: auto; opacity: 0.6;">Debug</button>
@@ -5468,6 +7207,14 @@ export function renderDashboard(assets, filteredAssets) {
             };
         }
         
+        const btnRegisterHere = document.getElementById('btnRegisterAssetHere');
+        if (btnRegisterHere) {
+            btnRegisterHere.onclick = (e) => {
+                e.stopPropagation();
+                startAssetIntakeFromHierarchy(parentNode);
+            };
+        }
+
         // Add Back Handler
         const btnBack = document.getElementById('btnDashboardBack');
         if (btnBack) {
@@ -5579,6 +7326,7 @@ export function renderDashboard(assets, filteredAssets) {
             const purchase = _dashFmtDate(asset.PurchaseDate || asset.purchasedate);
             const parentId = _dashEscapeHtml(asset.ParentId || asset.parentid || '-');
             const itemName = _dashEscapeHtml(asset.ItemName || asset.Name || '-');
+            const itemDesc = _dashEscapeHtml(asset.ItemDescription || asset.itemdescription || asset.Description || '');
 
             return `
                 <tr class="dash-table-row" data-id="${idAttr}" style="cursor: pointer; ${isRetired ? 'opacity: 0.6; filter: grayscale(0.5);' : ''}">
@@ -5586,6 +7334,7 @@ export function renderDashboard(assets, filteredAssets) {
                     <td style="text-align:center;">${iconHtml}</td>
                     <td>
                         <div style="font-weight: 600;">${itemName}</div>
+                        ${itemDesc ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${itemDesc}</div>` : ''}
                         ${qtyTracked ? `<button type="button" class="dash-row-qty-history" data-id="${idAttr}" style="margin-top:3px; color: #4338ca; background: #e0e7ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #c7d2fe; font-size: 10px; font-weight: 700; cursor: pointer;">📅 History</button>` : ''}
                     </td>
                     <td><span class="status-badge ${statusClass}" style="${statusColor ? `background: ${statusColor}15; color: ${statusColor}; border: 1px solid ${statusColor}40;` : ''}">${status}</span></td>
@@ -5759,6 +7508,9 @@ export function renderDashboard(assets, filteredAssets) {
                 </div>
                 <div class="asset-card-header" style="margin-bottom: 4px;">
                     <span class="asset-card-title" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${_dashEscapeHtml(asset.ItemName || asset.Name || '-')}</span>
+                    ${asset.ItemDescription || asset.itemdescription || asset.Description
+                        ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${_dashEscapeHtml(asset.ItemDescription || asset.itemdescription || asset.Description)}</div>`
+                        : ''}
                 </div>
                 <div class="asset-card-status" style="grid-template-columns: 1fr; border-top: 1px solid #f0f0f0; margin-top: 2px; padding-top: 4px;">
                     <div class="asset-card-status-item">
@@ -5830,15 +7582,19 @@ export function renderDashboard(assets, filteredAssets) {
     // If it's a leaf kind (no children), show assets ON PAGE directly (cards or table, just like inventory) instead of opening the list modal.
         if (parentNode && parentNode.type === 'kind' && (!parentNode.children || parentNode.children.length === 0)) {
             assetGrid.innerHTML = '';
+            let leafAssets = recursiveAssets;
+            if (window.currentSearchQuery) {
+                leafAssets = recursiveAssets.filter((a) => matchesQuery(a, window.currentSearchQuery));
+            }
             const viewMode = window.dashboardViewMode || 'table';
             if (viewMode === 'table') {
                 const wrapper = document.createElement('div');
                 wrapper.style = 'grid-column: 1 / -1;';
-                wrapper.innerHTML = renderAssetsTable(assetsToRender.length ? assetsToRender : recursiveAssets);
+                wrapper.innerHTML = renderAssetsTable(leafAssets);
                 assetGrid.appendChild(wrapper);
-                wireDashboardTableRowHandlers(wrapper, assetsToRender.length ? assetsToRender : recursiveAssets);
+                wireDashboardTableRowHandlers(wrapper, leafAssets);
             } else {
-                renderDashboardCardsGrid(assetGrid, assetsToRender.length ? assetsToRender : recursiveAssets);
+                renderDashboardCardsGrid(assetGrid, leafAssets);
             }
             return;
         }
@@ -5984,13 +7740,14 @@ export function renderDashboard(assets, filteredAssets) {
 
     displayNodes.forEach(node => {
         const isKind = node.type === 'kind';
+        const isMake = isKind && String(node.KindRole || node.kind_role || '').toUpperCase() === 'MAKE';
         const nodeName = node.Name;
         
         // Calculate stats recursively for this node
         const nodeDescendants = manager.getDescendants(node.ID, true);
         const nodeKindNames = nodeDescendants.filter(d => d.type === 'kind').map(d => d.Name);
         
-        const nodeAssets = assets.filter(a => nodeKindNames.includes(a.Type) && a.Category === category);
+        const nodeAssets = assets.filter((a) => assetBelongsUnderNode(a, node, category));
         
         const realAssets = nodeAssets.filter(a => {
             const p = a.isPlaceholder;
@@ -6039,34 +7796,30 @@ export function renderDashboard(assets, filteredAssets) {
         assetCard.onclick = (e) => {
                     e.stopPropagation(); // Prevent global listener from firing redundant showAssetList(null)
                     
-                    if (node.children && node.children.length > 0) {
-                        // Drill down if there are children
-                        window.currentDashboardParent = node;
-                        renderDashboard(window.allAssets, filteredAssets);
-                    } else if (node.type === 'kind') {
-                        // Leaf kind - show assets
-                        showAssetList(node);
-                    } else {
-                        // It's a folder with no children, show message or navigate
-                        window.currentDashboardParent = node;
-                        renderDashboard(window.allAssets, filteredAssets);
-                    }
+                    window.currentDashboardParent = node;
+                    syncHierarchyCreateButtons();
+                    renderDashboard(window.allAssets, filteredAssets);
                 };
 
-        const displayImg = node.DisplayImage || node.Icon;
+        const rawIcon = node.DisplayImage || node.Icon || '';
+        const displayImg = (isMake && (rawIcon === '™' || rawIcon === '™️')) ? '' : rawIcon;
         const isUrl = displayImg && (displayImg.startsWith('/') || displayImg.startsWith('http'));
         const isEmoji = displayImg && !isUrl && /[^\x00-\x7F]/.test(displayImg);
         const isMaterialIcon = displayImg && !isUrl && !isEmoji;
 
         const user = window.currentUser || {};
-        const isAdmin = user.role === 'admin' || user.role === 'superuser';
-        
-        const deleteBtnHtml = isAdmin ? `
-            <button class="asset-card-delete-button" title="Delete ${isKind ? 'Category' : 'Folder'}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
+        const canDeleteHierarchy = (typeof window !== 'undefined' && typeof window.hasPermission === 'function')
+            ? window.hasPermission('manage.hierarchy')
+            : false;
+
+        const deleteBtnHtml = canDeleteHierarchy ? `
+            <button class="asset-card-delete-button" title="Delete ${isMake ? 'Make' : (isKind ? 'Category' : 'Folder')}" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.8); border: 1px solid #ffccc7; color: #ff4d4f; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; z-index: 10;">🗑️</button>
         ` : '';
 
+        const nodePath = hierarchyPathForNode(node);
         assetCard.innerHTML = `
-            ${isKind ? `<button class="asset-card-add-button" data-kind="${nodeName}" title="Add ${nodeName}">+</button>` : ''}
+            ${isKind ? `<button class="asset-card-add-button" data-kind="${_dashEscapeHtml(nodeName)}" data-path="${_dashEscapeHtml(nodePath)}" title="Register an asset in ${ _dashEscapeHtml(nodeName) }">+</button>` : ''}
+            ${isMake ? '<span class="asset-card-make-tm" title="Make">™</span>' : ''}
             ${deleteBtnHtml}
             <div class="asset-card-icon">
                 ${isUrl 
@@ -6099,7 +7852,7 @@ export function renderDashboard(assets, filteredAssets) {
             if (addBtn) {
                 addBtn.onclick = (e) => {
                     e.stopPropagation();
-                    openAddItemModal(nodeName);
+                    startAssetIntakeFromHierarchy(node);
                 };
             }
         }
@@ -6124,7 +7877,7 @@ This action CANNOT be undone once the 30-day window closes.`;
                 if (!(await window.safeConfirm(title, body, { confirmBtnLabel: `Yes, Delete ${typeLabel} "${nodeName}"` }))) return;
 
                 try {
-                    const url = isKind ? `/api/asset_kinds/${encodeURIComponent(nodeName)}` : `/api/folders/${encodeURIComponent(node.ID)}`;
+                    const url = isKind ? `/api/asset_kinds/${encodeURIComponent(node.ID || nodeName)}` : `/api/folders/${encodeURIComponent(node.ID)}`;
                     const response = await fetch(url, { method: 'DELETE' });
 
                     if (response.ok) {
@@ -6357,97 +8110,202 @@ window.setupBreakLineageUI = async function setupBreakLineageUI({
     await reload();
 };
 
-export function openAddFolderModal() {
-    console.log('openAddFolderModal() called');
-    const modal = document.getElementById('addFolderModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        
-        // Reset the form
-        const form = document.getElementById('addFolderForm');
-        if (form) form.reset();
-        
-        // Pre-fill current module
-        const moduleSelect = document.getElementById('folderModule');
-        if (moduleSelect) {
-            moduleSelect.value = localStorage.getItem('selectedAssetCategory') || 'IT';
+export function openAddFolderModal(preset, opts = {}) {
+    fillAndOpenFolderModal(preset, opts);
+}
+
+function kindRoleOf(row) {
+    const direct = String(row?.KindRole || row?.kind_role || '').toUpperCase();
+    if (direct === 'MAKE' || direct === 'CATEGORY') return direct;
+    const name = String(row?.Name || row?.name || '');
+    const hit = (window.allAssetKinds || []).find((k) => String(k.Name || k.name) === name);
+    return String(hit?.KindRole || hit?.kind_role || '').toUpperCase() === 'MAKE' ? 'MAKE' : 'CATEGORY';
+}
+
+function hierarchyPathForNode(node) {
+    if (!node) return '';
+    const manager = window.hierarchyManager;
+    const names = [];
+    let cur = node;
+    for (let guard = 0; cur && guard < 24; guard += 1) {
+        const name = String(cur.Name || cur.name || '').trim();
+        if (name) names.unshift(name);
+        const pid = cur.ParentID || cur.parentid || cur.ParentId || cur.ParentName || cur.parentname;
+        if (!pid || !manager || typeof manager.findNode !== 'function') break;
+        const parent = manager.findNode(pid);
+        if (!parent || parent === cur || parent.ID === cur.ID) break;
+        cur = parent;
+    }
+    return names.join(' / ');
+}
+
+function assetFolderPathText(asset) {
+    return String(asset?.folder_path || asset?.folderPath || asset?.FolderPath || '').trim();
+}
+
+function kindNameIsUniqueInModule(name, moduleName) {
+    const key = String(name || '').toLowerCase();
+    const hits = (window.allAssetKinds || []).filter((kind) => {
+        if (Number(kind.is_deleted || kind.IsDeleted) === 1) return false;
+        const mod = kind.Module || kind.module;
+        if (moduleName && mod && mod !== moduleName) return false;
+        return String(kind.Name || kind.name || '').toLowerCase() === key;
+    });
+    return hits.length <= 1;
+}
+
+function assetBelongsUnderNode(asset, node, category) {
+    if (!asset || !node) return false;
+    if (category && (asset.Category || asset.category) !== category) return false;
+    const nodePath = hierarchyPathForNode(node);
+    const stored = assetFolderPathText(asset);
+    if (stored && nodePath) {
+        const a = stored.toLowerCase();
+        const n = nodePath.toLowerCase();
+        return a === n || a.startsWith(`${n} / `);
+    }
+    const nodeName = String(node.Name || node.name || '');
+    if (node.type === 'kind' && !kindNameIsUniqueInModule(nodeName, category)) return false;
+    const manager = window.hierarchyManager;
+    const descendants = (manager && node.ID && typeof manager.getDescendants === 'function')
+        ? manager.getDescendants(node.ID, true)
+        : [node];
+    const names = new Set(descendants.filter((d) => d.type === 'kind').map((d) => String(d.Name || d.name || '').toLowerCase()));
+    if (node.type === 'kind') names.add(nodeName.toLowerCase());
+    const type = String(asset.Type || asset.type || '').toLowerCase();
+    const item = String(asset.Name || asset.ItemName || '').toLowerCase();
+    return names.has(type) || names.has(item);
+}
+
+function startAssetIntakeFromHierarchy(node) {
+    const path = typeof node === 'string' ? node : hierarchyPathForNode(node);
+    if (typeof window.switchDashboardSubView === 'function') {
+        window.switchDashboardSubView('physical-intakes-view');
+    }
+    if (typeof window.startPhysicalIntake === 'function') {
+        window.startPhysicalIntake({ holdingType: 'ASSET', folderPath: path });
+        return;
+    }
+    const nav = document.getElementById('nav-physical-intakes');
+    if (nav) nav.click();
+}
+window.startAssetIntakeFromHierarchy = startAssetIntakeFromHierarchy;
+
+function setHierarchyCreateBtnState(btn, enabled, title) {
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    btn.classList.toggle('is-off', !enabled);
+    btn.style.removeProperty('opacity');
+    btn.title = title;
+}
+
+function syncHierarchyCreateButtons() {
+    const node = window.currentDashboardParent;
+    const type = node?.type || '';
+    const role = type === 'kind' ? kindRoleOf(node) : (type === 'folder' ? 'FOLDER' : '');
+    const canFolder = !node || type === 'folder';
+    const canCategory = type === 'folder' || role === 'CATEGORY';
+    const canMake = role === 'CATEGORY';
+    setHierarchyCreateBtnState(
+        document.getElementById('btnAddAssetFolder'),
+        canFolder,
+        canFolder
+            ? (node ? `Create folder inside ${node.Name}` : 'Create a top folder')
+            : 'A folder can only be created inside another folder'
+    );
+    setHierarchyCreateBtnState(
+        document.getElementById('btnAddAssetKind'),
+        canCategory,
+        canCategory
+            ? (node ? `Create category inside ${node.Name}` : 'Create a category')
+            : 'A Category must be created inside a Folder or Category'
+    );
+    setHierarchyCreateBtnState(
+        document.getElementById('btnAddAssetMake'),
+        canMake,
+        canMake
+            ? `Create make inside ${node.Name}`
+            : 'A Make can only be created inside a Category or Sub-category'
+    );
+}
+
+function populateKindParentSelect(parentSelect, { role = 'CATEGORY', selected = '', excludeName = '' } = {}) {
+    const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
+    const labeled = (window.hierarchyManager && Array.isArray(window.hierarchyManager.data) && window.hierarchyManager.data.length)
+        ? nodesInModule(currentCategory)
+        : [];
+    parentSelect.innerHTML = '<option value="">Select parent…</option>';
+    const addGroup = (label, items, glyph) => {
+        if (!items.length) return;
+        const group = document.createElement('optgroup');
+        group.label = label;
+        items.forEach((item) => {
+            const node = item.node || item;
+            const path = item.label || (node.Name || node.name);
+            const opt = document.createElement('option');
+            opt.value = node.ID || node.id || node.Name || node.name;
+            opt.dataset.name = node.Name || node.name || '';
+            opt.textContent = `${glyph} ${path}`;
+            group.appendChild(opt);
+        });
+        parentSelect.appendChild(group);
+    };
+    if (labeled.length) {
+        if (role !== 'MAKE') {
+            addGroup('Folders', labeled.filter((item) => item.node.type === 'folder'), '📁');
         }
+        addGroup(
+            role === 'MAKE' ? 'Categories' : 'Categories (for a sub-category)',
+            labeled.filter((item) => item.node.type === 'kind' && kindRoleOf(item.node) !== 'MAKE' && (item.node.Name || item.node.name) !== excludeName),
+            '📦'
+        );
     } else {
-        console.error('CRITICAL: addFolderModal NOT found in DOM');
+        const allKinds = (window.allAssetKinds || []).filter((k) => (k.Module || k.module) === currentCategory);
+        const allFolders = (window.allFolders || []).filter((f) => (f.Module || f.module) === currentCategory);
+        if (role !== 'MAKE') {
+            addGroup('Folders', allFolders.map((f) => ({ node: { ...f, ID: f.ID || f.id, Name: f.Name || f.name, type: 'folder' }, label: f.Name || f.name })), '📁');
+        }
+        addGroup(
+            role === 'MAKE' ? 'Categories' : 'Categories (for a sub-category)',
+            allKinds.filter((k) => kindRoleOf(k) !== 'MAKE' && (k.Name || k.name) !== excludeName)
+                .map((k) => ({ node: { ...k, ID: k.ID || k.id, Name: k.Name || k.name, type: 'kind' }, label: k.Name || k.name })),
+            '📦'
+        );
+    }
+    if (selected) {
+        parentSelect.value = selected;
+        if (parentSelect.value !== selected) {
+            const hit = [...parentSelect.options].find((opt) => opt.value === selected || opt.dataset.name === selected);
+            if (hit) parentSelect.value = hit.value;
+        }
     }
 }
 
-export function openAddKindModal() {
-    console.log('openAddKindModal() called');
+export function openAddKindModal(opts = {}) {
+    const role = String(opts.role || 'CATEGORY').toUpperCase() === 'MAKE' ? 'MAKE' : 'CATEGORY';
     const modal = document.getElementById('addAssetKindModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        
-        // Reset modal title
-        const modalTitle = modal.querySelector('h2');
-        if (modalTitle) modalTitle.textContent = 'Add New Asset Category';
-
-        // Reset the form
-        const form = document.getElementById('addAssetKindForm');
-        if (form) form.reset();
-        
-        // Populate the Parent Kind dropdown
-        const parentSelect = document.getElementById('newKindParent');
-        if (parentSelect) {
-            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
-            const allKinds = window.allAssetKinds || [];
-            const allFolders = window.allFolders || [];
-            
-            // Only show kinds/folders that belong to the current module (category)
-            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory);
-            const filteredFolders = allFolders.filter(f => (f.Module || f.module) === currentCategory);
-            
-            console.log(`Populating Parent Kind dropdown with ${filteredKinds.length} kinds and ${filteredFolders.length} folders`);
-            
-            parentSelect.innerHTML = '<option value="">None (Top Level)</option>';
-            
-            // Add Folders
-            if (filteredFolders.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Folders';
-                filteredFolders.forEach(f => {
-                    const fName = f.Name || f.name;
-                    const fIcon = f.Icon || f.icon;
-                    const opt = document.createElement('option');
-                    opt.value = fName;
-                    const icon = (fIcon && (fIcon.startsWith('/') || fIcon.startsWith('http'))) ? '📁' : (fIcon || '📁');
-                    opt.textContent = `${icon} ${fName}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-
-            // Add Kinds
-            if (filteredKinds.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Existing Categories';
-                filteredKinds.forEach(k => {
-                    const kName = k.Name || k.name;
-                    const kIcon = k.Icon || k.icon;
-                    const opt = document.createElement('option');
-                    opt.value = kName;
-                    const icon = (kIcon && (kIcon.startsWith('/') || kIcon.startsWith('http'))) ? '📦' : (kIcon || '📦');
-                    opt.textContent = `${icon} ${kName}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-
-            // --- Context Menu Integration ---
-            if (window.contextMenuTargetFolder) {
-                console.log(`[ContextMenu] Auto-selecting folder: ${window.contextMenuTargetFolder}`);
-                parentSelect.value = window.contextMenuTargetFolder;
-                window.contextMenuTargetFolder = null; // Clear it
-            }
-        }
-    } else {
+    if (!modal) {
         console.error('CRITICAL: addAssetKindModal NOT found in DOM');
+        return;
     }
+    modal.style.display = 'flex';
+    const modalTitle = modal.querySelector('h2, h3');
+    if (modalTitle) modalTitle.textContent = role === 'MAKE' ? 'Add New Make' : 'Add New Asset Category';
+    const form = document.getElementById('addAssetKindForm');
+    if (form) form.reset();
+    const roleInput = document.getElementById('newKindRole');
+    if (roleInput) roleInput.value = role;
+    const iconInput = document.getElementById('newKindIcon');
+    if (iconInput) iconInput.value = role === 'MAKE' ? '™' : '📦';
+    const parentSelect = document.getElementById('newKindParent');
+    if (parentSelect) {
+        const preset = opts.parentName || window.contextMenuTargetFolder || '';
+        window.contextMenuTargetFolder = null;
+        populateKindParentSelect(parentSelect, { role, selected: preset });
+    }
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = role === 'MAKE' ? 'Create Make' : 'Add Category';
 }
 
 export function openEditKindModal(node) {
@@ -6457,8 +8315,11 @@ export function openEditKindModal(node) {
         modal.style.display = 'flex';
         
         // Change modal title
-        const modalTitle = modal.querySelector('h2');
-        if (modalTitle) modalTitle.textContent = 'Edit Asset Category';
+        const role = kindRoleOf(node);
+        const modalTitle = modal.querySelector('h2, h3');
+        if (modalTitle) modalTitle.textContent = role === 'MAKE' ? 'Edit Make' : 'Edit Asset Category';
+        const roleInput = document.getElementById('newKindRole');
+        if (roleInput) roleInput.value = role;
 
         // Pre-populate fields
         const nameInput = document.getElementById('newKindName');
@@ -6472,48 +8333,215 @@ export function openEditKindModal(node) {
         if (imageInput) imageInput.value = node.DisplayImage || '';
         if (identifierInput) identifierInput.value = node.Identifier || '';
         
-        // Populate the Parent Kind dropdown
         if (parentSelect) {
-            const currentCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
-            const allKinds = window.allAssetKinds || [];
-            const allFolders = window.allFolders || [];
-            
-            const filteredKinds = allKinds.filter(k => (k.Module || k.module) === currentCategory && (k.Name || k.name) !== (node.Name || node.name));
-            const filteredFolders = allFolders.filter(f => (f.Module || f.module) === currentCategory);
-            
-            parentSelect.innerHTML = '<option value="">None (Top Level)</option>';
-            
-            if (filteredFolders.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Folders';
-                filteredFolders.forEach(f => {
-                    const fName = f.Name || f.name;
-                    const fIcon = f.Icon || f.icon;
-                    const opt = document.createElement('option');
-                    opt.value = fName;
-                    opt.textContent = `${(fIcon && fIcon.startsWith('/') ? '📁' : (fIcon || '📁'))} ${fName}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-
-            if (filteredKinds.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = 'Existing Categories';
-                filteredKinds.forEach(k => {
-                    const opt = document.createElement('option');
-                    opt.value = k.Name;
-                    opt.textContent = `${(k.Icon && k.Icon.startsWith('/') ? '📦' : (k.Icon || '📦'))} ${k.Name}`;
-                    group.appendChild(opt);
-                });
-                parentSelect.appendChild(group);
-            }
-            
-            parentSelect.value = node.ParentID || node.ParentName || '';
+            populateKindParentSelect(parentSelect, {
+                role,
+                selected: node.ParentID || node.ParentName || node.parentname || '',
+                excludeName: node.Name || node.name
+            });
         }
     } else {
         console.error('CRITICAL: addAssetKindModal NOT found in DOM');
     }
+}
+
+function ensureSelectValue(select, value) {
+    if (!select) return;
+    const text = String(value || '');
+    if (!text) {
+        select.value = '';
+        return;
+    }
+    if (![...select.options].some((opt) => opt.value === text)) {
+        const opt = document.createElement('option');
+        opt.value = text;
+        opt.textContent = text;
+        select.appendChild(opt);
+    }
+    select.disabled = false;
+    select.value = text;
+}
+
+function kindRowId(row) {
+    return String(row?.ID || row?.id || row?.Name || row?.name || '');
+}
+
+function kindRowName(row) {
+    return String(row?.Name || row?.name || kindRowId(row));
+}
+
+function kindParentKeys(row) {
+    return [
+        row?.parent_id, row?.ParentID, row?.parentid, row?.ParentId,
+        row?.parentname, row?.ParentName, row?.parentName
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+}
+
+function kindMatchesParent(kind, parentName, parentId) {
+    const keys = kindParentKeys(kind).map((value) => value.toLowerCase());
+    if (!keys.length) return false;
+    return [parentId, parentName]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+        .some((token) => keys.includes(token));
+}
+
+function liveAssetKinds() {
+    return (window.allAssetKinds || []).filter((kind) => Number(kind.is_deleted || kind.IsDeleted) !== 1);
+}
+
+function moduleAssetFolders(moduleName) {
+    return (window.allFolders || []).filter((folder) => {
+        const mod = folder.Module || folder.module;
+        return !moduleName || !mod || mod === moduleName;
+    });
+}
+
+function folderRowId(folder) {
+    return String(folder?.ID || folder?.id || '');
+}
+
+function folderRowName(folder) {
+    return String(folder?.Name || folder?.name || folderRowId(folder));
+}
+
+function folderParentId(folder) {
+    return String(folder?.ParentID || folder?.ParentId || folder?.parentid || folder?.parentId || '').trim();
+}
+
+function knownAssetPaths(moduleName) {
+    const folders = moduleAssetFolders(moduleName);
+    const kinds = liveAssetKinds();
+    const paths = [];
+    const walkKinds = (parentName, prefix, parentId, seenKinds) => {
+        const children = kinds.filter((kind) => {
+            const childKey = kindRowId(kind).toLowerCase();
+            if (!childKey || seenKinds.has(childKey)) return false;
+            return kindMatchesParent(kind, parentName, parentId);
+        });
+        if (!children.length) {
+            if (prefix.length > 1) paths.push(prefix.join(' / '));
+            return;
+        }
+        children.forEach((child) => {
+            const name = kindRowName(child);
+            const childId = kindRowId(child) || name;
+            const nextSeen = new Set(seenKinds);
+            nextSeen.add(String(childId).toLowerCase());
+            walkKinds(name, prefix.concat(name), childId, nextSeen);
+        });
+    };
+    const walkFolder = (folder, prefix) => {
+        const id = folderRowId(folder);
+        folders
+            .filter((child) => folderParentId(child) === String(id))
+            .forEach((child) => walkFolder(child, prefix.concat(folderRowName(child))));
+        walkKinds(folderRowName(folder), prefix, id, new Set());
+    };
+    folders.filter((folder) => !folderParentId(folder)).forEach((folder) => walkFolder(folder, [folderRowName(folder)]));
+    return paths;
+}
+
+function resolveExistingAssetPath(pathText, moduleName) {
+    const parts = String(pathText || '').split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2) {
+        return { error: 'Folder Path needs a folder and at least one existing category. Example: Cineom Assets / Accessories / URSA / Case' };
+    }
+    const folders = moduleAssetFolders(moduleName);
+    const kinds = liveAssetKinds();
+    const folderKey = parts[0].toLowerCase();
+    const folderHits = folders.filter((folder) => folderRowId(folder).toLowerCase() === folderKey || folderRowName(folder).toLowerCase() === folderKey);
+    if (!folderHits.length) {
+        return { error: `“${parts[0]}” is not an existing folder. Create it in the hierarchy first.` };
+    }
+    let folder = folderHits[0];
+    if (folderHits.length > 1) {
+        const next = parts[1];
+        folder = folderHits.find((item) => {
+            const id = folderRowId(item);
+            return folders.some((child) => folderParentId(child) === id && folderRowName(child).toLowerCase() === String(next || '').toLowerCase())
+                || kinds.some((kind) => kindMatchesParent(kind, folderRowName(item), id) && kindRowName(kind).toLowerCase() === String(next || '').toLowerCase());
+        }) || folderHits.find((item) => !folderParentId(item)) || folderHits[0];
+    }
+    const names = [folderRowName(folder)];
+    let i = 1;
+    while (i < parts.length) {
+        const nested = folders.find((child) => folderParentId(child) === folderRowId(folder)
+            && (folderRowName(child).toLowerCase() === parts[i].toLowerCase() || folderRowId(child).toLowerCase() === parts[i].toLowerCase()));
+        if (!nested) break;
+        folder = nested;
+        names.push(folderRowName(folder));
+        i += 1;
+    }
+    let parentName = folderRowName(folder);
+    let parentId = folderRowId(folder);
+    for (; i < parts.length; i += 1) {
+        const hits = kinds.filter((kind) => kindRowName(kind).toLowerCase() === parts[i].toLowerCase()
+            && kindMatchesParent(kind, parentName, parentId));
+        if (!hits.length) {
+            return { error: `“${parts[i]}” is not an existing category or make under “${parentName}”. Create it in the hierarchy first.` };
+        }
+        const hit = hits.find((kind) => String(kind.ParentID || kind.parent_id || '') === String(parentId)) || hits[0];
+        const name = kindRowName(hit);
+        names.push(name);
+        parentName = name;
+        parentId = kindRowId(hit) || name;
+    }
+    return { path: names.join(' / ') };
+}
+
+function pathFromAsset(asset) {
+    if (!asset) return '';
+    const stored = asset.folder_path || asset.folderPath || asset.FolderPath;
+    if (stored) return String(stored);
+    const root = asset.parent_folder || asset.ParentFolder || '';
+    const type = asset.Type || asset.type || '';
+    if (root && type && type !== root) return `${root} / ${type}`;
+    return root || type || '';
+}
+
+function bindAssetFolderPath(prefillData, moduleName) {
+    if (document.getElementById('addAssetItemForm')?.dataset.entity === 'inventory') return;
+    const input = document.getElementById('itemFolderPath');
+    const list = document.getElementById('itemFolderPathList');
+    const hint = document.getElementById('itemFolderPathHint');
+    const folderSelect = document.getElementById('itemFolder');
+    const kindSelect = document.getElementById('itemKind');
+    const brandSelect = document.getElementById('itemBrandCategory');
+    if (!input || !list) return;
+    const paths = knownAssetPaths(moduleName);
+    list.innerHTML = paths.map((path) => `<option value="${String(path).replace(/"/g, '&quot;')}"></option>`).join('');
+    const apply = () => {
+        const raw = String(input.value || '').trim();
+        const resolved = resolveExistingAssetPath(raw, moduleName);
+        const parts = raw.split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+        if (!resolved.error) {
+            if (folderSelect) folderSelect.value = parts[0] || '';
+            if (kindSelect) kindSelect.value = parts[1] || '';
+            if (brandSelect) brandSelect.value = parts.length > 2 ? parts[parts.length - 1] : '';
+        }
+        const leaf = parts[parts.length - 1] || '';
+        const kindObj = liveAssetKinds().find((kind) => kindRowName(kind) === leaf);
+        const idDisplay = document.getElementById('kindIdentifierDisplay');
+        const idValue = document.getElementById('kindIdentifierValue');
+        if (idDisplay && idValue && kindObj && (kindObj.Identifier || kindObj.identifier)) {
+            idValue.textContent = kindObj.Identifier || kindObj.identifier;
+            idDisplay.style.display = 'inline-block';
+        } else if (idDisplay) {
+            idDisplay.style.display = 'none';
+        }
+        if (hint) {
+            hint.style.color = resolved.error ? '#b91c1c' : '#64748b';
+            hint.textContent = resolved.error
+                || `Stored as ${resolved.path}. Category and Make must already exist in the tree.`;
+        }
+    };
+    input.oninput = apply;
+    input.onchange = apply;
+    const existing = pathFromAsset(prefillData);
+    if (existing) input.value = existing;
+    input.dataset.originalPath = existing || '';
+    apply();
 }
 
 export function openAddItemModal(kind, prefillData = null) {
@@ -6537,6 +8565,16 @@ export function openAddItemModal(kind, prefillData = null) {
         
         const assetDbId = document.getElementById('assetDbId');
         if (assetDbId) assetDbId.value = '';
+        const portBtn = document.getElementById('btnPortProductDescription');
+        if (portBtn) {
+            portBtn.style.display = 'none';
+            portBtn.onclick = null;
+        }
+        const portPriceBtn = document.getElementById('btnPortProductPrice');
+        if (portPriceBtn) {
+            portPriceBtn.style.display = 'none';
+            portPriceBtn.onclick = null;
+        }
 
         const bulkActions = document.querySelector('#addAssetItemModal form > div[style*="position: sticky"] div:last-child');
         if (bulkActions) bulkActions.style.display = 'flex';
@@ -6573,9 +8611,9 @@ export function openAddItemModal(kind, prefillData = null) {
         const qtyPrecision = document.getElementById('itemQtyPrecision');
         const qtyNote = document.getElementById('itemQtyNote');
         if (qtyUnit) qtyUnit.disabled = false;
-        if (qtyTotal) qtyTotal.disabled = false;
         if (qtyPrecision) qtyPrecision.disabled = false;
         if (qtyNote) qtyNote.disabled = false;
+        applyQtyOverrideGuard({ isSplitChild: false });
         if (qtyUnit && !qtyUnit.value) qtyUnit.value = 'Nos';
         if (qtyTotal && !qtyTotal.value) qtyTotal.value = '1';
         if (qtyPrecision && !qtyPrecision.value) qtyPrecision.value = '0';
@@ -6636,7 +8674,7 @@ export function openAddItemModal(kind, prefillData = null) {
                 brandSelect.disabled = true;
 
                 const allKinds = window.allAssetKinds || [];
-                allKinds.filter(k => (k.ParentName || k.parentname) === selectedFolder).forEach(k => {
+                allKinds.filter(k => (k.ParentName || k.parentname) === selectedFolder && kindRoleOf(k) !== 'MAKE').forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name || k.name;
                     opt.textContent = k.Name || k.name;
@@ -6655,7 +8693,7 @@ export function openAddItemModal(kind, prefillData = null) {
                 brandSelect.disabled = false;
 
                 const allKinds = window.allAssetKinds || [];
-                allKinds.filter(k => (k.ParentName || k.parentname) === selectedKind).forEach(k => {
+                allKinds.filter(k => (k.ParentName || k.parentname) === selectedKind && kindRoleOf(k) === 'MAKE').forEach(k => {
                     const opt = document.createElement('option');
                     opt.value = k.Name || k.name;
                     opt.textContent = k.Name || k.name;
@@ -6741,6 +8779,7 @@ export function openAddItemModal(kind, prefillData = null) {
                         folderSelect.dispatchEvent(new Event('change'));
                     }
                 }
+                bindAssetFolderPath(prefillData, currentCategory);
             };
 
             // Start the sync
@@ -6907,6 +8946,7 @@ export function openAddItemModal(kind, prefillData = null) {
                 form.dataset.boughtAgainstPo = prefillData.BoughtAgainstPO;
             }
         }
+        if (typeof window.bindHsnHistoryButton === 'function') window.bindHsnHistoryButton();
     } else {
         console.error('CRITICAL: addAssetItemModal NOT found in DOM');
     }
@@ -6914,6 +8954,7 @@ export function openAddItemModal(kind, prefillData = null) {
 window.openAddItemModal = openAddItemModal;
 window.openAddFolderModal = openAddFolderModal;
 window.openAddKindModal = openAddKindModal;
+window.openEditKindModal = openEditKindModal;
 
 // Add this to window so projects.js can call it
 window.showEditAssetModal = async function(assetId) {
@@ -6957,6 +8998,21 @@ export async function editAsset(asset) {
         editActions.style.display = 'flex';
         historyBtn.href = `/asset/${encodeURIComponent(asset.ID)}`;
     }
+    const retireBtn = document.getElementById('btnRetireAsset');
+    if (retireBtn) {
+        const canRetire = hasPermission('asset.retire');
+        const statusKey = String(asset.Status || '').trim().toLowerCase();
+        const exited = asset.IsRetired == 1 || asset.is_retired == 1 || RETIRE_BLOCKED_STATUSES.includes(statusKey);
+        retireBtn.style.display = canRetire && !exited ? 'inline-flex' : 'none';
+        retireBtn.onclick = () => showRetireAssetModal(asset);
+    }
+    const reclassifyBtn = document.getElementById('btnReclassifyAsset');
+    if (reclassifyBtn) {
+        const statusKey = String(asset.Status || '').trim().toLowerCase();
+        const exited = asset.IsRetired == 1 || asset.is_retired == 1 || RETIRE_BLOCKED_STATUSES.includes(statusKey);
+        reclassifyBtn.style.display = isSuperuserSession() && !exited ? 'inline-flex' : 'none';
+        reclassifyBtn.onclick = () => showReclassifyAssetModal(asset);
+    }
     
     // Fill the hidden ID
     const assetDbId = document.getElementById('assetDbId');
@@ -6978,6 +9034,7 @@ export async function editAsset(asset) {
     if (window.updateIconPreview) window.updateIconPreview(iconVal);
     
     document.getElementById('itemStatus').value = asset.Status || 'Owned';
+    applyStatusOverrideGuard(document.getElementById('itemStatus'), asset.Status);
     document.getElementById('itemMake').value = asset.Make || '';
     document.getElementById('itemModel').value = asset.Model || '';
     document.getElementById('itemSrNo').value = asset.SrNo || '';
@@ -6985,7 +9042,28 @@ export async function editAsset(asset) {
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
     document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
     document.getElementById('itemWeight').value = asset.Weight || asset.weight || '';
-    document.getElementById('itemDescription').value = asset.ItemDescription || '';
+    document.getElementById('itemDescription').value = asset.ItemDescription || asset.itemdescription || '';
+    const portBtn = document.getElementById('btnPortProductDescription');
+    const productId = asset.product_id || asset.productId || asset.ProductId || '';
+    if (portBtn) {
+        portBtn.style.display = productId ? 'inline-flex' : 'none';
+        portBtn.onclick = async () => {
+            if (!productId) return;
+            try {
+                const res = await fetch(`/api/products/${encodeURIComponent(productId)}`);
+                const data = await res.json().catch(() => ({}));
+                const text = String(data.product?.description || data.description || '').trim();
+                if (!text) {
+                    showToast('Product description is blank, so there is nothing to copy.', 'error');
+                    return;
+                }
+                document.getElementById('itemDescription').value = text;
+                showToast('Product description copied onto this asset. Edit it if they should differ.', 'info');
+            } catch (err) {
+                showToast(err.message || 'Could not load Product description.', 'error');
+            }
+        };
+    }
 
     if (typeof window.bindSerialIdentityPanel === 'function') window.bindSerialIdentityPanel();
     if (typeof window.loadSerialIdentityPanel === 'function' && asset.ID) {
@@ -7382,10 +9460,11 @@ export async function editAsset(asset) {
     if (qtyTotalInput) qtyTotalInput.value = (asset.quantity_total ?? '') === null ? '' : (asset.quantity_total ?? '');
     if (qtyPrecision) qtyPrecision.value = (asset.quantity_precision ?? 0);
     if (qtyNote) qtyNote.value = asset.quantity_note || '';
-    if (qtyUnit) qtyUnit.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
-    if (qtyTotalInput) qtyTotalInput.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
-    if (qtyPrecision) qtyPrecision.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
-    if (qtyNote) qtyNote.disabled = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID));
+    const isSplitChild = !!(asset.quantity_root_id && String(asset.quantity_root_id) !== String(asset.ID || asset.id));
+    if (qtyUnit) qtyUnit.disabled = isSplitChild;
+    if (qtyPrecision) qtyPrecision.disabled = isSplitChild;
+    if (qtyNote) qtyNote.disabled = isSplitChild;
+    applyQtyOverrideGuard({ isSplitChild });
 
     // Force fetch latest details to ensure project assignment is up to date
     try {
@@ -7518,8 +9597,33 @@ export async function editAsset(asset) {
 
     if (warrantyField) warrantyField.value = asset.warranty_months || 0;
     if (amcField) amcField.value = asset.amc_months || 0;
-    if (valueField) valueField.value = asset.asset_value || 0;
-    if (currencyField) currencyField.value = asset.Currency || 'INR';
+    if (valueField) {
+        const raw = asset.AssetValue ?? asset.asset_value ?? asset.UnitPrice ?? asset.unitprice;
+        const n = Number(raw);
+        valueField.value = Number.isFinite(n) ? n : 0;
+    }
+    if (currencyField) currencyField.value = asset.Currency || asset.currency || 'INR';
+    const portPriceBtn = document.getElementById('btnPortProductPrice');
+    if (portPriceBtn) {
+        const productId = asset.product_id || asset.productId || asset.ProductId || '';
+        portPriceBtn.style.display = productId ? 'inline-flex' : 'none';
+        portPriceBtn.onclick = async () => {
+            if (!productId) return;
+            try {
+                const res = await fetch(`/api/products/${encodeURIComponent(productId)}`);
+                const data = await res.json().catch(() => ({}));
+                const n = Number(data.product?.price ?? data.price);
+                if (!Number.isFinite(n) || n <= 0) {
+                    showToast('Product price is blank, so there is nothing to copy.', 'error');
+                    return;
+                }
+                valueField.value = n;
+                showToast('Product price copied onto this asset. Edit it if they should differ.', 'info');
+            } catch (err) {
+                showToast(err.message || 'Could not load Product price.', 'error');
+            }
+        };
+    }
     
     // Ensure date is in YYYY-MM-DD for native input
     let pDate = asset.PurchaseDate || '';
@@ -7550,6 +9654,8 @@ export async function editAsset(asset) {
         if (sidField) sidField.value = asset.SocketID || '';
         if (uidField) uidField.value = asset.UserID || '';
     }
+
+    if (typeof window.bindHsnHistoryButton === 'function') window.bindHsnHistoryButton();
 
     // Fetch and populate children (No QR)
     try {
@@ -7702,7 +9808,14 @@ function showAssetList(nodeOrKindName) {
     };
 
     // ---------- ASSETS (Module = Assets / IT) ----------
+    const listNode = typeof nodeOrKindName === 'object' ? nodeOrKindName : null;
+    const listCategory = localStorage.getItem('selectedAssetCategory') || 'IT';
     let assetRows = (window.allAssets || []).filter(a => {
+        const isPlaceholder = (a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true');
+        const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
+        if (listNode && assetFolderPathText(a) && hierarchyPathForNode(listNode)) {
+            return assetBelongsUnderNode(a, listNode, a.Category || listCategory) && !isPlaceholder && !isComp;
+        }
         const assetType = (a.Type || '').toLowerCase().trim();
         const assetName = (a.Name || '').toLowerCase().trim();
         const typeMatch = nodeKindNames.length ? matchesKind(assetName, assetType, nodeKindNames) : false;
@@ -7716,8 +9829,6 @@ function showAssetList(nodeOrKindName) {
         const assetFolderId = String(a.FolderId || a.folderid || '');
         if (nodeFolderIds.length && assetFolderId && nodeFolderIds.includes(assetFolderId)) folderIdMatch = true;
 
-        const isPlaceholder = (a.isPlaceholder === true || a.isPlaceholder === 1 || a.isPlaceholder === 'true');
-        const isComp = a.isComponent === true || a.isComponent === 'true' || a.isComponent === 1 || a.isComponent === '1';
         return (typeMatch || kindIdMatch || folderIdMatch) && !isPlaceholder && !isComp;
     }).map(a => ({ ...a, __entity: 'asset' }));
 
@@ -7811,7 +9922,12 @@ function showAssetList(nodeOrKindName) {
                         ? `<img src="${escapeAttr(r.Icon)}" style="width: 24px; height: 24px; object-fit: contain;">`
                         : escapeHtml(r.Icon || '📦')}
                 </td>
-                <td>${escapeHtml(r.ItemName || r.Name || '-')}</td>
+                <td>
+                    <div>${escapeHtml(r.ItemName || r.Name || '-')}</div>
+                    ${(r.ItemDescription || r.itemdescription || r.Description)
+                        ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">${escapeHtml(r.ItemDescription || r.itemdescription || r.Description)}</div>`
+                        : ''}
+                </td>
                 <td><span class="status-badge ${r.Status ? String(r.Status).toLowerCase().replace(' ', '-') : ''}">${escapeHtml(r.Status || 'In Store')}</span></td>
                 <td>${escapeHtml(r.Make || '-')}</td>
                 <td>${escapeHtml(r.Model || '-')}</td>
@@ -7925,7 +10041,7 @@ function showAssetList(nodeOrKindName) {
                         window.openInventorySharedModal(raw, id);
                         return;
                     }
-                    import('./inventory.js?v=7.114').then(() => {
+                    import('./inventory.js?v=7.116').then(() => {
                         if (typeof window.openCrudModal === 'function') window.openCrudModal('item', raw);
                         else if (typeof window.openInventorySharedModal === 'function') window.openInventorySharedModal(raw, id);
                         else if (typeof editAsset === 'function') editAsset(row);
@@ -8388,7 +10504,8 @@ export function setupDashboardFormHandlers() {
             // Receipt Note: stage holding on the open line (do not create stock here).
             if (window.__receiptHoldingContext?.card && typeof window.applyReceiptHoldingFromModal === 'function') {
                 try {
-                    window.applyReceiptHoldingFromModal(form);
+                    const applied = await window.applyReceiptHoldingFromModal(form);
+                    if (!applied) return;
                 } catch (err) {
                     console.error('[Receipt holding modal]', err);
                     alert(err.message || 'Failed to apply holding details');
@@ -8516,7 +10633,13 @@ export function setupDashboardFormHandlers() {
                         FolderID: folderValue,
                         KindID: kindValue,
                         ItemName: formData.get('itemName'),
-                        ItemDescription: formData.get('itemDescription') || '',
+                        ItemDescription: (() => {
+                            const desc = String(formData.get('itemDescription') || '').trim();
+                            if (!desc) {
+                                throw new Error('Inventory description is required. It is separate from Product description unless you copy it.');
+                            }
+                            return desc;
+                        })(),
                         Icon: formData.get('itemIcon') || '📦',
                         Status: formData.get('itemStatus') || 'In Store',
                         Make: formData.get('itemMake') || '',
@@ -8542,19 +10665,20 @@ export function setupDashboardFormHandlers() {
                         warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
                         is_quantity_tracked: isQtyTracked,
                         is_set: document.getElementById('itemIsSet')?.checked ? 1 : 0,
-                        quantity_unit: formData.get('itemQtyUnit') || 'Nos',
+                        quantity_unit: inventoryQtyUnit,
                         quantity_total: qtyTotal,
                         quantity_available: quantityAvailable,
                         quantity_precision: Math.floor(qtyPrecision),
                         quantity_note: formData.get('itemQtyNote') || '',
-                        conversion_unit: formData.get('itemConvUnit') || '',
+                        conversion_unit: document.getElementById('itemConvUnit')?.value.trim() || '',
                         conversion_factor: (() => {
-                            const raw = String(formData.get('itemConvFactor') || '').trim();
+                            const raw = String(document.getElementById('itemConvFactor')?.value || '').trim();
                             if (!raw) return null;
                             const parsed = Number(raw);
                             return Number.isFinite(parsed) ? parsed : null;
                         })(),
-                        conversion_mode: formData.get('itemConvMode') || 'multiply',
+                        conversion_mode: document.getElementById('itemConvMode')?.value || 'multiply',
+                        quantity_unit_conversion: pendingUnitConversionFromForm(form),
                         MACAddress: formData.get('itemMAC') || '',
                         IPAddress: formData.get('itemIP') || '',
                         NetworkType: formData.get('itemNetworkType') || 'DHCP',
@@ -8590,11 +10714,11 @@ export function setupDashboardFormHandlers() {
                         return;
                     }
 
-                    const response = await fetch(endpoint, {
-                        method: inventoryPayload.ID ? 'PUT' : 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(inventoryPayload)
-                    });
+                    const response = await fetchWithOverride(endpoint, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' }
+                    }, inventoryPayload);
+                    if (!response) return;
                     const responseText = await response.text();
                     let responseData = {};
                     if (responseText) {
@@ -8608,6 +10732,7 @@ export function setupDashboardFormHandlers() {
                         throw new Error(responseData.error || responseData.message || responseText || `Inventory save failed (${response.status})`);
                     }
 
+                    delete form.dataset.unitConversion;
                     alert('Inventory item saved successfully!');
                     document.getElementById('addAssetItemModal').style.display = 'none';
                     if (typeof window.loadInventoryWorkspace === 'function') {
@@ -8679,14 +10804,37 @@ export function setupDashboardFormHandlers() {
                 }
                 const hasEmployeeAssignment = String(assignedToValue || '').trim() !== '' && !String(assignedToValue).startsWith('Project: ');
                 const normalizedStatus = hasEmployeeAssignment ? 'In-Use' : formData.get('itemStatus');
+                const folderPathInput = document.getElementById('itemFolderPath');
+                const folderPathRaw = String(folderPathInput?.value || '').trim();
+                const originalPath = String(folderPathInput?.dataset.originalPath || '').trim();
+                const pathUnchanged = folderPathRaw.toLowerCase() === originalPath.toLowerCase();
+                const resolvedPath = pathUnchanged
+                    ? { path: originalPath || folderPathRaw }
+                    : resolveExistingAssetPath(folderPathRaw, category);
+                if (resolvedPath.error) {
+                    throw new Error(resolvedPath.error);
+                }
+                const folderPath = resolvedPath.path;
+                const pathParts = folderPath.split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+                const pathRoot = pathParts[0] || '';
+                const pathLeaf = pathParts[pathParts.length - 1] || '';
+                if (!folderPath || pathParts.length < 2) {
+                    throw new Error('Folder Path needs a folder and at least one existing category. Example: Cineom Assets / Accessories / URSA / Case');
+                }
                 const asset = {
                     ID: assetId || null,
-                    itemFolder: formData.get('itemFolder'),
-                    itemKind: formData.get('itemKind'),
-                    itemBrandCategory: formData.get('itemBrandCategory'),
-                    Type: formData.get('itemBrandCategory') || formData.get('itemKind'),
+                    itemFolder: pathRoot,
+                    itemKind: pathParts[1] || '',
+                    itemBrandCategory: pathParts.length > 2 ? pathLeaf : '',
+                    Type: pathLeaf,
                     ItemName: formData.get('itemName'),
-                    ItemDescription: formData.get('itemDescription'),
+                    ItemDescription: (() => {
+                        const desc = String(formData.get('itemDescription') || '').trim();
+                        if (!desc) {
+                            throw new Error('Asset description is required. It is separate from Product description unless you copy it.');
+                        }
+                        return desc;
+                    })(),
                     Icon: formData.get('itemIcon'),
                     Status: normalizedStatus,
                     Make: formData.get('itemMake'),
@@ -8694,7 +10842,8 @@ export function setupDashboardFormHandlers() {
                     SrNo: srNoValue,
                     is_batch: isBatchValue,
                     CurrentLocation: formData.get('itemLocation'),
-                    parent_folder: formData.get('itemFolder'),
+                    parent_folder: pathRoot || formData.get('itemFolder'),
+                    folder_path: folderPath || null,
                     Purpose: formData.get('itemPurpose') || 'Owned',
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
@@ -8813,6 +10962,8 @@ export function setupDashboardFormHandlers() {
                         }
                     }
                     if (convModeEl) asset.conversion_mode = convModeEl.value;
+                    const pendingConv = pendingUnitConversionFromForm(form);
+                    if (pendingConv) asset.quantity_unit_conversion = pendingConv;
 
                 // Collect conversion fields independently if they are NOT disabled (for non-root assets or initial setup)
                 // This ensures fields are captured if hasAnyQty logic is skipped
@@ -8889,6 +11040,7 @@ export function setupDashboardFormHandlers() {
                 const result = await window.saveAsset(asset);
                 
                 if (result) {
+                    delete form.dataset.unitConversion;
                     alert('Asset saved successfully!');
                     document.getElementById('addAssetItemModal').style.display = 'none';
                     // Dashboard and sidebar are refreshed inside window.saveAsset
@@ -8950,7 +11102,8 @@ export function setupDashboardFormHandlers() {
                 ParentID: formData.get('newKindParent'),
                 DisplayImage: formData.get('newKindImage'),
                 Identifier: formData.get('newKindIdentifier'),
-                Module: category
+                Module: category,
+                KindRole: formData.get('newKindRole') || 'CATEGORY'
             };
 
             try {
@@ -8965,7 +11118,7 @@ export function setupDashboardFormHandlers() {
                     let created = {};
                     try { created = text ? JSON.parse(text) : {}; } catch(_) {}
                     const createdId = String(created.ID || created.id || created.kind?.ID || created.kind?.id || '');
-                    alert('Category saved successfully!');
+                    alert((kindData.KindRole === 'MAKE' ? 'Make' : 'Category') + ' saved successfully!');
                     document.getElementById('addAssetKindModal').style.display = 'none';
                     kindForm.reset();
                     if (window.loadAssets) await window.loadAssets();
@@ -9196,7 +11349,10 @@ function generateKindSummaryReport(moduleCategory) {
             if (!descendantKindNames.includes(kind.Name)) descendantKindNames.push(kind.Name);
         }
 
-        const kindAssets = assets.filter(a => descendantKindNames.includes(a.Type) && categoryMatch(a.Category, moduleCategory));
+        const kindNode = manager ? manager.findNode(kind.ID || kind.id || kind.Name) : null;
+        const kindAssets = assets.filter((a) => kindNode
+            ? assetBelongsUnderNode(a, kindNode, a.Category)
+            : (descendantKindNames.includes(a.Type) && categoryMatch(a.Category, moduleCategory)));
         const total = kindAssets.length;
         
         const stats = {
@@ -9741,11 +11897,17 @@ window.confirmDCProjectSelection = function(index) {
         setVal('dcBuyerOrderNo', order.OrderNo || '');
         
         // Store Order Date for DC generation
-        window.tempDCOrderDate = order.OrderDate || '';
-        
-        // Try to set date if field exists (assuming standard HTML5 date input)
-        const refDateEl = document.getElementById('dcRefDate'); 
-        if (refDateEl && order.OrderDate) refDateEl.value = order.OrderDate;
+        const rawOrderDate = String(order.OrderDate || '').trim();
+        const isoOrderDate = !rawOrderDate
+            ? ''
+            : (/^\d{4}-\d{2}-\d{2}/.test(rawOrderDate)
+                ? rawOrderDate.slice(0, 10)
+                : (!Number.isNaN(new Date(rawOrderDate).getTime())
+                    ? new Date(rawOrderDate).toISOString().slice(0, 10)
+                    : rawOrderDate));
+        window.tempDCOrderDate = isoOrderDate;
+        const refDateEl = document.getElementById('dcRefDate');
+        if (refDateEl) refDateEl.value = isoOrderDate;
 
         if (typeof showToast === 'function') showToast('DC details populated from order', 'success');
     }
@@ -9954,10 +12116,13 @@ async function loadDCDropdowns() {
                                 }
                                 
                                 if (data.orderDate) {
-                                    window.tempDCOrderDate = data.orderDate;
-                                    // Also try to set date input if exists
+                                    const raw = String(data.orderDate).trim();
+                                    const iso = /^\d{4}-\d{2}-\d{2}/.test(raw)
+                                        ? raw.slice(0, 10)
+                                        : (!Number.isNaN(new Date(raw).getTime()) ? new Date(raw).toISOString().slice(0, 10) : raw);
+                                    window.tempDCOrderDate = iso;
                                     const refDateEl = document.getElementById('dcRefDate');
-                                    if (refDateEl) refDateEl.value = data.orderDate;
+                                    if (refDateEl) refDateEl.value = iso;
                                 }
                             }
                         };

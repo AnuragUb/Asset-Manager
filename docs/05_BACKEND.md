@@ -16,6 +16,19 @@
 Path: `web-app/asset-manager-backend/`  
 Entry: `server.js` (`npm start` → `node server.js`)
 
+### Redis logical databases
+
+One Redis container (`asset-manager-cache`). Postgres remains source of truth; Redis is cache only (no passwords / JWT secrets).
+
+| DB | Namespace API | Purpose | Key examples |
+|----|---------------|---------|--------------|
+| 0 | `cache` / `cache.default` | Zoho / misc | `zoho:*`, `asset:*` |
+| 1 | `cache.auth` | Auth / RBAC | `auth:role_perms`, `auth:user:{username}` |
+| 2 | `cache.product` | Products read-through | `product:id:{id}`, `product:list:{sha1}` |
+
+Env overrides: `REDIS_DEFAULT_DB` (0), `REDIS_AUTH_DB` (1), `REDIS_PRODUCT_DB` (2).  
+Never `FLUSHALL` — use per-DB `flushDb` / `delPattern` only. Startup no longer wipes Redis.
+
 ---
 
 ## Process responsibilities

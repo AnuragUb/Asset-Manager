@@ -184,6 +184,8 @@ async function renderBookList() {
     const q = el('pbSearch')?.value || '';
     const params = new URLSearchParams();
     if (q) params.set('q', q);
+    const poFilter = String(window.__pbPoFilter || '').trim();
+    if (poFilter) params.set('poId', poFilter);
     params.set('limit', '200');
     const data = await api(`/api/purchase-books?${params.toString()}`);
     const rows = data.purchaseBooks || [];
@@ -203,39 +205,27 @@ async function renderBookList() {
         return;
     }
     host.innerHTML = `
-        <table class="pb-table">
-            <thead>
-                <tr>
-                    <th>Invoice</th>
-                    <th>PO</th>
-                    <th>Kind</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                    <th class="pb-num">Created</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows.map((b) => `
-                    <tr class="pb-row" data-id="${escapeHtml(b.id)}">
-                        <td>
-                            <div class="pb-primary">${dash(b.vendorInvoiceNo)}</div>
-                            <div class="pb-mono">${escapeHtml(b.id)}</div>
-                        </td>
-                        <td>
-                            <div class="pb-primary">${dash(b.poNumber || b.procurementPoId)}</div>
-                            <div class="pb-muted">${escapeHtml(b.vendorName || '')}</div>
-                        </td>
-                        <td>${kindChip(b.documentKind)}</td>
-                        <td>${statusChip(b.status)}</td>
-                        <td>${formatIstDate(b.invoiceDate)}</td>
-                        <td class="pb-num pb-muted">${formatIstDateTime(b.createdAt)}</td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
-    host.querySelectorAll('.pb-row').forEach((row) => {
-        row.addEventListener('click', () => {
-            selectedId = row.getAttribute('data-id');
+        <div class="pb-card-grid">
+            ${rows.map((b) => `
+                <button type="button" class="pb-op-card" data-id="${escapeHtml(b.id)}" aria-label="Purchase Book ${escapeHtml(b.vendorInvoiceNo || b.id)}">
+                    <div class="pb-op-title">${dash(b.vendorInvoiceNo)}</div>
+                    <div class="pb-op-id pb-mono">${escapeHtml(b.id)}</div>
+                    <div class="pb-op-primary">${dash(b.poNumber || b.procurementPoId)}</div>
+                    <div class="pb-op-meta">${escapeHtml(b.vendorName || '—')}</div>
+                    <div class="pb-op-facts">
+                        <span>Invoice <strong>${formatIstDate(b.invoiceDate)}</strong></span>
+                        <span>Created <strong>${formatIstDateTime(b.createdAt)}</strong></span>
+                    </div>
+                    <div class="pb-op-foot">
+                        ${kindChip(b.documentKind)}
+                        ${statusChip(b.status)}
+                    </div>
+                </button>
+            `).join('')}
+        </div>`;
+    host.querySelectorAll('.pb-op-card').forEach((card) => {
+        card.addEventListener('click', () => {
+            selectedId = card.getAttribute('data-id');
             renderBookDetail(selectedId).catch((err) => toastOperatorError(err));
         });
     });
@@ -392,106 +382,120 @@ async function renderBookDetail(id) {
     const lines = data.lines || [];
     const mutate = canManageBooks();
     const isDraft = book.status === 'DRAFT';
+    const money = (value) => {
+        if (value == null || value === '') return '—';
+        const n = Number(value);
+        return Number.isFinite(n)
+            ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : '—';
+    };
+    const qtyTotal = lines.reduce((sum, line) => sum + (Number(line.qtyBooked) || 0), 0);
+    const amountTotal = lines.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+    const lineRows = lines.map((line, index) => {
+        const phys = line.physicals || [];
+        const serials = phys.length
+            ? phys.map((p) => `
+                <span class="pb-invoice-serial">
+                    <span class="pb-mono">${escapeHtml(p.resourceId)}</span>
+                    ${p.serialValue != null ? ` SN ${escapeHtml(p.serialValue)}` : ' whole holding'}
+                    ${book.status !== 'VOID' && mutate
+                        ? `<button type="button" class="pb-invoice-release pb-phys-release" data-phys-id="${escapeHtml(p.id)}">Release</button>`
+                        : ''}
+                </span>`).join('')
+            : '<span class="pb-muted">No serials linked</span>';
+        return `
+            <tr class="pb-edit-line" data-po-line-id="${escapeHtml(line.procurementPoLineId)}">
+                <td class="pb-invoice-idx">${index + 1}</td>
+                <td>
+                    ${isDraft && mutate
+                        ? `<input class="pb-line-name form-input" value="${escapeHtml(line.displayName || '')}" aria-label="Display name">
+                           <input class="pb-line-desc form-input pb-desc" value="${escapeHtml(line.displayDescription || '')}" aria-label="Description">`
+                        : `<div class="pb-primary">${escapeHtml(line.displayName || line.productName || '—')}</div>
+                           ${line.displayDescription ? `<div class="pb-muted">${escapeHtml(line.displayDescription)}</div>` : ''}`}
+                    <div class="pb-mono">${escapeHtml(line.productId || '')}${line.productName ? ` · ${escapeHtml(line.productName)}` : ''}</div>
+                </td>
+                <td class="pb-num">${isDraft && mutate
+                    ? `<input type="number" min="0" step="any" class="pb-line-qty form-input" value="${escapeHtml(line.qtyBooked)}" aria-label="Quantity">`
+                    : escapeHtml(formatQty(line.qtyBooked))}</td>
+                <td class="pb-num">${isDraft && mutate
+                    ? `<input type="number" step="any" class="pb-line-price form-input" value="${line.unitPrice == null ? '' : escapeHtml(line.unitPrice)}" aria-label="Price">`
+                    : money(line.unitPrice)}</td>
+                <td class="pb-num">${money(line.lineTotal)}</td>
+            </tr>
+            <tr class="pb-phys-line pb-invoice-serial-row" data-line-id="${escapeHtml(line.id)}" data-product-id="${escapeHtml(line.productId || '')}">
+                <td></td>
+                <td colspan="4" class="pb-invoice-serials">
+                    ${serials}
+                    ${book.status !== 'VOID' && mutate
+                        ? `<button type="button" class="pb-invoice-allocate pb-phys-add" data-line-id="${escapeHtml(line.id)}" data-product-id="${escapeHtml(line.productId || '')}">Allocate serial</button>`
+                        : ''}
+                    <div class="pb-phys-picker-host" hidden></div>
+                </td>
+            </tr>`;
+    }).join('');
     host.innerHTML = `
         <div class="pb-bar">
             <button type="button" class="action-button grey" id="btnPbBack">← Back</button>
-            <span class="pb-mono">${escapeHtml(book.id)}</span>
-            ${statusChip(book.status)}
-            ${kindChip(book.documentKind)}
             <span class="pb-spacer"></span>
             ${isDraft && mutate ? '<button type="button" class="action-button blue" id="btnPbSave">Save</button>' : ''}
             ${isDraft && mutate ? '<button type="button" class="action-button green" id="btnPbPost">Post</button>' : ''}
             ${book.status !== 'VOID' && mutate ? '<button type="button" class="action-button grey" id="btnPbVoid">Void</button>' : ''}
-            <button type="button" class="action-button grey" id="btnPbOpenPo">PO</button>
+            <button type="button" class="action-button grey" id="btnPbOpenPo">Open PO</button>
         </div>
-        <div class="pb-meta-row pb-meta-detail">
-            <label>PO
-                <div class="pb-readonly">${dash(book.poNumber || book.procurementPoId)}</div>
-            </label>
-            <label>Vendor
-                <div class="pb-readonly">${dash(book.vendorName)}</div>
-            </label>
-            <label>Invoice #
-                ${isDraft && mutate
-                    ? `<input id="pbEditInvoice" class="form-input" value="${escapeHtml(book.vendorInvoiceNo || '')}">`
-                    : `<div class="pb-readonly">${dash(book.vendorInvoiceNo)}</div>`}
-            </label>
-            <label>Date
-                ${isDraft && mutate
-                    ? `<input id="pbEditDate" type="date" class="form-input" value="${escapeHtml((book.invoiceDate || '').slice(0, 10))}">`
-                    : `<div class="pb-readonly">${formatIstDate(book.invoiceDate)}</div>`}
-            </label>
-            <label class="pb-notes-field">Notes
+        <article class="pb-invoice">
+            <header class="pb-invoice-head">
+                <div>
+                    <div class="pb-invoice-kicker">Purchase Book</div>
+                    <h2 class="pb-invoice-vendor">${escapeHtml(book.vendorName || 'Vendor')}</h2>
+                    <div class="pb-invoice-id">${escapeHtml(book.id)}</div>
+                </div>
+                <div class="pb-invoice-facts">
+                    <div class="pb-invoice-stamps">${statusChip(book.status)}${kindChip(book.documentKind)}</div>
+                    <label>Invoice
+                        ${isDraft && mutate
+                            ? `<input id="pbEditInvoice" class="form-input" value="${escapeHtml(book.vendorInvoiceNo || '')}">`
+                            : `<div class="pb-invoice-fact">${dash(book.vendorInvoiceNo)}</div>`}
+                    </label>
+                    <label>Date
+                        ${isDraft && mutate
+                            ? `<input id="pbEditDate" type="date" class="form-input" value="${escapeHtml((book.invoiceDate || '').slice(0, 10))}">`
+                            : `<div class="pb-invoice-fact">${formatIstDate(book.invoiceDate)}</div>`}
+                    </label>
+                    <label>Purchase Order
+                        <div class="pb-invoice-fact">${dash(book.poNumber || book.procurementPoId)}</div>
+                    </label>
+                </div>
+            </header>
+            <div class="pb-invoice-notes">
+                <span>Notes</span>
                 ${isDraft && mutate
                     ? `<input id="pbEditNotes" class="form-input" value="${escapeHtml(book.notes || '')}">`
-                    : `<div class="pb-readonly">${dash(book.notes)}</div>`}
-            </label>
-        </div>
-        <table class="pb-table pb-table-edit">
-            <thead>
-                <tr>
-                    <th>Product</th>
-                    <th>Display</th>
-                    <th class="pb-num">Qty</th>
-                    <th class="pb-num">Price</th>
-                    <th class="pb-num">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${lines.map((line) => `
-                    <tr class="pb-edit-line" data-po-line-id="${escapeHtml(line.procurementPoLineId)}">
-                        <td>
-                            <span class="pb-mono">${escapeHtml(line.productId)}</span>
-                            <div class="pb-muted">${escapeHtml(line.productName || '')}</div>
-                        </td>
-                        <td>
-                            ${isDraft && mutate
-                                ? `<input class="pb-line-name form-input" value="${escapeHtml(line.displayName || '')}">
-                                   <input class="pb-line-desc form-input pb-desc" value="${escapeHtml(line.displayDescription || '')}">`
-                                : `<div class="pb-primary">${escapeHtml(line.displayName || '—')}</div>
-                                   <div class="pb-muted">${escapeHtml(line.displayDescription || '')}</div>`}
-                        </td>
-                        <td class="pb-num">${isDraft && mutate
-                            ? `<input type="number" min="0" step="any" class="pb-line-qty form-input" value="${escapeHtml(line.qtyBooked)}">`
-                            : escapeHtml(formatQty(line.qtyBooked))}</td>
-                        <td class="pb-num">${isDraft && mutate
-                            ? `<input type="number" step="any" class="pb-line-price form-input" value="${line.unitPrice == null ? '' : escapeHtml(line.unitPrice)}">`
-                            : dash(line.unitPrice)}</td>
-                        <td class="pb-num">${dash(line.lineTotal)}</td>
+                    : `<div>${dash(book.notes)}</div>`}
+            </div>
+            <table class="pb-table pb-table-edit pb-invoice-table">
+                <thead>
+                    <tr>
+                        <th class="pb-invoice-idx">#</th>
+                        <th>Particulars</th>
+                        <th class="pb-num">Qty</th>
+                        <th class="pb-num">Rate</th>
+                        <th class="pb-num">Amount</th>
                     </tr>
-                `).join('') || '<tr><td colspan="5" class="pb-muted">No lines</td></tr>'}
-            </tbody>
-        </table>
-        <div class="pb-physical-section" style="margin-top:18px;">
-            <h3 style="margin:0 0 8px;font-size:14px;">Physical allocation</h3>
-            <p class="pb-muted" style="margin:0 0 12px;font-size:12px;">Pick available serial numbers for each book line. DC ships those linked serials.</p>
-            ${lines.map((line) => {
-                const phys = line.physicals || [];
-                return `
-                <div class="pb-phys-line" data-line-id="${escapeHtml(line.id)}" data-product-id="${escapeHtml(line.productId || '')}" style="border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:10px;background:#f8fafc;">
-                    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:8px;">
-                        <div>
-                            <strong>${escapeHtml(line.displayName || line.productName || line.productId || 'Line')}</strong>
-                            <span class="pb-muted" style="font-size:11px;margin-left:6px;">${escapeHtml(line.id)}</span>
-                        </div>
-                        ${book.status !== 'VOID' && mutate
-                            ? `<button type="button" class="action-button blue pb-phys-add" style="padding:4px 8px;font-size:11px;" data-line-id="${escapeHtml(line.id)}" data-product-id="${escapeHtml(line.productId || '')}">Allocate…</button>`
-                            : ''}
-                    </div>
-                    ${phys.length
-                        ? `<ul style="margin:0;padding-left:18px;font-size:12px;">${phys.map((p) => `
-                            <li style="margin-bottom:4px;">
-                                <span class="pb-mono">${escapeHtml(p.resourceId)}</span>
-                                ${p.serialValue != null ? ` · SN <strong>${escapeHtml(p.serialValue)}</strong> (#${escapeHtml(p.serialSortOrder)})` : ' · whole holding'}
-                                ${book.status !== 'VOID' && mutate
-                                    ? ` <button type="button" class="action-button grey pb-phys-release" style="padding:1px 6px;font-size:10px;" data-phys-id="${escapeHtml(p.id)}">Release</button>`
-                                    : ''}
-                            </li>`).join('')}</ul>`
-                        : '<div class="pb-muted" style="font-size:12px;">No serials linked yet.</div>'}
-                    <div class="pb-phys-picker-host" hidden></div>
-                </div>`;
-            }).join('') || '<div class="pb-muted">No lines</div>'}
-        </div>`;
+                </thead>
+                <tbody>
+                    ${lineRows || '<tr><td colspan="5" class="pb-muted">No lines</td></tr>'}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td></td>
+                        <td>Total</td>
+                        <td class="pb-num">${escapeHtml(formatQty(qtyTotal))}</td>
+                        <td></td>
+                        <td class="pb-num pb-invoice-grand">${money(amountTotal)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </article>`;
 
     el('btnPbBack')?.addEventListener('click', () => renderBookList().catch((e) => showToast(e.message, 'error')));
     el('btnPbOpenPo')?.addEventListener('click', () => {
@@ -608,6 +612,7 @@ export function initPurchaseBooksView() {
         renderBookDetail(selectedId).catch((e) => toastOperatorError(e));
         return;
     }
+    window.__pbPoFilter = String(pending?.extra?.poId || '').trim();
     renderBookList().catch((e) => showToast(e.message, 'error'));
 }
 

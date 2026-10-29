@@ -1,5 +1,6 @@
 
 import { fetchWithAuth } from './auth.js?v=7.29';
+import { initDcReasonsSettings } from './dcReasons.js?v=1.0';
 
 console.log('SETTINGS.JS: Module loaded');
 
@@ -7,6 +8,7 @@ export function initSettingsView() {
     console.log('initSettingsView() called');
     loadEmailSettings();
     setupSettingsHandlers();
+    initDcReasonsSettings();
 }
 
 async function loadEmailSettings() {

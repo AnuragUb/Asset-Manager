@@ -11,8 +11,29 @@
  * See docs/DC_DOCUMENT_DESIGN.md.
  */
 
-const DC_TEMPLATE_URL = '/templates/documents/dc/delivery-challan.html?v=1.3';
+const DC_TEMPLATE_URL = '/templates/documents/dc/delivery-challan.html?v=2.2';
+const DC_ASSET_BASE = '/templates/documents/dc/assets';
 const DC_DISCLAIMER = 'This is a computer-generated document and does not require physical signature.';
+const DC_REASON_LABELS = {
+    DEMO: 'Demo (returnable)',
+    RENTAL: 'Rental (returnable)',
+    REPAIR: 'Repair (returnable)',
+    INTERNAL_USE: 'Internal Use (returnable)',
+    STOCK_TRANSFER: 'Stock Transfer',
+    SALE: 'Sale',
+    REPLACEMENT: 'Replacement / Warranty swap',
+    FOC: 'Free of Cost / Sample',
+    VENDOR_RETURN: 'Return to Vendor',
+    LEGACY_UNSPECIFIED: 'Not specified (legacy)'
+};
+
+/** Built-in codes use the fixed labels; custom catalog reasons use the label stored on the DC. */
+function dcReasonLabel(raw, storedLabel) {
+    const key = dcTrim(raw).toUpperCase();
+    if (DC_REASON_LABELS[key]) return DC_REASON_LABELS[key];
+    if (dcTrim(storedLabel)) return dcTrim(storedLabel);
+    return dcTrim(raw).replace(/_/g, ' ');
+}
 
 let cachedDcTemplateHtml = null;
 
@@ -200,6 +221,17 @@ export function buildDcDocumentModel(result, options = {}) {
 
     const showRateAmount = meta.showRateAmount ?? options.showRateAmount ?? false;
     const showTotalPrice = meta.showTotalPrice ?? options.showTotalPrice ?? false;
+    const showDescription = meta.showDescription ?? options.showDescription ?? true;
+    const showSerial = meta.showSerial ?? options.showSerial ?? true;
+    const showSerialInDescription = meta.showSerialInDescription ?? options.showSerialInDescription ?? false;
+
+    const lineSerial = (row) => dcTrim(row && (row.srNo || row.serialNo || row.SrNo));
+    const serialNote = (rows) => rows.map((row) => {
+        const sn = lineSerial(row);
+        if (!sn) return '';
+        const label = dcTrim(row.description) || dcTrim(row.assetId);
+        return label ? `${label} — S/N: ${sn}` : `S/N: ${sn}`;
+    }).filter(Boolean).join('\n');
 
     const logoUrl = dcTrim(meta.logoUrl) || dcTrim(company.logoUrl);
     const companyName = dcTrim(company.name) || 'DELIVERY CHALLAN';
@@ -213,23 +245,73 @@ export function buildDcDocumentModel(result, options = {}) {
         return '';
     })();
 
-    const items = itemsRaw.map((it, idx) => {
+    // SET_COMMERCIAL_DEFINITION_ADR §5: a kit prints as ONE line (Set name, Set description,
+    // qty = kits). Its component lines stay in the payload for dispatch / tally, not on paper.
+    const items = [];
+    const seenSetGroups = new Set();
+    let lineNo = 0;
+    itemsRaw.forEach((it) => {
+        const setGroup = dcTrim(it.setGroup);
+        if (setGroup) {
+            if (seenSetGroups.has(setGroup)) return;
+            seenSetGroups.add(setGroup);
+            const group = itemsRaw.filter((row) => dcTrim(row.setGroup) === setGroup);
+            const amounts = group.map((row) => dcToNumber(row.amount)).filter((n) => n !== null);
+            const kits = Number(it.setKits) > 0 ? Number(it.setKits) : 1;
+            const kitAmount = amounts.length ? dcRound2(amounts.reduce((a, b) => a + b, 0)) : null;
+            const setSerials = group.map(lineSerial).filter(Boolean);
+            const name = dcTrim(it.setName) || dcTrim(it.setId) || 'Set';
+            const descLines = dcTrim(it.setDescription).split(/\n+/)
+                .map((l) => l.trim()
+                    .replace(/(\d+)\.0+(?=\D|$)/g, '$1')
+                    .replace(/(\d+\.\d*?[1-9])0+(?=\D|$)/g, '$1'))
+                .filter(Boolean);
+            if (descLines.length && descLines[0].toUpperCase() === name.toUpperCase()) descLines.shift();
+            lineNo += 1;
+            items.push({
+                isSetHeader: false,
+                isLine: true,
+                inSet: false,
+                n: lineNo,
+                description: name,
+                setDescription: showDescription ? descLines.join('\n') : '',
+                serialInDescription: showSerialInDescription ? serialNote(group) : '',
+                make: dcTrim(it.setMake) || '—',
+                model: dcTrim(it.setModel) || '—',
+                assetId: dcTrim(it.setProductId) || '—',
+                serialNo: showSerial ? (setSerials.join(', ') || '—') : '—',
+                hsn: dcTrim(it.setHsn) || '—',
+                qty: String(kits),
+                unit: 'SET',
+                rate: kitAmount === null ? '—' : String(dcRound2(kitAmount / kits)),
+                amount: kitAmount === null ? '—' : String(kitAmount),
+                showRateAmount: Boolean(showRateAmount)
+            });
+            return;
+        }
         const make = dcTrim(it.make) || dcTrim(it.Make);
         const model = dcTrim(it.model) || dcTrim(it.Model);
-        return {
-            n: idx + 1,
+        const serial = lineSerial(it);
+        lineNo += 1;
+        items.push({
+            isSetHeader: false,
+            isLine: true,
+            inSet: false,
+            n: lineNo,
             description: dcTrim(it.description) || '—',
+            setDescription: '',
+            serialInDescription: showSerialInDescription && serial ? `S/N: ${serial}` : '',
             make: make || '—',
             model: model || '—',
             assetId: dcTrim(it.assetId) || '—',
-            serialNo: dcTrim(it.srNo || it.serialNo || it.SrNo) || '—',
+            serialNo: showSerial ? (serial || '—') : '—',
             hsn: dcTrim(it.hsn) || '—',
             qty: it.qty == null || it.qty === '' ? '—' : String(it.qty),
             unit: dcTrim(it.per || it.unit) || 'NO',
             rate: it.rate == null || it.rate === '' ? '—' : String(it.rate),
             amount: it.amount == null || it.amount === '' ? '—' : String(it.amount),
             showRateAmount: Boolean(showRateAmount)
-        };
+        });
     });
 
     const totalAmount = itemsRaw.reduce((acc, it) => {
@@ -258,10 +340,12 @@ export function buildDcDocumentModel(result, options = {}) {
 
     const gstin = dcTrim(company.gstin);
     const cin = dcTrim(company.cin);
+    const pan = dcTrim(company.pan);
     const companyState = stateLine(company);
     const contactParts = [];
     if (gstin) contactParts.push(`GSTIN ${gstin}`);
     if (cin) contactParts.push(`CIN ${cin}`);
+    if (pan) contactParts.push(`PAN ${pan}`);
     if (companyState) contactParts.push(companyState);
     const contactLine = contactParts.join('  ·  ');
 
@@ -272,15 +356,23 @@ export function buildDcDocumentModel(result, options = {}) {
     const website = dcTrim(company.website || meta.website || company.web || company.url);
     const footerWeb = website || companyName;
 
-    const colCount = 9 + (showRateAmount ? 2 : 0);
+    // Letterhead artwork bakes in Cineom contacts/address, so only use it for Cineom templates.
+    const useLetterhead = /cineom/i.test(companyName);
+    const letterheadHeader = useLetterhead ? `${DC_ASSET_BASE}/cineom-header.png` : '';
+    const letterheadFooter = useLetterhead ? `${DC_ASSET_BASE}/cineom-footer.png` : '';
+
+    const colCount = (showSerial ? 9 : 8) + (showRateAmount ? 2 : 0);
+    const orderDate = dcTrim(meta.orderDate || meta.referenceDate);
 
     return {
         document: {
             title: 'DELIVERY CHALLAN',
             legalNumber: dcDash(dcData.challanNo || dcData.ChallanNo),
             date: dcDash(meta.deliveryDate || meta.dated || dcData.deliveryDate || dcData.DeliveryDate),
-            orderDate: dcTrim(meta.orderDate),
-            status: dcDash(dcData.status || dcData.Status || 'Pending'),
+            orderDate,
+            status: dcDash(dcData.lifecycleStatus || dcData.lifecycle_status || dcData.status || dcData.Status || 'DRAFT'),
+            dispatchReason: dcDash(dcReasonLabel(dcData.dispatchReason || dcData.dispatch_reason || meta.dispatchReason, result?.dispatchReasonLabel || meta.dispatchReasonLabel)),
+            transferDestination: dcTrim(dcData.transferDestination || dcData.transfer_destination || meta.transferDestination),
             createdBy: dcTrim(dcData.createdBy || dcData.CreatedBy),
             referenceNo: dcDash(referenceNo),
             buyerOrderNo,
@@ -289,17 +381,23 @@ export function buildDcDocumentModel(result, options = {}) {
             disclaimer: DC_DISCLAIMER
         },
         showRateAmount: Boolean(showRateAmount),
+        showSerial: Boolean(showSerial),
         company: {
             name: companyName,
             address: dcTrim(company.address),
             gstin,
             cin,
+            pan,
             stateLine: companyState,
-            logoUrl,
-            showFallback: !logoUrl,
+            logoUrl: useLetterhead ? '' : logoUrl,
+            showFallback: !useLetterhead && !logoUrl,
             contactLine,
             footerAddress,
-            footerWeb
+            footerWeb,
+            letterheadHeader,
+            letterheadFooter,
+            cssHeader: !useLetterhead,
+            cssFooter: !useLetterhead
         },
         customer: {
             name: dcDash(customerName),
@@ -313,7 +411,7 @@ export function buildDcDocumentModel(result, options = {}) {
             kindAttn
         },
         buyer: {
-            name: buyerName,
+            name: dcDash(buyerName),
             address: dcTrim(buyer.address),
             gstin: dcTrim(buyer.gstin),
             stateLine: stateLine(buyer)
@@ -364,13 +462,57 @@ export async function showDcDocumentPreview(result, options = {}) {
         return;
     }
     try {
-        printable.innerHTML = await renderDcDocumentHtml(result, options);
+        const docHtml = await renderDcDocumentHtml(result, options);
+        const returnHtml = renderDcReturnHistoryHtml(result);
+        printable.innerHTML = docHtml + returnHtml;
         modal.style.display = 'flex';
     } catch (err) {
         console.error('[DC Preview] Template render failed', err);
         printable.innerHTML = `<div style="padding:24px;color:#991b1b;">Delivery Challan template could not load. ${dcEscapeHtml(err.message || err)}</div>`;
         modal.style.display = 'flex';
     }
+}
+
+function renderDcReturnHistoryHtml(result) {
+    const position = result?.returnPosition || null;
+    const logs = Array.isArray(result?.returnLogs) ? result.returnLogs : [];
+    if (!position && !logs.length) return '';
+
+    const pos = position || {};
+    const label = String(pos.position || 'NO_RETURN').replace(/_/g, ' ');
+    const assetsLine = pos.dispatchedAssets != null
+        ? `${pos.returnedAssets || 0} / ${pos.dispatchedAssets || 0} Assets Returned · ${pos.stillOutAssets || 0} Still Out`
+        : '';
+    const qtyLine = pos.dispatchedQuantity != null
+        ? `Qty returned ${pos.returnedQuantity || 0} / ${pos.dispatchedQuantity || 0} · outstanding ${pos.outstandingQuantity || 0}`
+        : '';
+
+    const entries = logs.map((log) => {
+        const date = log.returnDate ? String(log.returnDate).slice(0, 10) : '—';
+        const lineSummary = (log.lines || []).map((l) =>
+            `${l.resourceType} ${l.resourceId}${l.quantity != null && l.resourceType === 'INVENTORY' ? ` ×${l.quantity}` : ''}`
+        ).join(', ') || '—';
+        return `<div class="dc-return-entry" style="border-top:1px solid #e2e8f0;padding:12px 0;">
+            <div style="font-weight:700;font-family:ui-monospace,monospace;">${dcEscapeHtml(log.id)}</div>
+            <div style="color:#64748b;font-size:13px;">${dcEscapeHtml(date)}</div>
+            <div style="margin-top:6px;">${dcEscapeHtml(lineSummary)}</div>
+            <div style="margin-top:4px;font-size:13px;">Reason: <strong>${dcEscapeHtml(log.returnReason || '—')}</strong></div>
+            <div style="font-size:13px;">Returned By: ${dcEscapeHtml(log.returnedByParty || '—')}</div>
+            <div style="font-size:13px;">Received By: ${dcEscapeHtml(log.receivedByUser || '—')}</div>
+            <div style="font-size:13px;">Receipt Note: <span class="lc-mono">${dcEscapeHtml(log.receiptNoteId || '—')}</span> · ${dcEscapeHtml(log.status || '')}</div>
+        </div>`;
+    }).join('');
+
+    return `<div class="no-print dc-return-history" style="margin-top:24px;padding:20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+        <h3 style="margin:0 0 12px;font-size:16px;letter-spacing:0.04em;">RETURN HISTORY</h3>
+        <div style="margin-bottom:12px;">
+            <div style="font-size:12px;color:#64748b;text-transform:uppercase;font-weight:700;">Return Position</div>
+            <div style="font-size:15px;font-weight:700;margin-top:4px;">${dcEscapeHtml(label)}</div>
+            ${assetsLine ? `<div style="margin-top:4px;">${dcEscapeHtml(assetsLine)}</div>` : ''}
+            ${qtyLine ? `<div style="color:#64748b;font-size:13px;">${dcEscapeHtml(qtyLine)}</div>` : ''}
+        </div>
+        ${entries || '<p style="color:#64748b;margin:0;">No return logs yet.</p>'}
+    </div>`;
 }
 
 if (typeof window !== 'undefined') {

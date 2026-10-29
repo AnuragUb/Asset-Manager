@@ -10,26 +10,19 @@ const cache = require('./cacheService');
  * Hard-coded here (not env / DB / config-file). buildAuthorizationUrl and
  * /api/zoho/status both read this list. Do not duplicate elsewhere.
  *
- * Products ALL covers catalog pull + asset product create/update.
- * Deals READ covers sync-deals.
+ * modules.ALL covers Products / Deals / Purchase Orders / Accounts /
+ * Contacts / Vendors (and other CRM modules) for sync + zoho_crm_db mirror.
  * settings.fields/modules READ required by SDK Utility.getFields
  * when autoRefreshFields(true) precedes Records API calls.
- * purchaseorders.READ is the least-privilege scope for CRM GET
- * Purchase_Orders / {id} (SDK RecordOperations('Purchase_Orders').getRecord).
- * accounts.READ is the least-privilege scope for CRM GET Accounts
- * used by Delivery Challan Customer / Receiver lookup.
  * findUser(false) avoids mandatory users/org READ scopes.
  *
  * Adding a scope here does not mutate the current refresh token.
  * Explicit Reauthorize / Connect Zoho (prompt=consent) is required.
  */
 const ZOHO_OAUTH_SCOPES = [
-    'ZohoCRM.modules.products.ALL',
-    'ZohoCRM.modules.deals.READ',
+    'ZohoCRM.modules.ALL',
     'ZohoCRM.settings.fields.READ',
-    'ZohoCRM.settings.modules.READ',
-    'ZohoCRM.modules.purchaseorders.READ',
-    'ZohoCRM.modules.accounts.READ'
+    'ZohoCRM.settings.modules.READ'
 ].join(',');
 
 /** CRM v8 getRecords requires `fields`. */
@@ -54,8 +47,97 @@ const ACCOUNT_GET_FIELDS = [
     'Shipping_Country',
     'Shipping_Flat_House_No_Building_Apartment_Name'
 ].join(',');
+/** Full mirror pull fields for zoho_crm_db.zoho_accounts (includes DC set). */
+const ACCOUNT_MIRROR_FIELDS = [
+    'Account_Name',
+    'Phone',
+    'Fax',
+    'Website',
+    'Account_Type',
+    'Industry',
+    'Rating',
+    'Owner',
+    'Description',
+    'Last_Activity_Time',
+    'Billing_Address',
+    'Billing_Street',
+    'Billing_City',
+    'Billing_State',
+    'Billing_Code',
+    'Billing_Country',
+    'Billing_Flat_House_No_Building_Apartment_Name',
+    'Shipping_Address',
+    'Shipping_Street',
+    'Shipping_City',
+    'Shipping_State',
+    'Shipping_Code',
+    'Shipping_Country',
+    'Shipping_Flat_House_No_Building_Apartment_Name'
+].join(',');
+const CONTACT_MIRROR_FIELDS = [
+    'First_Name',
+    'Last_Name',
+    'Full_Name',
+    'Email',
+    'Secondary_Email',
+    'Phone',
+    'Mobile',
+    'Home_Phone',
+    'Fax',
+    'Title',
+    'Department',
+    'Salutation',
+    'Account_Name',
+    'Vendor_Name',
+    'Owner',
+    'Description',
+    'Last_Activity_Time',
+    'Mailing_Street',
+    'Mailing_City',
+    'Mailing_State',
+    'Mailing_Zip',
+    'Mailing_Country',
+    'Mailing_Flat_House_No_Building_Apartment_Name',
+    'Mailing_Address'
+].join(',');
+/** Deal Projects are the Zoho Deals module (plural label "Deal Projects"). */
+const DEAL_PROJECT_FIELDS = [
+    'Deal_Name',
+    'Project_ID',
+    'Account_Name',
+    'Contact_Name',
+    'Stage',
+    'Type',
+    'Amount',
+    'Closing_Date',
+    'Pipeline',
+    'Owner',
+    'Description',
+    'Last_Activity_Time',
+    'Modified_Time'
+].join(',');
+const VENDOR_MIRROR_FIELDS = [
+    'Vendor_Name',
+    'Phone',
+    'Email',
+    'Website',
+    'Category',
+    'GL_Account',
+    'Owner',
+    'Description',
+    'Last_Activity_Time',
+    'Street',
+    'City',
+    'State',
+    'Zip_Code',
+    'Country',
+    'Flat_House_No_Building_Apartment_Name',
+    'Address'
+].join(',');
 const ACCOUNT_CACHE_KEY = 'zoho:dc:accounts:v1';
 const ACCOUNT_CACHE_TTL_SEC = 600;
+const MIRROR_MAX_PAGES = 50;
+const MIRROR_PER_PAGE = 200;
 
 const OAUTH_STATE_TTL_SEC = 600;
 const TOKEN_FILE = path.join(__dirname, '../zoho_tokens.txt');
@@ -159,9 +241,9 @@ function toZohoRecordBigInt(value, fieldName = 'id') {
  * Zoho CRM Service
  *
  * Token persistence: FileStore (Option A — lowest risk).
- * DB `oauthtoken` migration exists but SDK DBStore is MySQL-oriented;
- * FileStore remains the active store. File is gitignored and lives on
- * the bind-mounted host tree so restarts keep authorization.
+ * The unused public oauthtoken table was dropped; the SDK DBStore is
+ * MySQL-oriented and was never the live store. File is gitignored and
+ * lives on the bind-mounted host tree so restarts keep authorization.
  */
 class ZohoService {
     constructor() {
@@ -1343,6 +1425,306 @@ class ZohoService {
         } catch (error) {
             this._throwAccountReadError(error);
         }
+    }
+
+    /**
+     * Page through a CRM module for zoho_crm_db mirror pulls.
+     * Read-only. Does not write asset_manager.
+     * @param {string} moduleApiName Accounts | Contacts | Vendors
+     * @param {string} fieldsCsv
+     * @returns {Promise<object[]>} SDK Record instances
+     */
+    async fetchCrmModulePages(moduleApiName, fieldsCsv, { maxPages = MIRROR_MAX_PAGES, perPage = MIRROR_PER_PAGE } = {}) {
+        await this.init();
+        const moduleName = String(moduleApiName || '').trim();
+        if (!moduleName) {
+            const err = new Error('CRM module name is required');
+            err.code = 'ZOHO_BAD_REQUEST';
+            throw err;
+        }
+        const rows = [];
+        let page = 1;
+        let moreRecords = true;
+        while (moreRecords && page <= maxPages) {
+            const recordOperations = new ZOHOCRMSDK.Record.RecordOperations(moduleName);
+            const paramInstance = new ZOHOCRMSDK.ParameterMap();
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.FIELDS, fieldsCsv);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PAGE, page);
+            await paramInstance.add(ZOHOCRMSDK.Record.GetRecordsParam.PER_PAGE, perPage);
+            const response = await recordOperations.getRecords(paramInstance);
+            if (response == null) {
+                const err = new Error(`Zoho ${moduleName} getRecords returned no response`);
+                err.code = 'ZOHO_EMPTY_RESPONSE';
+                throw err;
+            }
+            const responseObject = response.getObject();
+            if (responseObject instanceof ZOHOCRMSDK.Record.APIException) {
+                const err = new Error(zohoApiExceptionMessage(responseObject));
+                err.code = 'ZOHO_API_EXCEPTION';
+                throw err;
+            }
+            if (!(responseObject instanceof ZOHOCRMSDK.Record.ResponseWrapper)) {
+                const err = new Error(`Zoho ${moduleName} getRecords returned an unexpected response`);
+                err.code = 'ZOHO_UNEXPECTED_RESPONSE';
+                throw err;
+            }
+            const batch = responseObject.getData() || [];
+            rows.push(...batch);
+            const info = typeof responseObject.getInfo === 'function' ? responseObject.getInfo() : null;
+            moreRecords = !!(info && typeof info.getMoreRecords === 'function' && info.getMoreRecords());
+            page += 1;
+        }
+        return rows;
+    }
+
+    _mirrorLookup(value) {
+        if (value == null || value === '') return { id: null, name: null };
+        if (typeof value === 'object') {
+            let id = null;
+            let name = null;
+            try {
+                if (typeof value.getId === 'function') {
+                    const raw = value.getId();
+                    id = raw != null ? String(raw) : null;
+                }
+            } catch { /* ignore */ }
+            try {
+                if (typeof value.getKeyValue === 'function') {
+                    const n = value.getKeyValue('name') || value.getKeyValue('Name');
+                    if (n != null) name = String(n).trim() || null;
+                }
+            } catch { /* ignore */ }
+            if (!name && value.name != null) name = String(value.name).trim() || null;
+            if (!id && value.id != null) id = String(value.id);
+            return { id, name };
+        }
+        return { id: null, name: String(value).trim() || null };
+    }
+
+    _mirrorActivityTime(value) {
+        const raw = this._accountScalar(value);
+        if (!raw) return null;
+        const ts = Date.parse(raw);
+        return Number.isFinite(ts) ? new Date(ts) : null;
+    }
+
+    mapAccountMirrorRow(record) {
+        const rawId = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        let zohoId = null;
+        try {
+            zohoId = this.zohoIdToString(rawId);
+        } catch {
+            return null;
+        }
+        const owner = this._mirrorLookup(record.getKeyValue('Owner'));
+        const billingAddress = this._accountAddress(record.getKeyValue('Billing_Address'), [
+            record.getKeyValue('Billing_Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Billing_Street'),
+            record.getKeyValue('Billing_City'),
+            record.getKeyValue('Billing_State'),
+            record.getKeyValue('Billing_Code'),
+            record.getKeyValue('Billing_Country')
+        ]);
+        const shippingAddress = this._accountAddress(record.getKeyValue('Shipping_Address'), [
+            record.getKeyValue('Shipping_Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Shipping_Street'),
+            record.getKeyValue('Shipping_City'),
+            record.getKeyValue('Shipping_State'),
+            record.getKeyValue('Shipping_Code'),
+            record.getKeyValue('Shipping_Country')
+        ]);
+        const row = {
+            zoho_id: zohoId,
+            account_name: this._accountScalar(record.getKeyValue('Account_Name')) || null,
+            phone: this._accountScalar(record.getKeyValue('Phone')) || null,
+            fax: this._accountScalar(record.getKeyValue('Fax')) || null,
+            website: this._accountScalar(record.getKeyValue('Website')) || null,
+            account_type: this._accountScalar(record.getKeyValue('Account_Type')) || null,
+            industry: this._accountScalar(record.getKeyValue('Industry')) || null,
+            rating: this._accountScalar(record.getKeyValue('Rating')) || null,
+            owner_zoho_id: owner.id,
+            owner_name: owner.name,
+            billing_address: billingAddress || null,
+            billing_street: this._accountScalar(record.getKeyValue('Billing_Street')) || null,
+            billing_city: this._accountScalar(record.getKeyValue('Billing_City')) || null,
+            billing_state: this._accountScalar(record.getKeyValue('Billing_State')) || null,
+            billing_code: this._accountScalar(record.getKeyValue('Billing_Code')) || null,
+            billing_country: this._accountScalar(record.getKeyValue('Billing_Country')) || null,
+            billing_flat: this._accountScalar(record.getKeyValue('Billing_Flat_House_No_Building_Apartment_Name')) || null,
+            shipping_address: shippingAddress || null,
+            shipping_street: this._accountScalar(record.getKeyValue('Shipping_Street')) || null,
+            shipping_city: this._accountScalar(record.getKeyValue('Shipping_City')) || null,
+            shipping_state: this._accountScalar(record.getKeyValue('Shipping_State')) || null,
+            shipping_code: this._accountScalar(record.getKeyValue('Shipping_Code')) || null,
+            shipping_country: this._accountScalar(record.getKeyValue('Shipping_Country')) || null,
+            shipping_flat: this._accountScalar(record.getKeyValue('Shipping_Flat_House_No_Building_Apartment_Name')) || null,
+            description: this._accountScalar(record.getKeyValue('Description')) || null,
+            last_activity_time: this._mirrorActivityTime(record.getKeyValue('Last_Activity_Time'))
+        };
+        row.raw_json = { ...row };
+        return row;
+    }
+
+    mapContactMirrorRow(record) {
+        const rawId = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        let zohoId = null;
+        try {
+            zohoId = this.zohoIdToString(rawId);
+        } catch {
+            return null;
+        }
+        const owner = this._mirrorLookup(record.getKeyValue('Owner'));
+        const account = this._mirrorLookup(record.getKeyValue('Account_Name'));
+        const vendor = this._mirrorLookup(record.getKeyValue('Vendor_Name'));
+        const mailingAddress = this._accountAddress(record.getKeyValue('Mailing_Address'), [
+            record.getKeyValue('Mailing_Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Mailing_Street'),
+            record.getKeyValue('Mailing_City'),
+            record.getKeyValue('Mailing_State'),
+            record.getKeyValue('Mailing_Zip'),
+            record.getKeyValue('Mailing_Country')
+        ]);
+        const row = {
+            zoho_id: zohoId,
+            first_name: this._accountScalar(record.getKeyValue('First_Name')) || null,
+            last_name: this._accountScalar(record.getKeyValue('Last_Name')) || null,
+            full_name: this._accountScalar(record.getKeyValue('Full_Name')) || null,
+            email: this._accountScalar(record.getKeyValue('Email')) || null,
+            secondary_email: this._accountScalar(record.getKeyValue('Secondary_Email')) || null,
+            phone: this._accountScalar(record.getKeyValue('Phone')) || null,
+            mobile: this._accountScalar(record.getKeyValue('Mobile')) || null,
+            home_phone: this._accountScalar(record.getKeyValue('Home_Phone')) || null,
+            fax: this._accountScalar(record.getKeyValue('Fax')) || null,
+            title: this._accountScalar(record.getKeyValue('Title')) || null,
+            department: this._accountScalar(record.getKeyValue('Department')) || null,
+            salutation: this._accountScalar(record.getKeyValue('Salutation')) || null,
+            account_zoho_id: account.id,
+            account_name: account.name,
+            vendor_zoho_id: vendor.id,
+            vendor_name: vendor.name,
+            mailing_street: this._accountScalar(record.getKeyValue('Mailing_Street')) || null,
+            mailing_city: this._accountScalar(record.getKeyValue('Mailing_City')) || null,
+            mailing_state: this._accountScalar(record.getKeyValue('Mailing_State')) || null,
+            mailing_zip: this._accountScalar(record.getKeyValue('Mailing_Zip')) || null,
+            mailing_country: this._accountScalar(record.getKeyValue('Mailing_Country')) || null,
+            mailing_flat: this._accountScalar(record.getKeyValue('Mailing_Flat_House_No_Building_Apartment_Name')) || null,
+            mailing_address: mailingAddress || null,
+            owner_zoho_id: owner.id,
+            owner_name: owner.name,
+            description: this._accountScalar(record.getKeyValue('Description')) || null,
+            last_activity_time: this._mirrorActivityTime(record.getKeyValue('Last_Activity_Time'))
+        };
+        row.raw_json = { ...row };
+        return row;
+    }
+
+    mapVendorMirrorRow(record) {
+        const rawId = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        let zohoId = null;
+        try {
+            zohoId = this.zohoIdToString(rawId);
+        } catch {
+            return null;
+        }
+        const owner = this._mirrorLookup(record.getKeyValue('Owner'));
+        const address = this._accountAddress(record.getKeyValue('Address'), [
+            record.getKeyValue('Flat_House_No_Building_Apartment_Name'),
+            record.getKeyValue('Street'),
+            record.getKeyValue('City'),
+            record.getKeyValue('State'),
+            record.getKeyValue('Zip_Code'),
+            record.getKeyValue('Country')
+        ]);
+        const row = {
+            zoho_id: zohoId,
+            vendor_name: this._accountScalar(record.getKeyValue('Vendor_Name')) || null,
+            phone: this._accountScalar(record.getKeyValue('Phone')) || null,
+            email: this._accountScalar(record.getKeyValue('Email')) || null,
+            website: this._accountScalar(record.getKeyValue('Website')) || null,
+            category: this._accountScalar(record.getKeyValue('Category')) || null,
+            gl_account: this._accountScalar(record.getKeyValue('GL_Account')) || null,
+            street: this._accountScalar(record.getKeyValue('Street')) || null,
+            city: this._accountScalar(record.getKeyValue('City')) || null,
+            state: this._accountScalar(record.getKeyValue('State')) || null,
+            zip_code: this._accountScalar(record.getKeyValue('Zip_Code')) || null,
+            country: this._accountScalar(record.getKeyValue('Country')) || null,
+            flat: this._accountScalar(record.getKeyValue('Flat_House_No_Building_Apartment_Name')) || null,
+            address: address || null,
+            owner_zoho_id: owner.id,
+            owner_name: owner.name,
+            description: this._accountScalar(record.getKeyValue('Description')) || null,
+            last_activity_time: this._mirrorActivityTime(record.getKeyValue('Last_Activity_Time'))
+        };
+        row.raw_json = { ...row };
+        return row;
+    }
+
+    async pullAccountsMirrorRows() {
+        const records = await this.fetchCrmModulePages('Accounts', ACCOUNT_MIRROR_FIELDS);
+        return records.map((r) => this.mapAccountMirrorRow(r)).filter(Boolean);
+    }
+
+    mapDealProjectRow(record) {
+        const rawId = typeof record.getId === 'function' ? record.getId() : record.getKeyValue('id');
+        let zohoId = null;
+        try {
+            zohoId = this.zohoIdToString(rawId);
+        } catch {
+            return null;
+        }
+        const account = this._mirrorLookup(record.getKeyValue('Account_Name'));
+        const contact = this._mirrorLookup(record.getKeyValue('Contact_Name'));
+        const owner = this._mirrorLookup(record.getKeyValue('Owner'));
+        const amountText = this._accountScalar(record.getKeyValue('Amount'));
+        const amount = amountText && Number.isFinite(Number(amountText)) ? Number(amountText) : null;
+        const closingRaw = record.getKeyValue('Closing_Date');
+        let closing = null;
+        if (closingRaw instanceof Date && !Number.isNaN(closingRaw.getTime())) {
+            closing = closingRaw.toISOString().slice(0, 10);
+        } else {
+            const closingText = this._accountScalar(closingRaw);
+            if (/^\d{4}-\d{2}-\d{2}/.test(closingText)) closing = closingText.slice(0, 10);
+            else if (closingText) {
+                const parsed = Date.parse(closingText);
+                if (Number.isFinite(parsed)) closing = new Date(parsed).toISOString().slice(0, 10);
+            }
+        }
+        const row = {
+            zoho_id: zohoId,
+            deal_name: this._accountScalar(record.getKeyValue('Deal_Name')) || null,
+            project_id: this._accountScalar(record.getKeyValue('Project_ID')) || null,
+            account_zoho_id: account.id,
+            account_name: account.name,
+            contact_zoho_id: contact.id,
+            contact_name: contact.name,
+            stage: this._accountScalar(record.getKeyValue('Stage')) || null,
+            deal_type: this._accountScalar(record.getKeyValue('Type')) || null,
+            amount,
+            closing_date: closing,
+            pipeline: this._accountScalar(record.getKeyValue('Pipeline')) || null,
+            owner_zoho_id: owner.id,
+            owner_name: owner.name,
+            description: this._accountScalar(record.getKeyValue('Description')) || null,
+            last_activity_time: this._mirrorActivityTime(record.getKeyValue('Last_Activity_Time')),
+            zoho_modified_at: this._mirrorActivityTime(record.getKeyValue('Modified_Time'))
+        };
+        row.raw_json = { ...row };
+        return row;
+    }
+
+    async pullDealProjectRows() {
+        const records = await this.fetchCrmModulePages('Deals', DEAL_PROJECT_FIELDS);
+        return records.map((r) => this.mapDealProjectRow(r)).filter(Boolean);
+    }
+
+    async pullContactsMirrorRows() {
+        const records = await this.fetchCrmModulePages('Contacts', CONTACT_MIRROR_FIELDS);
+        return records.map((r) => this.mapContactMirrorRow(r)).filter(Boolean);
+    }
+
+    async pullVendorsMirrorRows() {
+        const records = await this.fetchCrmModulePages('Vendors', VENDOR_MIRROR_FIELDS);
+        return records.map((r) => this.mapVendorMirrorRow(r)).filter(Boolean);
     }
 
     classifyZohoError(error) {

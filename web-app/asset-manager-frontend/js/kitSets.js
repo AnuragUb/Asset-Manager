@@ -18,6 +18,24 @@ function canMutateSets() {
     return canLogistics();
 }
 
+function fmtSetQty(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n) : String(value ?? '');
+}
+
+/** Fills "N in stock" per component; silent when the user cannot see DC stock. */
+async function loadSetStock(setId) {
+    try {
+        const data = await api(`/api/dc/sets/${encodeURIComponent(setId)}/pick-options?kits=1`);
+        (data.requirements || []).forEach((r) => {
+            const slot = document.querySelector(`[data-set-stock="${CSS.escape(r.id)}"]`);
+            if (!slot) return;
+            const ok = Number(r.inStock) >= Number(r.perKit);
+            slot.innerHTML = `<span style="color:${ok ? '#15803d' : '#b91c1c'};">${escapeHtml(fmtSetQty(r.inStock))} ${escapeHtml(r.unit || '')} in stock</span>`;
+        });
+    } catch (_) { /* stock hint is optional */ }
+}
+
 async function api(path, options = {}) {
     const response = await fetchWithAuth(path, options);
     const data = await response.json().catch(() => ({}));
@@ -89,16 +107,18 @@ async function renderSetList() {
     const q = el('setSearch')?.value || '';
     const composition = el('setTypeFilter')?.value || '';
     const completeness = el('setCompletenessFilter')?.value || '';
+    const status = el('setStatusFilter')?.value || 'ACTIVE';
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (composition) params.set('composition', composition);
     if (completeness) params.set('completeness', completeness);
+    if (status) params.set('status', status);
     const data = await api(`/api/sets?${params.toString()}`);
     const sets = data.sets || [];
     el('setCountBadge').textContent = `${sets.length} Sets`;
     if (!sets.length) {
         host.innerHTML = emptyState({
-            title: 'No active Sets.',
+            title: 'No Sets in this view.',
             body: 'Create a Set, add Product requirements, then allocate Assets or Inventory. Completeness and composition are different: completeness is requirements vs allocated quantity; composition is the kinds of physical stock.',
             actionLabel: canMutateSets() ? 'Create Set' : '',
             actionView: 'sets-view',
@@ -115,6 +135,35 @@ async function renderSetList() {
     host.querySelectorAll('[data-set-open]').forEach((btn) => {
         btn.addEventListener('click', () => openSetDetail(btn.getAttribute('data-set-open')));
     });
+    host.querySelectorAll('[data-set-delete]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            deleteSet(btn.getAttribute('data-set-delete'), btn.getAttribute('data-set-name'));
+        });
+    });
+}
+
+function canDeleteSet(set) {
+    return canMutateSets() && String(set?.status || '').toUpperCase() !== 'ARCHIVED';
+}
+
+async function deleteSet(id, name) {
+    const label = name ? `"${name}"` : 'this Set';
+    if (!confirm(`Delete ${label}?\n\nThis removes the Set recipe from the list.\nIt does NOT delete Assets, Inventory, or Products.\nAny Set reservations are released.`)) return;
+    try {
+        await api(`/api/sets/${encodeURIComponent(id)}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('delete') },
+            body: JSON.stringify({})
+        });
+        showToast('Set deleted. Physical records were kept.', 'success');
+        const modal = el('setDetailModal');
+        if (modal) modal.style.display = 'none';
+        await renderSetList();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 }
 
 function cardHtml(set) {
@@ -123,7 +172,6 @@ function cardHtml(set) {
         <article class="ms-card">
             <div class="ms-card-top">
                 <span class="${statusChipClass(set.status)}">${escapeHtml(set.status)}</span>
-                <span class="${completenessChipClass(set.completeness)}">${escapeHtml(set.completeness || 'EMPTY')}</span>
                 <span class="ms-chip ms-chip-type">${escapeHtml(set.composition || 'EMPTY')}</span>
                 ${legacy ? '<span class="ms-chip ms-chip-legacy">Manual review</span>' : ''}
             </div>
@@ -131,7 +179,10 @@ function cardHtml(set) {
             <div class="ms-mono">${escapeHtml(set.id)}</div>
             <div class="ms-card-foot">
                 <span class="ms-card-count">${legacy ? 'Legacy Managed Set' : `${(set.requirements || []).length} requirement${(set.requirements || []).length === 1 ? '' : 's'}`}</span>
-                <button type="button" class="ms-btn ms-btn-primary" data-set-open="${escapeHtml(set.id)}">Open</button>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                    ${canDeleteSet(set) ? `<button type="button" class="ms-btn ms-btn-xs ms-btn-danger" data-set-delete="${escapeHtml(set.id)}" data-set-name="${escapeHtml(set.name)}">Delete</button>` : ''}
+                    <button type="button" class="ms-btn ms-btn-primary" data-set-open="${escapeHtml(set.id)}">Open</button>
+                </div>
             </div>
         </article>`;
 }
@@ -258,7 +309,6 @@ async function openSetDetail(id) {
             <div class="ms-mono">${escapeHtml(set.id)}</div>
             <div class="ms-meta">
                 <span class="${statusChipClass(set.status)}">${escapeHtml(set.status)}</span>
-                Completeness: <span class="${completenessChipClass(set.completeness)}">${escapeHtml(set.completeness)}</span>
                 Composition: <span class="ms-chip ms-chip-type">${escapeHtml(set.composition)}</span>
             </div>
             ${set.description ? `<p class="ms-desc">${escapeHtml(set.description)}</p>` : ''}
@@ -285,24 +335,23 @@ async function openSetDetail(id) {
         </div>
         <div id="commercializePreviewHost"></div>
         ` : ''}
-        <div class="ms-section-title">Requirements <span class="ms-frozen">FROZEN</span></div>
+        <div class="ms-section-title">Components <span class="ms-frozen">FROZEN</span></div>
+        ${!legacy ? '<p class="ms-desc" style="margin:0 0 8px;">A Set is a product recipe. The physical units are picked when the Set is added to a Delivery Challan (DC → ＋ Add Set).</p>' : ''}
         <div class="ms-rows">
             ${reqs.map((r) => {
-                const line = (set.completenessLines || []).find((l) => l.requirementId === r.id);
                 const allocs = allocationsForRequirement(set, r.id);
                 return `<div class="ms-row" style="flex-direction:column;align-items:stretch;">
                     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
                         <div class="ms-row-main">
-                            <div class="ms-row-name">${escapeHtml(r.productName || r.productId)} × ${escapeHtml(r.quantity)} ${escapeHtml(r.unit || '')}</div>
-                            <div class="ms-row-sub"><span class="ms-mono">${escapeHtml(r.productId)}</span>${line ? `<span>${escapeHtml(line.state)} (${escapeHtml(line.allocated)} / ${escapeHtml(line.required)})</span>` : ''}</div>
+                            <div class="ms-row-name">${escapeHtml(r.productName || r.productId)} × ${escapeHtml(fmtSetQty(r.quantity))} ${escapeHtml(r.unit || '')}</div>
+                            <div class="ms-row-sub"><span class="ms-mono">${escapeHtml(r.productId)}</span><span data-set-stock="${escapeHtml(r.id)}"></span></div>
                         </div>
-                        ${canOperate ? `<button type="button" class="ms-btn ms-btn-xs ms-btn-primary" data-allocate-req="${escapeHtml(r.id)}">Allocate</button>` : ''}
                     </div>
-                    <div class="ms-rows" style="margin-top:6px;">
+                    ${allocs.length ? `<div class="ms-rows" style="margin-top:6px;">
                         ${allocs.map((a) => `
                             <div class="ms-row">
                                 <div class="ms-row-main">
-                                    <div class="ms-row-name">${escapeHtml(a.label || a.resourceId)}</div>
+                                    <div class="ms-row-name">${escapeHtml(a.label || a.resourceId)} <span class="ms-chip">earlier allocation</span></div>
                                     <div class="ms-row-sub">
                                         <span class="ms-mono">${escapeHtml(a.resourceId)}</span>
                                         <span>${escapeHtml(a.resourceType)}</span>
@@ -310,12 +359,10 @@ async function openSetDetail(id) {
                                     </div>
                                 </div>
                                 <div class="ms-row-actions">
-                                    ${canOperate ? `<button type="button" class="ms-btn ms-btn-xs" data-replace-alc="${escapeHtml(a.id)}" data-req="${escapeHtml(r.id)}" data-type="${escapeHtml(a.resourceType)}">Replace</button>
-                                    <button type="button" class="ms-btn ms-btn-xs ms-btn-danger" data-remove-alc="${escapeHtml(a.id)}">Remove</button>` : ''}
+                                    ${canOperate ? `<button type="button" class="ms-btn ms-btn-xs ms-btn-danger" data-remove-alc="${escapeHtml(a.id)}" title="Release this unit back to stock">Release</button>` : ''}
                                 </div>
-                            </div>`).join('') || '<div class="ms-empty">No physical allocation yet</div>'}
-                    </div>
-                    <div id="alloc-panel-${escapeHtml(r.id)}"></div>
+                            </div>`).join('')}
+                    </div>` : ''}
                 </div>`;
             }).join('') || '<div class="ms-empty">No requirements</div>'}
         </div>
@@ -323,10 +370,13 @@ async function openSetDetail(id) {
         <div id="setProcurementHost" class="ms-rows"><div class="ms-empty">Loading procurement need…</div></div>
         <div class="ms-section-title">History</div>
         <div id="setHistoryHost" class="ms-rows"><div class="ms-empty">Loading history…</div></div>
-        ${canOperate ? `
+        ${canOperate || canDeleteSet(set) ? `
         <div class="ms-modal-actions">
+            ${canOperate ? `
             <button type="button" class="ms-btn ms-btn-xs" id="btnSetArchive">Archive Set</button>
             <button type="button" class="ms-btn ms-btn-xs ms-btn-danger" id="btnSetDisband">Disband Set</button>
+            ` : ''}
+            ${canDeleteSet(set) ? '<button type="button" class="ms-btn ms-btn-xs ms-btn-danger" id="btnSetDelete">Delete Set</button>' : ''}
         </div>` : ''}
     `;
     if (modal.parentElement !== document.body) {
@@ -336,6 +386,7 @@ async function openSetDetail(id) {
 
     loadHistory(id);
     loadSetProcurementNeed(id);
+    if (!legacy && active) loadSetStock(set.id);
 
     el('btnViewSetProduct')?.addEventListener('click', () => {
         if (typeof window.lifecycleGo === 'function') {
@@ -348,14 +399,21 @@ async function openSetDetail(id) {
             window.openProductDetail(set.productId);
         }
     });
-    el('btnPublishSetProduct')?.addEventListener('click', async () => {
+    el('btnPublishSetProduct')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        if (btn.disabled) return;
         if (!confirm('Publish the Set-derived Product to Zoho? This does not change allocations or reservations.')) return;
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Publishing…';
         try {
             const result = await api(`/api/products/${encodeURIComponent(set.productId)}/publish`, { method: 'POST' });
-            showToast(result.skipped ? 'Publish skipped (unchanged)' : `Published ${result.zohoId}`, 'success');
+            showToast(result.skipped ? 'Already up to date in Zoho' : `Published ${result.zohoId}`, 'success');
             openSetDetail(id);
         } catch (err) {
             showToast(err.message, 'error');
+            btn.disabled = false;
+            btn.textContent = label;
         }
     });
     el('btnCommercializeSet')?.addEventListener('click', async () => {
@@ -417,7 +475,7 @@ async function openSetDetail(id) {
                     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('dealloc') },
                     body: JSON.stringify({})
                 });
-                showToast('Allocation removed. Reservation released. Requirement unchanged.', 'success');
+                showToast('Unit released back to stock.', 'success');
                 openSetDetail(id);
                 renderSetList();
             } catch (err) {
@@ -448,6 +506,7 @@ async function openSetDetail(id) {
             showToast(err.message, 'error');
         }
     });
+    el('btnSetDelete')?.addEventListener('click', () => deleteSet(id, set.name));
     el('btnSetArchive')?.addEventListener('click', async () => {
         if (!confirm('Archive this Set?')) return;
         try {
@@ -798,6 +857,7 @@ export function initKitSetsView() {
     });
     el('setTypeFilter')?.addEventListener('change', () => renderSetList().catch((err) => showToast(err.message, 'error')));
     el('setCompletenessFilter')?.addEventListener('change', () => renderSetList().catch((err) => showToast(err.message, 'error')));
+    el('setStatusFilter')?.addEventListener('change', () => renderSetList().catch((err) => showToast(err.message, 'error')));
     el('closeSetDetailModal')?.addEventListener('click', () => {
         const modal = el('setDetailModal');
         if (modal) modal.style.display = 'none';

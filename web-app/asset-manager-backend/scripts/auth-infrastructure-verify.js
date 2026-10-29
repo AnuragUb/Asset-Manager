@@ -144,7 +144,7 @@ function sourceChecks() {
   const allowFnStart = serverSrc.indexOf('function allowAuthDevResetLink');
   const allowFn = allowFnStart >= 0 ? serverSrc.slice(allowFnStart, allowFnStart + 700) : '';
   assert(allowFn.includes("host.includes('9090')") && !allowFn.includes("8080"), 'forgot-password does not treat 8080 as dev');
-  assert(serverSrc.includes("role: AUTH_PUBLIC_SIGNUP_ROLE"), '6. public signup ignores client role');
+  assert(serverSrc.includes('resolvePublicSignupTeam'), '6. public signup only accepts the five user teams');
   assert(serverSrc.includes("httpOnly: true") && serverSrc.includes("sameSite: 'lax'") && serverSrc.includes("path: '/'"), '39-41. cookie httpOnly / SameSite / Path');
   assert(serverSrc.includes('shouldUseSecureCookies'), '40. production Secure cookie helper present');
   assert(tokenSrc.includes('randomBytes(32)') && tokenSrc.includes("createHash('sha256')"), '38. reset token CSPRNG + hashed storage');
@@ -154,6 +154,7 @@ function sourceChecks() {
   assert(indexSrc.includes('name="confirmPassword"') && loginAnimSrc.includes('confirmPassword: data.confirmPassword'), 'signup confirm password wired');
   assert(indexSrc.includes('Forgot Password?') && indexSrc.includes('signupLink'), 'login has Forgot Password and Sign Up');
   assert(serverSrc.includes('FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED'), '25. email-unconfigured reasonCode');
+  assert(serverSrc.includes('mustChangePassword') && serverSrc.includes('must_change_password'), 'first-login password setup is gated');
 }
 
 async function ensureAuthColumns() {
@@ -295,6 +296,21 @@ async function runHttpMutationTests(base) {
       body: JSON.stringify({ username: '', password: '' })
     });
     assert(empty.status === 400, '11. malformed/empty login', empty.status);
+
+    if (await db.schema.hasColumn('users', 'must_change_password')) {
+      await db('users').whereRaw('LOWER(username) = LOWER(?)', [email]).update({ must_change_password: true });
+      const pendingLogin = await request(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({ username: email, password, rememberMe: false, category: 'IT' })
+      });
+      const pendingBody = parseJson(pendingLogin.body);
+      const pendingCookies = parseSetCookies(pendingLogin.headers);
+      const pendingJwt = pendingCookies.find((c) => c.name === 'auth_token' && c.value);
+      assert(pendingLogin.status === 200 && pendingBody.mustChangePassword === true && pendingBody.setupToken, 'first-login must change password', pendingLogin.body);
+      assert(!pendingJwt, 'first-login does not issue a session cookie');
+      await db('users').whereRaw('LOWER(username) = LOWER(?)', [email]).update({ must_change_password: false });
+    }
 
     const sessionLogin = await request(`${base}/api/auth/login`, {
       method: 'POST',

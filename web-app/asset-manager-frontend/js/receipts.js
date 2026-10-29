@@ -185,6 +185,57 @@ function assetFolderByName(name) {
     return receiptHierarchy.assetFolders.find((f) => rowName(f).toLowerCase() === n);
 }
 
+function pathParts(value) {
+    return String(value || '').split(/[/|>]+/).map((part) => part.trim()).filter(Boolean);
+}
+
+function sameName(left, right) {
+    return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function domField(id) {
+    const node = document.getElementById(id);
+    return node ? String(node.value || '').trim() : '';
+}
+
+function resolveInventoryPlacement(path, folderRaw, kindRaw) {
+    const parts = pathParts(path);
+    const folder = receiptHierarchy.invFolders.find((row) => rowId(row) === folderRaw)
+        || receiptHierarchy.invFolders.find((row) => sameName(rowName(row), folderRaw))
+        || receiptHierarchy.invFolders.find((row) => sameName(rowName(row), parts[0]));
+    if (!folder) return null;
+    const folderId = rowId(folder);
+    const kinds = receiptHierarchy.invKinds.filter((row) => rowFolderId(row) === folderId);
+    const guesses = [kindRaw, parts[1], parts[parts.length - 1]].filter(Boolean);
+    let kind = null;
+    for (const guess of guesses) {
+        kind = kinds.find((row) => rowId(row) === guess || sameName(rowName(row), guess));
+        if (kind) break;
+    }
+    if (!kind) return null;
+    return { folderId, kindId: rowId(kind) };
+}
+
+function resolveAssetPlacement(path, folderRaw, kindRaw, brandRaw) {
+    const parts = pathParts(path);
+    const folder = assetFolderById(folderRaw) || assetFolderByName(folderRaw) || assetFolderByName(parts[0]);
+    if (!folder) return null;
+    const folderId = rowId(folder);
+    const folderName = rowName(folder);
+    const under = receiptHierarchy.assetKinds.filter((row) => {
+        const parent = assetKindParent(row);
+        return parent === folderName || parent === folderId;
+    });
+    const kind = under.find((row) => sameName(assetKindName(row), kindRaw || parts[1]));
+    if (!kind) return null;
+    const brand = brandRaw || (parts.length > 2 ? parts[parts.length - 1] : '');
+    return {
+        folderId,
+        kindName: assetKindName(kind),
+        brand: sameName(brand, assetKindName(kind)) ? '' : brand
+    };
+}
+
 function invFolderOptionsHtml(selected) {
     const current = String(selected || '');
     return ['<option value="">Select folder</option>']
@@ -277,7 +328,6 @@ function fillHoldingFromProduct(card, product) {
         if (input && value != null && String(value).trim() !== '') input.value = String(value);
     };
     set('.rn-item-name', product.name);
-    set('.rn-item-description', product.description);
     set('.rn-item-make', product.make);
     set('.rn-item-model', product.model);
     set('.rn-item-unit', product.unit);
@@ -523,7 +573,6 @@ async function openHoldingModalForCard(card) {
     const prefill = productPrefillFromCard(card);
     if (product) {
         prefill.ItemName = product.name || prefill.ItemName;
-        prefill.ItemDescription = product.description || prefill.ItemDescription;
         prefill.Make = product.make || prefill.Make;
         prefill.Model = product.model || prefill.Model;
         prefill.UOM = product.unit || prefill.UOM;
@@ -600,9 +649,12 @@ async function openHoldingModalForCard(card) {
     }, 200);
 }
 
-function applyReceiptHoldingFromModal(form) {
+async function applyReceiptHoldingFromModal(form) {
     const ctx = window.__receiptHoldingContext;
     if (!ctx?.card) return false;
+    if (!receiptHierarchy.invFolders.length || !receiptHierarchy.assetFolders.length) {
+        try { await loadReceiptHierarchy(); } catch (_err) { /* use whatever is loaded */ }
+    }
     const card = ctx.card;
     const mode = ctx.mode || 'INVENTORY';
     const formData = new FormData(form);
@@ -620,9 +672,10 @@ function applyReceiptHoldingFromModal(form) {
     const location = String(formData.get('itemLocation') || formData.get('itemCurrentLocation') || el('rnEditLocation')?.value || '').trim();
     const serial = String(formData.get('itemSrNo') || '').trim();
     const purpose = String(formData.get('itemPurpose') || formData.get('itemStatus') || 'Owned').trim() || 'Owned';
-    const folderValue = String(formData.get('itemFolder') || '').trim();
-    const kindValue = String(formData.get('itemKind') || '').trim();
-    const brandValue = String(formData.get('itemBrandCategory') || '').trim();
+    const pathValue = domField('itemFolderPath') || String(formData.get('itemFolderPath') || '').trim();
+    const folderValue = domField('itemFolder') || String(formData.get('itemFolder') || '').trim();
+    const kindValue = domField('itemKind') || String(formData.get('itemKind') || '').trim();
+    const brandValue = domField('itemBrandCategory') || String(formData.get('itemBrandCategory') || '').trim();
 
     set('.rn-item-name', name);
     set('.rn-item-description', description);
@@ -643,43 +696,51 @@ function applyReceiptHoldingFromModal(form) {
     if (modeRadio) modeRadio.checked = true;
 
     if (mode === 'INVENTORY') {
+        const placed = resolveInventoryPlacement(pathValue, folderValue, kindValue);
+        if (!placed) {
+            showToast('Choose a Folder Path that is an existing Inventory folder and category, such as Stores / Cables.', 'error');
+            return false;
+        }
         const folderSelect = card.querySelector('.rn-folder');
         const kindSelect = card.querySelector('.rn-kind');
         if (folderSelect) {
-            if (![...folderSelect.options].some((o) => o.value === folderValue)) {
+            if (![...folderSelect.options].some((o) => o.value === placed.folderId)) {
                 const opt = document.createElement('option');
-                opt.value = folderValue;
-                opt.textContent = intakeFolderName(folderValue, 'inv') || folderValue;
+                opt.value = placed.folderId;
+                opt.textContent = intakeFolderName(placed.folderId, 'inv') || placed.folderId;
                 folderSelect.appendChild(opt);
             }
-            folderSelect.value = folderValue;
-            kindSelect.innerHTML = invKindOptionsHtml(folderValue, kindValue);
+            folderSelect.value = placed.folderId;
         }
-        if (kindSelect && kindValue) kindSelect.value = kindValue;
+        if (kindSelect) {
+            kindSelect.innerHTML = invKindOptionsHtml(placed.folderId, placed.kindId);
+            kindSelect.value = placed.kindId;
+        }
     } else {
-        // Asset modal uses folder Name; receipt stores folder ID when possible
-        let folderId = folderValue;
-        const byName = assetFolderByName(folderValue);
-        if (byName) folderId = rowId(byName);
+        const placed = resolveAssetPlacement(pathValue, folderValue, kindValue, brandValue);
+        if (!placed) {
+            showToast('Choose a Folder Path under an existing Asset folder and category.', 'error');
+            return false;
+        }
         const folderSelect = card.querySelector('.rn-asset-folder');
         const kindSelect = card.querySelector('.rn-asset-kind');
         const makeSelect = card.querySelector('.rn-asset-make');
         if (folderSelect) {
-            if (![...folderSelect.options].some((o) => o.value === folderId)) {
+            if (![...folderSelect.options].some((o) => o.value === placed.folderId)) {
                 const opt = document.createElement('option');
-                opt.value = folderId;
-                opt.textContent = folderValue || folderId;
+                opt.value = placed.folderId;
+                opt.textContent = intakeFolderName(placed.folderId, 'asset') || placed.folderId;
                 folderSelect.appendChild(opt);
             }
-            folderSelect.value = folderId;
+            folderSelect.value = placed.folderId;
         }
         if (kindSelect) {
-            kindSelect.innerHTML = assetKindOptionsHtml(folderId, kindValue);
-            kindSelect.value = kindValue;
+            kindSelect.innerHTML = assetKindOptionsHtml(placed.folderId, placed.kindName);
+            kindSelect.value = placed.kindName;
         }
         if (makeSelect) {
-            makeSelect.innerHTML = assetMakeOptionsHtml(kindValue, brandValue);
-            makeSelect.value = brandValue;
+            makeSelect.innerHTML = assetMakeOptionsHtml(placed.kindName, placed.brand);
+            makeSelect.value = placed.brand;
         }
     }
 
@@ -856,7 +917,7 @@ async function createAssetMake(card) {
     }
 }
 
-async function renderReceiptList() {
+async function renderReceiptList(filterPoId) {
     const host = el('receiptsContent');
     if (!host) return;
     const q = el('receiptSearch')?.value || '';
@@ -866,6 +927,8 @@ async function renderReceiptList() {
     if (status) params.set('status', status);
     const period = el('receiptPeriodFilter')?.value || '';
     if (period) params.set('period', period);
+    const poFilter = String(filterPoId || window.__receiptPoFilter || '').trim();
+    if (poFilter) params.set('poId', poFilter);
     params.set('limit', '100');
     const data = await api(`/api/receipt-notes?${params.toString()}`);
     const notes = data.receiptNotes || [];
@@ -888,34 +951,25 @@ async function renderReceiptList() {
         return;
     }
     host.innerHTML = `
-        <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead>
-                <tr style="text-align:left;border-bottom:1px solid #e5e7eb;color:#667085;">
-                    <th style="padding:8px;">Receipt Note</th>
-                    <th style="padding:8px;">PO</th>
-                    <th style="padding:8px;">Vendor</th>
-                    <th style="padding:8px;">Status</th>
-                    <th style="padding:8px;">Received</th>
-                    <th style="padding:8px;">Accepted</th>
-                    <th style="padding:8px;">Projection</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${notes.map((n) => `
-                    <tr class="rn-row" data-id="${escapeHtml(n.id)}" style="border-bottom:1px solid #f1f5f9;cursor:pointer;">
-                        <td style="padding:8px;" class="ms-mono">${escapeHtml(n.id)}</td>
-                        <td style="padding:8px;">${escapeHtml(n.poNumber || n.poId || '—')}</td>
-                        <td style="padding:8px;">${escapeHtml(n.vendorName || '—')}</td>
-                        <td style="padding:8px;"><span class="${statusChipClass(n.status)}">${escapeHtml(n.status)}</span></td>
-                        <td style="padding:8px;">${escapeHtml(n.receivedAt ? String(n.receivedAt).slice(0, 16) : '—')}</td>
-                        <td style="padding:8px;">${escapeHtml(n.acceptedQuantity == null ? '—' : String(n.acceptedQuantity))}</td>
-                        <td style="padding:8px;"><span class="${projectionChip(n.projectionStatus)}">${escapeHtml(n.projectionStatus || '—')}</span></td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
-    host.querySelectorAll('.rn-row').forEach((row) => {
-        row.addEventListener('click', () => openReceiptDetail(row.getAttribute('data-id')));
+        <div class="rn-card-grid">
+            ${notes.map((n) => `
+                <button type="button" class="rn-op-card" data-id="${escapeHtml(n.id)}" aria-label="Receipt Note ${escapeHtml(n.id)}">
+                    <div class="rn-op-title ms-mono">${escapeHtml(n.id)}</div>
+                    <div class="rn-op-primary">${escapeHtml(n.poNumber || n.poId || '—')}</div>
+                    <div class="rn-op-meta">${escapeHtml(n.vendorName || '—')}</div>
+                    <div class="rn-op-facts">
+                        <span>Received <strong>${escapeHtml(n.receivedAt ? String(n.receivedAt).slice(0, 16) : '—')}</strong></span>
+                        <span>Accepted <strong>${escapeHtml(n.acceptedQuantity == null ? '—' : String(n.acceptedQuantity))}</strong></span>
+                    </div>
+                    <div class="rn-op-foot">
+                        <span class="${statusChipClass(n.status)}">${escapeHtml(n.status)}</span>
+                        <span class="${projectionChip(n.projectionStatus)}">${escapeHtml(n.projectionStatus || '—')}</span>
+                    </div>
+                </button>
+            `).join('')}
+        </div>`;
+    host.querySelectorAll('.rn-op-card').forEach((card) => {
+        card.addEventListener('click', () => openReceiptDetail(card.getAttribute('data-id')));
     });
 }
 
@@ -1346,13 +1400,19 @@ function validateEditorLines(lines, { requireReceived = false } = {}) {
 }
 
 async function saveOpenReceipt(noteId, { requireReceived = false } = {}) {
+    const invoice = String(el('rnEditVendorInvoice')?.value || '').trim();
+    if (!invoice) {
+        showToast('Invoice number is required', 'error');
+        el('rnEditVendorInvoice')?.focus();
+        return false;
+    }
     const lines = validateEditorLines(collectLinesFromEditor(), { requireReceived });
     if (!lines) return false;
     await api(`/api/receipt-notes/${encodeURIComponent(noteId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            vendorInvoiceNo: el('rnEditVendorInvoice')?.value || null,
+            vendorInvoiceNo: invoice,
             deliveryNoteNo: el('rnEditDeliveryNote')?.value || null,
             receivedAtLocation: el('rnEditLocation')?.value || null,
             lines
@@ -1363,21 +1423,22 @@ async function saveOpenReceipt(noteId, { requireReceived = false } = {}) {
 }
 
 function readOnlyLinesHtml(lines) {
-    return lines.map((line) => `
-        <div class="rn-readonly-card">
-            <div class="rn-line-title">${escapeHtml(lineDisplayTitle(line))}</div>
-            <div style="margin-top:4px;font-size:13px;">Product: ${line.productId ? `<span class="ms-mono">${escapeHtml(line.productId)}</span>` : '<span class="rn-req">Product Required</span>'}</div>
-            <div class="rn-line-meta" style="margin-top:10px;">
-                <span>Ordered <strong>${escapeHtml(line.orderedQtySnapshot)}</strong></span>
-                <span>Accepted to date <strong>${escapeHtml(line.acceptedToDate ?? '—')}</strong></span>
-                <span>Outstanding <strong>${escapeHtml(line.outstanding ?? '—')}</strong></span>
-                <span>Received <strong>${escapeHtml(line.qtyReceived)}</strong></span>
-                <span>Accepted <strong>${escapeHtml(line.qtyAccepted)}</strong></span>
-                <span>Rejected <strong>${escapeHtml(line.qtyRejected)}</strong></span>
-                <span>Damaged <strong>${escapeHtml(line.qtyDamaged)}</strong></span>
-                <span>Mode <strong>${escapeHtml(line.creationMode || '—')}</strong></span>
-            </div>
-        </div>
+    if (!lines.length) {
+        return '<tr><td colspan="7" class="rn-sheet-empty">No lines</td></tr>';
+    }
+    return lines.map((line, index) => `
+        <tr>
+            <td class="rn-sheet-idx">${index + 1}</td>
+            <td>
+                <div class="rn-sheet-name">${escapeHtml(lineDisplayTitle(line))}</div>
+                <div class="rn-sheet-sub">${line.productId ? `<span class="ms-mono">${escapeHtml(line.productId)}</span>` : '<span class="rn-req">Product required</span>'}${line.creationMode ? ` · ${escapeHtml(line.creationMode)}` : ''}</div>
+            </td>
+            <td class="rn-sheet-num">${escapeHtml(line.orderedQtySnapshot ?? '—')}</td>
+            <td class="rn-sheet-num">${escapeHtml(line.qtyReceived ?? '—')}</td>
+            <td class="rn-sheet-num">${escapeHtml(line.qtyAccepted ?? '—')}</td>
+            <td class="rn-sheet-num">${escapeHtml(line.qtyRejected ?? '—')}</td>
+            <td class="rn-sheet-num">${escapeHtml(line.qtyDamaged ?? '—')}</td>
+        </tr>
     `).join('');
 }
 
@@ -1397,62 +1458,117 @@ async function openReceiptDetail(id) {
         await loadReceiptHierarchy();
     }
 
+    const isReturn = String(note.inwardKind || '').toUpperCase() === 'RETURN_INWARD';
+    const editable = isOpen && mutate && !isReturn;
+    const receivedLabel = note.receivedAt ? String(note.receivedAt).slice(0, 16).replace('T', ' ') : '—';
+    const landLabel = note.returnHome === 'ASSET'
+        ? `Asset · ${note.returnLocation || '—'}`
+        : note.returnHome === 'INVENTORY'
+            ? `Inventory · ${note.returnLocation || '—'}`
+            : 'Origin place';
+    const fact = (label, value) => `<label>${label}<div class="rn-sheet-fact">${escapeHtml(value || '—')}</div></label>`;
+    const inputFact = (label, id, value, placeholder, required) => `
+        <label>${label}<input id="${id}" class="form-input${required ? ' rn-invoice-required' : ''}" value="${escapeHtml(value || '')}"${placeholder ? ` placeholder="${placeholder}"` : ''}${required ? ' required' : ''}></label>`;
+    const lineTable = (body, foot) => `
+        <table class="rn-sheet-table">
+            <thead>
+                <tr>
+                    <th class="rn-sheet-idx">#</th>
+                    <th>Particulars</th>
+                    <th class="rn-sheet-num">Ordered</th>
+                    <th class="rn-sheet-num">Received</th>
+                    <th class="rn-sheet-num">Accepted</th>
+                    <th class="rn-sheet-num">Rejected</th>
+                    <th class="rn-sheet-num">Damaged</th>
+                </tr>
+            </thead>
+            <tbody>${body}</tbody>
+            ${foot || ''}
+        </table>`;
+    const totals = `
+        <tfoot>
+            <tr>
+                <td></td>
+                <td>Total</td>
+                <td></td>
+                <td class="rn-sheet-num">${escapeHtml(String(lines.reduce((s, line) => s + num(line.qtyReceived), 0)))}</td>
+                <td class="rn-sheet-num">${escapeHtml(String(lines.reduce((s, line) => s + num(line.qtyAccepted), 0)))}</td>
+                <td class="rn-sheet-num">${escapeHtml(String(lines.reduce((s, line) => s + num(line.qtyRejected), 0)))}</td>
+                <td class="rn-sheet-num">${escapeHtml(String(lines.reduce((s, line) => s + num(line.qtyDamaged), 0)))}</td>
+            </tr>
+        </tfoot>`;
+    const physicalHtml = isReturn
+        ? (isPosted
+            ? `<ul class="rn-sheet-list">${lines.map((l) => `<li>${escapeHtml(l.resourceType || '')} <span class="ms-mono">${escapeHtml(l.resourceId || l.itemDescriptionSnapshot || '')}</span>${l.serialSnapshot ? ` · SN ${escapeHtml(l.serialSnapshot)}` : ''} × ${escapeHtml(l.qtyAccepted ?? l.qtyReceived ?? '')}</li>`).join('')}</ul>`
+            : '<p class="rn-sheet-empty">No physical restoration until this return is posted.</p>')
+        : (outputs.length ? `<ul class="rn-sheet-list">${outputs.map((o) => {
+            const view = String(o.resourceType).toUpperCase() === 'INVENTORY' ? 'inventory-view' : 'home-view';
+            const qr = String(o.resourceType).toUpperCase() === 'INVENTORY'
+                ? `/api/qr/dynamic/inventory/${encodeURIComponent(o.resourceId)}`
+                : `/api/qr/${encodeURIComponent(o.resourceId)}`;
+            return `<li>${escapeHtml(o.resourceType)}
+                <button type="button" class="lc-crumb-link" data-lc-go="${view}" data-lc-open="${escapeHtml(o.resourceId)}">${escapeHtml(o.resourceId)}</button>
+                × ${escapeHtml(o.quantity)}
+                · <a href="${qr}" target="_blank" rel="noopener">QR</a></li>`;
+        }).join('')}</ul>` : '<p class="rn-sheet-empty">None until this receipt is posted.</p>');
+
     host.innerHTML = `
-        <div class="rn-detail-header">
-            <div class="rn-detail-title-row">
-                <button type="button" class="action-button grey" id="btnReceiptBack">← Receipts</button>
-                <span class="lc-mono rn-detail-id">${escapeHtml(note.id)}</span>
-                <span class="${statusChipClass(note.status)}">${escapeHtml(note.status)}</span>
-                <span class="${projectionChip(note.projectionStatus)}">${escapeHtml(note.projectionStatus || '—')}</span>
-            </div>
-            <div class="rn-detail-actions">
-                ${isOpen && mutate ? '<button type="button" class="action-button blue" id="btnReceiptSave">Save</button>' : ''}
-                ${isOpen && mutate ? '<button type="button" class="action-button green" id="btnReceiptPost">Post receipt</button>' : ''}
-                ${isOpen && mutate ? '<button type="button" class="action-button grey" id="btnReceiptCancel">Cancel</button>' : ''}
-                ${isPosted && mutate && note.canReverse ? '<button type="button" class="action-button grey" id="btnReceiptReverse">Reverse</button>' : ''}
-            </div>
+        <div class="rn-bar">
+            <button type="button" class="action-button grey" id="btnReceiptBack">← Receipts</button>
+            <span class="rn-bar-spacer"></span>
+            ${editable ? '<button type="button" class="action-button blue" id="btnReceiptSave">Save</button>' : ''}
+            ${isOpen && mutate ? '<button type="button" class="action-button green" id="btnReceiptPost">Post</button>' : ''}
+            ${isOpen && mutate ? '<button type="button" class="action-button grey" id="btnReceiptCancel">Cancel</button>' : ''}
+            ${isPosted && mutate && note.canReverse && !isReturn ? '<button type="button" class="action-button grey" id="btnReceiptReverse">Reverse</button>' : ''}
         </div>
-
-        <div class="rn-po-card">
-            <div class="rn-kicker">PO</div>
-            <div class="rn-line-title">${escapeHtml(note.poNumber || note.poId)}</div>
-            <div class="lc-muted">Vendor: ${escapeHtml(note.vendorName || '—')}</div>
-            ${note.projectionSkipReason ? `<div class="rn-warn">Zoho projection skipped: ${escapeHtml(note.projectionSkipReason)}. No GRN exists.</div>` : ''}
-            ${isOpen && mutate ? `
-                <div class="rn-meta-grid">
-                    <label>Vendor invoice<input id="rnEditVendorInvoice" class="form-input" value="${escapeHtml(note.vendorInvoiceNo || '')}"></label>
-                    <label>Delivery note<input id="rnEditDeliveryNote" class="form-input" value="${escapeHtml(note.deliveryNoteNo || '')}"></label>
-                    <label>Location<input id="rnEditLocation" class="form-input" value="${escapeHtml(note.receivedAtLocation || '')}" placeholder="Mumbai"></label>
+        <article class="rn-sheet">
+            <header class="rn-sheet-head">
+                <div>
+                    <div class="rn-sheet-kicker">${isReturn ? 'Return Inward' : 'Receipt Note'}</div>
+                    <h2 class="rn-sheet-vendor">${escapeHtml(note.vendorName || (isReturn ? 'Return' : 'Vendor'))}</h2>
+                    <div class="rn-sheet-id">${escapeHtml(note.id)}</div>
                 </div>
-            ` : `<div class="lc-muted" style="margin-top:8px;">Location: ${escapeHtml(note.receivedAtLocation || '—')}</div>`}
-        </div>
-
-        <div id="rnEditorLines">
-            ${isOpen && mutate
-                ? lines.map((line, i) => lineEditorHtml(line, i, note)).join('')
-                : readOnlyLinesHtml(lines)}
-        </div>
-
-        <div class="rn-readonly-card">
-            <div class="rn-kicker">PHYSICAL RECORDS</div>
-            ${outputs.length ? `<ul class="rn-list">${outputs.map((o) => {
-                const view = String(o.resourceType).toUpperCase() === 'INVENTORY' ? 'inventory-view' : 'home-view';
-                const qr = String(o.resourceType).toUpperCase() === 'INVENTORY'
-                    ? `/api/qr/dynamic/inventory/${encodeURIComponent(o.resourceId)}`
-                    : `/api/qr/${encodeURIComponent(o.resourceId)}`;
-                return `<li>${escapeHtml(o.resourceType)}
-                    <button type="button" class="lc-crumb-link" data-lc-go="${view}" data-lc-open="${escapeHtml(o.resourceId)}">${escapeHtml(o.resourceId)}</button>
-                    × ${escapeHtml(o.quantity)}
-                    · <a href="${qr}" target="_blank" rel="noopener">QR</a></li>`;
-            }).join('')}</ul>` : '<p class="lc-muted">None until POST.</p>'}
-        </div>
-
-        <div class="rn-readonly-card">
-            <div class="rn-kicker">HISTORY</div>
-            <ul class="rn-list">
-                ${events.map((ev) => `<li>${escapeHtml(ev.type)} · ${escapeHtml(ev.actor || '—')} · ${escapeHtml(ev.timestamp ? String(ev.timestamp).slice(0, 19) : '')}</li>`).join('')}
-            </ul>
-        </div>`;
+                <div class="rn-sheet-facts">
+                    <div class="rn-sheet-stamps">
+                        <span class="${statusChipClass(note.status)}">${escapeHtml(note.status)}</span>
+                        ${isReturn
+                            ? '<span class="ms-chip" style="background:#dbeafe;color:#1e40af;">Return</span>'
+                            : `<span class="${projectionChip(note.projectionStatus)}">${escapeHtml(note.projectionStatus || '—')}</span>`}
+                    </div>
+                    ${editable
+                        ? inputFact('Invoice', 'rnEditVendorInvoice', note.vendorInvoiceNo, '', true)
+                        : fact('Invoice', note.vendorInvoiceNo)}
+                    ${isReturn
+                        ? fact('Originating DC', note.deliveryNoteNo || note.deliveryChallanId)
+                        : (editable
+                            ? inputFact('Delivery note', 'rnEditDeliveryNote', note.deliveryNoteNo)
+                            : fact('Delivery note', note.deliveryNoteNo))}
+                    ${editable
+                        ? inputFact('Location', 'rnEditLocation', note.receivedAtLocation, 'Mumbai')
+                        : fact('Location', note.receivedAtLocation)}
+                    ${isReturn ? fact('Return log', note.returnLogId) : fact('Purchase Order', note.poNumber || note.poId)}
+                    ${fact('Received', receivedLabel)}
+                </div>
+            </header>
+            ${isReturn ? `
+                <div class="rn-sheet-note">
+                    <span>Return</span>
+                    <div>${escapeHtml(note.returnReason || '—')} · Returned by ${escapeHtml(note.returnedByParty || '—')} · Lands ${escapeHtml(landLabel)}. Not a vendor purchase. Quantity on the purchase order stays as it is. Stock is restored only when this note is posted.</div>
+                </div>` : (note.projectionSkipReason ? `<div class="rn-warn">Zoho projection skipped: ${escapeHtml(note.projectionSkipReason)}. No GRN exists.</div>` : '')}
+            ${isReturn || !(isOpen && mutate)
+                ? lineTable(readOnlyLinesHtml(lines), totals)
+                : `<div id="rnEditorLines" class="rn-sheet-lines">${lines.map((line, i) => lineEditorHtml(line, i, note)).join('')}</div>`}
+            <section class="rn-sheet-foot">
+                <div class="rn-sheet-kicker">${isReturn ? 'Physical restoration' : 'Physical records'}</div>
+                ${physicalHtml}
+            </section>
+            <section class="rn-sheet-foot">
+                <div class="rn-sheet-kicker">History</div>
+                ${events.length
+                    ? `<ul class="rn-sheet-list">${events.map((ev) => `<li>${escapeHtml(ev.type)} · ${escapeHtml(ev.actor || '—')} · ${escapeHtml(ev.timestamp ? String(ev.timestamp).slice(0, 19).replace('T', ' ') : '')}</li>`).join('')}</ul>`
+                    : '<p class="rn-sheet-empty">No events yet.</p>'}
+            </section>
+        </article>`;
 
     if (isOpen && mutate) {
         host.querySelectorAll('#rnEditorLines .rn-line-card').forEach((card, i) => bindLineCard(card, lines[i]));
@@ -1470,6 +1586,10 @@ async function openReceiptDetail(id) {
     });
     el('btnReceiptPost')?.addEventListener('click', async () => {
         try {
+            if (String(note.inwardKind || '').toUpperCase() === 'RETURN_INWARD') {
+                await confirmAndPost(note, lines);
+                return;
+            }
             const ok = await saveOpenReceipt(note.id, { requireReceived: true });
             if (!ok) return;
             const refreshed = await api(`/api/receipt-notes/${encodeURIComponent(note.id)}`);
@@ -1524,6 +1644,21 @@ Physical: ${physical}`;
 }
 
 async function confirmAndPost(note, lines) {
+    if (String(note.inwardKind || '').toUpperCase() === 'RETURN_INWARD') {
+        if (!confirm(`Post Return Inward ${note.id}?\n\nThis restores physical holdings for Return Log ${note.returnLogId || '—'}.\nOriginating DC: ${note.deliveryNoteNo || note.deliveryChallanId || '—'}\nReturn Reason: ${note.returnReason || '—'}\nReturned By: ${note.returnedByParty || '—'}\nReceived By: ${note.receivedByUser || note.receivedBy || '—'}`)) return;
+        try {
+            const data = await api(`/api/receipt-notes/${encodeURIComponent(note.id)}/post`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('rn-post') },
+                body: '{}'
+            });
+            showToast(`Posted Return Inward ${data.receiptNote?.id || note.id}`, 'success');
+            await openReceiptDetail(note.id);
+        } catch (err) {
+            toastOperatorError(err);
+        }
+        return;
+    }
     const missing = lines.filter((line) => num(line.qtyReceived) > 0 && !line.productId);
     if (missing.length) {
         showToast('Product Required on every received line before POST. Use the Product catalogue to create/link a Product first.', 'error');
@@ -1548,7 +1683,7 @@ async function confirmAndPost(note, lines) {
 }
 
 /** Slim create: pick PO + meta, create OPEN draft with qty 0 lines, open editor. */
-async function renderCreateForm() {
+async function renderCreateForm(preselectPoId) {
     const host = el('receiptsContent');
     if (!host) return;
     if (!canMutateReceipts()) {
@@ -1557,50 +1692,72 @@ async function renderCreateForm() {
     }
     const orders = await api('/api/procurement/pos?limit=200');
     const list = orders.purchaseOrders || [];
+    const pre = String(preselectPoId || '').trim();
     host.innerHTML = `
-        <div class="rn-detail-header">
-            <div>
-                <button type="button" class="action-button grey" id="btnReceiptBackCreate">← Receipts</button>
-                <h3 style="margin:8px 0 0;">Start Receipt Note ${rnInfoTip('Select a Purchase Order to open an editable draft. Enter quantities and holdings on the next screen.')}</h3>
-            </div>
+        <div class="rn-bar">
+            <button type="button" class="action-button grey" id="btnReceiptBackCreate">← Receipts</button>
+            <span class="rn-bar-spacer"></span>
+            <button type="button" class="action-button green" id="btnReceiptCreateDraft">Open draft</button>
         </div>
-        <div class="rn-po-card">
-            <label style="font-size:12px;font-weight:700;">Purchase Order ${rnInfoTip('Creates an OPEN receipt draft from this PO’s lines. Quantities start at zero until you edit them.')}</label>
-            <select id="rnPoSelect" class="form-input" style="margin-top:4px;">
-                <option value="">Select a PO…</option>
-                ${list.map((o) => `<option value="${escapeHtml(o.id)}" data-po-source="${escapeHtml(o.source || 'LOCAL')}">${escapeHtml(o.poNumber || o.id)}${o.source === 'ZOHO' ? ' · Zoho' : ' · Legacy'}${o.status ? ` · ${escapeHtml(o.status)}` : ''}</option>`).join('')}
-            </select>
-            <div class="rn-meta-grid" style="margin-top:10px;">
-                <label>Vendor invoice<input id="rnVendorInvoice" class="form-input"></label>
-                <label>Delivery note<input id="rnDeliveryNote" class="form-input"></label>
-                <label>Location<input id="rnLocation" class="form-input" placeholder="Mumbai"></label>
-            </div>
-            <div id="rnPoSummary" class="lc-muted" style="margin-top:10px;"></div>
-        </div>
-        <button type="button" class="action-button green" id="btnReceiptCreateDraft">Create OPEN draft</button>`;
+        <article class="rn-sheet">
+            <header class="rn-sheet-head">
+                <div>
+                    <div class="rn-sheet-kicker">Receipt Note</div>
+                    <h2 class="rn-sheet-vendor">New receipt</h2>
+                    <div class="rn-sheet-id">Quantities start at zero. You enter them on the next page.</div>
+                </div>
+                <div class="rn-sheet-facts">
+                    <label>Purchase Order ${rnInfoTip('Opens a draft from this order’s lines.')}
+                        <select id="rnPoSelect" class="form-input">
+                            <option value="">Select a PO…</option>
+                            ${list.map((o) => `<option value="${escapeHtml(o.id)}" data-po-source="${escapeHtml(o.source || 'LOCAL')}" ${pre && String(o.id) === pre ? 'selected' : ''}>${escapeHtml(o.poNumber || o.id)}${o.source === 'ZOHO' ? ' · Zoho' : ' · Legacy'}${o.status ? ` · ${escapeHtml(o.status)}` : ''}</option>`).join('')}
+                        </select>
+                    </label>
+                    <label>Invoice<input id="rnVendorInvoice" class="form-input rn-invoice-required" required></label>
+                    <label>Delivery note<input id="rnDeliveryNote" class="form-input"></label>
+                    <label>Location<input id="rnLocation" class="form-input" placeholder="Mumbai"></label>
+                </div>
+            </header>
+            <div id="rnPoSummary" class="rn-sheet-note"><span>Order</span><div>Select a purchase order.</div></div>
+        </article>`;
 
     bindInfoTips(host);
 
     el('btnReceiptBackCreate')?.addEventListener('click', () => renderReceiptList().catch((err) => showToast(err.message, 'error')));
-    el('rnPoSelect')?.addEventListener('change', async () => {
+    const onPoChange = async () => {
         const poId = el('rnPoSelect').value;
         const box = el('rnPoSummary');
-        if (!poId) { box.textContent = ''; return; }
+        if (!poId) {
+            const vendor = host.querySelector('.rn-sheet-vendor');
+            if (vendor) vendor.textContent = 'New receipt';
+            box.innerHTML = '<span>Order</span><div>Select a purchase order.</div>';
+            return;
+        }
         try {
             const balance = await api(`/api/purchase-orders/${encodeURIComponent(poId)}/receipt-balance`);
             const count = (balance.lines || []).length;
-            box.textContent = `${escapeHtml(balance.poNumber || poId)} · ${count} line(s) · Vendor ${balance.vendorName || '—'}`;
+            const vendor = host.querySelector('.rn-sheet-vendor');
+            if (vendor) vendor.textContent = balance.vendorName || 'Vendor';
+            box.innerHTML = `<span>Order</span><div>${escapeHtml(balance.poNumber || poId)} · ${count} line${count === 1 ? '' : 's'}</div>`;
             box.dataset.lineCount = String(count);
         } catch (err) {
             box.textContent = err.message;
         }
-    });
+    };
+    el('rnPoSelect')?.addEventListener('change', onPoChange);
     el('btnReceiptCreateDraft')?.addEventListener('click', submitCreateDraft);
+    if (pre) onPoChange().catch(() => {});
 }
 
 async function submitCreateDraft() {
     const poId = el('rnPoSelect')?.value;
+    const invoice = String(el('rnVendorInvoice')?.value || '').trim();
     if (!poId) { showToast('Select a PO', 'error'); return; }
+    if (!invoice) {
+        showToast('Invoice number is required', 'error');
+        el('rnVendorInvoice')?.focus();
+        return;
+    }
     try {
         const balance = await api(`/api/purchase-orders/${encodeURIComponent(poId)}/receipt-balance`);
         const poLines = balance.lines || [];
@@ -1625,7 +1782,7 @@ async function submitCreateDraft() {
             body: JSON.stringify({
                 poId,
                 poSource: el('rnPoSelect')?.selectedOptions?.[0]?.getAttribute('data-po-source') || balance.poSource || 'LOCAL',
-                vendorInvoiceNo: el('rnVendorInvoice')?.value || null,
+                vendorInvoiceNo: invoice,
                 deliveryNoteNo: el('rnDeliveryNote')?.value || null,
                 receivedAtLocation: el('rnLocation')?.value || null,
                 lines
@@ -1643,7 +1800,15 @@ export function initReceiptsView() {
         el('btnCreateReceipt').style.display = canMutateReceipts() ? '' : 'none';
     }
     const pending = consumeOpen('receipts-view');
+    const createFromPo = pending?.createFromPo || pending?.extra?.createFromPo || '';
+    const filterPoId = pending?.extra?.poId || '';
+    if (filterPoId) window.__receiptPoFilter = filterPoId;
+    else window.__receiptPoFilter = '';
     const start = async () => {
+        if (createFromPo) {
+            await renderCreateForm(createFromPo);
+            return;
+        }
         if (pending && pending.open) {
             await openReceiptDetail(pending.open);
             return;
@@ -1657,7 +1822,7 @@ export function initReceiptsView() {
         if (periodFilter && (period === 'month' || period === 'quarter' || period === 'year')) {
             periodFilter.value = period;
         }
-        await renderReceiptList();
+        await renderReceiptList(filterPoId);
     };
     if (viewListenersBound) {
         start().catch((err) => toastOperatorError(err));

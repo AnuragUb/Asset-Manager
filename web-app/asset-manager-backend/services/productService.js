@@ -1,9 +1,39 @@
 const crypto = require('crypto');
 const { db, generateProductId, verifyProductId } = require('../utils');
+const cache = require('./cacheService');
 
 const ORIGINS = ['ZOHO', 'ASSETENGINE', 'ASSET', 'INVENTORY', 'SET'];
 const STATUSES = ['ACTIVE', 'ARCHIVED'];
 const LINK_ORIGINS = ['PULL', 'PUSH'];
+const PRODUCT_ID_TTL_SEC = 600; // 10 minutes
+const PRODUCT_LIST_TTL_SEC = 90;
+
+function productIdKey(id) {
+  return `product:id:${String(id || '').trim()}`;
+}
+
+function productListKey(filters) {
+  const stable = JSON.stringify({
+    q: filters.q || '',
+    status: filters.status || '',
+    origin: filters.origin || '',
+    source: filters.source || '',
+    linked: filters.linked == null ? '' : String(filters.linked),
+    limit: filters.limit || 100,
+    offset: filters.offset || 0
+  });
+  const hash = crypto.createHash('sha1').update(stable).digest('hex');
+  return `product:list:${hash}`;
+}
+
+async function invalidateProductCache(productId) {
+  try {
+    if (productId) await cache.product.del(productIdKey(productId));
+    await cache.product.delPattern('product:list:*');
+  } catch (_) {
+    // non-critical
+  }
+}
 const UPDATE_FIELDS = [
   'name',
   'description',
@@ -206,6 +236,13 @@ async function insertProductWithRetry(payload, runner) {
 }
 
 async function listProducts({ q, status, origin, source, linked, limit, offset } = {}) {
+  const filters = { q, status, origin, source, linked, limit, offset };
+  const listKey = productListKey(filters);
+  const cached = await cache.product.get(listKey);
+  if (cached && typeof cached === 'object' && Array.isArray(cached.products)) {
+    return cached;
+  }
+
   await requireTables();
   const cap = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
   const skip = Math.max(parseInt(offset, 10) || 0, 0);
@@ -346,13 +383,15 @@ async function listProducts({ q, status, origin, source, linked, limit, offset }
     }));
   }
 
-  return {
+  const payload = {
     total,
     limit: cap,
     offset: skip,
     products,
     unlinked_catalog_refs: unlinkedCatalogRefs
   };
+  await cache.product.set(listKey, payload, PRODUCT_LIST_TTL_SEC);
+  return payload;
 }
 
 function detectProductMatch(product, term) {
@@ -380,12 +419,18 @@ function detectCatalogMatch(row, term) {
 }
 
 async function getProduct(id) {
+  const key = productIdKey(id);
+  const cached = await cache.product.get(key);
+  if (cached && cached.id) return cached;
+
   await requireTables();
   const row = await db('product').where({ id }).first();
   if (!row) throw httpError('Product not found', 404);
   const ref = await zohoRefFor(id);
   const openConflict = await openNameConflict(id);
-  return publicProduct(row, ref, { openConflict });
+  const product = publicProduct(row, ref, { openConflict });
+  await cache.product.set(key, product, PRODUCT_ID_TTL_SEC);
+  return product;
 }
 
 function holdingQtyNum(value) {
@@ -489,15 +534,16 @@ async function listProductHoldings(productId, { mode } = {}) {
   };
 }
 
-async function createProduct(input, actor) {
-  await requireTables();
+function standalonePayload(input, actor) {
   const name = blankToNull(input && input.name);
   if (!name) throw httpError('name is required', 400);
-
-  const origin = 'ASSETENGINE';
-  const payload = {
+  const description = blankToNull(input && input.description);
+  if (!description) {
+    throw httpError('Product description is required. It is separate from Asset / Inventory description.', 400);
+  }
+  return {
     name,
-    description: blankToNull(input && input.description),
+    description,
     make: blankToNull(input && input.make),
     model: blankToNull(input && input.model),
     manufacturer: blankToNull(input && input.manufacturer),
@@ -506,19 +552,243 @@ async function createProduct(input, actor) {
     product_code: blankToNull(input && input.product_code),
     price: asPrice(input && input.price),
     status: 'ACTIVE',
-    origin,
+    origin: 'ASSETENGINE',
     origin_ref: null,
     archived_at: null,
     created_by: actor || null,
     updated_by: actor || null
   };
+}
+
+async function createProduct(input, actor) {
+  await requireTables();
+  const payload = standalonePayload(input, actor);
 
   try {
     const row = await insertProductWithRetry(payload, db);
-    return publicProduct(row, null);
+    const product = publicProduct(row, null);
+    await invalidateProductCache(product.id);
+    return product;
   } catch (err) {
     throw mapPgError(err);
   }
+}
+
+const BULK_PRODUCT_LIMIT = 500;
+
+function matchKey(value) {
+  return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function matchCandidate(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    make: row.make || null,
+    model: row.model || null,
+    product_code: row.product_code || null,
+    unit: row.unit || null
+  };
+}
+
+async function loadProductMatchIndex(runner = db) {
+  const rows = await runner('product')
+    .where('status', 'ACTIVE')
+    .select('id', 'name', 'make', 'model', 'product_code', 'unit');
+  const byId = new Map();
+  const byCode = new Map();
+  const byFull = new Map();
+  const byName = new Map();
+  const byMakeModel = new Map();
+  const byModel = new Map();
+  const push = (map, key, row) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  };
+  for (const row of rows) {
+    byId.set(matchKey(row.id), row);
+    push(byCode, matchKey(row.product_code), row);
+    push(byFull, [matchKey(row.name), matchKey(row.make), matchKey(row.model)].join('|'), row);
+    push(byName, matchKey(row.name), row);
+    const modelKey = matchKey(row.model);
+    if (modelKey) {
+      push(byModel, modelKey, row);
+      push(byMakeModel, `${matchKey(row.make)}|${modelKey}`, row);
+    }
+  }
+  return { byId, byCode, byFull, byName, byMakeModel, byModel };
+}
+
+/**
+ * Resolve one import row to an existing ACTIVE Product.
+ * Order: Product ID → product code → name+make+model → unique name →
+ * unique make+model → unique model.
+ * A product code that is not stored as product_code is tried again as a model,
+ * which is how catalogue SKUs such as U-ZC-C are kept on these products.
+ */
+function matchProductRow(input, index) {
+  const src = input || {};
+  const result = (status, matchedBy, rows) => ({
+    status,
+    matchedBy: matchedBy || null,
+    productId: status === 'MATCHED' ? rows[0].id : null,
+    candidates: (rows || []).slice(0, 10).map(matchCandidate)
+  });
+
+  const idKey = matchKey(src.product_id || src.productId);
+  if (idKey) {
+    const hit = index.byId.get(idKey);
+    if (hit) return result('MATCHED', 'ID', [hit]);
+    return { ...result('UNMATCHED', null, []), note: 'Product ID not found among active Products' };
+  }
+
+  const codeKey = matchKey(src.product_code || src.productCode);
+  if (codeKey) {
+    const hits = index.byCode.get(codeKey) || [];
+    if (hits.length === 1) return result('MATCHED', 'PRODUCT_CODE', hits);
+    if (hits.length > 1) return result('AMBIGUOUS', 'PRODUCT_CODE', hits);
+  }
+
+  const nameKey = matchKey(src.name || src.description);
+  const makeKey = matchKey(src.make);
+  const modelKey = matchKey(src.model) || codeKey;
+
+  if (nameKey) {
+    const fullHits = index.byFull.get([nameKey, makeKey, modelKey].join('|')) || [];
+    if (fullHits.length === 1) return result('MATCHED', 'NAME_MAKE_MODEL', fullHits);
+    if (fullHits.length > 1) return result('AMBIGUOUS', 'NAME_MAKE_MODEL', fullHits);
+
+    const nameHits = index.byName.get(nameKey) || [];
+    if (nameHits.length === 1) return result('MATCHED', 'NAME', nameHits);
+    if (nameHits.length > 1) return result('AMBIGUOUS', 'NAME', nameHits);
+  }
+
+  if (modelKey) {
+    if (makeKey) {
+      const hits = index.byMakeModel.get(`${makeKey}|${modelKey}`) || [];
+      if (hits.length === 1) return result('MATCHED', 'MAKE_MODEL', hits);
+      if (hits.length > 1) return result('AMBIGUOUS', 'MAKE_MODEL', hits);
+    }
+    const hits = index.byModel.get(modelKey) || [];
+    if (hits.length === 1) return result('MATCHED', 'MODEL', hits);
+    if (hits.length > 1) return result('AMBIGUOUS', 'MODEL', hits);
+  }
+  return result('UNMATCHED', null, []);
+}
+
+function assertBulkRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw httpError('rows must be a non-empty array', 400, 'BULK_ROWS_REQUIRED');
+  }
+  if (rows.length > BULK_PRODUCT_LIMIT) {
+    throw httpError(`At most ${BULK_PRODUCT_LIMIT} rows per import`, 400, 'BULK_TOO_MANY_ROWS');
+  }
+}
+
+function rowNumberOf(row, idx) {
+  const n = parseInt(row && (row.rowNumber || row.row_number), 10);
+  return Number.isFinite(n) && n > 0 ? n : idx + 1;
+}
+
+async function matchProducts(rows) {
+  await requireTables();
+  assertBulkRows(rows);
+  const index = await loadProductMatchIndex();
+  return rows.map((row, idx) => ({ row: rowNumberOf(row, idx), ...matchProductRow(row, index) }));
+}
+
+/**
+ * Bulk create standalone AssetEngine Products.
+ * dryRun: classify every row (VALID / ERROR / DUPLICATE) without writing.
+ * commit: every submitted row must be VALID, or DUPLICATE with allowDuplicate=true;
+ *         otherwise nothing is written (all-or-nothing).
+ */
+async function bulkCreateProducts(rows, actor, { dryRun = false } = {}) {
+  await requireTables();
+  assertBulkRows(rows);
+  const index = await loadProductMatchIndex();
+  const seenInFile = new Map();
+
+  const results = rows.map((input, idx) => {
+    const rowNumber = rowNumberOf(input, idx);
+    const errors = [];
+    let payload = null;
+    try {
+      payload = standalonePayload(input, actor);
+    } catch (err) {
+      errors.push(err.message);
+    }
+    if (errors.length) {
+      return { row: rowNumber, status: 'ERROR', errors, match: null, payload: null };
+    }
+
+    const match = matchProductRow({ name: payload.name, make: payload.make, model: payload.model, product_code: payload.product_code }, index);
+    const fileKey = [matchKey(payload.name), matchKey(payload.make), matchKey(payload.model)].join('|');
+    const firstRow = seenInFile.get(fileKey);
+    if (firstRow == null) seenInFile.set(fileKey, rowNumber);
+
+    let status = 'VALID';
+    const warnings = [];
+    if (match.status !== 'UNMATCHED') {
+      status = 'DUPLICATE';
+      warnings.push(`Looks like existing Product ${match.candidates.map((c) => c.id).join(', ')}`);
+    }
+    if (firstRow != null) {
+      status = 'DUPLICATE';
+      warnings.push(`Same name/make/model as row ${firstRow}`);
+    }
+    return {
+      row: rowNumber,
+      status,
+      errors,
+      warnings,
+      match: match.status === 'UNMATCHED' ? null : match,
+      allowDuplicate: Boolean(input && (input.allowDuplicate || input.allow_duplicate)),
+      payload
+    };
+  });
+
+  const summary = {
+    total: results.length,
+    valid: results.filter((r) => r.status === 'VALID').length,
+    duplicate: results.filter((r) => r.status === 'DUPLICATE').length,
+    error: results.filter((r) => r.status === 'ERROR').length
+  };
+  const publicRows = results.map(({ payload, ...rest }) => ({
+    ...rest,
+    name: payload ? payload.name : null
+  }));
+
+  if (dryRun) {
+    return { dryRun: true, summary, rows: publicRows };
+  }
+
+  const blocked = results.filter((r) => r.status === 'ERROR' || (r.status === 'DUPLICATE' && !r.allowDuplicate));
+  if (blocked.length) {
+    throw httpError(
+      `${blocked.length} row(s) need attention before import; nothing was created`,
+      409,
+      'BULK_VALIDATION_FAILED',
+      { summary, rows: publicRows }
+    );
+  }
+
+  let created;
+  try {
+    created = await db.transaction(async (trx) => {
+      const out = [];
+      for (const r of results) {
+        const row = await insertProductWithRetry(r.payload, trx);
+        out.push({ row: r.row, product: publicProduct(row, null) });
+      }
+      return out;
+    });
+  } catch (err) {
+    throw mapPgError(err);
+  }
+  await invalidateProductCache(null);
+  return { dryRun: false, summary, created };
 }
 
 async function updateProduct(id, input, actor) {
@@ -542,6 +812,12 @@ async function updateProduct(id, input, actor) {
       const name = blankToNull(body.name);
       if (!name) throw httpError('name is required', 400);
       patch.name = name;
+    } else if (field === 'description') {
+      const description = blankToNull(body.description);
+      if (!description) {
+        throw httpError('Product description is required. It is separate from Asset / Inventory description.', 400);
+      }
+      patch.description = description;
     } else if (field === 'price') {
       patch.price = asPrice(body.price);
     } else {
@@ -553,7 +829,9 @@ async function updateProduct(id, input, actor) {
   try {
     const rows = await db('product').where({ id }).update(patch).returning('*');
     const ref = await zohoRefFor(id);
-    return publicProduct(rows[0], ref);
+    const product = publicProduct(rows[0], ref);
+    await invalidateProductCache(id);
+    return product;
   } catch (err) {
     throw mapPgError(err);
   }
@@ -574,7 +852,9 @@ async function archiveProduct(id, actor) {
         updated_by: actor || null
       })
       .returning('*');
-    return publicProduct(rows[0], await zohoRefFor(id));
+    const product = publicProduct(rows[0], await zohoRefFor(id));
+    await invalidateProductCache(id);
+    return product;
   } catch (err) {
     throw mapPgError(err);
   }
@@ -595,7 +875,9 @@ async function restoreProduct(id, actor) {
         updated_by: actor || null
       })
       .returning('*');
-    return publicProduct(rows[0], await zohoRefFor(id));
+    const product = publicProduct(rows[0], await zohoRefFor(id));
+    await invalidateProductCache(id);
+    return product;
   } catch (err) {
     throw mapPgError(err);
   }
@@ -656,6 +938,7 @@ async function createExternalRef(productId, input, actor) {
       updated_at: db.fn.now(),
       updated_by: actor || null
     });
+    await invalidateProductCache(productId);
     return publicExternalRef(rows[0]);
   } catch (err) {
     throw mapPgError(err);
@@ -716,7 +999,7 @@ function renderSetDescription(setName, requirementRows) {
   });
   const body = lines.map((row) => {
     const name = row.product_name || row.productName || row.product_id;
-    const qty = row.quantity;
+    const qty = Number.isFinite(Number(row.quantity)) ? String(Number(row.quantity)) : row.quantity;
     const unit = row.unit ? ` ${row.unit}` : '';
     const mm = [row.make, row.model].filter((v) => v != null && String(v).trim() !== '').join(' / ');
     const desc = row.description && String(row.description).trim() ? String(row.description).trim() : '';
@@ -850,9 +1133,11 @@ async function upsertCatalogFromZoho(zohoProduct) {
   }
 }
 
-async function recordPublishFailure(productId, err) {
+async function recordPublishFailure(productId, err, startedAt = null) {
   const ref = await zohoRefFor(productId);
   if (!ref) return;
+  // A slow attempt that fails after a newer publish succeeded must not mark the product as failing.
+  if (startedAt && ref.last_pushed_at && new Date(ref.last_pushed_at) > startedAt) return;
   try {
     await db('product_external_ref').where({ id: ref.id }).update({
       last_error: String(err && err.message ? err.message : err).slice(0, 2000),
@@ -914,6 +1199,7 @@ async function insertMappingAfterCreate(product, zohoId, actor) {
 }
 
 async function publishProduct(productId, actor) {
+  const startedAt = new Date();
   await requireTables();
   requireMutations();
   const product = await db('product').where({ id: productId }).first();
@@ -1078,7 +1364,7 @@ async function publishProduct(productId, actor) {
       payload: fields,
       errorMessage: err.message
     });
-    await recordPublishFailure(product.id, err);
+    await recordPublishFailure(product.id, err, startedAt);
     const classified = zoho().classifyZohoError ? zoho().classifyZohoError(err) : 'ERROR';
     if (classified === 'OAUTH') {
       throw httpError(err.message || 'Zoho OAuth failure', 502, 'ZOHO_OAUTH');
@@ -1095,6 +1381,7 @@ async function publishProduct(productId, actor) {
     }
   }
 
+  await invalidateProductCache(product.id);
   return {
     skipped: false,
     mode: result.mode,
@@ -1183,6 +1470,7 @@ async function refreshProductFromZoho(productId, actor) {
     updated_at: db.fn.now()
   });
 
+  await invalidateProductCache(product.id);
   return {
     nameChanged,
     zohoId: String(remote.zohoId),
@@ -1249,6 +1537,7 @@ async function resolveNameConflict(productId, conflictId, resolution, actor) {
     final_value: finalValue
   };
   await db('product_name_conflict').where({ id: conflictId }).update(patch);
+  await invalidateProductCache(productId);
   return {
     conflict: (await listNameConflicts(productId)).find((c) => c.id === conflictId),
     product: await getProduct(productId)
@@ -1293,6 +1582,7 @@ async function createProductFromCatalog(zohoProductId, actor) {
     link_origin: 'PULL',
     baseline_name: row.name
   }, actor);
+  await invalidateProductCache(row.id);
   return { product: await getProduct(row.id), ref };
 }
 
@@ -1399,7 +1689,9 @@ async function createSetOriginProduct(input, actor, runner = db) {
   if (await runner.schema.hasColumn('product', 'composition_hash')) {
     payload.composition_hash = blankToNull(input && input.composition_hash);
   }
-  return insertProductWithRetry(payload, runner);
+  const row = await insertProductWithRetry(payload, runner);
+  await invalidateProductCache(row.id);
+  return row;
 }
 
 module.exports = {
@@ -1408,6 +1700,11 @@ module.exports = {
   getProduct,
   listProductHoldings,
   createProduct,
+  bulkCreateProducts,
+  matchProducts,
+  matchProductRow,
+  loadProductMatchIndex,
+  BULK_PRODUCT_LIMIT,
   updateProduct,
   archiveProduct,
   restoreProduct,
@@ -1433,5 +1730,6 @@ module.exports = {
   inspectProductFields,
   insertProductWithRetry,
   createSetOriginProduct,
-  deriveSyncStatus
+  deriveSyncStatus,
+  invalidateProductCache
 };

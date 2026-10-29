@@ -9,10 +9,17 @@
 const ZOHOCRMSDK = require('@zohocrm/nodejs-sdk-8.0');
 const zohoService = require('./zohoService');
 
+// Outbound_PO_Identifier is the human OPO ID (for example OPO5.1/CPO4.1/10023).
+// Outbound_PO_Number and PO_Number are older numeric fallbacks.
 const PO_GET_FIELDS = [
+  'Outbound_PO_Identifier',
+  'Outbound_PO_Number',
   'PO_Number',
+  'PO_Version_Number',
   'Subject',
   'Vendor_Name',
+  'Account_Name',
+  'Customer_ID',
   'PO_Date',
   'Due_Date',
   'Status',
@@ -116,6 +123,15 @@ function lookupName(value) {
       return String(value.Product_Name).trim();
     }
     return null;
+  }
+  const text = String(value).trim();
+  return text || null;
+}
+
+function textOrNull(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object' && typeof value.getValue === 'function') {
+    return textOrNull(value.getValue());
   }
   const text = String(value).trim();
   return text || null;
@@ -303,16 +319,28 @@ function normalizePurchaseOrder(record) {
   const rawId = typeof record.getId === 'function' ? record.getId() : readKey(record, 'id');
   const zohoPoId = asZohoIdString(rawId, 'zoho_po_id');
   const vendor = readKey(record, 'Vendor_Name');
+  const account = readKey(record, 'Account_Name');
   const itemsRaw = readKey(record, 'Purchase_Items') || [];
   const items = Array.isArray(itemsRaw) ? itemsRaw : [];
   const lines = items.map((item, i) => normalizeLine(item, i));
+  const outboundPoIdentifier = textOrNull(readKey(record, 'Outbound_PO_Identifier'));
+  const outboundPoNumber = textOrNull(readKey(record, 'Outbound_PO_Number'));
+  const legacyPoNumber = textOrNull(readKey(record, 'PO_Number'));
+  const poVersionNumber = decimalOrNull(readKey(record, 'PO_Version_Number'));
   return {
     zohoPoId,
-    poNumber: readKey(record, 'PO_Number') != null ? String(readKey(record, 'PO_Number')) : null,
+    outboundPoIdentifier,
+    outboundPoNumber,
+    legacyPoNumber,
+    poVersionNumber,
+    poNumber: outboundPoIdentifier || outboundPoNumber || legacyPoNumber,
     subject: readKey(record, 'Subject') != null ? String(readKey(record, 'Subject')) : null,
     status: picklistStatus(readKey(record, 'Status')),
     vendorZohoId: lookupId(vendor),
     vendorName: lookupName(vendor),
+    accountZohoId: lookupId(account),
+    accountName: lookupName(account),
+    customerId: textOrNull(readKey(record, 'Customer_ID')),
     poDate: normalizeZohoDate(readKey(record, 'PO_Date')),
     dueDate: normalizeZohoDate(readKey(record, 'Due_Date')),
     subTotal: decimalOrNull(readKey(record, 'Sub_Total')),
@@ -345,6 +373,72 @@ function unwrapGet(response, notFoundCode) {
     throw httpError('Zoho Purchase Orders returned an unexpected response', 502, 'ZOHO_UNEXPECTED_RESPONSE');
   }
   return responseObject.getData() || [];
+}
+
+async function searchPurchaseOrders(criteria) {
+  await zohoService.init();
+  try {
+    const recordOperations = new ZOHOCRMSDK.Record.RecordOperations('Purchase_Orders');
+    const paramInstance = new ZOHOCRMSDK.ParameterMap();
+    await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.CRITERIA, criteria);
+    await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.FIELDS, PO_GET_FIELDS);
+    await paramInstance.add(ZOHOCRMSDK.Record.SearchRecordsParam.PER_PAGE, 20);
+    const response = await recordOperations.searchRecords(paramInstance);
+    if (response == null) return [];
+    const status = response.getStatusCode && response.getStatusCode();
+    if (status === 204 || status === 404) return [];
+    return unwrapGet(response, 'ZOHO_PO_NOT_FOUND').map((row) => normalizePurchaseOrder(row));
+  } catch (error) {
+    if (error && (error.reasonCode === 'ZOHO_PO_NOT_FOUND' || error.statusCode === 404)) return [];
+    throw wrapZohoError(error);
+  }
+}
+
+function escapeCriteriaValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/[(),]/g, (ch) => `\\${ch}`);
+}
+
+function matchesOpoField(row, field, text) {
+  if (field === 'Outbound_PO_Identifier') return row.outboundPoIdentifier === text;
+  if (field === 'Outbound_PO_Number') return row.outboundPoNumber === text;
+  return row.legacyPoNumber === text;
+}
+
+/**
+ * Resolve a human OPO ID to one Purchase Order.
+ * Search order: Outbound PO Identifier, then Outbound PO Number, then legacy PO Number.
+ * Returns null when nothing matches.
+ */
+function isInvalidZohoQuery(error) {
+  const msg = String((error && error.message) || '');
+  const code = String((error && error.code) || '');
+  return /invalid query formed/i.test(msg) || code === 'INVALID_QUERY';
+}
+
+async function findByOutboundPoNumber(opoId) {
+  const text = String(opoId || '').trim();
+  if (!text) throw httpError('Enter an OPO ID', 400, 'OPO_ID_REQUIRED');
+  const escaped = escapeCriteriaValue(text);
+  // Outbound_PO_Number and PO_Number are numeric. A non-numeric OPO ID
+  // makes Zoho reject those criteria with "Invalid query formed".
+  const fields = /^\d+$/.test(text)
+    ? ['Outbound_PO_Identifier', 'Outbound_PO_Number', 'PO_Number']
+    : ['Outbound_PO_Identifier'];
+  for (const field of fields) {
+    let hits = [];
+    try {
+      hits = (await searchPurchaseOrders(`(${field}:equals:${escaped})`))
+        .filter((row) => matchesOpoField(row, field, text));
+    } catch (error) {
+      if (isInvalidZohoQuery(error)) continue;
+      throw error;
+    }
+    if (hits.length > 1) {
+      throw httpError(`More than one Purchase Order matches OPO ID ${text}`, 409, 'OPO_ID_AMBIGUOUS');
+    }
+    if (hits.length === 1) return getPurchaseOrder(hits[0].zohoPoId);
+  }
+  return null;
 }
 
 async function getPurchaseOrder(externalId) {
@@ -401,6 +495,7 @@ module.exports = {
   listPurchaseOrders,
   getPurchaseOrder,
   getPurchaseOrderLines,
+  findByOutboundPoNumber,
   normalizePurchaseOrder,
   normalizePurchaseOrderLine: normalizeLine,
   asZohoIdString,

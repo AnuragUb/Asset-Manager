@@ -3,9 +3,9 @@
  * Operator language, navigation, role checks. No engine logic.
  */
 import { fetchWithAuth } from './auth.js?v=7.29';
-import { showToast, canOpenAppView } from './utils.js?v=7.39';
+import { showToast, canOpenAppView } from './utils.js?v=7.43';
 
-export const LIFECYCLE_CACHE = '7.52';
+export const LIFECYCLE_CACHE = '7.53';
 
 const OPERATOR_ERRORS = {
     OVER_RECEIPT: 'That quantity exceeds the remaining PO quantity.',
@@ -41,6 +41,8 @@ const OPERATOR_ERRORS = {
     CATALOG_NOT_FOUND: 'That Zoho catalog row was not found. Pull the catalog first.',
     INVALID_QUANTITY: 'Enter a valid quantity.',
     INSUFFICIENT_AVAILABLE: 'Requested quantity is more than what is available.',
+    INSUFFICIENT_QUANTITY: 'Requested quantity is more than what is available.',
+    DC_HOLDING_NO_QUANTITY: 'Requested quantity is more than what is available on this item.',
     MISSING_ID: 'A required record ID is missing.',
     PO_NOT_FOUND: 'That Purchase Order was not found.',
     RECEIPT_NOT_OPEN: 'Only an open Receipt Note can be posted or edited.',
@@ -58,6 +60,7 @@ const VIEW_NAV = {
     'reservations-view': 'nav-reservations',
     'sets-view': 'nav-sets',
     'history-view': 'nav-history',
+    'tally-view': 'nav-tally',
     'physical-intakes-view': 'nav-physical-intakes',
     'dc-view': 'nav-dc',
     'projects-view': 'nav-projects',
@@ -69,8 +72,18 @@ export function currentRole() {
 }
 
 export function canLogistics() {
-    const role = currentRole();
-    return role === 'superuser' || role === 'admin' || role === 'manager';
+    // RBAC V2: action permissions only (no role-name triad).
+    if (typeof window !== 'undefined' && typeof window.hasPermission === 'function') {
+        return (
+            window.hasPermission('dc.create')
+            || window.hasPermission('receipt_note.create')
+            || window.hasPermission('purchase_order.import')
+            || window.hasPermission('purchase_book.create')
+            || window.hasPermission('reservation.create')
+            || window.hasPermission('physical_intake.create')
+        );
+    }
+    return false;
 }
 
 export function isSalesRole() {
@@ -255,6 +268,7 @@ export function go(view, opts = {}) {
     if (opts.waitlist) params.set('waitlist', '1');
     if (opts.awaiting) params.set('awaiting', '1');
     if (opts.zohoCatalog) params.set('zohoCatalog', '1');
+    if (opts.aeUnlinked) params.set('aeUnlinked', '1');
     if (opts.status) params.set('status', String(opts.status));
     if (opts.createFromPo) params.set('createFromPo', opts.createFromPo);
     const qs = params.toString();
@@ -291,10 +305,11 @@ export function consumeOpen(view) {
     const status = params.get('status');
     const awaiting = params.get('awaiting');
     const zohoCatalog = params.get('zohoCatalog');
+    const aeUnlinked = params.get('aeUnlinked');
     const period = params.get('period');
     const createFromPo = params.get('createFromPo');
-    if (!id && !params.get('poId') && !params.get('q') && !waitlist && !status && !awaiting && !zohoCatalog && !period && !createFromPo) return null;
-    return { view, open: id, createFromPo, extra: { poId: params.get('poId'), q: params.get('q'), waitlist, status, awaiting, zohoCatalog, period, createFromPo } };
+    if (!id && !params.get('poId') && !params.get('q') && !waitlist && !status && !awaiting && !zohoCatalog && !aeUnlinked && !period && !createFromPo) return null;
+    return { view, open: id, createFromPo, extra: { poId: params.get('poId'), q: params.get('q'), waitlist, status, awaiting, zohoCatalog, aeUnlinked, period, createFromPo } };
 }
 
 function lifecycleOptsFromEl(el) {
@@ -304,6 +319,7 @@ function lifecycleOptsFromEl(el) {
         status: el.getAttribute('data-lc-status') || undefined,
         awaiting: el.getAttribute('data-lc-awaiting') || undefined,
         zohoCatalog: el.getAttribute('data-lc-zoho-catalog') || undefined,
+        aeUnlinked: el.getAttribute('data-lc-ae-unlinked') || undefined,
         period: el.getAttribute('data-lc-period') || undefined
     };
 }

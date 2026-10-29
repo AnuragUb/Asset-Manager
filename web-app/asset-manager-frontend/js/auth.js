@@ -1,12 +1,15 @@
 /**
  * auth.js
  * Manages user login, session persistence, and module selection
- * Version: 7.29
+ * Version: 7.31
  */
+
+import { startLoginButtonSaver, stopLoginButtonSaver } from './loginAnimations.js?v=7.36';
 
 const AUTH_GENERIC_LOGIN = 'Invalid username or password.';
 const AUTH_SESSION_EXPIRED = 'Your session has expired. Please sign in again.';
 const AUTH_FORGOT_NEUTRAL = 'If an account exists for that address, a reset link has been sent.';
+const AUTH_MUST_CHANGE = 'Check your email for a link to set your own password before using AssetEngine.';
 
 function operatorAuthMessage(payload, fallback) {
     if (!payload || typeof payload !== 'object') return fallback;
@@ -54,6 +57,7 @@ export async function fetchWithAuth(url, options = {}) {
         if (user) {
             response = await fetch(url, options);
         } else {
+            if (typeof window.closePoCarousel === 'function') window.closePoCarousel();
             if (window.showView) window.showView('loginView');
         }
     }
@@ -110,6 +114,17 @@ export function setupAuth(onLoginSuccess) {
 
                 if (response.ok) {
                     const payload = await response.json();
+                    stopLoginButtonSaver();
+                    if (payload && payload.mustChangePassword) {
+                        showAuthMessage('loginMsg', operatorAuthMessage(payload, AUTH_MUST_CHANGE));
+                        if (payload.setupToken) {
+                            openResetPasswordModal(payload.setupToken);
+                        } else if (payload.devResetLink) {
+                            const tokenFromLink = String(payload.devResetLink).split('token=')[1];
+                            if (tokenFromLink) openResetPasswordModal(tokenFromLink);
+                        }
+                        return;
+                    }
                     const user = payload && payload.user ? payload.user : payload;
                     user.category = category;
                     localStorage.setItem('selectedAssetCategory', category);
@@ -128,9 +143,11 @@ export function setupAuth(onLoginSuccess) {
                     onLoginSuccess(user);
                 } else if (response.status === 401) {
                     showAuthMessage('loginMsg', AUTH_GENERIC_LOGIN);
+                    startLoginButtonSaver();
                 } else {
                     const error = await response.json().catch(() => ({}));
                     showAuthMessage('loginMsg', operatorAuthMessage(error, AUTH_GENERIC_LOGIN));
+                    startLoginButtonSaver();
                 }
             } catch (err) {
                 console.error('Login error:', err);
@@ -213,79 +230,82 @@ export function setupAuth(onLoginSuccess) {
         });
     }
 
-    if (window.location.hash.includes('reset-password')) {
-        let token = null;
+    bindResetPasswordForm();
+    const hashToken = readResetTokenFromLocation();
+    if (hashToken) openResetPasswordModal(hashToken);
+}
 
+function readResetTokenFromLocation() {
+    if (window.location.hash.includes('reset-password')) {
         const hashParts = window.location.hash.split('?');
         if (hashParts.length > 1) {
             const hashParams = new URLSearchParams(hashParts[1]);
-            token = hashParams.get('token');
-        }
-
-        if (!token) {
-            const urlParams = new URLSearchParams(window.location.search);
-            token = urlParams.get('token');
-        }
-
-        const resetModal = document.getElementById('resetPasswordModal');
-        const resetForm = document.getElementById('resetPasswordForm');
-        const tokenInput = document.getElementById('resetToken');
-
-        if (token && resetModal && tokenInput) {
-            tokenInput.value = token;
-            tokenInput.setAttribute('value', token);
-            resetModal.style.display = 'block';
-        }
-
-        if (resetForm && !resetForm.dataset.resetBound) {
-            resetForm.dataset.resetBound = '1';
-            resetForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const newPass = document.getElementById('newPassword').value;
-                const confirmPass = document.getElementById('confirmPassword').value;
-                const tokenVal = (document.getElementById('resetToken') || {}).value || token || '';
-
-                if (newPass !== confirmPass) {
-                    showAuthMessage('resetMsg', 'Passwords do not match.');
-                    return;
-                }
-                if (!tokenVal) {
-                    showAuthMessage('resetMsg', 'This password reset link is no longer valid.');
-                    return;
-                }
-
-                const btn = resetForm.querySelector('button');
-                const originalBtnText = btn ? btn.textContent : 'Reset Password';
-                if (btn) {
-                    btn.disabled = true;
-                    btn.textContent = 'Resetting...';
-                }
-
-                try {
-                    const response = await fetch('/api/auth/reset-password', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token: tokenVal, newPassword: newPass, confirmPassword: confirmPass })
-                    });
-
-                    const result = await response.json().catch(() => ({}));
-                    if (response.ok) {
-                        alert(operatorAuthMessage(result, 'Your password has been reset. Please sign in.'));
-                        if (resetModal) resetModal.style.display = 'none';
-                        window.location.href = '/';
-                    } else {
-                        showAuthMessage('resetMsg', operatorAuthMessage(result, 'This password reset link is no longer valid.'));
-                    }
-                } catch (err) {
-                    console.error('Reset error:', err);
-                    showAuthMessage('resetMsg', 'Failed to reset password.');
-                } finally {
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.textContent = originalBtnText;
-                    }
-                }
-            });
+            const token = hashParams.get('token');
+            if (token) return token;
         }
     }
+    return new URLSearchParams(window.location.search).get('token');
+}
+
+function openResetPasswordModal(token) {
+    const resetModal = document.getElementById('resetPasswordModal');
+    const tokenInput = document.getElementById('resetToken');
+    if (!token || !resetModal || !tokenInput) return;
+    tokenInput.value = token;
+    tokenInput.setAttribute('value', token);
+    resetModal.style.display = 'block';
+}
+
+function bindResetPasswordForm() {
+    const resetModal = document.getElementById('resetPasswordModal');
+    const resetForm = document.getElementById('resetPasswordForm');
+    if (!resetForm || resetForm.dataset.resetBound) return;
+    resetForm.dataset.resetBound = '1';
+    resetForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newPass = document.getElementById('newPassword').value;
+        const confirmPass = document.getElementById('confirmPassword').value;
+        const tokenVal = (document.getElementById('resetToken') || {}).value || '';
+
+        if (newPass !== confirmPass) {
+            showAuthMessage('resetMsg', 'Passwords do not match.');
+            return;
+        }
+        if (!tokenVal) {
+            showAuthMessage('resetMsg', 'This password reset link is no longer valid.');
+            return;
+        }
+
+        const btn = resetForm.querySelector('button');
+        const originalBtnText = btn ? btn.textContent : 'Reset Password';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+        }
+
+        try {
+            const response = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: tokenVal, newPassword: newPass, confirmPassword: confirmPass })
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (response.ok) {
+                alert(operatorAuthMessage(result, 'Your password has been reset. Please sign in.'));
+                if (resetModal) resetModal.style.display = 'none';
+                window.location.href = '/';
+            } else {
+                showAuthMessage('resetMsg', operatorAuthMessage(result, 'This password reset link is no longer valid.'));
+            }
+        } catch (err) {
+            console.error('Reset error:', err);
+            showAuthMessage('resetMsg', 'Failed to reset password.');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalBtnText;
+            }
+        }
+    });
 }

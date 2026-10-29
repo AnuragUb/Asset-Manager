@@ -10,9 +10,215 @@ const getDataDir = () => {
 };
 const dataDir = getDataDir();
 
-// Database connection configuration
+// Database connection configuration.
+// Live tables live in their logical schema. The app pool search_path lists
+// those schemas before public, and query-builder table names are qualified
+// the same way. public keeps the Knex ledger, retired asset snapshots,
+// and the few tables that were never given a logical schema.
 const environment = process.env.NODE_ENV || 'development';
-const db = require('knex')(knexConfig[environment]);
+const LOGICAL_SEARCH_PATH = [
+    'assets',
+    'delivery_challans',
+    'inventory',
+    'purchase_books',
+    'purchase_orders',
+    'receipt_note',
+    'sets',
+    'utility',
+    'public'
+].join(', ');
+
+function schemaMap(schema, tables) {
+    return Object.fromEntries(tables.map((table) => [table, schema]));
+}
+
+const TABLE_SCHEMA = Object.assign(
+    {},
+    schemaMap('assets', [
+        'assets', 'asset_folders', 'asset_history', 'asset_it_details', 'asset_hierarchy',
+        'asset_kinds', 'components'
+    ]),
+    schemaMap('delivery_challans', [
+        'delivery_challans', 'delivery_challan_version', 'dc_disposition_line',
+        'dc_item_mappings', 'dc_dispatch_outbox', 'dc_return_inward_outbox', 'dc_dispatch_reason'
+    ]),
+    schemaMap('inventory', [
+        'inventory_items', 'inventory_folders', 'inventory_kinds', 'inventory_components'
+    ]),
+    schemaMap('purchase_books', [
+        'purchase_book', 'purchase_book_line', 'purchase_book_physical', 'purchase_book_dc_consumption'
+    ]),
+    schemaMap('purchase_orders', [
+        'procurement_po', 'procurement_po_line', 'procurement_po_external_ref'
+    ]),
+    schemaMap('receipt_note', [
+        'receipt_note', 'receipt_note_line', 'receipt_idempotency',
+        'receipt_physical_output', 'receipt_projection_outbox'
+    ]),
+    schemaMap('sets', [
+        'managed_sets', 'managed_set_components', 'set_requirement', 'set_idempotency',
+        'sets', 'set_components'
+    ]),
+    schemaMap('utility', [
+        'arri_clients', 'arri_job_cards', 'audit_log', 'auth_tokens', 'clients',
+        'commercial_provenance', 'companies', 'company_templates', 'conversion',
+        'conversion_event', 'conversion_line', 'dc_return_log', 'dc_return_log_line',
+        'deal_projects', 'delivery_challan_event', 'department_quotas', 'domain_events',
+        'employees', 'holding_hsn_history', 'hsn_codes', 'inventory_quantity_event_lines', 'inventory_quantity_events',
+        'password_resets', 'permissions', 'physical_intake', 'physical_intake_event',
+        'physical_intake_idempotency', 'physical_intake_output', 'physical_marking',
+        'procurement_reconciliation', 'procurement_reconciliation_event', 'procurement_sync_event',
+        'product', 'product_external_ref', 'product_name_conflict', 'project_assets',
+        'project_history', 'project_order_items', 'project_orders', 'projects',
+        'purchase_book_event', 'quantity_event_lines', 'quantity_events', 'quotes', 'receipt_event',
+        'reservation', 'reservation_event', 'role_permissions', 'roles', 'serial_identity',
+        'set_event', 'temporary_assets', 'users', 'vendor_invoice', 'vendor_return',
+        'vendor_return_line', 'vendor_return_outbox', 'zoho_account', 'zoho_catalog',
+        'zoho_deal_projects', 'zoho_invoices', 'zoho_purchase_orders', 'zoho_sync_logs',
+        'zoho_vendors'
+    ])
+);
+
+function tableToken(arg) {
+    if (typeof arg !== 'string') return null;
+    const token = arg.trim().split(/\s+/)[0].replace(/"/g, '');
+    if (token.includes('.')) return null;
+    return TABLE_SCHEMA[token] ? token : null;
+}
+
+function qualifyTableRef(arg) {
+    const token = tableToken(arg);
+    if (!token) return arg;
+    return arg.replace(token, `${TABLE_SCHEMA[token]}.${token}`);
+}
+
+function splitQualifiedTable(raw) {
+    if (typeof raw !== 'string') return null;
+    const token = raw.trim().split(/\s+/)[0].replace(/"/g, '');
+    const dot = token.indexOf('.');
+    if (dot > 0) {
+        return { schema: token.slice(0, dot), table: token.slice(dot + 1) };
+    }
+    if (TABLE_SCHEMA[token]) return { schema: TABLE_SCHEMA[token], table: token };
+    return null;
+}
+
+const BUILDER_TABLE_METHODS = new Set([
+    'from', 'into', 'table',
+    'join', 'innerJoin', 'leftJoin', 'leftOuterJoin',
+    'rightJoin', 'rightOuterJoin', 'fullOuterJoin', 'crossJoin'
+]);
+
+function isQueryBuilder(value) {
+    return Boolean(value && typeof value === 'object' && typeof value.from === 'function' && typeof value.where === 'function');
+}
+
+function wrapBuilder(builder) {
+    if (!isQueryBuilder(builder) || builder.__assetSchemaWrapped) return builder;
+    const proxy = new Proxy(builder, {
+        get(target, prop, receiver) {
+            if (prop === '__assetSchemaWrapped') return true;
+            const value = Reflect.get(target, prop, receiver);
+            if (prop === 'columnInfo' && typeof value === 'function') {
+                return (...args) => {
+                    const qualified = splitQualifiedTable(target._single && target._single.table);
+                    if (qualified) {
+                        target._single.table = qualified.table;
+                        target._single.schema = qualified.schema;
+                    }
+                    return value.call(target, ...args);
+                };
+            }
+            if (typeof value !== 'function' || !BUILDER_TABLE_METHODS.has(prop)) {
+                return typeof value === 'function' ? value.bind(target) : value;
+            }
+            return (...args) => {
+                if (typeof args[0] === 'string') args[0] = qualifyTableRef(args[0]);
+                const result = value.apply(target, args);
+                return result === target ? proxy : result;
+            };
+        }
+    });
+    return proxy;
+}
+
+function routeKnex(knex) {
+    return new Proxy(knex, {
+        apply(target, _thisArg, args) {
+            const built = tableToken(args[0])
+                ? target.from(qualifyTableRef(args[0]))
+                : target.apply(target, args);
+            return isQueryBuilder(built) ? wrapBuilder(built) : built;
+        },
+        get(target, prop, receiver) {
+            if (prop === 'transaction') {
+                return function transaction(...args) {
+                    const fnIndex = args.findIndex((arg) => typeof arg === 'function');
+                    if (fnIndex >= 0) {
+                        const userFn = args[fnIndex];
+                        args[fnIndex] = (trx) => userFn(routeKnex(trx));
+                        return target.transaction.apply(target, args);
+                    }
+                    return Promise.resolve(target.transaction.apply(target, args)).then((trx) => {
+                        return trx && typeof trx === 'function' ? routeKnex(trx) : trx;
+                    });
+                };
+            }
+            if (prop === 'schema') {
+                const schema = target.schema;
+                return new Proxy(schema, {
+                    get(schemaTarget, schemaProp) {
+                        if (schemaProp === 'hasTable') {
+                            return (name) => {
+                                const token = tableToken(name);
+                                return token
+                                    ? target.schema.withSchema(TABLE_SCHEMA[token]).hasTable(token)
+                                    : schemaTarget.hasTable(name);
+                            };
+                        }
+                        if (schemaProp === 'hasColumn') {
+                            return (name, column) => {
+                                const token = tableToken(name);
+                                return token
+                                    ? target.schema.withSchema(TABLE_SCHEMA[token]).hasColumn(token, column)
+                                    : schemaTarget.hasColumn(name, column);
+                            };
+                        }
+                        if (schemaProp === 'table' || schemaProp === 'alterTable' || schemaProp === 'createTable'
+                            || schemaProp === 'dropTable' || schemaProp === 'dropTableIfExists') {
+                            return (name, ...rest) => {
+                                const token = tableToken(name);
+                                const builder = token
+                                    ? schemaTarget.withSchema(TABLE_SCHEMA[token])
+                                    : schemaTarget;
+                                return builder[schemaProp](token || name, ...rest);
+                            };
+                        }
+                        const value = Reflect.get(schemaTarget, schemaProp);
+                        return typeof value === 'function' ? value.bind(schemaTarget) : value;
+                    }
+                });
+            }
+            const value = Reflect.get(target, prop, receiver);
+            if (typeof value !== 'function') return value;
+            return (...args) => {
+                const result = value.apply(target, args);
+                return isQueryBuilder(result) ? wrapBuilder(result) : result;
+            };
+        }
+    });
+}
+
+const appConfig = {
+    ...knexConfig[environment],
+    pool: {
+        ...(knexConfig[environment].pool || {}),
+        afterCreate(conn, done) {
+            conn.query(`SET search_path TO ${LOGICAL_SEARCH_PATH}`, (err) => done(err, conn));
+        }
+    }
+};
+const db = routeKnex(require('knex')(appConfig));
 
 // Service Database configuration
 const serviceConfig = { ...knexConfig[environment] };
@@ -492,26 +698,18 @@ function dateCode() {
     return d.getFullYear().toString().substr(-2) + (d.getMonth() + 1).toString().padStart(2, '0');
 }
 
+/**
+ * Fallback segment code for names not in the lookup maps: first 3 letters/digits only,
+ * so free-text like "M/S Cineom" or "4K Cam / Rig" can't put "/" or spaces into an ID.
+ */
+function fallbackIdCode(raw, defaultCode) {
+    const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 3);
+    return code.length >= 2 ? code : defaultCode;
+}
+
 function generateModernAssetId(location, type) {
-    // Lookup location code, default to 'LOC' if not found (or first 3 chars)
-    let loc = locCode[location];
-    if (!loc) {
-        if (location && location.length >= 3) {
-            loc = location.substring(0, 3).toUpperCase().replace(/\s+/g, '');
-        } else {
-            loc = 'LOC'; // Default fallback
-        }
-    }
-
-    let typ = typeCode[type];
-    if (!typ) {
-        if (type && type.length >= 3) {
-            typ = type.substring(0, 3).toUpperCase();
-        } else {
-            typ = 'GEN'; // Default fallback
-        }
-    }
-
+    const loc = locCode[location] || fallbackIdCode(location, 'LOC');
+    const typ = typeCode[type] || fallbackIdCode(type, 'GEN');
     return IdGenerator.generateAssetId(typ, loc);
 }
 
@@ -595,6 +793,38 @@ function verifyReceiptLineId(id) {
     return IdGenerator.verifyReceiptLineId(id);
 }
 
+function generateReturnLogId(now) {
+    return IdGenerator.generateReturnLogId(now);
+}
+
+function verifyReturnLogId(id) {
+    return IdGenerator.verifyReturnLogId(id);
+}
+
+function generateProcurementReconciliationId(now) {
+    return IdGenerator.generateProcurementReconciliationId(now);
+}
+
+function verifyProcurementReconciliationId(id) {
+    return IdGenerator.verifyProcurementReconciliationId(id);
+}
+
+function generateVendorReturnId(now) {
+    return IdGenerator.generateVendorReturnId(now);
+}
+
+function verifyVendorReturnId(id) {
+    return IdGenerator.verifyVendorReturnId(id);
+}
+
+function generateVendorReturnLineId(now) {
+    return IdGenerator.generateVendorReturnLineId(now);
+}
+
+function verifyVendorReturnLineId(id) {
+    return IdGenerator.verifyVendorReturnLineId(id);
+}
+
 function generateProcurementPoId(now) {
     return IdGenerator.generateProcurementPoId(now);
 }
@@ -629,6 +859,14 @@ function verifyPhysicalIntakeId(id) {
 
 function generatePurchaseBookId(now) {
     return IdGenerator.generatePurchaseBookId(now);
+}
+
+function generateVendorInvoiceId(now) {
+    return IdGenerator.generateVendorInvoiceId(now);
+}
+
+function verifyVendorInvoiceId(id) {
+    return IdGenerator.verifyVendorInvoiceId(id);
 }
 
 function verifyPurchaseBookId(id) {
@@ -744,6 +982,14 @@ module.exports = {
     verifyReceiptNoteId,
     generateReceiptLineId,
     verifyReceiptLineId,
+    generateReturnLogId,
+    verifyReturnLogId,
+    generateProcurementReconciliationId,
+    verifyProcurementReconciliationId,
+    generateVendorReturnId,
+    verifyVendorReturnId,
+    generateVendorReturnLineId,
+    verifyVendorReturnLineId,
     generateProcurementPoId,
     verifyProcurementPoId,
     generateProcurementPoLineId,
@@ -754,6 +1000,8 @@ module.exports = {
     verifyPhysicalIntakeId,
     generatePurchaseBookId,
     verifyPurchaseBookId,
+    generateVendorInvoiceId,
+    verifyVendorInvoiceId,
     generatePurchaseBookLineId,
     verifyPurchaseBookLineId,
     generatePurchaseBookDcConsumptionId,

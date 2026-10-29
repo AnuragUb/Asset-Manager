@@ -19,6 +19,10 @@ Single entry point for AssetEngine / CineEAM documentation.
 | [05 — Backend](./05_BACKEND.md) | Express surface, `server.js` realities |
 | [06 — API](./06_API.md) | REST catalog by domain |
 | [07 — Security](./07_SECURITY.md) | Auth gaps, secrets, hardening notes |
+| [RBAC V2 Implementation Report](./RBAC_V2_IMPLEMENTATION_REPORT.md) | Resource-and-action RBAC hardening (scratch-verified) |
+| [RBAC Permission Matrix](./RBAC_PERMISSION_MATRIX.md) | Canonical keys + role action grants |
+| [RBAC Role Matrix](./RBAC_ROLE_MATRIX.md) | Phase 19 ALLOW/DENY/FUTURE by role |
+| [RBAC Route Coverage](./RBAC_ROUTE_COVERAGE.md) | Mutation route → required permission inventory |
 | [08 — Technical debt](./08_TECHNICAL_DEBT.md) | Debt register |
 | [09 — Current state](./09_CURRENT_STATE.md) | Live vs mid-migration vs sediment |
 | [10 — Next phase](./10_NEXT_PHASE.md) | Recommended next engineering work |

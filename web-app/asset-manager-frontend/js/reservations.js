@@ -12,7 +12,6 @@ import {
     statusChip,
     emptyState,
     crumb,
-    section,
     go,
     consumeOpen,
     toastOperatorError,
@@ -39,12 +38,23 @@ function remainingQty(row) {
     return formatQty(row.quantity);
 }
 
+function reservedForSetLabel(row) {
+    if (String(row.ownerType || '').toUpperCase() !== 'SET' && !row.reservedForSet) return '—';
+    const name = row.reservedForSetName;
+    const code = row.reservedForSetCode;
+    if (name && code) return `${name} (${code})`;
+    if (name) return name;
+    return row.reservedForSet || row.ownerId || '—';
+}
+
 async function renderBoard() {
     const host = el('reservationsContent');
     if (!host) return;
     const status = el('reservationStatusFilter')?.value || 'ACTIVE';
+    const q = String(el('reservationSearch')?.value || '').trim();
     const params = new URLSearchParams();
     if (status) params.set('status', status);
+    if (q) params.set('q', q);
     params.set('limit', '200');
     const data = await lifecycleApi(`/api/reservations?${params.toString()}`);
     const rows = data.reservations || [];
@@ -53,10 +63,14 @@ async function renderBoard() {
     }
     if (!rows.length) {
         host.innerHTML = emptyState({
-            title: status === 'ACTIVE' || !status ? 'No active reservations.' : 'No reservations in this filter.',
-            body: 'Reserve from an Asset or Inventory record when stock needs to be held for a Set or operator.',
-            actionLabel: 'Open Stock — Assets',
-            actionView: 'home-view'
+            title: q
+                ? 'No reservations match this search.'
+                : (status === 'ACTIVE' || !status ? 'No active reservations.' : 'No reservations in this filter.'),
+            body: q
+                ? 'Try a reservation ID, asset/inventory resource ID, or Set ID/name.'
+                : 'Reserve from an Asset or Inventory record when stock needs to be held for a Set or operator.',
+            actionLabel: q ? '' : 'Open Stock — Assets',
+            actionView: q ? '' : 'home-view'
         });
         return;
     }
@@ -69,6 +83,7 @@ async function renderBoard() {
                         <th style="padding:8px;">Resource</th>
                         <th style="padding:8px;">Quantity</th>
                         <th style="padding:8px;">Owner</th>
+                        <th style="padding:8px;">Reserved for Set</th>
                         <th style="padding:8px;">Status</th>
                         <th style="padding:8px;">Created</th>
                         <th style="padding:8px;">Remaining</th>
@@ -84,6 +99,7 @@ async function renderBoard() {
                             </td>
                             <td style="padding:8px;">${formatQty(r.quantityOriginal != null ? r.quantityOriginal : r.quantity)}</td>
                             <td style="padding:8px;">${escapeHtml(ownerLabel(r))}</td>
+                            <td style="padding:8px;">${escapeHtml(reservedForSetLabel(r))}</td>
                             <td style="padding:8px;">${statusChip(r.status)}</td>
                             <td style="padding:8px;">${formatWhen(r.createdAt)}</td>
                             <td style="padding:8px;">${remainingQty(r)}</td>
@@ -105,47 +121,80 @@ async function openReservationDetail(id) {
     const events = data.events || r.events || [];
     const resourceView = String(r.resourceType).toUpperCase() === 'INVENTORY' ? 'inventory-view' : 'home-view';
     const setView = String(r.ownerType).toUpperCase() === 'SET' ? 'sets-view' : '';
+    const isActive = String(r.status).toUpperCase() === 'ACTIVE';
+    const canRelease = canLogistics() && isActive;
+    const original = Number(r.quantityOriginal);
+    const remaining = isActive ? Number(r.quantity) : 0;
+    const pct = original > 0 ? Math.max(0, Math.min(100, Math.round((remaining / original) * 100))) : 0;
+    const eventLabel = (ev) => String(ev.type || ev.action || 'Event').replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
     host.innerHTML = `
-        <div class="lc-detail-head">
-            <button type="button" class="action-button grey" id="btnRsvBack">← Reservations</button>
+        <div class="rsv-detail">
+            <div class="rsv-topline">
+                <button type="button" class="rsv-back" id="btnRsvBack">← All reservations</button>
+                ${crumb([
+                    { label: 'Stock', view: resourceView, open: r.resourceId },
+                    { label: 'Reservation' },
+                    setView ? { label: 'Set', view: 'sets-view', open: r.ownerId } : null,
+                    { label: 'History', view: 'history-view', open: r.id }
+                ])}
+            </div>
+
+            <section class="rsv-hero">
+                <div class="rsv-hero-main">
+                    <div class="rsv-eyebrow">Reservation ${statusChip(r.status)}</div>
+                    <h3 class="rsv-title">Held for ${escapeHtml(ownerLabel(r))}</h3>
+                    <div class="rsv-id">
+                        <span class="lc-mono">${escapeHtml(r.id)}</span>
+                        <button type="button" class="rn-info-tip rn-info-tip--portal" aria-label="About reservation IDs" data-tip="Reservation IDs are for audit. Operators work from the stock record and owner."><span aria-hidden="true">i</span></button>
+                    </div>
+                </div>
+                <div class="rsv-hero-actions">
+                    ${setView ? `<button type="button" class="action-button grey" data-lc-go="sets-view" data-lc-open="${escapeHtml(r.ownerId)}">Open Set</button>` : ''}
+                    ${canRelease ? '<button type="button" class="action-button red" id="btnRsvRelease">Release</button>' : ''}
+                </div>
+            </section>
+
+            <div class="rsv-stats">
+                <div class="rsv-stat rsv-stat--primary">
+                    <div class="rsv-stat-label">Quantity remaining</div>
+                    <div class="rsv-stat-value">${formatQty(remaining)}</div>
+                    <div class="rsv-meter" aria-hidden="true"><span style="width:${pct}%;"></span></div>
+                </div>
+                <div class="rsv-stat">
+                    <div class="rsv-stat-label">Originally reserved</div>
+                    <div class="rsv-stat-value">${formatQty(r.quantityOriginal)}</div>
+                </div>
+                <div class="rsv-stat">
+                    <div class="rsv-stat-label">Created</div>
+                    <div class="rsv-stat-value rsv-stat-value--sm">${formatWhen(r.createdAt)}</div>
+                    <div class="rsv-stat-sub">by ${dash(r.createdBy)}</div>
+                </div>
+            </div>
+
+            <div class="rsv-grid">
+                <section class="rsv-card">
+                    <div class="rsv-card-label">Resource</div>
+                    <div class="rsv-card-sub">${escapeHtml(holdingKindLabel(r.resourceType))}</div>
+                    <button type="button" class="rsv-pill-link" data-lc-go="${resourceView}" data-lc-open="${escapeHtml(r.resourceId)}">${escapeHtml(r.resourceId)} →</button>
+                </section>
+                <section class="rsv-card">
+                    <div class="rsv-card-label">Owner</div>
+                    <div class="rsv-card-main">${escapeHtml(ownerLabel(r))}</div>
+                    ${r.reason ? `<div class="rsv-card-sub">Reason: ${escapeHtml(r.reason)}</div>` : ''}
+                </section>
+            </div>
+
+            <section class="rsv-card">
+                <div class="rsv-card-label">History</div>
+                ${events.length ? `<ol class="rsv-timeline">${events.map((ev) => `
+                    <li>
+                        <span class="rsv-dot" aria-hidden="true"></span>
+                        <div class="rsv-tl-title">${escapeHtml(eventLabel(ev))}${ev.quantity != null ? ` <span class="rsv-tl-qty">qty ${formatQty(ev.quantity)}</span>` : ''}</div>
+                        <div class="rsv-tl-meta">${formatWhen(ev.createdAt || ev.timestamp)} · ${dash(ev.actor || ev.createdBy)}</div>
+                    </li>
+                `).join('')}</ol>` : '<p class="lc-muted" style="margin:0;">No events.</p>'}
+            </section>
         </div>
-        ${crumb([
-            { label: 'Stock', view: resourceView, open: r.resourceId },
-            { label: 'Reservation' },
-            setView ? { label: 'Set', view: 'sets-view', open: r.ownerId } : null,
-            { label: 'History', view: 'history-view', open: r.id }
-        ])}
-        ${section('Reservation', `
-            <h3 style="margin:6px 0 12px;">Held for ${escapeHtml(ownerLabel(r))}</h3>
-            <div class="lc-kv">
-                <div><div class="lc-k">Status</div><div>${statusChip(r.status)}</div></div>
-                <div><div class="lc-k">Quantity remaining</div><div>${formatQty(r.quantity)}</div></div>
-                <div><div class="lc-k">Originally reserved</div><div>${formatQty(r.quantityOriginal)}</div></div>
-                <div><div class="lc-k">Created</div><div>${formatWhen(r.createdAt)} · ${dash(r.createdBy)}</div></div>
-            </div>
-            <p class="lc-muted">Reservation IDs are for audit. Operators work from the stock record and owner.</p>
-            <div class="lc-mono" style="margin-top:8px;">${escapeHtml(r.id)}</div>
-        `)}
-        ${section('Resource', `
-            <div>${escapeHtml(holdingKindLabel(r.resourceType))}</div>
-            <button type="button" class="lc-crumb-link" data-lc-go="${resourceView}" data-lc-open="${escapeHtml(r.resourceId)}">${escapeHtml(r.resourceId)}</button>
-        `)}
-        ${section('Owner', `
-            <div>${escapeHtml(ownerLabel(r))}</div>
-            ${setView ? `<button type="button" class="action-button grey" data-lc-go="sets-view" data-lc-open="${escapeHtml(r.ownerId)}">Open Set</button>` : ''}
-            ${r.reason ? `<p class="lc-muted">Reason: ${escapeHtml(r.reason)}</p>` : ''}
-        `)}
-        ${section('History', events.length ? `<ul class="lc-event-list">${events.map((ev) => `
-            <li><strong>${escapeHtml(ev.type || ev.action || 'Event')}</strong>
-            · ${formatWhen(ev.createdAt || ev.timestamp)}
-            · ${dash(ev.actor || ev.createdBy)}
-            ${ev.quantity != null ? ` · qty ${formatQty(ev.quantity)}` : ''}</li>
-        `).join('')}</ul>` : '<p class="lc-muted">No events.</p>')}
-        ${canLogistics() && String(r.status).toUpperCase() === 'ACTIVE' ? `
-            <div class="view-actions" style="margin-top:12px;">
-                <button type="button" class="action-button grey" id="btnRsvRelease">Release</button>
-            </div>
-        ` : ''}
     `;
     el('btnRsvBack')?.addEventListener('click', () => renderBoard().catch((err) => toastOperatorError(err)));
     el('btnRsvRelease')?.addEventListener('click', async () => {
@@ -294,6 +343,9 @@ export function initReservationsView() {
         bound = true;
         el('btnReloadReservations')?.addEventListener('click', () => renderBoard().catch((e) => toastOperatorError(e)));
         el('reservationStatusFilter')?.addEventListener('change', () => renderBoard().catch((e) => toastOperatorError(e)));
+        el('reservationSearch')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') renderBoard().catch((err) => toastOperatorError(err));
+        });
     }
     const pending = consumeOpen('reservations-view');
     if (pending && pending.open) {

@@ -87,11 +87,20 @@ JWT itself is stateless; outstanding session JWTs remain valid until expiry unle
 - If SMTP is not configured **and** this is not a permitted development fallback: **503** `FORGOT_PASSWORD_EMAIL_DELIVERY_NOT_CONFIGURED` for every caller (no enumeration).
 - Development fallback (`NODE_ENV !== production` plus `AUTH_EXPOSE_RESET_LINK=true` or host `9090` / localhost): may include `devResetLink` and `reasonCode` so operators can test without pretending mail was delivered.
 
+First login with a temporary / default password (`users.must_change_password`):
+
+- Valid credentials do **not** issue a session cookie.
+- Response includes `mustChangePassword: true` and a one-hour `setupToken` so the login screen can collect a new password immediately (they already proved the temporary password).
+- The same token is emailed when SMTP in Settings works. Forgot-password still requires email delivery and never returns a token in the JSON.
+- Completing `POST /api/auth/reset-password` clears the flag. The new password must differ from the current one.
+- Admin-created accounts start with `must_change_password = true`. Public signup does not.
+
 `POST /api/auth/reset-password`
 
 - Enforces the same password rules
 - Consumes the token
 - Invalidates remember sessions
+- Clears `must_change_password`
 - Copy: expired vs no-longer-valid vs **Your password has been reset. Please sign in.**
 
 ---
