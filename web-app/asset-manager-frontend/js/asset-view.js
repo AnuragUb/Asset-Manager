@@ -507,7 +507,7 @@ async function renderAsset(data) {
                     </div>
                     `;
                 };
-                import('/js/physical-intakes.js?v=7.112').then((mod) => {
+                import('/js/physical-intakes.js?v=7.113').then((mod) => {
                     provenanceHost.innerHTML = mod.provenanceHtml(intake, { compact: true });
                     mod.bindPhysicalIntakePoLink(provenanceHost, intake, { onLinked: () => window.location.reload() });
                 }).catch(renderFallback);

@@ -55,6 +55,51 @@ function tableFor(resourceType) {
   return resourceType === 'ASSET' ? 'assets' : 'inventory_items';
 }
 
+function isRemovedHolding(holding) {
+  if (!holding) return true;
+  if (Number(holding.is_deleted || holding.IsDeleted || 0) === 1) return true;
+  const lineage = String(holding.lineage_status || '').trim().toUpperCase();
+  if (lineage && lineage !== 'ACTIVE') return true;
+  return false;
+}
+
+function applyLiveHoldingFilter(query) {
+  return query.where(function liveHolding() {
+    this.where(function liveAsset() {
+      this.where('commercial_provenance.resource_type', 'ASSET').whereExists(function existsAsset() {
+        this.select(db.raw('1'))
+          .from('assets')
+          .whereRaw('assets.id = commercial_provenance.resource_id')
+          .andWhere(function notDeleted() {
+            this.where('assets.is_deleted', 0).orWhereNull('assets.is_deleted');
+          });
+      });
+    }).orWhere(function liveInventory() {
+      this.where('commercial_provenance.resource_type', 'INVENTORY').whereExists(function existsInventory() {
+        this.select(db.raw('1'))
+          .from('inventory_items')
+          .whereRaw('inventory_items.id = commercial_provenance.resource_id')
+          .andWhere(function notDeleted() {
+            this.where('inventory_items.is_deleted', 0).orWhereNull('inventory_items.is_deleted');
+          });
+      });
+    });
+  });
+}
+
+async function findProvenanceRow(runner, resourceType, resourceId) {
+  return runner('commercial_provenance')
+    .where({ resource_type: resourceType })
+    .whereRaw('LOWER(resource_id) = LOWER(?)', [resourceId])
+    .first();
+}
+
+async function findHoldingRow(runner, resourceType, resourceId) {
+  return runner(tableFor(resourceType))
+    .whereRaw('LOWER(id) = LOWER(?)', [resourceId])
+    .first();
+}
+
 function insertedId(inserted) {
   if (Array.isArray(inserted)) return inserted[0]?.id ?? inserted[0];
   return inserted?.id ?? inserted;
@@ -462,6 +507,64 @@ async function insertIntakeEvent(trx, payload) {
   }
 }
 
+async function closeAwaitingRow(trx, {
+  existing,
+  holding,
+  actor,
+  resourceType,
+  resourceId,
+  reason,
+  details
+}) {
+  if (!existing) return null;
+  if (existing.state === 'NOT_REQUIRED') {
+    return publicProvenance(existing, { replayed: true });
+  }
+  if (existing.state !== 'AWAITING_PO') {
+    throw httpError('This holding is not waiting for a Purchase Order.', 409, 'PROVENANCE_NOT_AWAITING');
+  }
+  const now = new Date().toISOString();
+  await trx('commercial_provenance').where({ id: existing.id }).update({
+    state: 'NOT_REQUIRED',
+    expected_po_number: null,
+    expected_vendor_ref: null,
+    expected_zoho_po_id: null,
+    state_changed_at: now
+  });
+  if (existing.physical_intake_id) {
+    await insertIntakeEvent(trx, {
+      physical_intake_id: existing.physical_intake_id,
+      type: 'PO_NOT_REQUIRED',
+      product_id: holding && holding.product_id ? holding.product_id : null,
+      quantity: qtyNum(existing.quantity),
+      unit: holding ? holding.quantity_unit || null : null,
+      actor,
+      timestamp: now,
+      reason: reason || 'No PO Required',
+      resource_type: resourceType,
+      resource_id: existing.resource_id || resourceId,
+      metadata_json: JSON.stringify({
+        fromState: 'AWAITING_PO',
+        toState: 'NOT_REQUIRED',
+        holdingRemoved: isRemovedHolding(holding)
+      })
+    });
+  }
+  if (resourceType === 'ASSET' && holding && !isRemovedHolding(holding) && (await trx.schema.hasTable('asset_history'))) {
+    await trx('asset_history').insert({
+      assetid: existing.resource_id || resourceId,
+      action: 'PO_NOT_REQUIRED',
+      oldvalue: 'AWAITING_PO',
+      newvalue: 'NOT_REQUIRED',
+      user: actor || 'web',
+      timestamp: now,
+      details: details || 'Operator marked No PO Required from Awaiting Adoption'
+    });
+  }
+  const updated = await trx('commercial_provenance').where({ id: existing.id }).first();
+  return publicProvenance(updated);
+}
+
 async function markNotRequired(args = {}) {
   await requireTables();
   const resourceType = String(args.resourceType || args.resource_type || '').trim().toUpperCase();
@@ -471,61 +574,99 @@ async function markNotRequired(args = {}) {
     throw httpError('A physical holding is required.', 400, 'MISSING_ID');
   }
   return db.transaction(async (trx) => {
-    const table = tableFor(resourceType);
-    const holding = await trx(table).where({ id: resourceId }).forUpdate().first();
-    if (!holding) {
-      throw httpError('That Asset or Inventory holding was not found.', 404, 'NOT_FOUND');
-    }
-    const existing = await trx('commercial_provenance')
-      .where({ resource_type: resourceType, resource_id: resourceId })
-      .forUpdate()
-      .first();
+    const holding = await findHoldingRow(trx, resourceType, resourceId);
+    const existing = await findProvenanceRow(trx, resourceType, resourceId);
     if (!existing) {
       throw httpError('This holding has no Purchase Order expectation to close.', 409, 'PROVENANCE_NOT_AWAITING');
     }
-    if (existing.state === 'NOT_REQUIRED') {
-      return publicProvenance(existing, { replayed: true });
-    }
-    if (existing.state !== 'AWAITING_PO') {
+    const removed = isRemovedHolding(holding);
+    if (removed && existing.state !== 'AWAITING_PO' && existing.state !== 'NOT_REQUIRED') {
       throw httpError('This holding is not waiting for a Purchase Order.', 409, 'PROVENANCE_NOT_AWAITING');
     }
-    const now = new Date().toISOString();
-    await trx('commercial_provenance').where({ id: existing.id }).update({
-      state: 'NOT_REQUIRED',
-      expected_po_number: null,
-      expected_vendor_ref: null,
-      expected_zoho_po_id: null,
-      state_changed_at: now
+    return closeAwaitingRow(trx, {
+      existing,
+      holding,
+      actor,
+      resourceType,
+      resourceId,
+      reason: removed ? 'No PO Required — holding removed' : 'No PO Required',
+      details: removed
+        ? 'Closed Awaiting Adoption because the Asset or Inventory holding was removed'
+        : 'Operator marked No PO Required from Awaiting Adoption'
     });
-    if (existing.physical_intake_id) {
-      await insertIntakeEvent(trx, {
-        physical_intake_id: existing.physical_intake_id,
-        type: 'PO_NOT_REQUIRED',
-        product_id: holding.product_id || null,
-        quantity: qtyNum(existing.quantity),
-        unit: holding.quantity_unit || null,
-        actor,
-        timestamp: now,
-        reason: 'No PO Required',
-        resource_type: resourceType,
-        resource_id: resourceId,
-        metadata_json: JSON.stringify({ fromState: 'AWAITING_PO', toState: 'NOT_REQUIRED' })
-      });
-    }
-    if (resourceType === 'ASSET' && (await trx.schema.hasTable('asset_history'))) {
-      await trx('asset_history').insert({
-        assetid: resourceId,
-        action: 'PO_NOT_REQUIRED',
-        oldvalue: 'AWAITING_PO',
-        newvalue: 'NOT_REQUIRED',
-        user: actor || 'web',
-        timestamp: now,
-        details: 'Operator marked No PO Required from Awaiting Adoption'
-      });
-    }
-    const updated = await trx('commercial_provenance').where({ id: existing.id }).first();
-    return publicProvenance(updated);
   });
+}
+
+async function closeAwaitingOnRemoval(args = {}, runner) {
+  const trxOrDb = runner || db;
+  if (!(await tablesReady(trxOrDb))) return { closed: false, commercialProvenance: null };
+  const resourceType = String(args.resourceType || args.resource_type || '').trim().toUpperCase();
+  const resourceId = trimText(args.resourceId || args.resource_id);
+  const actor = trimText(args.actor || args.updatedBy);
+  if (!RESOURCE_TYPES.includes(resourceType) || !resourceId) {
+    return { closed: false, commercialProvenance: null };
+  }
+  const run = async (trx) => {
+    const holding = await findHoldingRow(trx, resourceType, resourceId);
+    const existing = await findProvenanceRow(trx, resourceType, resourceId);
+    if (!existing || existing.state !== 'AWAITING_PO') {
+      return { closed: false, commercialProvenance: existing ? publicProvenance(existing) : null };
+    }
+    const commercialProvenance = await closeAwaitingRow(trx, {
+      existing,
+      holding,
+      actor,
+      resourceType,
+      resourceId,
+      reason: 'Holding removed',
+      details: 'Closed Awaiting Adoption because the Asset or Inventory holding was removed'
+    });
+    return { closed: !commercialProvenance?.replayed, commercialProvenance };
+  };
+  if (runner) return run(runner);
+  return db.transaction(run);
+}
+
+async function markNotRequiredMany(args = {}) {
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (!items.length) {
+    throw httpError('Select at least one holding.', 400, 'MISSING_ID');
+  }
+  if (items.length > 5000) {
+    throw httpError('At most 5000 holdings can be marked at once.', 400, 'BULK_TOO_MANY_ROWS');
+  }
+  const actor = trimText(args.actor || args.updatedBy);
+  const results = [];
+  for (const item of items) {
+    const resourceType = String(item.resourceType || item.resource_type || '').trim().toUpperCase();
+    const resourceId = trimText(item.resourceId || item.resource_id);
+    try {
+      const commercialProvenance = await markNotRequired({ resourceType, resourceId, actor });
+      results.push({
+        resourceType,
+        resourceId,
+        status: 'OK',
+        replayed: Boolean(commercialProvenance && commercialProvenance.replayed)
+      });
+    } catch (err) {
+      if (!err.statusCode || err.statusCode >= 500) throw err;
+      results.push({
+        resourceType,
+        resourceId,
+        status: 'ERROR',
+        error: err.message,
+        reasonCode: err.reasonCode || null
+      });
+    }
+  }
+  return {
+    summary: {
+      total: results.length,
+      ok: results.filter((row) => row.status === 'OK').length,
+      error: results.filter((row) => row.status === 'ERROR').length
+    },
+    results
+  };
 }
 
 async function holdingLabelMap(rows) {
@@ -545,19 +686,22 @@ async function holdingLabelMap(rows) {
 
 async function countAwaitingAdoption() {
   if (!(await tablesReady())) return 0;
-  const row = await db('commercial_provenance').where({ state: 'AWAITING_PO' }).count({ n: '*' }).first();
+  const row = await applyLiveHoldingFilter(
+    db('commercial_provenance').where({ state: 'AWAITING_PO' })
+  ).count({ n: '*' }).first();
   return Number(row && row.n ? row.n : 0);
 }
 
 async function listByState(query = {}) {
   await requireTables();
   const state = String(query.state || '').trim().toUpperCase();
-  const limit = Math.min(200, Math.max(1, parseInt(query.limit, 10) || 50));
+  const limit = Math.min(5000, Math.max(1, parseInt(query.limit, 10) || 50));
   const offset = Math.max(0, parseInt(query.offset, 10) || 0);
   let q = db('commercial_provenance').orderBy('created_at', 'desc');
   if (STATES.includes(state)) q = q.where('state', state);
   const resourceType = String(query.resourceType || query.resource_type || '').trim().toUpperCase();
   if (RESOURCE_TYPES.includes(resourceType)) q = q.where('resource_type', resourceType);
+  if (state === 'AWAITING_PO') q = applyLiveHoldingFilter(q);
   const countRow = await q.clone().clearOrder().count({ n: '*' }).first();
   const rows = await q.limit(limit).offset(offset);
   const labels = await holdingLabelMap(rows);
@@ -631,6 +775,8 @@ module.exports = {
   writeIntakeProvenanceEvents,
   linkPurchaseOrder,
   markNotRequired,
+  markNotRequiredMany,
+  closeAwaitingOnRemoval,
   countAwaitingAdoption,
   listByState,
   listLinkablePurchaseOrders,

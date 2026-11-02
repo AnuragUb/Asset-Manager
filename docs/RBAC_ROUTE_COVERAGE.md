@@ -57,6 +57,8 @@ Frontend checks are UX only.
 | POST | `/api/products/:id/restore` | product | restore | product.restore | requirePermission('product.restore') | ok |
 | POST | `/api/products` | product | create | product.create | requirePermission('product.create') | ok |
 | PUT | `/api/products/:id` | product | edit | product.edit | requirePermission('product.edit') | ok |
+| POST | `/api/products/:id/physical-links` | product | edit | product.edit | requirePermission('product.edit') | ok |
+| DELETE | `/api/products/:id/physical-links/:resourceType/:resourceId` | product | edit | product.edit | requirePermission('product.edit') | ok |
 | POST | `/api/break` | asset | break | asset.break | requirePermission('asset.break') | ok |
 | POST | `/api/break/inactivate` | asset | break | asset.break | requirePermission('asset.break') | ok |
 | POST | `/api/reservations` | reservation | create | reservation.create | requirePermission('reservation.create') | ok |

@@ -15,6 +15,8 @@ const {
 const { EVENT_TYPES } = require('../../shared/inventoryEventSystem');
 const productService = require('./productService');
 const commercialProvenanceService = require('./commercialProvenanceService');
+const hsnHistoryService = require('./hsnHistoryService');
+const encryptionService = require('./encryptionService');
 
 const HOLDING_TYPES = Object.freeze(['ASSET', 'INVENTORY']);
 const INTAKE_TYPES = Object.freeze([
@@ -542,38 +544,40 @@ function validateRequest(args) {
   };
 }
 
-function normalizePurchaseDate(value) {
-  const text = String(value || '').trim();
-  if (!text) return null;
-  let year;
-  let month;
-  let day;
-  let match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) {
-    year = Number(match[1]);
-    month = Number(match[2]);
-    day = Number(match[3]);
-  } else {
-    match = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-    if (match) {
-      day = Number(match[1]);
-      month = Number(match[2]);
-      year = Number(match[3]);
-    } else if (/^\d+(\.\d+)?$/.test(text)) {
-      const serial = Math.floor(Number(text));
-      if (serial > 20000 && serial < 80000) {
-        const utc = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
-        year = utc.getUTCFullYear();
-        month = utc.getUTCMonth() + 1;
-        day = utc.getUTCDate();
-      }
-    }
-  }
-  if (!year) return undefined;
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return undefined;
+function calendarYmd(year, month, day) {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!y || !m || !d) return undefined;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return undefined;
   const pad = (n) => String(n).padStart(2, '0');
-  return `${year}-${pad(month)}-${pad(day)}`;
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+
+function normalizePurchaseDate(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const serial = Math.floor(value);
+    if (serial > 20000 && serial < 80000) {
+      const utc = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      return calendarYmd(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+    }
+    return undefined;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const serial = Math.floor(Number(text));
+    if (serial > 20000 && serial < 80000) {
+      const utc = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      return calendarYmd(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+    }
+    return undefined;
+  }
+  const match = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (!match) return undefined;
+  return calendarYmd(match[3], match[2], match[1]);
 }
 
 function parseIntakePrice(value) {
@@ -587,30 +591,112 @@ function parseIntakePrice(value) {
   return n;
 }
 
+function parseIntakeHsn(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  if (text.length > 64) {
+    throw httpError('HSN Code is too long (max 64 characters).', 400, 'INTAKE_HSN_INVALID');
+  }
+  return text;
+}
+
+function parseIntakeSerial(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  if (text.length > 128) {
+    throw httpError('Serial Number is too long (max 128 characters).', 400, 'INTAKE_SERIAL_INVALID');
+  }
+  return text;
+}
+
+async function applyHoldingSerial(trx, table, row, serial) {
+  if (!serial) return;
+  const encrypted = encryptionService.encryptDeterministic(serial);
+  if (await trx.schema.hasColumn(table, 'srno')) {
+    const existing = await trx(table).where('srno', encrypted).first();
+    if (existing) {
+      throw httpError(
+        `Serial Number "${serial}" is already on ${existing.id}.`,
+        409,
+        'INTAKE_SERIAL_DUPLICATE'
+      );
+    }
+    row.srno = encrypted;
+  }
+  if (await trx.schema.hasColumn(table, 'serialno')) {
+    row.serialno = encrypted;
+  }
+}
+
+const ASSET_INTAKE_STATUSES = Object.freeze([
+  'In Store', 'Under Inspection', 'Project', 'Owned', 'Sold', 'Demo',
+  'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped'
+]);
+const INVENTORY_INTAKE_STATUSES = Object.freeze([
+  'In Store', 'In Use', 'In Project', 'Under Inspection', 'Owned', 'Sold',
+  'Demo', 'Rental', 'Stand By', 'In-Repair', 'Scraped'
+]);
+
+function statusLookupKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[_/]+/g, ' ').replace(/\s+/g, ' ').replace(/-/g, ' ');
+}
+
+function parseIntakeStatus(value, holdingType) {
+  const allowed = String(holdingType || 'ASSET').toUpperCase() === 'INVENTORY'
+    ? INVENTORY_INTAKE_STATUSES
+    : ASSET_INTAKE_STATUSES;
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return 'In Store';
+  const key = statusLookupKey(text);
+  const aliases = {
+    'in store': 'In Store',
+    'under inspection': 'Under Inspection',
+    'project': String(holdingType || '').toUpperCase() === 'INVENTORY' ? 'In Project' : 'Project',
+    'in project': String(holdingType || '').toUpperCase() === 'INVENTORY' ? 'In Project' : 'Project',
+    'owned': 'Owned',
+    'sold': 'Sold',
+    'demo': 'Demo',
+    'in use': String(holdingType || '').toUpperCase() === 'INVENTORY' ? 'In Use' : 'In-Use',
+    'inuse': String(holdingType || '').toUpperCase() === 'INVENTORY' ? 'In Use' : 'In-Use',
+    'rental': 'Rental',
+    'stand by': 'Stand By',
+    'standby': 'Stand By',
+    'in repair': 'In-Repair',
+    'inrepair': 'In-Repair',
+    'scraped': 'Scraped',
+    'scrapped': 'Scraped'
+  };
+  const mapped = aliases[key] || allowed.find((s) => statusLookupKey(s) === key);
+  if (!mapped || !allowed.includes(mapped)) {
+    throw httpError(
+      `Status "${text}" is not allowed. Use one of: ${allowed.join(', ')}.`,
+      400,
+      'INTAKE_STATUS_INVALID'
+    );
+  }
+  return mapped;
+}
+
+async function applyHoldingHsn(trx, table, row, hsn) {
+  if (hsn == null) return;
+  if (await trx.schema.hasColumn(table, 'hsn_code')) {
+    row.hsn_code = hsn;
+  }
+}
+
 function truthyFlag(value) {
   return value === true || value === 1 || /^(true|1|yes)$/i.test(String(value || '').trim());
 }
 
 function requireHoldingDescription(args, product, holdingType) {
-  const label = String(holdingType || 'ASSET').toUpperCase() === 'INVENTORY' ? 'Inventory' : 'Asset';
   const port = truthyFlag(args.portProductDescription || args.port_product_description);
   let text = trimText(args.itemDescription || args.itemdescription || args.holdingDescription);
-  if (!text && !(product && product.id)) {
-    text = trimText(args.description);
-  }
-  if (!text && port) {
-    text = trimText(product && product.description);
-    if (!text) {
-      throw httpError(`Cannot port Product description onto this ${label}: the Product description is blank.`, 400, 'PRODUCT_DESCRIPTION_BLANK');
-    }
-  }
-  if (!text) {
-    throw httpError(`${label} description is required. It is not the Product description unless you port it.`, 400, 'HOLDING_DESCRIPTION_REQUIRED');
-  }
-  return text;
+  if (!text) text = trimText(args.description);
+  if (!text && port) text = trimText(product && product.description);
+  return text || '';
 }
 
-async function createInventoryRow(trx, { product, qty, unit, location, host, actor, intakeId, folder, itemName, purchaseDate, folderPath, price, itemDescription }) {
+async function createInventoryRow(trx, { product, qty, unit, location, host, actor, intakeId, folder, itemName, purchaseDate, folderPath, price, itemDescription, hsnCode, status, serialNo }) {
   const named = product || {};
   const holdingId = await uniqueHoldingId(trx, 'inventory_items', location, folder.type || named.name || 'Inventory');
   const now = new Date().toISOString();
@@ -619,7 +705,7 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
     id: holdingId,
     itemname: trimText(itemName) || named.name || '',
     itemdescription: trimText(itemDescription),
-    status: 'In Store',
+    status: status || 'In Store',
     make: named.make || '',
     model: named.model || '',
     purchasedate: purchaseDate || null,
@@ -658,6 +744,8 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
   if (price != null && await trx.schema.hasColumn('inventory_items', 'asset_value')) {
     row.asset_value = price;
   }
+  await applyHoldingHsn(trx, 'inventory_items', row, hsnCode);
+  await applyHoldingSerial(trx, 'inventory_items', row, serialNo);
   await trx('inventory_items').insert(row);
   const outputInserted = await trx('physical_intake_output').insert({
     physical_intake_id: intakeId,
@@ -679,7 +767,7 @@ async function createInventoryRow(trx, { product, qty, unit, location, host, act
   return { resourceType: 'INVENTORY', resourceId: holdingId, quantity: qty, qr: true, outputId };
 }
 
-async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId, hierarchy, itemName, purchaseDate, folderPath, price, itemDescription }) {
+async function createAssetRow(trx, { product, qty, unit, location, host, actor, intakeId, hierarchy, itemName, purchaseDate, folderPath, price, itemDescription, hsnCode, status, serialNo }) {
   const named = product || {};
   const type = hierarchy?.type || named.make || 'GEN';
   const category = hierarchy?.category || 'IT';
@@ -691,7 +779,7 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
     id: holdingId,
     itemname: trimText(itemName) || named.name || '',
     itemdescription: trimText(itemDescription),
-    status: 'In Store',
+    status: status || 'In Store',
     make: named.make || '',
     model: named.model || '',
     purchasedate: purchaseDate || null,
@@ -736,6 +824,8 @@ async function createAssetRow(trx, { product, qty, unit, location, host, actor, 
   } else if (price != null && await trx.schema.hasColumn('assets', 'unitprice')) {
     row.unitprice = price;
   }
+  await applyHoldingHsn(trx, 'assets', row, hsnCode);
+  await applyHoldingSerial(trx, 'assets', row, serialNo);
   await trx('assets').insert(row);
   const outputInserted = await trx('physical_intake_output').insert({
     physical_intake_id: intakeId,
@@ -778,6 +868,9 @@ async function insertIntakeRecord(trx, { args, validated, product, unit, locatio
   const now = new Date().toISOString();
   const productId = product && product.id ? product.id : null;
   const price = parseIntakePrice(args.price);
+  const hsnCode = parseIntakeHsn(args.hsn_code || args.hsnCode || args.hsn);
+  const serialNo = parseIntakeSerial(args.serialNo || args.serial_no || args.srno || args.SerialNo);
+  const status = parseIntakeStatus(args.status || args.itemStatus, validated.holdingType);
   const sourceJson = { ...validated.source, _fingerprint: fp };
   const approvingActor = validated.intakeType === 'OTHER_APPROVED'
     ? (trimText(args.approvingActor || args.approving_actor) || actor)
@@ -850,7 +943,10 @@ async function insertIntakeRecord(trx, { args, validated, product, unit, locatio
       purchaseDate: args.purchaseDate || args.purchase_date || null,
       folderPath: trimText(args.folderPath || args.folder_path),
       price,
-      itemDescription: holdingDescription
+      itemDescription: holdingDescription,
+      hsnCode,
+      status,
+      serialNo
     });
     await writeIntakeEvent(trx, {
       physicalIntakeId: intakeId,
@@ -884,7 +980,10 @@ async function insertIntakeRecord(trx, { args, validated, product, unit, locatio
       purchaseDate: args.purchaseDate || args.purchase_date || null,
       folderPath: trimText(args.folderPath || args.folder_path),
       price,
-      itemDescription: holdingDescription
+      itemDescription: holdingDescription,
+      hsnCode,
+      status,
+      serialNo
     });
     await writeIntakeEvent(trx, {
       physicalIntakeId: intakeId,
@@ -896,6 +995,18 @@ async function insertIntakeRecord(trx, { args, validated, product, unit, locatio
       reason: validated.reason,
       resourceType: 'ASSET',
       resourceId: created.resourceId
+    });
+  }
+
+  if (hsnCode) {
+    await hsnHistoryService.recordChange({
+      trx,
+      resourceType: created.resourceType,
+      resourceId: created.resourceId,
+      previous: '',
+      next: hsnCode,
+      actor,
+      note: `Physical Intake ${intakeId}`
     });
   }
 
@@ -1043,7 +1154,7 @@ async function createPhysicalIntake(args = {}) {
 }
 
 const BULK_INTAKE_LIMIT = 200;
-const BULK_ROW_FIELDS = ['productId', 'itemName', 'itemDescription', 'portProductDescription', 'purchaseDate', 'price', 'folderPath', 'quantity', 'unit', 'folderId', 'kindId', 'parentFolder', 'type', 'category', 'location'];
+const BULK_ROW_FIELDS = ['productId', 'noProduct', 'no_product', 'itemName', 'itemDescription', 'description', 'make', 'model', 'portProductDescription', 'purchaseDate', 'price', 'hsn_code', 'hsnCode', 'hsn', 'status', 'itemStatus', 'serialNo', 'serial_no', 'srno', 'SerialNo', 'folderPath', 'quantity', 'unit', 'folderId', 'kindId', 'parentFolder', 'type', 'category', 'location'];
 
 function bulkRowNumber(row, idx) {
   const n = parseInt(row && (row.rowNumber || row.row_number), 10);
@@ -1077,7 +1188,7 @@ async function prepareBulkRow(header, row) {
   const purchaseDate = normalizePurchaseDate(rawPurchaseDate);
   if (purchaseDate === undefined) {
     throw httpError(
-      `Purchase Date "${String(rawPurchaseDate).trim()}" is not a date. Use YYYY-MM-DD or DD/MM/YYYY.`,
+      `Purchase Date "${String(rawPurchaseDate).trim()}" is not a date. Use DD-MM-YYYY (for example 15-04-2024).`,
       400,
       'INTAKE_PURCHASE_DATE_INVALID'
     );
@@ -1085,7 +1196,33 @@ async function prepareBulkRow(header, row) {
   args.purchaseDate = purchaseDate;
   args.price = parseIntakePrice(args.price);
   const validated = validateRequest(args);
-  const product = await loadActiveProduct(args.productId);
+  args.hsn_code = parseIntakeHsn(args.hsn_code || args.hsnCode || args.hsn);
+  args.serialNo = parseIntakeSerial(args.serialNo || args.serial_no || args.srno || args.SerialNo);
+  args.status = parseIntakeStatus(args.status || args.itemStatus, validated.holdingType);
+  const requestedProductId = trimText(args.productId || args.product_id);
+  const skipProduct = truthyFlag(args.noProduct || args.no_product) || !requestedProductId;
+  let product;
+  if (skipProduct) {
+    if (validated.commercialChoice === 'AVAILABLE') {
+      throw httpError('A Product is required to link a Purchase Order.', 409, 'PRODUCT_REQUIRED');
+    }
+    const itemName = trimText(args.itemName || args.item_name)
+      || trimText(args.name)
+      || trimText(args.type)
+      || 'Holding';
+    args.itemName = itemName;
+    args.noProduct = true;
+    product = {
+      id: null,
+      name: itemName,
+      description: trimText(args.description || args.itemDescription) || '',
+      make: trimText(args.make) || '',
+      model: trimText(args.model) || '',
+      unit: null
+    };
+  } else {
+    product = await loadActiveProduct(requestedProductId);
+  }
   const unit = trimText(args.unit) || trimText(product.unit) || 'Nos';
   const location = trimText(args.location) || 'Mumbai';
   if (validated.holdingType === 'INVENTORY') {
@@ -1094,7 +1231,7 @@ async function prepareBulkRow(header, row) {
   const fp = fingerprintOf({
     holdingType: validated.holdingType,
     intakeType: validated.intakeType,
-    productId: product.id,
+    productId: product.id || null,
     itemName: trimText(args.itemName || args.item_name),
     purchaseDate: args.purchaseDate || null,
     quantity: validated.quantity,
@@ -1154,7 +1291,9 @@ async function createPhysicalIntakesBulk({ header = {}, rows, actor, host, batch
         row: rowNumber,
         status: 'VALID',
         errors: [],
-        product: { id: ctx.product.id, name: ctx.product.name, unit: ctx.product.unit || null },
+        product: ctx.product && ctx.product.id
+          ? { id: ctx.product.id, name: ctx.product.name, unit: ctx.product.unit || null }
+          : null,
         quantity: ctx.validated.quantity,
         unit: ctx.unit,
         ctx
@@ -1205,7 +1344,7 @@ async function createPhysicalIntakesBulk({ header = {}, rows, actor, host, batch
         row: p.row,
         id: intake.id,
         productId: intake.productId,
-        productName: intake.productName || p.product.name,
+        productName: intake.productName || (p.product && p.product.name) || (p.ctx && p.ctx.product && p.ctx.product.name) || null,
         quantity: intake.quantity,
         unit: intake.unit,
         resourceType: out0.resourceType || intake.holdingType,

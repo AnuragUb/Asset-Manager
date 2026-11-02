@@ -1,5 +1,5 @@
 import { showToast, hasPermission } from './utils.js?v=6.60';
-import { HierarchyManager } from './hierarchy.js?v=6.67';
+import { HierarchyManager } from './hierarchy.js?v=6.69';
 import {
     getEventDisplayName,
     getEventUi,
@@ -631,8 +631,9 @@ function openInventorySharedModal(existingItem = null) {
     setVal('itemAMC', existingItem?.amc_months || 0);
     setVal('itemValue', existingItem?.AssetValue || existingItem?.asset_value || 0);
     setVal('itemCurrency', existingItem?.Currency || existingItem?.currency || 'INR');
-    setVal('itemPurchaseDate', existingItem?.PurchaseDate || existingItem?.purchasedate || '');
-    setVal('itemPurpose', existingItem?.Purpose || existingItem?.purpose || 'Owned');
+    setVal('itemPurchaseDate', (typeof window.toDdMmYyyyInput === 'function'
+        ? window.toDdMmYyyyInput(existingItem?.PurchaseDate || existingItem?.purchasedate || '')
+        : (existingItem?.PurchaseDate || existingItem?.purchasedate || '')));
     setVal('itemParentId', existingItem?.ParentId || existingItem?.parentid || '');
     setVal('itemQtyUnit', existingItem?.quantity_unit || 'Nos');
     setVal('itemQtyTotal', existingItem?.QuantityTotal ?? existingItem?.quantity_total ?? '1');
@@ -1114,11 +1115,11 @@ function renderInventoryItemsTable(items) {
 
     const fmtDate = (v) => {
         if (!v) return '-';
-        let d = v instanceof Date ? v : new Date(v);
-        if (isNaN(d.getTime())) return escapeHtml(String(v || '-'));
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        return `${dd}-${mm}-${d.getFullYear()}`;
+        if (typeof window.formatDisplayDate === 'function') return escapeHtml(window.formatDisplayDate(v));
+        const text = String(v).trim();
+        const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+        return escapeHtml(text);
     };
 
     const rows = items.map(item => {

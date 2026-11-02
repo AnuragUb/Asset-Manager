@@ -49,6 +49,8 @@ const ROUTE_PERMS = [
   ["app.post('/api/products/:id/restore'", 'product.restore'],
   ["app.post('/api/products'", 'product.create'],
   ["app.put('/api/products/:id'", 'product.edit'],
+  ["app.post('/api/products/:id/physical-links'", 'product.edit'],
+  ["app.delete('/api/products/:id/physical-links/:resourceType/:resourceId'", 'product.edit'],
 
   // Break / convert
   ["app.post('/api/break'", 'asset.break'],

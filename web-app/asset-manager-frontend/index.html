@@ -9,7 +9,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/static/logo.png?v=6.44">
     <link rel="apple-touch-icon" href="/static/logo.png?v=6.44">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=7.164">
+    <link rel="stylesheet" href="/static/style.css?v=7.166">
     <link rel="stylesheet" href="/static/login-lamp.css?v=1.7">
     <link rel="stylesheet" href="/templates/documents/dc/delivery-challan.css?v=1.9">
     <link rel="stylesheet" href="/static/modal.css?v=6.46">
@@ -604,7 +604,7 @@
                                         <div class="bubble bubble-hover"></div>
                                         <div class="bubble bubble-active"></div>
                                         <ul class="module-list">
-                                            <li class="module-option" data-value="IT">IT Assets</li>
+                                            <li class="module-option" data-value="IT">Cineom Assets</li>
                                             <li class="module-option" data-value="SERVICE">Service</li>
                                             <li class="module-option" data-value="Rental">Rental</li>
                                             <li class="module-option" data-value="Inventory">Inventory</li>
@@ -1683,6 +1683,7 @@
                                 <input type="text" id="physicalIntakeSearch" placeholder="Search intake, Product, reason..." style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; width: 200px; font-size: 12px;">
                                 <button class="action-button grey" id="btnReloadPhysicalIntakes">Refresh</button>
                                 <button type="button" class="action-button grey" id="btnBulkPhysicalIntake" onclick="window.startBulkPhysicalIntake && window.startBulkPhysicalIntake()">Bulk Upload (CSV / Excel)</button>
+                                <button type="button" class="action-button grey" id="btnAwaitingNoPo" hidden>No PO Required</button>
                                 <button class="action-button green" id="btnStartPhysicalIntake">+ Physical Intake</button>
                             </div>
                         </div>
@@ -2212,7 +2213,7 @@
                             <div class="form-group">
                                 <label>Module / Category</label>
                                 <select id="folderModule" name="folderModule" class="form-input">
-                                    <option value="IT">IT Assets</option>
+                                    <option value="IT">Cineom Assets</option>
                                     <option value="In-House">Service</option>
                                     <option value="Rental">Rental</option>
                                     <option value="Inventory">Inventory</option>
@@ -2417,21 +2418,11 @@
                             </div>
                             <div class="form-group">
                                 <label for="itemPurchaseDate">Purchase Date</label>
-                                <input type="date" id="itemPurchaseDate" name="itemPurchaseDate">
+                                <input type="text" id="itemPurchaseDate" name="itemPurchaseDate" placeholder="DD-MM-YYYY" inputmode="numeric" autocomplete="off">
                             </div>
                             <div class="form-group" style="grid-column: span 2; background: #f0fdf4; padding: 10px; border-radius: 8px; border: 1px solid #dcfce7; margin-bottom: 5px; display: flex; align-items: center; gap: 10px;">
                                 <input type="checkbox" id="itemWarrantyTracking" name="itemWarrantyTracking" style="width: 20px; height: 20px; cursor: pointer;" checked>
                                 <label for="itemWarrantyTracking" style="font-weight: 700; color: #166534; cursor: pointer; margin-bottom: 0;">Enable Warranty Tracking for this Asset</label>
-                            </div>
-                            <div class="form-group">
-                                <label for="itemPurpose">Purpose / Flag</label>
-                                <select id="itemPurpose" name="itemPurpose">
-                                    <option value="Owned">Owned</option>
-                                    <option value="Rental">Rental</option>
-                                    <option value="Demo">Demo</option>
-                                    <option value="Project">Project</option>
-                                    <option value="Stand By">Stand By</option>
-                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="itemAssignedTo">Assigned To</label>
@@ -3206,7 +3197,7 @@
     </div>
 </div>
 
-<script type="module" src="/js/main.js?v=7.248"></script>
+<script type="module" src="/js/main.js?v=7.263"></script>
 <script>
     // Module Load Watchdog
     window.addEventListener('load', () => {

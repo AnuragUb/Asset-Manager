@@ -58,11 +58,6 @@ export class HierarchyManager {
                     children: [] 
                 };
                 nodes[id] = node;
-                // Folders may still be referenced by name. Kinds with the same
-                // name under different parents must only be keyed by ID.
-                if (item.type !== 'kind' && item.Name && item.Name !== id && !nodes[item.Name]) {
-                    nodes[item.Name] = node;
-                }
             }
         });
 
@@ -73,7 +68,8 @@ export class HierarchyManager {
             const seen = new Set();
             Object.values(nodes).forEach((candidate) => {
                 if (!candidate || candidate.ID === childId || seen.has(candidate.ID)) return;
-                if (String(candidate.Name || '') !== wanted && String(candidate.ID || '') !== wanted) return;
+                if (String(candidate.Name || '').toLowerCase() !== wanted.toLowerCase()
+                    && String(candidate.ID || '').toLowerCase() !== wanted.toLowerCase()) return;
                 seen.add(candidate.ID);
                 hits.push(candidate);
             });
@@ -89,6 +85,9 @@ export class HierarchyManager {
             if (!node || addedToHierarchy.has(node.ID)) return;
 
             let parentId = item.ParentID;
+            if (parentId && !nodes[parentId]) {
+                parentId = uniqueParentByName(parentId, id, item.Name) || parentId;
+            }
             if ((!parentId || !nodes[parentId] || parentId === id) && item.type === 'kind') {
                 parentId = uniqueParentByName(item.ParentName || item.parentname, id, item.Name) || parentId;
             }
@@ -97,6 +96,7 @@ export class HierarchyManager {
             if (parentId && nodes[parentId] && parentId !== id) {
                 // Check if already a child to avoid duplication
                 if (!nodes[parentId].children.some(c => c.ID === node.ID)) {
+                    node.treeParent = nodes[parentId];
                     nodes[parentId].children.push(node);
                     addedToHierarchy.add(node.ID);
                 }

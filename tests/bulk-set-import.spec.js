@@ -28,7 +28,7 @@ test.describe('Asset Manager: Bulk Set Import', () => {
         await loginForm.locator('#password').fill('password123');
         
         // 2. Explicitly select the module and wait for the 'active' state
-        const itModule = page.locator('.module-option', { hasText: 'IT Assets' });
+        const itModule = page.locator('.module-option', { hasText: 'Cineom Assets' });
         await itModule.click();
         await expect(itModule).toHaveClass(/active/);
         

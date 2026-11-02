@@ -1,5 +1,5 @@
 import { showView, TABULATOR_BASE_CONFIG, robustRedraw, registerTabulator, showToast, hasPermission, canViewPrice, canEditPrice, applyRbacUiRestrictions } from './utils.js?v=6.59';
-import { HierarchyManager } from './hierarchy.js?v=6.67';
+import { HierarchyManager } from './hierarchy.js?v=6.69';
 import { DataProcessor } from './dataProcessor.js?v=6.59';
 import { initScannerView } from './networkScanner.js?v=6.59';
 import { fetchWithAuth } from './auth.js?v=7.29';
@@ -1446,25 +1446,46 @@ window.escapeAttr = escapeAttr;
 window.escapeHtml = escapeHtml;
 
 function formatDisplayDate(val) {
-    if (!val) return '-';
-    
-    let date;
-    if (val instanceof Date) {
-        date = val;
-    } else if (typeof val === 'string') {
-        // Handle ISO strings or YYYY-MM-DD
-        date = new Date(val);
-    } else {
-        return val;
+    if (val == null || val === '') return '-';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        const d = String(val.getUTCDate()).padStart(2, '0');
+        const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+        return `${d}-${m}-${val.getUTCFullYear()}`;
     }
-
-    if (isNaN(date.getTime())) return val;
-
-    const d = String(date.getDate()).padStart(2, '0');
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const y = date.getFullYear();
-    return `${d}-${m}-${y}`;
+    const text = String(val).trim();
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+    const dmy = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+    if (dmy) return `${String(dmy[1]).padStart(2, '0')}-${String(dmy[2]).padStart(2, '0')}-${dmy[3]}`;
+    const dmy2 = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})$/);
+    if (dmy2) return `${String(dmy2[1]).padStart(2, '0')}-${String(dmy2[2]).padStart(2, '0')}-20${dmy2[3]}`;
+    return text;
 }
+window.formatDisplayDate = formatDisplayDate;
+
+function toDdMmYyyyInput(val) {
+    const shown = formatDisplayDate(val);
+    return !shown || shown === '-' ? '' : shown;
+}
+
+function toIsoDateFromDdMmYyyy(val) {
+    const text = String(val == null ? '' : val).trim();
+    if (!text) return '';
+    const dmy = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dmy) {
+        const d = Number(dmy[1]);
+        const m = Number(dmy[2]);
+        const y = Number(dmy[3]);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return '';
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    return '';
+}
+window.toDdMmYyyyInput = toDdMmYyyyInput;
+window.toIsoDateFromDdMmYyyy = toIsoDateFromDdMmYyyy;
 
 function matchesQuery(asset, query) {
     if (!query) return true;
@@ -7275,12 +7296,7 @@ export function renderDashboard(assets, filteredAssets) {
             .replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
     function _dashFmtDate(v) {
-        if (!v) return '-';
-        let d = v instanceof Date ? v : new Date(v);
-        if (isNaN(d.getTime())) return _dashEscapeHtml(String(v || '-'));
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        return `${dd}-${mm}-${d.getFullYear()}`;
+        return formatDisplayDate(v);
     }
     function renderAssetsTable(rows) {
         if (!rows || !rows.length) {
@@ -7600,7 +7616,7 @@ export function renderDashboard(assets, filteredAssets) {
         }
 
         // Render cards for displayNodes (subfolders/subkinds)
-        if (displayNodes.length === 0 && parentNode) {
+        if (displayNodes.length === 0 && parentNode && recursiveAssets.length === 0) {
             assetGrid.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: #999;">
                     <p>No sub-categories or folders found in <b>${parentNode.Name}</b>.</p>
@@ -7916,13 +7932,16 @@ This action CANNOT be undone once the 30-day window closes.`;
         assetGrid.appendChild(assetCard);
     });
 
-    // If there are direct assets in this category (not just sub-categories), show them too
-    if (directAssets.length > 0 && parentNode) {
-        // Add a small header for direct items
+    // Parent folders with children only list holdings stored on this node.
+    // Nested holdings stay on the child folder/category cards.
+    const holdingsToShow = parentNode
+        ? (displayNodes.length > 0 ? directAssets : recursiveAssets)
+        : [];
+    if (holdingsToShow.length > 0 && parentNode) {
         if (displayNodes.length > 0) {
             const header = document.createElement('div');
             header.style = 'grid-column: 1 / -1; margin: 20px 0 10px 0; font-weight: bold; color: #666; font-size: 14px; display: flex; align-items: center; gap: 10px;';
-            header.innerHTML = `<span>Items directly in ${parentNode.Name}</span> <span style="font-weight: normal; font-size: 12px; color: #999;">(${directAssets.length})</span>`;
+            header.innerHTML = `<span>Items directly in ${parentNode.Name}</span> <span style="font-weight: normal; font-size: 12px; color: #999;">(${holdingsToShow.length})</span>`;
             assetGrid.appendChild(header);
         }
 
@@ -7930,11 +7949,11 @@ This action CANNOT be undone once the 30-day window closes.`;
         if (viewMode === 'table') {
             const wrapper = document.createElement('div');
             wrapper.style = 'grid-column: 1 / -1;';
-            wrapper.innerHTML = renderAssetsTable(directAssets);
+            wrapper.innerHTML = renderAssetsTable(holdingsToShow);
             assetGrid.appendChild(wrapper);
-            wireDashboardTableRowHandlers(wrapper, directAssets);
+            wireDashboardTableRowHandlers(wrapper, holdingsToShow);
         } else {
-            renderDashboardCardsGrid(assetGrid, directAssets);
+            renderDashboardCardsGrid(assetGrid, holdingsToShow);
         }
     }
 
@@ -8130,9 +8149,12 @@ function hierarchyPathForNode(node) {
     for (let guard = 0; cur && guard < 24; guard += 1) {
         const name = String(cur.Name || cur.name || '').trim();
         if (name) names.unshift(name);
-        const pid = cur.ParentID || cur.parentid || cur.ParentId || cur.ParentName || cur.parentname;
-        if (!pid || !manager || typeof manager.findNode !== 'function') break;
-        const parent = manager.findNode(pid);
+        let parent = cur.treeParent || null;
+        if (!parent && manager && typeof manager.findNode === 'function') {
+            const pid = cur.ParentID || cur.parentid || cur.ParentId;
+            if (pid) parent = manager.findNode(pid);
+            if (!parent && cur.ParentName) parent = manager.findNodeByName(cur.ParentName);
+        }
         if (!parent || parent === cur || parent.ID === cur.ID) break;
         cur = parent;
     }
@@ -8378,12 +8400,13 @@ function kindParentKeys(row) {
 }
 
 function kindMatchesParent(kind, parentName, parentId) {
-    const keys = kindParentKeys(kind).map((value) => value.toLowerCase());
-    if (!keys.length) return false;
-    return [parentId, parentName]
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter(Boolean)
-        .some((token) => keys.includes(token));
+    const storedId = String(kind?.parent_id || kind?.ParentID || kind?.parentid || kind?.ParentId || '').trim();
+    const wantedId = String(parentId || '').trim();
+    if (storedId) {
+        return Boolean(wantedId) && storedId.toLowerCase() === wantedId.toLowerCase();
+    }
+    const parent = String(kind?.parentname || kind?.ParentName || kind?.parentName || '').trim().toLowerCase();
+    return Boolean(parentName) && parent === String(parentName).trim().toLowerCase();
 }
 
 function liveAssetKinds() {
@@ -8466,8 +8489,23 @@ function resolveExistingAssetPath(pathText, moduleName) {
     const names = [folderRowName(folder)];
     let i = 1;
     while (i < parts.length) {
+        const wanted = parts[i].toLowerCase();
         const nested = folders.find((child) => folderParentId(child) === folderRowId(folder)
-            && (folderRowName(child).toLowerCase() === parts[i].toLowerCase() || folderRowId(child).toLowerCase() === parts[i].toLowerCase()));
+            && (folderRowName(child).toLowerCase() === wanted || folderRowId(child).toLowerCase() === wanted));
+        const matchingKinds = kinds.filter((kind) => kindRowName(kind).toLowerCase() === wanted
+            && kindMatchesParent(kind, folderRowName(folder), folderRowId(folder)));
+        if (nested && matchingKinds.length) {
+            const nextWanted = String(parts[i + 1] || '').toLowerCase();
+            if (!nextWanted) break;
+            const kindId = kindRowId(matchingKinds[0]);
+            const nextUnderKind = kinds.some((kind) => kindRowName(kind).toLowerCase() === nextWanted
+                && kindMatchesParent(kind, kindRowName(matchingKinds[0]), kindId));
+            const nextUnderFolder = folders.some((child) => folderParentId(child) === folderRowId(nested)
+                    && folderRowName(child).toLowerCase() === nextWanted)
+                || kinds.some((kind) => kindRowName(kind).toLowerCase() === nextWanted
+                    && kindMatchesParent(kind, folderRowName(nested), folderRowId(nested)));
+            if (nextUnderKind || !nextUnderFolder) break;
+        }
         if (!nested) break;
         folder = nested;
         names.push(folderRowName(folder));
@@ -8923,10 +8961,7 @@ export function openAddItemModal(kind, prefillData = null) {
             setVal('itemValue', prefillData.AssetValue);
             setVal('itemCurrency', prefillData.Currency || 'INR');
             
-            // Ensure date is in YYYY-MM-DD for native input
-            let pDate = prefillData.PurchaseDate || '';
-            if (pDate && pDate.includes('T')) pDate = pDate.split('T')[0];
-            setVal('itemPurchaseDate', pDate);
+            setVal('itemPurchaseDate', toDdMmYyyyInput(prefillData.PurchaseDate || ''));
             
             setVal('itemRemarks', prefillData.Remarks);
             setVal('itemDescription', prefillData.ItemDescription);
@@ -8977,11 +9012,39 @@ window.showEditAssetModal = async function(assetId) {
 };
 
 export async function editAsset(asset) {
+    if (asset == null || asset === '') {
+        if (typeof showToast === 'function') showToast('Asset not found.', 'error');
+        return;
+    }
+    if (typeof asset === 'string' || typeof asset === 'number') {
+        const id = String(asset).trim();
+        if (!id) {
+            if (typeof showToast === 'function') showToast('Asset not found.', 'error');
+            return;
+        }
+        const cached = (window.allAssets || window.assets || []).find((a) =>
+            String(a.ID || a.id || '').toLowerCase() === id.toLowerCase()
+        );
+        if (cached) return editAsset(cached);
+        if (typeof window.showEditAssetModal === 'function') {
+            return window.showEditAssetModal(id);
+        }
+        if (typeof showToast === 'function') showToast('Asset not found.', 'error');
+        return;
+    }
+    const assetId = asset.ID || asset.id || asset.Id;
+    if (!assetId) {
+        if (typeof showToast === 'function') showToast('Asset not found.', 'error');
+        return;
+    }
+    if (!asset.ID) asset = { ...asset, ID: assetId };
     console.log('editAsset() called for:', asset.ID);
     
     // Close assetListModal if it's open
     const listModal = document.getElementById('assetListModal');
     if (listModal) listModal.style.display = 'none';
+    const productModal = document.getElementById('productDetailModal');
+    if (productModal) productModal.style.display = 'none';
 
     openAddItemModal(asset.Type, asset);
     
@@ -9040,7 +9103,6 @@ export async function editAsset(asset) {
     document.getElementById('itemSrNo').value = asset.SrNo || '';
     document.getElementById('itemHsnCode').value = asset.HSNCode || '';
     document.getElementById('itemLocation').value = asset.CurrentLocation || '';
-    document.getElementById('itemPurpose').value = asset.Purpose || 'Owned';
     document.getElementById('itemWeight').value = asset.Weight || asset.weight || '';
     document.getElementById('itemDescription').value = asset.ItemDescription || asset.itemdescription || '';
     const portBtn = document.getElementById('btnPortProductDescription');
@@ -9603,6 +9665,7 @@ export async function editAsset(asset) {
         valueField.value = Number.isFinite(n) ? n : 0;
     }
     if (currencyField) currencyField.value = asset.Currency || asset.currency || 'INR';
+    if (purchaseDateField) purchaseDateField.value = toDdMmYyyyInput(asset.PurchaseDate || asset.purchasedate || '');
     const portPriceBtn = document.getElementById('btnPortProductPrice');
     if (portPriceBtn) {
         const productId = asset.product_id || asset.productId || asset.ProductId || '';
@@ -9625,10 +9688,7 @@ export async function editAsset(asset) {
         };
     }
     
-    // Ensure date is in YYYY-MM-DD for native input
-    let pDate = asset.PurchaseDate || '';
-    if (pDate && typeof pDate === 'string' && pDate.includes('T')) pDate = pDate.split('T')[0];
-    if (purchaseDateField) purchaseDateField.value = pDate;
+    if (purchaseDateField) purchaseDateField.value = toDdMmYyyyInput(asset.PurchaseDate || asset.purchasedate || '');
 
     const warrantyTrackingToggle = document.getElementById('itemWarrantyTracking');
     if (warrantyTrackingToggle) {
@@ -10652,7 +10712,6 @@ export function setupDashboardFormHandlers() {
                         HSNCode: formData.get('itemHsnCode') || '',
                         Remarks: formData.get('itemRemarks') || '',
                         Weight: formData.get('itemWeight') || '',
-                        Purpose: formData.get('itemPurpose') || 'Owned',
                         ParentId: (() => {
                             const v = String(formData.get('itemParentId') || '').trim();
                             return v || null;
@@ -10661,7 +10720,7 @@ export function setupDashboardFormHandlers() {
                         amc_months: Number(formData.get('itemAMC') || 0),
                         AssetValue: canEditPrice() ? Number(formData.get('itemValue') || 0) : 0,
                         Currency: canEditPrice() ? (formData.get('itemCurrency') || 'INR') : 'INR',
-                        PurchaseDate: formData.get('itemPurchaseDate') || '',
+                        PurchaseDate: toIsoDateFromDdMmYyyy(formData.get('itemPurchaseDate') || '') || formData.get('itemPurchaseDate') || '',
                         warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
                         is_quantity_tracked: isQtyTracked,
                         is_set: document.getElementById('itemIsSet')?.checked ? 1 : 0,
@@ -10844,7 +10903,6 @@ export function setupDashboardFormHandlers() {
                     CurrentLocation: formData.get('itemLocation'),
                     parent_folder: pathRoot || formData.get('itemFolder'),
                     folder_path: folderPath || null,
-                    Purpose: formData.get('itemPurpose') || 'Owned',
                     DispatchReceiveDt: formData.get('itemDate'),
                     PurchaseDetails: formData.get('itemPurchase'),
                     HSNCode: formData.get('itemHsnCode'),
@@ -10870,7 +10928,7 @@ export function setupDashboardFormHandlers() {
                     amc_months: formData.get('itemAMC') || 0,
                     asset_value: canEditPrice() ? (formData.get('itemValue') || 0) : undefined,
                     Currency: canEditPrice() ? (formData.get('itemCurrency') || 'INR') : undefined,
-                    PurchaseDate: formData.get('itemPurchaseDate'),
+                    PurchaseDate: toIsoDateFromDdMmYyyy(formData.get('itemPurchaseDate') || '') || formData.get('itemPurchaseDate') || '',
                     warranty_tracking: document.getElementById('itemWarrantyTracking')?.checked ? 1 : 0,
                     is_quantity_tracked: document.getElementById('itemIsQtyTracked')?.checked ? 1 : 0,
                     is_set: document.getElementById('itemIsSet')?.checked ? 1 : 0,

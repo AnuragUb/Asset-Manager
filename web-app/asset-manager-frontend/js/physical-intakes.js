@@ -199,12 +199,13 @@ function kindParentKeys(row) {
 }
 
 function kindMatchesParent(kind, parentName, parentId) {
-    const keys = kindParentKeys(kind).map((value) => value.toLowerCase());
-    if (!keys.length) return false;
-    return [parentId, parentName]
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter(Boolean)
-        .some((token) => keys.includes(token));
+    const storedId = String(kind?.parent_id || kind?.ParentID || kind?.parentid || kind?.ParentId || '').trim();
+    const wantedId = String(parentId || '').trim();
+    if (storedId) {
+        return Boolean(wantedId) && storedId.toLowerCase() === wantedId.toLowerCase();
+    }
+    const parent = String(kind?.parentname || kind?.ParentName || kind?.parentName || '').trim().toLowerCase();
+    return Boolean(parentName) && parent === String(parentName).trim().toLowerCase();
 }
 
 function currentModule() {
@@ -477,31 +478,126 @@ function isAwaitingHash() {
     return String(window.location.hash || '').includes('awaiting=1');
 }
 
+function awaitingSelectedItems(host) {
+    return [...(host || wizardHost())?.querySelectorAll('.pi-await-row:checked') || []].map((box) => ({
+        resourceType: box.getAttribute('data-resource-type'),
+        resourceId: box.getAttribute('data-resource-id')
+    })).filter((item) => item.resourceType && item.resourceId);
+}
+
+function refreshAwaitingSelection(host) {
+    const root = host || wizardHost();
+    if (!root) return;
+    const boxes = [...root.querySelectorAll('.pi-await-row')];
+    const selected = boxes.filter((box) => box.checked);
+    const all = el('piAwaitSelectAll');
+    const allFoot = el('piAwaitSelectAllFoot');
+    [all, allFoot].forEach((box) => {
+        if (!box) return;
+        box.checked = boxes.length > 0 && selected.length === boxes.length;
+        box.indeterminate = selected.length > 0 && selected.length < boxes.length;
+    });
+    const label = selected.length
+        ? `No PO Required (${selected.length})`
+        : 'No PO Required';
+    [el('piAwaitMarkSelected'), el('btnAwaitingNoPo')].forEach((btn) => {
+        if (!btn) return;
+        btn.disabled = selected.length === 0;
+        btn.textContent = label;
+        btn.hidden = false;
+    });
+    const meta = el('piAwaitSelectedMeta');
+    if (meta) meta.textContent = `${selected.length} of ${boxes.length} selected`;
+}
+
+function setAwaitingAllSelected(host, checked) {
+    const root = host || wizardHost();
+    if (!root) return;
+    root.querySelectorAll('.pi-await-row').forEach((box) => { box.checked = checked; });
+    refreshAwaitingSelection(root);
+}
+
+function showAwaitingToolbar(visible) {
+    const btn = el('btnAwaitingNoPo');
+    if (!btn) return;
+    btn.hidden = !visible;
+    if (!visible) {
+        btn.disabled = true;
+        btn.textContent = 'No PO Required';
+    }
+}
+
+async function markSelectedNoPoRequired(host) {
+    const selected = awaitingSelectedItems(host);
+    if (!selected.length) {
+        showToast('Select at least one holding.', 'error');
+        return;
+    }
+    if (!confirm(`Mark ${selected.length} holding${selected.length === 1 ? '' : 's'} as No PO Required? They will leave Awaiting Adoption.`)) return;
+    const buttons = [el('piAwaitMarkSelected'), el('btnAwaitingNoPo')].filter(Boolean);
+    buttons.forEach((btn) => { btn.disabled = true; });
+    try {
+        const data = await api('/api/physical-intakes/mark-not-required', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: selected })
+        });
+        const ok = Number(data.summary?.ok || 0);
+        const failed = Number(data.summary?.error || 0);
+        if (failed) {
+            showToast(`${ok} marked No PO Required. ${failed} could not be marked.`, 'error');
+        } else {
+            showToast(`${ok} holding${ok === 1 ? '' : 's'} marked No PO Required.`, 'success');
+        }
+        await renderAwaitingAdoptionList();
+    } catch (err) {
+        toastOperatorError(err);
+        refreshAwaitingSelection(host);
+    }
+}
+
 async function renderAwaitingAdoptionList() {
     const host = wizardHost();
     if (!host) return;
     const token = claimContent();
-    const data = await api('/api/physical-intakes/provenance?state=AWAITING_PO&limit=200');
+    const data = await api('/api/physical-intakes/provenance?state=AWAITING_PO&limit=5000');
     if (!contentIsCurrent(token) || !wizardHost()) return;
     const items = data.items || [];
+    const total = Number(data.total || items.length);
     if (el('physicalIntakeCountBadge')) {
-        el('physicalIntakeCountBadge').textContent = `${items.length} Awaiting Adoption`;
+        el('physicalIntakeCountBadge').textContent = `${total} Awaiting Adoption`;
     }
     if (!items.length) {
+        showAwaitingToolbar(false);
         host.innerHTML = emptyState({
             title: 'Nothing awaiting adoption.',
             body: 'Newly registered Physical Intake holdings appear here until an operator links a Purchase Order or marks No PO Required.'
         });
         return;
     }
+    const truncated = total > items.length
+        ? ` Showing ${items.length} of ${total}. Select all applies to the rows on this list.`
+        : '';
+    showAwaitingToolbar(true);
     host.innerHTML = piSheet({
         kicker: 'Awaiting Adoption',
         title: 'Holdings waiting for a Purchase Order',
-        lead: 'Leave them here, mark No PO Required, or link a Purchase Order. Each ID opens the physical holding.',
+        lead: `Select rows, then click No PO Required at the top. Link a Purchase Order on one holding if needed. Each ID opens the physical holding.${truncated}`,
         wide: true,
-        body: `<table class="rn-sheet-table">
+        body: `<div class="pi-await-bar">
+                <label class="pi-await-select-all" for="piAwaitSelectAllFoot">
+                    <input type="checkbox" id="piAwaitSelectAllFoot"> Select all rows
+                </label>
+                <span class="rn-sheet-sub" id="piAwaitSelectedMeta">0 of ${items.length} selected</span>
+                <span class="pi-foot-spacer"></span>
+                <button type="button" class="action-button grey" id="piAwaitMarkSelected" disabled>No PO Required</button>
+            </div>
+            <table class="rn-sheet-table">
             <thead>
                 <tr>
+                    <th class="pi-await-check">
+                        <input type="checkbox" id="piAwaitSelectAll" title="Select all rows">
+                    </th>
                     <th>Holding</th>
                     <th>Type</th>
                     <th>Name</th>
@@ -513,6 +609,9 @@ async function renderAwaitingAdoptionList() {
                 ${items.map((item) => {
                     const view = item.resourceType === 'INVENTORY' ? 'inventory-view' : 'home-view';
                     return `<tr>
+                        <td class="pi-await-check">
+                            <input type="checkbox" class="pi-await-row" data-resource-type="${escapeHtml(item.resourceType)}" data-resource-id="${escapeHtml(item.resourceId)}">
+                        </td>
                         <td class="lc-mono">
                             <button type="button" class="lc-crumb-link" data-lc-go="${view}" data-lc-open="${escapeHtml(item.resourceId)}">${escapeHtml(item.resourceId)}</button>
                         </td>
@@ -531,6 +630,15 @@ async function renderAwaitingAdoptionList() {
     bindPhysicalIntakePoLink(host, null, {
         onLinked: () => renderAwaitingAdoptionList().catch((err) => toastOperatorError(err))
     });
+    const onToggleAll = (ev) => setAwaitingAllSelected(host, ev.target.checked);
+    el('piAwaitSelectAll')?.addEventListener('change', onToggleAll);
+    el('piAwaitSelectAllFoot')?.addEventListener('change', onToggleAll);
+    host.querySelectorAll('.pi-await-row').forEach((box) => {
+        box.addEventListener('change', () => refreshAwaitingSelection(host));
+        box.addEventListener('click', (ev) => ev.stopPropagation());
+    });
+    el('piAwaitMarkSelected')?.addEventListener('click', () => markSelectedNoPoRequired(host));
+    refreshAwaitingSelection(host);
 }
 
 async function renderIntakeHome() {
@@ -548,6 +656,7 @@ let intakePaging = false;
 function renderList(intakes, total) {
     const host = wizardHost();
     if (!host) return;
+    showAwaitingToolbar(false);
     if (!intakes.length) {
         host.innerHTML = emptyState({
             title: 'No Physical Intakes yet.',
@@ -1252,6 +1361,7 @@ function renderSuccess(data) {
 }
 
 async function openDetail(id) {
+    showAwaitingToolbar(false);
     const host = wizardHost();
     const data = await api(`/api/physical-intakes/${encodeURIComponent(id)}`);
     const intake = data.intake || data;
@@ -1505,8 +1615,10 @@ const BULK_COLUMNS = [
     { key: 'model', label: 'Model', aliases: ['model', 'model no', 'model number'] },
     { key: 'manufacturer', label: 'Manufacturer', aliases: ['manufacturer', 'mfr', 'oem'] },
     { key: 'description', label: 'Product Description', aliases: ['description', 'desc', 'product description'] },
-    { key: 'hsn_code', label: 'HSN', aliases: ['hsn', 'hsn code', 'hsn sac', 'hsnsac', 'sac'] },
+    { key: 'hsn_code', label: 'HSN Code', aliases: ['hsn', 'hsn code', 'hsn sac', 'hsnsac', 'sac', 'hsncode'] },
+    { key: 'status', label: 'Status', aliases: ['status', 'asset status', 'item status', 'stock status', 'holding status'] },
     { key: 'itemName', label: 'Item Name', aliases: ['item name', 'holding name', 'asset name', 'inventory name'] },
+    { key: 'serialNo', label: 'Serial Number', aliases: ['serial number', 'serial no', 'serial', 'srno', 's n', 'sn', 'serialno', 's/n'] },
     { key: 'itemDescription', label: 'Holding Description', aliases: ['holding description', 'asset description', 'inventory description', 'item description'] },
     { key: 'purchaseDate', label: 'Purchase Date', aliases: ['purchase date', 'date of purchase', 'bought on', 'purchasedate'] },
     { key: 'price', label: 'Price', aliases: ['price', 'rate', 'unit price', 'purchase price', 'cost', 'asset value', 'value'] },
@@ -1556,12 +1668,46 @@ function bulkNormalizeMatrix(matrix) {
     return idx > 0 ? rows.slice(idx) : rows;
 }
 
+function bulkFormatDdMmYyyy(day, month, year) {
+    return `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
+}
+
+function bulkFromExcelSerial(serial) {
+    const n = Math.floor(Number(serial));
+    if (!(n > 20000 && n < 80000)) return '';
+    const utc = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+    return bulkFormatDdMmYyyy(utc.getUTCDate(), utc.getUTCMonth() + 1, utc.getUTCFullYear());
+}
+
+function bulkKeepAllowedDate(value) {
+    if (value == null || value === '') return '';
+    if (value instanceof Date && !isNaN(value.getTime())) {
+        return bulkFormatDdMmYyyy(value.getUTCDate(), value.getUTCMonth() + 1, value.getUTCFullYear());
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return bulkFromExcelSerial(value) || String(value);
+    }
+    const text = String(value).trim();
+    if (/^\d+(\.\d+)?$/.test(text)) {
+        return bulkFromExcelSerial(text) || text;
+    }
+    const normalized = text.replace(/[/.]/g, '-');
+    const match = normalized.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (match) return bulkFormatDdMmYyyy(match[1], match[2], match[3]);
+    return text;
+}
+
 async function bulkReadSheet(file) {
     if (window.XLSX) {
-        const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
         const preferred = wb.SheetNames.find((name) => /^intake$/i.test(name)) || wb.SheetNames[0];
         const sheet = wb.Sheets[preferred];
-        return bulkNormalizeMatrix(window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }));
+        const matrix = window.XLSX.utils.sheet_to_json(sheet, {
+            header: 1,
+            defval: '',
+            raw: true
+        });
+        return bulkNormalizeMatrix(matrix);
     }
     if (!/\.csv$/i.test(file.name)) throw new Error('Excel reader unavailable — save the sheet as CSV and try again.');
     return bulkNormalizeMatrix(bulkParseCsv(await file.text()));
@@ -1576,9 +1722,6 @@ function bulkSheetToRows(matrix) {
     if (!keys.includes('path')) {
         throw new Error('A "Path" column is required. Example: Cineom Assets / Accessories / URSA / Case');
     }
-    if (!keys.some((k) => ['productId', 'product_code', 'name', 'description', 'make', 'model'].includes(k))) {
-        throw new Error('Add a Product Name column (or Product ID / Code / Description / Make / Model) so each row can be matched to or create a Product.');
-    }
     const ignored = header.filter((h, i) => String(h || '').trim() && !keys[i]);
     const rows = [];
     body.forEach((cells, idx) => {
@@ -1586,7 +1729,10 @@ function bulkSheetToRows(matrix) {
         let any = false;
         keys.forEach((key, i) => {
             if (!key) return;
-            const value = String(cells[i] == null ? '' : cells[i]).trim();
+            const cell = cells[i];
+            const value = key === 'purchaseDate'
+                ? bulkKeepAllowedDate(cell)
+                : String(cell == null ? '' : cell).trim();
             if (value) any = true;
             raw[key] = value;
         });
@@ -1609,7 +1755,10 @@ function bulkSheetToRows(matrix) {
             quantity: raw.quantity || '',
             unit: raw.unit || '',
             price: bulkNormalizePrice(raw.price),
+            hsnCode: raw.hsn_code || '',
+            status: raw.status || '',
             itemName: raw.itemName || '',
+            serialNo: raw.serialNo || '',
             itemDescription: raw.itemDescription || '',
             purchaseDate: raw.purchaseDate || '',
             pathText: raw.path || '',
@@ -1644,9 +1793,11 @@ function bulkTemplateExampleRecords() {
             manufacturer: 'Konvision',
             description: 'Catalog text on the Product. Not copied onto the Asset unless you tick Port Product description.',
             hsn_code: '8528',
+            status: 'In Store',
             itemName: 'Konvision Gansgassa #1',
+            serialNo: 'KV-GANS-001',
             itemDescription: 'Opening-balance monitor — this text is stored on the Asset.',
-            purchaseDate: '2024-04-01',
+            purchaseDate: '01-04-2024',
             price: '80000',
             quantity: '1',
             unit: 'Nos',
@@ -1661,8 +1812,10 @@ function bulkTemplateExampleRecords() {
             manufacturer: 'Canare',
             description: 'Product catalog cable.',
             hsn_code: '8544',
+            status: 'In Store',
+            serialNo: '',
             itemDescription: 'Legacy store stock cable.',
-            purchaseDate: '15/04/2024',
+            purchaseDate: '15-04-2024',
             price: '450',
             quantity: '12',
             unit: 'Nos',
@@ -1671,8 +1824,11 @@ function bulkTemplateExampleRecords() {
         },
         {
             productId: '(paste an existing Product ID here)',
-            itemDescription: 'Required unless you tick Port Product description in Bulk.',
-            purchaseDate: '2024-06-12',
+            hsn_code: '8471',
+            status: 'In Store',
+            serialNo: 'DL-XPS-88421',
+            itemDescription: 'Optional holding description.',
+            purchaseDate: '12-06-2024',
             price: '0',
             quantity: '1',
             unit: 'Nos',
@@ -1685,17 +1841,19 @@ function bulkTemplateExampleRecords() {
 function bulkTemplateColumnGuide() {
     return [
         ['Column', 'Required?', 'Goes onto', 'Notes'],
-        ['Product ID', 'One of Product ID / Code / Name', 'Match existing Product', 'Fastest match. Leave blank if the Product is not in AssetEngine yet.'],
-        ['Product Code', 'One of Product ID / Code / Name', 'Match or create Product', 'SKU / part number.'],
-        ['Product Name', 'One of Product ID / Code / Name', 'Match or create Product', 'Make and Model help when names collide.'],
-        ['Make', 'Optional', 'Product', 'Used when matching or creating a Product.'],
-        ['Model', 'Optional', 'Product', 'Used when matching or creating a Product.'],
-        ['Manufacturer', 'Optional', 'Product', 'Stored on a newly created Product.'],
-        ['Product Description', 'Optional', 'Product only', 'Does not become Asset / Inventory description unless you port it in Bulk.'],
-        ['HSN', 'Optional', 'Product', 'HSN / SAC on a newly created Product.'],
-        ['Item Name', 'Optional', 'Asset / Inventory', 'Holding name. Blank uses the Product name.'],
-        ['Holding Description', 'Required unless you port', 'Asset / Inventory', 'This is what Edit Asset shows. Separate from Product Description.'],
-        ['Purchase Date', 'Optional', 'Asset / Inventory', 'YYYY-MM-DD or DD/MM/YYYY.'],
+        ['Product ID', 'Optional', 'Link existing Product', 'Leave blank to register a holding with no Product. Do not fill this unless you want a link.'],
+        ['Product Code', 'Optional', 'Match existing Product', 'Used only if you want to match an existing Product. Not required to create a holding.'],
+        ['Product Name', 'Optional', 'Match existing Product, or holding name fallback', 'Not required. If Item Name is blank, this can be used as the holding name.'],
+        ['Make', 'Optional', 'Holding (and Product match)', 'Copied onto the Asset / Inventory row. Not a Product catalog requirement.'],
+        ['Model', 'Optional', 'Holding (and Product match)', 'Copied onto the Asset / Inventory row. Not a Product catalog requirement.'],
+        ['Manufacturer', 'Optional', 'Ignored unless you later create a Product', 'Not required for bulk holding upload.'],
+        ['Product Description', 'Optional', 'Holding fallback only', 'Not required. If Holding Description is blank, this text can be stored on the holding. It does not create a Product.'],
+        ['HSN Code', 'Optional', 'Asset / Inventory (and new Product)', 'Writes to the holding HSN field. If you create a Product from the row, the same code is also stored on that Product. Blank leaves holding HSN empty.'],
+        ['Status', 'Optional', 'Asset / Inventory', 'Asset: In Store, Under Inspection, Project, Owned, Sold, Demo, In-Use, Rental, Stand By, In-Repair, Scraped. Inventory: In Store, In Use, In Project (and the overlapping names). Blank defaults to In Store.'],
+        ['Item Name', 'Optional', 'Asset / Inventory', 'Holding name. Blank uses Product Name, then Make / Model, then the last Path name.'],
+        ['Serial Number', 'Optional', 'Asset / Inventory', 'Stored on the holding (srno). Blank leaves serial empty. One serial per row — if quantity is greater than 1, this is still a single serial on that holding. Duplicate serials already in the system are rejected.'],
+        ['Holding Description', 'Optional', 'Asset / Inventory', 'This is what Edit Asset shows. Blank is allowed.'],
+        ['Purchase Date', 'Optional', 'Asset / Inventory', 'Only DD-MM-YYYY (15-04-2024). That is mapped onto the calendar. Blank is allowed.'],
         ['Price', 'Optional', 'Asset Value / Inventory value', 'Number only (80000). Writes to the holding. Blank stores 0. Does not pull Product price automatically.'],
         ['Quantity', 'Required', 'Asset / Inventory qty', 'Must be greater than 0. One row = one holding with that quantity.'],
         ['Unit', 'Optional', 'Holding unit', 'Blank uses the Product unit, then Nos.'],
@@ -1720,11 +1878,13 @@ function bulkTemplateInstructions() {
         ['How to fill Intake'],
         ['1. Leave the header row as-is.'],
         ['2. Add one row per holding (at most 200). Split larger lists into another file.'],
-        ['3. Identify the Product with Product ID, Product Code, or Product Name. Make / Model help.'],
-        ['4. Put the Asset / Inventory description in Holding Description (or tick Port Product description in the app).'],
-        ['5. Put the holding unit value in Price. That becomes Asset Value in the dashboard. Leave Price blank only when the value should be 0.'],
-        ['6. Put Quantity and Path. Path names must already exist in the tree, in order, separated by /.'],
-        ['7. Empty rows are skipped. Do not copy the Examples sheet onto Intake unless you mean to register those rows.'],
+        ['3. Product columns are optional. A holding is registered without a Product if those cells are blank.'],
+        ['4. Item Name and Holding Description are optional. Blank Item Name uses Product Name, Make / Model, or the last Path name.'],
+        ['5. Put Purchase Date as DD-MM-YYYY only (15-04-2024). Leave it blank if unknown.'],
+        ['6. Put the holding unit value in Price. That becomes Asset Value in the dashboard. Leave Price blank only when the value should be 0.'],
+        ['7. Put HSN Code, Status, and Serial Number on the holding. Blank Status is In Store. Blank Serial Number is allowed. These are not Product catalog fields (except HSN on a newly created Product).'],
+        ['8. Put Quantity and Path. Path names must already exist in the tree, in order, separated by /.'],
+        ['9. Empty rows are skipped. Do not copy the Examples sheet onto Intake unless you mean to register those rows.'],
         [''],
         ['Product vs holding'],
         ['Product Description and Product price live on the Product catalog.'],
@@ -1732,7 +1892,7 @@ function bulkTemplateInstructions() {
         ['They stay different unless you copy them on purpose (port description in Bulk, or type the same Price).'],
         [''],
         ['After upload'],
-        ['Review the preview, create any missing Products if asked, then Register.'],
+        ['Review Quantity and Path, then Register. Linking or creating a Product is optional.'],
         ['New holdings appear under the Path you set. If a brand-new row is missing for a few minutes, refresh — the asset list can cache for up to 5 minutes.']
     ];
 }
@@ -1852,8 +2012,15 @@ function bulkKindName(folderId, kindId) {
     return hit ? rowName(hit) : '';
 }
 
+function bulkHoldingName(row) {
+    return String(row.itemName || '').trim()
+        || bulkRowProductName(row)
+        || String(row.pathLeaf || '').trim()
+        || '';
+}
+
 function bulkRowResolved(row) {
-    return Boolean(row.product && Number(row.quantity) > 0 && row.pathLeaf && !bulkHierarchyIssues(row).length);
+    return Boolean(Number(row.quantity) > 0 && row.pathLeaf && !bulkHierarchyIssues(row).length);
 }
 
 function bulkRefLabel(ref) {
@@ -1876,7 +2043,7 @@ function renderBulkHeader() {
     host.innerHTML = piSheet({
         kicker: 'Bulk Physical Intake',
         title: 'Sheet details',
-        lead: 'Register many existing or non-procurement holdings from one CSV or Excel sheet. Rows are matched to existing Products. All rows are registered together, or none are.',
+        lead: 'Register many existing or non-procurement holdings from one CSV or Excel sheet. Product is optional. All rows are registered together, or none are.',
         body: `<p class="pi-callout">Bulk intake registers every row as PO Expected Later. Link Purchase Orders afterwards from Awaiting Adoption.</p>
             <div class="pi-fields pi-fields-3">
                 <div>
@@ -1956,7 +2123,7 @@ function bulkProductCell(row, idx) {
     const candidates = row.match?.candidates || [];
     const label = status === 'AMBIGUOUS' ? `${candidates.length} possible Products` : 'No matching Product';
     return `<div class="lc-muted" style="font-size:12px;">${escapeHtml(bulkRefLabel(row.ref))}</div>
-        <span class="lc-chip" style="background:${status === 'AMBIGUOUS' ? '#fef9c3' : '#fee2e2'};color:${status === 'AMBIGUOUS' ? '#854d0e' : '#991b1b'};">${escapeHtml(label)}</span>
+        <span class="lc-chip" style="background:${status === 'AMBIGUOUS' ? '#fef9c3' : '#f1f5f9'};color:${status === 'AMBIGUOUS' ? '#854d0e' : '#475569'};">${escapeHtml(label === 'No matching Product' ? 'No Product (optional)' : label)}</span>
         ${candidates.length ? `<select class="form-input" data-bulk-act="candidate" data-idx="${idx}" style="margin-top:4px;">
             <option value="">Choose Product</option>
             ${candidates.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.id)} · ${escapeHtml([c.name, c.make, c.model].filter(Boolean).join(' / '))}</option>`).join('')}
@@ -2109,6 +2276,15 @@ function applyBulkAssetPath(row) {
     let i = 1;
     while (i < segments.length) {
         const nested = bulkChildFolder(rowId(folder), segments[i]);
+        const matchingKind = bulkKindByParent(rowName(folder), segments[i], rowId(folder));
+        if (nested && matchingKind) {
+            const nextWanted = segments[i + 1];
+            if (!nextWanted) break;
+            const nextUnderKind = bulkKindByParent(assetKindName(matchingKind), nextWanted, rowId(matchingKind));
+            const nextUnderFolder = bulkChildFolder(rowId(nested), nextWanted)
+                || bulkKindByParent(rowName(nested), nextWanted, rowId(nested));
+            if (nextUnderKind || !nextUnderFolder) break;
+        }
         if (!nested) break;
         folder = nested;
         names.push(rowName(folder));
@@ -2166,13 +2342,9 @@ function bulkStatusCell(row) {
         return `<span class="lc-chip" style="background:#fee2e2;color:#991b1b;">Error</span>
             <div style="font-size:12px;color:#991b1b;">${row.errors.map(escapeHtml).join('<br>')}</div>`;
     }
-    if (!row.product && bulkRowReadyExceptProduct(row)) {
-        return '<span class="lc-chip" style="background:#e0f2fe;color:#075985;">New Product will be created</span>';
-    }
     const hierarchy = bulkHierarchyIssues(row);
     if (!bulkRowResolved(row) || hierarchy.length) {
         const missing = [];
-        if (!row.product) missing.push('Product');
         if (!(Number(row.quantity) > 0)) missing.push('Quantity');
         if (!row.pathLeaf) missing.push('Path');
         const head = missing.length ? `Needs ${missing.join(', ')}` : 'Unknown hierarchy name';
@@ -2191,9 +2363,16 @@ function renderBulkTable() {
         <tr>
             <td class="rn-sheet-idx">${escapeHtml(String(row.rowNumber))}</td>
             <td class="pi-col-product">${bulkProductCell(row, idx)}</td>
-            <td><input type="text" class="form-input" data-bulk-act="itemName" data-idx="${idx}" value="${escapeHtml(row.itemName || '')}" placeholder="Product name if blank"></td>
-            <td><input type="text" class="form-input" data-bulk-act="purchaseDate" data-idx="${idx}" value="${escapeHtml(row.purchaseDate || '')}" placeholder="YYYY-MM-DD"></td>
+            <td><input type="text" class="form-input" data-bulk-act="itemName" data-idx="${idx}" value="${escapeHtml(row.itemName || '')}" placeholder="Holding name"></td>
+            <td><input type="text" class="form-input" data-bulk-act="serialNo" data-idx="${idx}" value="${escapeHtml(row.serialNo || '')}" placeholder="Serial"></td>
+            <td><input type="text" class="form-input" data-bulk-act="purchaseDate" data-idx="${idx}" value="${escapeHtml(row.purchaseDate || '')}" placeholder="DD-MM-YYYY"></td>
             <td class="rn-sheet-num"><input type="text" class="form-input" data-bulk-act="price" data-idx="${idx}" value="${escapeHtml(row.price || '')}" placeholder="0"></td>
+            <td><input type="text" class="form-input" data-bulk-act="hsn" data-idx="${idx}" value="${escapeHtml(row.hsnCode || '')}" placeholder="HSN"></td>
+            <td>
+                <select class="form-input" data-bulk-act="status" data-idx="${idx}">
+                    ${bulkStatusOptionsHtml(row.status)}
+                </select>
+            </td>
             <td class="rn-sheet-num"><input type="number" min="0.000001" step="any" class="form-input" data-bulk-act="qty" data-idx="${idx}" value="${escapeHtml(row.quantity)}"></td>
             <td><input type="text" class="form-input" data-bulk-act="unit" data-idx="${idx}" value="${escapeHtml(row.unit || row.product?.unit || '')}" placeholder="Nos"></td>
             <td class="pi-col-path">
@@ -2204,7 +2383,7 @@ function renderBulkTable() {
             <td data-bulk-status="${idx}">${bulkStatusCell(row)}</td>
             <td><button type="button" class="action-button grey" data-bulk-act="remove" data-idx="${idx}" title="Remove row">×</button></td>
         </tr>
-    `).join('') || '<tr><td colspan="11" class="rn-sheet-empty">Upload a CSV or Excel sheet to add rows.</td></tr>';
+    `).join('') || '<tr><td colspan="14" class="rn-sheet-empty">Upload a CSV or Excel sheet to add rows.</td></tr>';
     refreshBulkFooter();
 }
 
@@ -2228,17 +2407,16 @@ function refreshBulkFooter() {
     if (banner) banner.style.display = missing ? 'flex' : 'none';
     const bannerText = el('piBulkMissingText');
     if (bannerText) {
-        bannerText.textContent = `${missing} row${missing === 1 ? ' has' : 's have'} no Product yet. Create them from the sheet's name / make / model, or pick an existing Product on each row.`;
+        bannerText.textContent = `${missing} row${missing === 1 ? ' has' : 's have'} no Product. That is optional — holdings still register. Link or create a Product only if you want a catalog match.`;
     }
     const createMissing = el('piBulkCreateMissing');
     if (createMissing) {
         createMissing.disabled = bulk.busy || !missing;
-        createMissing.textContent = `Create missing Products (${missing} row${missing === 1 ? '' : 's'})`;
+        createMissing.textContent = `Create Products (${missing} row${missing === 1 ? '' : 's'})`;
     }
     const allResolved = total > 0 && resolved === total;
-    const allCreatable = total > 0 && bulk.rows.every(bulkRowReadyExceptProduct);
     const check = el('piBulkCheck');
-    if (check) check.disabled = bulk.busy || !allCreatable;
+    if (check) check.disabled = bulk.busy || !allResolved;
     const submit = el('piBulkSubmit');
     if (submit) {
         submit.disabled = bulk.busy || !allResolved || !bulk.validated;
@@ -2254,7 +2432,7 @@ function renderBulkRows() {
         title: isAsset ? 'Assets' : 'Inventory',
         lead: `${escapeHtml(INTAKE_TYPE_LABELS[wizard.intakeType] || wizard.intakeType)} · PO Expected Later${isAsset ? ` · module ${escapeHtml(currentModule())}` : ''}. Each row creates one ${isAsset ? 'Asset' : 'Inventory'} record with its quantity.`,
         wide: true,
-        body: `<p class="pi-callout">Item Name is the name stored on the holding. Leave it blank to use the Product name. Holding Description is required on the holding and is not the Product Description column unless you port it. Purchase Date is YYYY-MM-DD or DD/MM/YYYY. Path is the folder. ${isAsset ? 'Example: Cineom Assets / Accessories / URSA / Case.' : 'Example: Stores / Cables.'} Each name must already exist under the previous one.</p>
+        body: `<p class="pi-callout">Product is optional. Quantity and Path are required. Item Name, Serial Number, Holding Description, HSN, Status, and Price are optional. Blank Status is In Store. Path is the folder. ${isAsset ? 'Example: Cineom Assets / Accessories / URSA / Case.' : 'Example: Stores / Cables.'} Each name must already exist under the previous one.</p>
             <label class="pi-choice" style="margin:10px 0;display:flex;align-items:flex-start;gap:8px;">
                 <input type="checkbox" id="piBulkPortProductDesc" ${bulk.portProductDescription ? 'checked' : ''}>
                 <span>Port Product description onto each holding that has no Holding Description. Product records stay unchanged.</span>
@@ -2286,13 +2464,16 @@ function renderBulkRows() {
                             <th>Row</th>
                             <th>Product</th>
                             <th>Item Name</th>
+                            <th>Serial Number</th>
                             <th>Purchase Date</th>
                             <th class="rn-sheet-num">Price</th>
+                            <th>HSN Code</th>
+                            <th>Status</th>
                             <th class="rn-sheet-num">Qty</th>
                             <th>Unit</th>
                             <th>Path</th>
                             <th>Location</th>
-                            <th>Status</th>
+                            <th>Check</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -2377,13 +2558,13 @@ async function loadBulkFile(file) {
         const unmatched = rows.filter((r) => !r.product).length;
         const unknownHierarchy = rows.filter((r) => bulkHierarchyIssues(r).length).length;
         const bits = [`${rows.length} rows loaded`];
-        if (unmatched) bits.push(`${unmatched} have no Product yet`);
+        if (unmatched) bits.push(`${unmatched} with no Product (optional)`);
         if (unknownHierarchy) {
             const first = rows.find((r) => r.pathError);
             bits.push(first?.pathError || `${unknownHierarchy} have a Path that is not in the folder tree`);
         }
-        if (!unmatched && !unknownHierarchy) bits.push('all matched to Products and existing hierarchy');
-        showToast(bits.join(' · '), unmatched || unknownHierarchy ? 'warning' : 'success');
+        if (!unknownHierarchy) bits.push('ready to check Quantity and Path');
+        showToast(bits.join(' · '), unknownHierarchy ? 'warning' : 'success');
     } catch (err) {
         toastOperatorError(err);
     }
@@ -2395,6 +2576,21 @@ function bulkPickProduct(idx, product) {
     row.product = { id: product.id, name: product.name, unit: product.unit || null };
     bulkMarkDirty();
     renderBulkTable();
+}
+
+function bulkHoldingStatuses() {
+    return bulkIsAsset()
+        ? ['In Store', 'Under Inspection', 'Project', 'Owned', 'Sold', 'Demo', 'In-Use', 'Rental', 'Stand By', 'In-Repair', 'Scraped']
+        : ['In Store', 'In Use', 'In Project', 'Under Inspection', 'Owned', 'Sold', 'Demo', 'Rental', 'Stand By', 'In-Repair', 'Scraped'];
+}
+
+function bulkStatusOptionsHtml(selected) {
+    const current = String(selected || 'In Store').trim() || 'In Store';
+    const options = bulkHoldingStatuses();
+    const extra = options.includes(current) ? [] : [current];
+    return extra.concat(options).map((s) =>
+        `<option value="${escapeHtml(s)}" ${s === current ? 'selected' : ''}>${escapeHtml(s)}</option>`
+    ).join('');
 }
 
 function bulkNormalizePrice(value) {
@@ -2591,8 +2787,14 @@ function bindBulkTableEvents() {
         if (act === 'qty') row.quantity = target.value;
         else if (act === 'unit') row.unit = target.value.trim();
         else if (act === 'itemName') row.itemName = target.value.trim();
+        else if (act === 'serialNo') row.serialNo = target.value.trim();
         else if (act === 'purchaseDate') row.purchaseDate = target.value.trim();
         else if (act === 'price') row.price = bulkNormalizePrice(target.value);
+        else if (act === 'hsn') {
+            row.hsnCode = target.value.trim();
+            if (row.productInfo) row.productInfo.hsn_code = row.hsnCode;
+        }
+        else if (act === 'status') row.status = target.value.trim();
         else if (act === 'location') row.location = target.value.trim();
         else if (act === 'path') {
             row.pathText = target.value.trim();
@@ -2653,12 +2855,19 @@ function bulkPayload(dryRun) {
             const brand = isAsset ? (row.brandId || '') : '';
             return {
                 rowNumber: row.rowNumber,
-                productId: row.product?.id,
-                itemName: row.itemName || undefined,
-                itemDescription: row.itemDescription || undefined,
+                productId: row.product?.id || undefined,
+                noProduct: !row.product?.id,
+                itemName: bulkHoldingName(row) || undefined,
+                make: row.ref?.make || undefined,
+                model: row.ref?.model || undefined,
+                serialNo: row.serialNo || undefined,
+                itemDescription: row.itemDescription || row.productInfo?.description || undefined,
+                description: row.productInfo?.description || undefined,
                 portProductDescription: bulk.portProductDescription === true,
                 purchaseDate: row.purchaseDate || undefined,
                 price: row.price === '' || row.price == null ? undefined : row.price,
+                hsn_code: row.hsnCode || undefined,
+                status: row.status || undefined,
                 quantity: Number(row.quantity),
                 unit: row.unit || row.product?.unit || undefined,
                 location: row.location || undefined,
@@ -2688,12 +2897,8 @@ async function submitBulk(dryRun) {
         return;
     }
     if (bulk.busy) return;
-    if (bulk.rows.length && bulk.rows.every(bulkRowReadyExceptProduct) && bulkMissingProductRows().length) {
-        const ok = await bulkCreateMissingProducts();
-        if (!ok) return;
-    }
     if (!bulk.rows.length || !bulk.rows.every(bulkRowResolved)) {
-        showToast('Resolve every row (Product, quantity, and Path) first.', 'error');
+        showToast('Resolve every row (quantity and Path) first. Product is optional.', 'error');
         return;
     }
     if (!dryRun && !confirm(`Register ${bulk.rows.length} ${bulkIsAsset() ? 'Asset' : 'Inventory'} holdings as NON-PROCUREMENT INTAKE?`)) return;
@@ -2779,6 +2984,7 @@ function renderBulkResult(data) {
 }
 
 function startBulkIntake() {
+    showAwaitingToolbar(false);
     if (!canMutate()) {
         showToast('Sales cannot create Physical Intakes.', 'error');
         return;
@@ -2795,6 +3001,7 @@ function startBulkIntake() {
 }
 
 function startWizard(preset) {
+    showAwaitingToolbar(false);
     if (!canMutate()) {
         showToast('Sales cannot create Physical Intakes.', 'error');
         return;
@@ -2826,6 +3033,7 @@ export function initPhysicalIntakesView() {
             startWizard();
         });
         el('btnBulkPhysicalIntake')?.addEventListener('click', startBulkIntake);
+        el('btnAwaitingNoPo')?.addEventListener('click', () => markSelectedNoPoRequired(wizardHost()));
         el('physicalIntakeSearch')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();

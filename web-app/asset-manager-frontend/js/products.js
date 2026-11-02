@@ -1017,13 +1017,13 @@ async function openProductDetail(id) {
     });
     const bodyHost = showProductDetailModal('Product', '<p class="lc-muted">Loading…</p>');
     if (!bodyHost) return;
-    const [productRes, refsRes, conflictsRes, posRes, setsRes, invRes] = await Promise.all([
+    const [productRes, refsRes, conflictsRes, posRes, setsRes, linksRes] = await Promise.all([
         api(`/api/products/${encodeURIComponent(id)}`),
         api(`/api/products/${encodeURIComponent(id)}/external-refs`),
         api(`/api/products/${encodeURIComponent(id)}/conflicts`).catch(() => ({ conflicts: [] })),
         api('/api/procurement/pos?limit=200').catch(() => ({ purchaseOrders: [] })),
         api('/api/sets').catch(() => ({ sets: [] })),
-        api('/api/inventory/items').catch(() => ({ items: [] }))
+        api(`/api/products/${encodeURIComponent(id)}/physical-links`).catch(() => ({ links: [] }))
     ]);
     if (selectedId !== id) return;
     const p = productRes.product;
@@ -1045,12 +1045,13 @@ async function openProductDetail(id) {
         || String(set.productId || '') === String(p.id)
     );
     const originatingSet = p.origin === 'SET' ? p.origin_ref : null;
-    const assets = (window.allAssets || window.assets || []).filter((a) =>
-        String(a.product_id || a.productId || '') === String(p.id)
-    );
-    const inventory = (invRes.items || []).filter((item) =>
-        String(item.product_id || item.productId || '') === String(p.id)
-    );
+    const physicalLinks = linksRes.links || [];
+    const liveAssets = physicalLinks.filter((l) => l.resourceType === 'ASSET' && l.live);
+    const liveInventory = physicalLinks.filter((l) => l.resourceType === 'INVENTORY' && l.live);
+    const staleLinks = physicalLinks.filter((l) => l.deleted);
+    const originType = String(p.origin || '').toUpperCase();
+    const originRef = p.origin_ref || linksRes.originRef || '';
+    const originStale = originRef && (originType === 'ASSET' || originType === 'INVENTORY') && linksRes.originLive === false;
 
     const lastSync = zohoRef
         ? (zohoRef.last_pushed_at || zohoRef.last_pulled_at || zohoRef.updated_at || p.updated_at)
@@ -1145,15 +1146,42 @@ async function openProductDetail(id) {
             `).join('')}</ul>
         ` : '<p class="lc-muted">No imported Purchase Orders for this Product.</p>')}
         ${section('Physical', `
-            <p class="lc-muted">Physical stock is not the Product. Assets are identified holdings. Inventory is quantity-tracked.</p>
+            <p class="lc-muted">Physical stock is not the Product. Link a live Asset or Inventory id here when the original holding was deleted or intake created a new id.</p>
+            ${originRef ? `<p class="lc-muted">Birth holding (${escapeHtml(originType)}): <span class="lc-mono">${escapeHtml(originRef)}</span>${originStale ? ' — deleted. This stamp is history only; link a live id below.' : ''}.</p>` : ''}
             <div class="lc-kv">
-                <div><div class="lc-k">Assets</div><div>${assets.length
-                    ? assets.slice(0, 8).map((a) => `<div><button type="button" class="lc-crumb-link" data-lc-go="home-view" data-lc-open="${escapeHtml(a.ID || a.id)}">${escapeHtml(a.ID || a.id)}</button></div>`).join('')
+                <div><div class="lc-k">Live Assets</div><div>${liveAssets.length
+                    ? liveAssets.map((a) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <button type="button" class="lc-crumb-link" data-lc-go="home-view" data-lc-open="${escapeHtml(a.resourceId)}">${escapeHtml(a.resourceId)}</button>
+                        ${logistics ? `<button type="button" class="action-button grey" data-unlink-holding="${escapeHtml(a.resourceType)}" data-unlink-id="${escapeHtml(a.resourceId)}" style="width:auto;padding:2px 8px;font-size:11px;">Unlink</button>` : ''}
+                    </div>`).join('')
                     : '—'}</div></div>
-                <div><div class="lc-k">Inventory</div><div>${inventory.length
-                    ? inventory.slice(0, 8).map((item) => `<div><button type="button" class="lc-crumb-link" data-lc-go="inventory-view" data-lc-open="${escapeHtml(item.id || item.ID)}">${escapeHtml(item.id || item.ID)}</button></div>`).join('')
+                <div><div class="lc-k">Live Inventory</div><div>${liveInventory.length
+                    ? liveInventory.map((item) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <button type="button" class="lc-crumb-link" data-lc-go="inventory-view" data-lc-open="${escapeHtml(item.resourceId)}">${escapeHtml(item.resourceId)}</button>
+                        ${logistics ? `<button type="button" class="action-button grey" data-unlink-holding="${escapeHtml(item.resourceType)}" data-unlink-id="${escapeHtml(item.resourceId)}" style="width:auto;padding:2px 8px;font-size:11px;">Unlink</button>` : ''}
+                    </div>`).join('')
                     : '—'}</div></div>
             </div>
+            ${staleLinks.length ? `<div style="margin-top:10px;">
+                <div class="lc-k">Deleted holdings still pointing at this Product</div>
+                ${staleLinks.map((l) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                    <span class="lc-mono">${escapeHtml(l.resourceId)}</span>
+                    <span class="lc-chip">${escapeHtml(l.resourceType)} · deleted</span>
+                    ${logistics ? `<button type="button" class="action-button grey" data-unlink-holding="${escapeHtml(l.resourceType)}" data-unlink-id="${escapeHtml(l.resourceId)}" style="width:auto;padding:2px 8px;font-size:11px;">Clear link</button>` : ''}
+                </div>`).join('')}
+            </div>` : ''}
+            ${logistics ? `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                <label class="lc-k" style="display:block;">Link live holding
+                    <select id="prdLinkHoldingType" class="form-input" style="display:block;margin-top:4px;width:140px;">
+                        <option value="ASSET">Asset</option>
+                        <option value="INVENTORY">Inventory</option>
+                    </select>
+                </label>
+                <label class="lc-k" style="display:block;flex:1;min-width:180px;">Id
+                    <input id="prdLinkHoldingId" class="form-input" style="display:block;margin-top:4px;width:100%;" placeholder="Paste the new Asset or Inventory id">
+                </label>
+                <button type="button" class="action-button blue" id="btnLinkHolding" style="width:auto;">Link to this Product</button>
+            </div>` : ''}
         `)}
         ${section('Sets', `
             ${originatingSet ? `<p>Originating Set: <button type="button" class="lc-crumb-link" data-lc-go="sets-view" data-lc-open="${escapeHtml(originatingSet)}">${escapeHtml(originatingSet)}</button></p>` : ''}
@@ -1242,6 +1270,51 @@ async function openProductDetail(id) {
         } catch (err) {
             toastOperatorError(err);
         }
+    });
+    el('btnLinkHolding')?.addEventListener('click', async () => {
+        const resourceType = el('prdLinkHoldingType')?.value || 'ASSET';
+        const resourceId = String(el('prdLinkHoldingId')?.value || '').trim();
+        if (!resourceId) {
+            showToast('Paste a live Asset or Inventory id.', 'error');
+            return;
+        }
+        try {
+            const result = await api(`/api/products/${encodeURIComponent(id)}/physical-links`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resourceType, resourceId })
+            });
+            if (result.previousProductId && String(result.previousProductId) !== String(id)) {
+                showToast(`Moved ${resourceId} from ${result.previousProductId} onto this Product.`, 'success');
+            } else {
+                showToast(result.alreadyLinked ? 'Already linked to this Product.' : `Linked ${resourceId} to this Product.`, 'success');
+            }
+            if (typeof window.loadAssets === 'function') {
+                Promise.resolve(window.loadAssets()).catch(() => {});
+            }
+            await refreshDetail();
+        } catch (err) {
+            toastOperatorError(err);
+        }
+    });
+    bodyHost.querySelectorAll('[data-unlink-holding]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const resourceType = btn.getAttribute('data-unlink-holding');
+            const resourceId = btn.getAttribute('data-unlink-id');
+            if (!confirmAction(`Remove ${resourceId} from this Product? The holding itself is not deleted.`)) return;
+            try {
+                await api(`/api/products/${encodeURIComponent(id)}/physical-links/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}`, {
+                    method: 'DELETE'
+                });
+                showToast('Link cleared.', 'success');
+                if (typeof window.loadAssets === 'function') {
+                    Promise.resolve(window.loadAssets()).catch(() => {});
+                }
+                await refreshDetail();
+            } catch (err) {
+                toastOperatorError(err);
+            }
+        });
     });
     el('btnLinkZoho')?.addEventListener('click', () => openLinkWizard(id));
     el('btnConflictAe')?.addEventListener('click', async () => {

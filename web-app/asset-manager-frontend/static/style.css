@@ -6512,6 +6512,45 @@ button.ops-activity-row:focus-visible {
 #physical-intakes-view .pi-col-product { min-width: 220px; }
 #physical-intakes-view .pi-col-path { min-width: 240px; }
 #physical-intakes-view .pi-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+#physical-intakes-view .pi-await-check {
+    width: 36px;
+    text-align: center;
+    vertical-align: middle;
+}
+#physical-intakes-view .pi-await-check input,
+#physical-intakes-view .pi-await-select-all input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    vertical-align: middle;
+    cursor: pointer;
+}
+#physical-intakes-view .pi-await-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #334155;
+    cursor: pointer;
+    user-select: none;
+}
+#physical-intakes-view .pi-await-bar {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    margin: 0 0 12px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
+#physical-intakes-view #btnAwaitingNoPo[hidden] {
+    display: none !important;
+}
 #physical-intakes-view .pi-list-frame { display: flex; flex-direction: column; }
 #physical-intakes-view .pi-list { margin-top: 0; width: 100%; table-layout: fixed; }
 #physical-intakes-view .pi-list thead th { padding: 6px; }

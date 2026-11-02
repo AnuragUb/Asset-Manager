@@ -757,35 +757,48 @@ function whereKindNotDeleted(qb) {
   });
 }
 
-/** Walk category parent links, including soft-deleted nodes, and return live names under a folder. */
-async function liveCategoryNamesUnderFolder(folderName, folderId) {
-  const rows = await db('asset_kinds').select('id', 'name', 'parentname', 'parent_id', 'is_deleted');
-  const childrenOf = new Map();
-  const addChild = (key, row) => {
-    const parent = String(key || '');
-    if (!parent) return;
-    if (!childrenOf.has(parent)) childrenOf.set(parent, []);
-    childrenOf.get(parent).push(row);
-  };
-  rows.forEach((row) => {
-    addChild(row.parent_id, row);
-    addChild(row.parentname, row);
+function idsEqual(left, right) {
+  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function kindStoredParentId(row) {
+  return String(row?.parent_id || '').trim();
+}
+
+/**
+ * Live kinds that actually sit in this folder.
+ * Match parent_id to the folder id. Do not treat parentname as identity — a sibling
+ * category may share the folder's display name (Hardware folder vs Hardware category).
+ */
+async function liveOccupancyUnderFolder(folder) {
+  const folderId = String(folder?.id || '').trim();
+  const folderName = String(folder?.name || '').trim();
+  const nestedFolders = folderId
+    ? await db('asset_folders').whereRaw("LOWER(coalesce(parentid, '')) = LOWER(?)", [folderId]).select('id', 'name')
+    : [];
+  const kinds = await db('asset_kinds').select('id', 'name', 'parentname', 'parent_id', 'is_deleted');
+  const siblingCategoryName = kinds.some((row) => {
+    if (Number(row.is_deleted || 0) === 1) return false;
+    return idsEqual(row.name, folderName) || idsEqual(row.id, folderName);
   });
-  const live = [];
-  const seen = new Set();
-  const stack = [String(folderId || ''), String(folderName || '')].filter(Boolean);
-  while (stack.length) {
-    const parent = stack.pop();
-    for (const child of (childrenOf.get(parent) || [])) {
-      const name = String(child.name || '');
-      const key = String(child.id || `${child.parentname || ''}\0${name}`);
-      if (!name || seen.has(key)) continue;
-      seen.add(key);
-      if (Number(child.is_deleted || 0) !== 1) live.push(name);
-      stack.push(name);
-    }
-  }
-  return live;
+  const liveKinds = kinds.filter((row) => {
+    if (Number(row.is_deleted || 0) === 1) return false;
+    const parentId = kindStoredParentId(row);
+    if (parentId) return idsEqual(parentId, folderId);
+    if (siblingCategoryName) return false;
+    return idsEqual(row.parentname, folderName);
+  });
+  return {
+    folders: nestedFolders.map((row) => String(row.name || row.id)),
+    kinds: liveKinds.map((row) => String(row.name || row.id))
+  };
+}
+
+function kindMatchesParentRow(kind, parentName, parentId) {
+  const storedId = kindStoredParentId(kind);
+  const wantedId = String(parentId || '').trim();
+  if (storedId) return Boolean(wantedId) && idsEqual(storedId, wantedId);
+  return Boolean(parentName) && idsEqual(kind.parentname, parentName);
 }
 
 function newAssetKindId() {
@@ -860,6 +873,26 @@ async function resolveLiveAssetFolderPath(folderPath, moduleName) {
         this.whereRaw('LOWER(name) = LOWER(?)', [wanted]).orWhereRaw('LOWER(id) = LOWER(?)', [wanted]);
       })
       .first();
+    const kindHits = await db('asset_kinds')
+      .where(whereKindNotDeleted)
+      .whereRaw('LOWER(name) = LOWER(?)', [wanted]);
+    const matchingKinds = kindHits.filter((row) => kindMatchesParentRow(row, parentName, parentId));
+    if (nested && matchingKinds.length) {
+      const nextWanted = parts[index + 1];
+      if (!nextWanted) break;
+      const kindId = matchingKinds[0].id || matchingKinds[0].name;
+      const nextKinds = await db('asset_kinds')
+        .where(whereKindNotDeleted)
+        .whereRaw('LOWER(name) = LOWER(?)', [nextWanted]);
+      const nextUnderKind = nextKinds.some((row) => kindMatchesParentRow(row, matchingKinds[0].name, kindId));
+      const nextNestedFolder = await db('asset_folders')
+        .where('parentid', nested.id)
+        .whereRaw('LOWER(name) = LOWER(?)', [nextWanted])
+        .first();
+      const nextUnderFolder = Boolean(nextNestedFolder)
+        || nextKinds.some((row) => kindMatchesParentRow(row, nested.name, nested.id));
+      if (nextUnderKind || !nextUnderFolder) break;
+    }
     if (!nested) break;
     names.push(nested.name);
     parentId = nested.id;
@@ -871,21 +904,12 @@ async function resolveLiveAssetFolderPath(folderPath, moduleName) {
     const wanted = parts[index];
     const hits = await db('asset_kinds')
       .where(whereKindNotDeleted)
-      .whereRaw('LOWER(name) = LOWER(?)', [wanted])
-      .where(function () {
-        this.where('parent_id', parentId)
-          .orWhereRaw('LOWER(coalesce(parent_id, \'\')) = LOWER(?)', [String(parentId)])
-          .orWhereRaw('LOWER(coalesce(parent_id, \'\')) = LOWER(?)', [String(parentName)])
-          .orWhere(function () {
-            this.where(function () {
-              this.whereNull('parent_id').orWhere('parent_id', '');
-            }).whereRaw('LOWER(parentname) = LOWER(?)', [parentName]);
-          });
-      });
-    if (!hits.length) {
+      .whereRaw('LOWER(name) = LOWER(?)', [wanted]);
+    const matching = hits.filter((row) => kindMatchesParentRow(row, parentName, parentId));
+    if (!matching.length) {
       throw pathResolveError(`“${wanted}” is not an existing category or make under “${parentName}”. Create it in the hierarchy first.`);
     }
-    const kind = hits.find((row) => String(row.parent_id || '') === String(parentId)) || hits[0];
+    const kind = matching.find((row) => idsEqual(row.parent_id, parentId)) || matching[0];
     names.push(kind.name);
     parentId = kind.id || kind.name;
     parentName = kind.name;
@@ -1106,46 +1130,46 @@ async function logAudit(user, action, details, assetId = 'N/A', severity = 'INFO
 }
 
 function formatDisplayDate(val) {
-    if (!val) return '-';
-    
-    let date;
-    if (val instanceof Date) {
-        date = val;
-    } else if (typeof val === 'string') {
-        date = new Date(val);
-    } else {
-        return val;
+    if (val == null || val === '') return '-';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        const d = String(val.getUTCDate()).padStart(2, '0');
+        const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+        return `${d}-${m}-${val.getUTCFullYear()}`;
     }
-
-    if (isNaN(date.getTime())) return val;
-
-    const d = String(date.getDate()).padStart(2, '0');
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const y = date.getFullYear();
-    return `${d}-${m}-${y}`;
+    const text = String(val).trim();
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+    const dmy = text.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+    if (dmy) return `${String(dmy[1]).padStart(2, '0')}-${String(dmy[2]).padStart(2, '0')}-${dmy[3]}`;
+    return text;
 }
 
 // Helper to normalize Excel date numbers or various date formats to YYYY-MM-DD for DB
 const normalizeDate = (val) => {
-    if (!val) return null;
-    
-    let date;
-    if (val instanceof Date) {
-        date = val;
-    } else if (typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)))) {
-        // If it's a number (Excel serial date format)
-        const num = parseFloat(val);
-        // Excel dates start from 1900-01-01. 
-        // 25569 is the number of days between 1900-01-01 and 1970-01-01 (Unix Epoch)
-        date = new Date((num - 25569) * 86400 * 1000);
-        console.log(`[DATE] Converted Excel serial ${num} to ${date.toISOString().split('T')[0]}`);
-    } else {
-        date = new Date(val);
+    if (val == null || val === '') return null;
+    const pad = (n) => String(n).padStart(2, '0');
+    const ymd = (year, month, day) => {
+        const y = Number(year);
+        const m = Number(month);
+        const d = Number(day);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+        return `${y}-${pad(m)}-${pad(d)}`;
+    };
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return ymd(val.getUTCFullYear(), val.getUTCMonth() + 1, val.getUTCDate());
     }
-
-    if (date && !isNaN(date.getTime())) {
-        const iso = date.toISOString().split('T')[0];
-        return iso;
+    const text = String(val).trim();
+    const dmy = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dmy) return ymd(dmy[3], dmy[2], dmy[1]);
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return ymd(iso[1], iso[2], iso[3]);
+    if (/^\d+(\.\d+)?$/.test(text)) {
+        const serial = Math.floor(Number(text));
+        if (serial > 20000 && serial < 80000) {
+            const utc = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+            return ymd(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+        }
     }
     console.warn(`[DATE] Failed to normalize date value: "${val}"`);
     return null;
@@ -3967,6 +3991,40 @@ app.get('/api/products/:id/holdings', authenticateJWT, requirePermission('produc
     }
 });
 
+app.get('/api/products/:id/physical-links', authenticateJWT, requirePermission('product.view'), async (req, res) => {
+    try {
+        const data = await productService.listProductPhysicalLinks(req.params.id);
+        res.json({ success: true, ...data });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.post('/api/products/:id/physical-links', authenticateJWT, requirePermission('product.edit'), async (req, res) => {
+    try {
+        const body = req.body || {};
+        const data = await productService.linkHoldingToProduct(req.params.id, {
+            resourceType: body.resourceType || body.resource_type,
+            resourceId: body.resourceId || body.resource_id
+        }, productActor(req));
+        res.json({ success: true, ...data });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
+app.delete('/api/products/:id/physical-links/:resourceType/:resourceId', authenticateJWT, requirePermission('product.edit'), async (req, res) => {
+    try {
+        const data = await productService.unlinkHoldingFromProduct(req.params.id, {
+            resourceType: req.params.resourceType,
+            resourceId: req.params.resourceId
+        });
+        res.json({ success: true, ...data });
+    } catch (err) {
+        sendProductError(res, err);
+    }
+});
+
 app.post('/api/products', authenticateJWT, requirePermission('product.create'), async (req, res) => {
     try {
         const product = await productService.createProduct(req.body || {}, productActor(req));
@@ -5003,9 +5061,18 @@ app.post('/api/physical-intakes/link-po', authenticateJWT, requirePermission('ph
 app.post('/api/physical-intakes/mark-not-required', authenticateJWT, requirePermission('physical_intake.link_po'), async (req, res) => {
     try {
         const body = req.body || {};
+        const actor = physicalIntakeActor(req);
+        if (Array.isArray(body.items)) {
+            const result = await commercialProvenanceService.markNotRequiredMany({
+                items: body.items,
+                actor
+            });
+            await invalidateAssetsCache();
+            return res.json({ success: true, ...result });
+        }
         const commercialProvenance = await commercialProvenanceService.markNotRequired({
             ...body,
-            actor: physicalIntakeActor(req)
+            actor
         });
         await invalidateAssetsCache();
         res.json({ success: true, commercialProvenance });
@@ -8262,7 +8329,7 @@ app.put('/api/inventory/items/:id', authenticateJWT, requirePermission('inventor
         currentlocation: location,
         dispatchreceivedt: item.DispatchReceiveDt || item.dispatchreceivedt || null,
         purchasedetails: item.PurchaseDetails || item.purchasedetails || '',
-        purpose: item.Purpose || item.purpose || 'Owned',
+        purpose: existing.purpose || existing.Purpose || 'Owned',
         remarks: item.Remarks || item.remarks || '',
         lastupdated: new Date().toISOString(),
         currency: item.Currency || item.currency || 'INR',
@@ -8499,6 +8566,15 @@ app.post('/api/inventory/items/:id/delete', authenticateJWT, requirePermission('
     const existing = await db('inventory_items').whereRaw('LOWER(id) = LOWER(?)', [originalId]).first();
     if (!existing) return res.status(404).json({ error: `Inventory item ${originalId} not found.` });
     if (Number(existing.is_deleted || 0) === 1) {
+      try {
+        await commercialProvenanceService.closeAwaitingOnRemoval({
+          resourceType: 'INVENTORY',
+          resourceId: originalId,
+          actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web'
+        });
+      } catch (provErr) {
+        console.error('[INVENTORY DELETE] closeAwaitingOnRemoval', originalId, provErr.message);
+      }
       return res.json({ success: true, id: originalId, alreadyDeleted: true });
     }
 
@@ -8509,10 +8585,11 @@ app.post('/api/inventory/items/:id/delete', authenticateJWT, requirePermission('
       .update({ is_deleted: 1, deleted_at: now, lastupdated: now });
 
     const newSnap = { ...prevSnap, is_deleted: 1 };
+    const actor = req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web';
     await recordInventoryQuantityEvent({
       rootId: existing.quantity_root_id || originalId,
       type: INV_EVENT_TYPES.DELETE,
-      actor: req.user?.username || req.user?.user_id || req.headers['x-user'] || 'web',
+      actor,
       note: req.body?.note || defaultInventoryEventNote(INV_EVENT_TYPES.DELETE),
       entityType: INV_ENTITY_TYPES.INVENTORY_ITEM,
       entityId: originalId,
@@ -8520,6 +8597,15 @@ app.post('/api/inventory/items/:id/delete', authenticateJWT, requirePermission('
       newValue: newSnap,
       lines: []
     });
+    try {
+      await commercialProvenanceService.closeAwaitingOnRemoval({
+        resourceType: 'INVENTORY',
+        resourceId: originalId,
+        actor
+      });
+    } catch (provErr) {
+      console.error('[INVENTORY DELETE] closeAwaitingOnRemoval', originalId, provErr.message);
+    }
 
     res.json({ success: true, id: originalId });
   } catch (err) {
@@ -8697,11 +8783,15 @@ app.delete('/api/folders/:id', authenticateJWT, requirePermission('manage.hierar
     const folder = await db('asset_folders').where('id', id).first();
     if (!folder) return res.status(404).send('Folder not found');
 
-    const liveChildren = await liveCategoryNamesUnderFolder(folder.name, folder.id);
-    if (liveChildren.length > 0) {
-        const preview = liveChildren.slice(0, 8).join(', ');
-        const extra = liveChildren.length > 8 ? ` (+${liveChildren.length - 8} more)` : '';
-        return res.status(400).send(`Cannot delete folder. It still contains ${liveChildren.length} live categor${liveChildren.length === 1 ? 'y' : 'ies'} (${preview}${extra}). Move or delete them first.`);
+    const occupancy = await liveOccupancyUnderFolder(folder);
+    const blockers = [
+      ...occupancy.folders.map((name) => `folder “${name}”`),
+      ...occupancy.kinds.map((name) => `category “${name}”`)
+    ];
+    if (blockers.length > 0) {
+        const preview = blockers.slice(0, 8).join(', ');
+        const extra = blockers.length > 8 ? ` (+${blockers.length - 8} more)` : '';
+        return res.status(400).send(`Cannot delete folder. It still contains ${blockers.length} item${blockers.length === 1 ? '' : 's'} (${preview}${extra}). Move or delete those that are inside this folder first. Categories that sit beside it in the parent folder are not a reason to block delete.`);
     }
 
     await db('asset_folders').where('id', id).del();
@@ -12212,10 +12302,7 @@ app.put('/api/assets/:id', authenticateJWT, requirePermission('asset.edit'), asy
         ItemName: asset.ItemName || existing.itemname || '',
         ItemDescription: asset.ItemDescription !== undefined ? asset.ItemDescription : (existing.itemdescription || ''),
         Status: asset.Status || existing.status || 'In Store',
-        // Purpose drives Holdings Demo/Rented slices and kanban purpose filters; form already sends it.
-        Purpose: asset.Purpose !== undefined
-          ? (String(asset.Purpose || '').trim() || 'Owned')
-          : (existing.purpose || existing.Purpose || 'Owned'),
+        Purpose: existing.purpose || existing.Purpose || 'Owned',
         Make: asset.Make || existing.make || '',
         Model: asset.Model || existing.model || '',
         SrNo: encryptionService.encryptDeterministic(asset.SrNo !== undefined ? asset.SrNo : (existing.srno || '')),
@@ -12675,6 +12762,11 @@ app.delete('/api/assets/bulk', authenticateJWT, requirePermission('asset.delete'
           .update({ is_deleted: 1, deleted_at: now, deleted_by: username, lastupdated: now });
         if (changes > 0) {
           deletedCount++;
+          await commercialProvenanceService.closeAwaitingOnRemoval({
+            resourceType: 'ASSET',
+            resourceId: id,
+            actor: username
+          }, trx);
           await recordDomainEvent({
             entityType: INV_ENTITY_TYPES.ASSET,
             entityId: id,
@@ -12833,6 +12925,15 @@ app.delete('/api/assets/:id', authenticateJWT, requirePermission('asset.delete')
         extra: Object.keys(qtyReturnedMeta).length ? qtyReturnedMeta : null
       });
       await appendAudit({ Action: 'DELETE', User: username, AssetId: id, Severity: 'INFO', Details: 'Asset soft-deleted (Recovery Center); relationships preserved' });
+      try {
+        await commercialProvenanceService.closeAwaitingOnRemoval({
+          resourceType: 'ASSET',
+          resourceId: id,
+          actor: username
+        });
+      } catch (provErr) {
+        console.error('[DELETE] closeAwaitingOnRemoval', id, provErr.message);
+      }
       await invalidateAssetsCache();
       res.json({ success: true, message: 'Asset moved to Recovery Center' });
     } else {

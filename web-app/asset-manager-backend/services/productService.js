@@ -534,6 +534,145 @@ async function listProductHoldings(productId, { mode } = {}) {
   };
 }
 
+function holdingDeleted(row) {
+  return Number(row && (row.is_deleted ?? row.isdeleted) || 0) === 1;
+}
+
+async function listProductPhysicalLinks(productId) {
+  await requireTables();
+  const id = String(productId || '').trim();
+  if (!id) throw httpError('Product id is required', 400);
+  const product = await db('product').where({ id }).first();
+  if (!product) throw httpError('Product not found', 404);
+
+  const links = [];
+  if (await db.schema.hasColumn('assets', 'product_id')) {
+    const cols = ['id', 'itemname', 'status', 'currentlocation'];
+    if (await db.schema.hasColumn('assets', 'is_deleted')) cols.push('is_deleted');
+    const rows = await db('assets').where({ product_id: id }).select(cols).orderBy('id');
+    for (const row of rows) {
+      const deleted = holdingDeleted(row);
+      links.push({
+        resourceType: 'ASSET',
+        resourceId: row.id,
+        name: row.itemname || row.id,
+        status: row.status || null,
+        location: row.currentlocation || '',
+        deleted,
+        live: !deleted
+      });
+    }
+  }
+  if (await db.schema.hasColumn('inventory_items', 'product_id')) {
+    const cols = ['id', 'itemname', 'status', 'currentlocation'];
+    if (await db.schema.hasColumn('inventory_items', 'is_deleted')) cols.push('is_deleted');
+    const rows = await db('inventory_items').where({ product_id: id }).select(cols).orderBy('id');
+    for (const row of rows) {
+      const deleted = holdingDeleted(row);
+      links.push({
+        resourceType: 'INVENTORY',
+        resourceId: row.id,
+        name: row.itemname || row.id,
+        status: row.status || null,
+        location: row.currentlocation || '',
+        deleted,
+        live: !deleted
+      });
+    }
+  }
+
+  const originType = String(product.origin || '').toUpperCase();
+  let originLive = null;
+  if (product.origin_ref && (originType === 'ASSET' || originType === 'INVENTORY')) {
+    const table = originType === 'ASSET' ? 'assets' : 'inventory_items';
+    const originRow = await db(table).whereRaw('LOWER(id) = LOWER(?)', [String(product.origin_ref)]).first();
+    originLive = originRow ? !holdingDeleted(originRow) : false;
+  }
+
+  return {
+    productId: id,
+    origin: product.origin,
+    originRef: product.origin_ref || null,
+    originLive,
+    links
+  };
+}
+
+async function loadHoldingForProductLink(resourceType, resourceId) {
+  const type = String(resourceType || '').trim().toUpperCase();
+  const id = String(resourceId || '').trim();
+  if (!id) throw httpError('Holding id is required', 400, 'MISSING_HOLDING_ID');
+  if (type !== 'ASSET' && type !== 'INVENTORY') {
+    throw httpError('resourceType must be ASSET or INVENTORY', 400, 'INVALID_TYPE');
+  }
+  const table = type === 'ASSET' ? 'assets' : 'inventory_items';
+  const row = await db(table).whereRaw('LOWER(id) = LOWER(?)', [id]).first();
+  if (!row) throw httpError(`${type === 'ASSET' ? 'Asset' : 'Inventory'} ${id} not found`, 404, 'HOLDING_NOT_FOUND');
+  return { type, table, row };
+}
+
+async function linkHoldingToProduct(productId, { resourceType, resourceId } = {}, actor) {
+  await requireTables();
+  const id = String(productId || '').trim();
+  const product = await db('product').where({ id }).first();
+  if (!product) throw httpError('Product not found', 404);
+  if (String(product.status || '').toUpperCase() === 'ARCHIVED') {
+    throw httpError('Restore the Product before linking holdings.', 409, 'PRODUCT_ARCHIVED');
+  }
+  const { type, table, row } = await loadHoldingForProductLink(resourceType, resourceId);
+  if (holdingDeleted(row)) {
+    throw httpError('That holding is deleted. Link a live Asset or Inventory id.', 409, 'HOLDING_DELETED');
+  }
+  if (!(await db.schema.hasColumn(table, 'product_id'))) {
+    throw httpError('product_id is not available on this holding table', 500, 'MISSING_COLUMN');
+  }
+  const previousProductId = row.product_id || null;
+  if (previousProductId && String(previousProductId) === String(product.id)) {
+    return {
+      alreadyLinked: true,
+      productId: product.id,
+      resourceType: type,
+      resourceId: row.id,
+      previousProductId
+    };
+  }
+  const patch = { product_id: product.id };
+  if (await db.schema.hasColumn(table, 'lastupdated')) patch.lastupdated = new Date().toISOString();
+  await db(table).where({ id: row.id }).update(patch);
+  await invalidateProductCache(product.id);
+  if (previousProductId) await invalidateProductCache(previousProductId);
+  try { await cache.delPattern('assets:*'); } catch (_) { /* non-critical */ }
+  return {
+    alreadyLinked: false,
+    productId: product.id,
+    resourceType: type,
+    resourceId: row.id,
+    previousProductId,
+    actor: actor || null
+  };
+}
+
+async function unlinkHoldingFromProduct(productId, { resourceType, resourceId } = {}) {
+  await requireTables();
+  const id = String(productId || '').trim();
+  const product = await db('product').where({ id }).first();
+  if (!product) throw httpError('Product not found', 404);
+  const { type, table, row } = await loadHoldingForProductLink(resourceType, resourceId);
+  if (String(row.product_id || '') !== String(product.id)) {
+    throw httpError('That holding is not linked to this Product.', 409, 'NOT_LINKED');
+  }
+  const patch = { product_id: null };
+  if (await db.schema.hasColumn(table, 'lastupdated')) patch.lastupdated = new Date().toISOString();
+  await db(table).where({ id: row.id }).update(patch);
+  await invalidateProductCache(product.id);
+  try { await cache.delPattern('assets:*'); } catch (_) { /* non-critical */ }
+  return {
+    productId: product.id,
+    resourceType: type,
+    resourceId: row.id
+  };
+}
+
 function standalonePayload(input, actor) {
   const name = blankToNull(input && input.name);
   if (!name) throw httpError('name is required', 400);
@@ -1699,6 +1838,9 @@ module.exports = {
   listProducts,
   getProduct,
   listProductHoldings,
+  listProductPhysicalLinks,
+  linkHoldingToProduct,
+  unlinkHoldingFromProduct,
   createProduct,
   bulkCreateProducts,
   matchProducts,
